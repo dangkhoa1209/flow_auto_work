@@ -1,0 +1,31 @@
+{
+  "name": "flow_auto_work",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "GitLab webhook → Cursor SDK local auto-work → MR + Teams clarify",
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "selfcheck": "tsx scripts/selfcheck.ts",
+    "list-tasks": "tsx scripts/list-tasks.ts list",
+    "scan": "tsx scripts/list-tasks.ts scan",
+    "tunnel": "cloudflared tunnel --url http://127.0.0.1:8787"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@cursor/sdk": "^1.0.18",
+    "@hono/node-server": "^2.0.11",
+    "dotenv": "^17.4.2",
+    "hono": "^4.12.31",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.1",
+    "tsx": "^4.23.1",
+    "typescript": "^7.0.2"
+  }
+}
