@@ -28,9 +28,10 @@ import {
 import { getReviewDiff } from "../git/diff.js";
 import { listAssignedOpenIssues } from "../gitlab/client.js";
 import { scanExistingAssignedIssues } from "../gitlab/startup-scan.js";
-import { saveJob } from "../job-store.js";
+import { ensureJob, loadJob, loadJobByIssue, listJobs, saveJob } from "../job-store.js";
 import { logger } from "../logger.js";
 import { jobQueue } from "../queue.js";
+import { isJobBusy, resolveDevNotes, type CompletionActions } from "../types.js";
 
 export function createApiRoutes() {
   const api = new Hono();
@@ -80,17 +81,26 @@ export function createApiRoutes() {
   api.post("/jobs/start", async (c) => {
     const body = (await c.req.json().catch(() => ({}))) as {
       mode?: string;
+      issueIid?: number;
       issueIids?: number[];
-      completion?: {
-        assignees?: string[];
-        labels?: string[];
-        removeLabels?: string[];
-        onStartLabels?: string[];
-        labelMode?: "add" | "set";
-        comment?: string;
-      };
+      /** Run all assigned tasks (re-run); skip busy; create job if missing */
+      runDrafts?: boolean;
+      runAll?: boolean;
+      devNotes?: string;
+      techLeadNotes?: string;
+      completion?: CompletionActions;
     };
-    const mode = body.mode === "selected" ? "selected" : "auto";
+    const mode =
+      body.mode === "selected" || body.mode === "manual"
+        ? "selected"
+        : body.mode === "drafts" ||
+            body.mode === "all" ||
+            body.runDrafts ||
+            body.runAll
+          ? "all"
+          : "auto";
+    const devNotes =
+      body.devNotes?.trim() || body.techLeadNotes?.trim() || undefined;
     const completion = body.completion
       ? {
           assignees: body.completion.assignees
@@ -113,10 +123,64 @@ export function createApiRoutes() {
         }
       : undefined;
 
+    if (mode === "all") {
+      const config = getConfig();
+      const issues = await listAssignedOpenIssues();
+      const existingJobs = await listJobs();
+      const jobByIid = new Map(
+        existingJobs.map((j) => [j.issue.issueIid, j] as const),
+      );
+
+      let enqueued = 0;
+      let skipped = 0;
+      let skippedBusy = 0;
+      let created = 0;
+      const jobIds: string[] = [];
+
+      for (const issue of issues) {
+        if (
+          issue.labels.some((l) => config.skipLabels.includes(l.toLowerCase()))
+        ) {
+          skipped += 1;
+          continue;
+        }
+
+        const existing = jobByIid.get(issue.issueIid);
+        if (existing && isJobBusy(existing.status)) {
+          skippedBusy += 1;
+          skipped += 1;
+          continue;
+        }
+
+        const wasMissing = !existing;
+        const result = await jobQueue.enqueue(issue, {
+          source: "ui_run_all",
+          completion: completion ?? existing?.completion,
+          devNotes:
+            resolveDevNotes(existing ?? { devNotes: undefined }) || undefined,
+        });
+        if (result.enqueued && result.jobId) {
+          enqueued += 1;
+          if (wasMissing) created += 1;
+          jobIds.push(result.jobId);
+        } else {
+          skipped += 1;
+        }
+      }
+
+      return c.json({
+        mode: "all",
+        found: issues.length,
+        enqueued,
+        skipped,
+        skippedBusy,
+        created,
+        jobIds,
+      });
+    }
+
     if (mode === "auto") {
-      // Auto scan uses env defaults unless UI sent completion overrides —
-      // apply overrides by enqueueing selected-from-scan with completion.
-      if (!completion) {
+      if (!completion && !devNotes) {
         const result = await scanExistingAssignedIssues({
           source: "ui_auto",
           includeSucceeded: false,
@@ -135,9 +199,10 @@ export function createApiRoutes() {
           skipped += 1;
           continue;
         }
-        const result = jobQueue.enqueue(issue, {
+        const result = await jobQueue.enqueue(issue, {
           source: "ui_auto",
           completion,
+          devNotes,
         });
         if (result.enqueued && result.jobId) {
           enqueued += 1;
@@ -156,8 +221,15 @@ export function createApiRoutes() {
     const iids = Array.isArray(body.issueIids)
       ? body.issueIids.map(Number).filter((n) => !Number.isNaN(n))
       : [];
+    if (body.issueIid != null && !Number.isNaN(Number(body.issueIid))) {
+      const one = Number(body.issueIid);
+      if (!iids.includes(one)) iids.push(one);
+    }
     if (iids.length === 0) {
-      return c.json({ error: "issueIids required for mode=selected" }, 400);
+      return c.json(
+        { error: "issueIid or issueIids required for mode=selected|manual" },
+        400,
+      );
     }
 
     const all = await listAssignedOpenIssues();
@@ -172,9 +244,11 @@ export function createApiRoutes() {
         skipped += 1;
         continue;
       }
-      const result = jobQueue.enqueue(issue, {
+      const result = await jobQueue.enqueue(issue, {
         source: "ui_selected",
         completion,
+        // Single-issue Run: attach notes; multi: same notes only if provided
+        devNotes: iids.length === 1 ? devNotes : undefined,
       });
       if (result.enqueued && result.jobId) {
         enqueued += 1;
@@ -193,6 +267,62 @@ export function createApiRoutes() {
       missing,
       jobIds,
     });
+  });
+
+  /** Open/create the unique job for an issue (status draft if new) */
+  api.post("/jobs/ensure", async (c) => {
+    const body = (await c.req.json().catch(() => ({}))) as {
+      issueIid?: number;
+      devNotes?: string;
+    };
+    const iid = Number(body.issueIid);
+    if (!Number.isFinite(iid) || iid <= 0) {
+      return c.json({ error: "issueIid required" }, 400);
+    }
+    const all = await listAssignedOpenIssues();
+    const issue = all.find((i) => i.issueIid === iid);
+    if (!issue) {
+      // Fall back: load existing job issue snapshot
+      const existing = (await listJobs()).find((j) => j.issue.issueIid === iid);
+      if (!existing) return c.json({ error: `Issue #${iid} not found` }, 404);
+      if (body.devNotes !== undefined) {
+        existing.devNotes = body.devNotes.trim() || undefined;
+        if (existing.status !== "draft" && !existing.runCount) {
+          /* keep */
+        }
+        await saveJob(existing);
+      }
+      return c.json({ job: existing });
+    }
+    const job = await ensureJob(issue, {
+      source: "ui_ensure",
+      devNotes: body.devNotes,
+    });
+    return c.json({ job });
+  });
+
+  api.put("/jobs/:id/dev-notes", async (c) => {
+    const job = await loadJob(c.req.param("id"));
+    if (!job) return c.json({ error: "job not found" }, 404);
+    const body = (await c.req.json().catch(() => ({}))) as { devNotes?: string };
+    job.devNotes = body.devNotes?.trim() || undefined;
+    await saveJob(job);
+    return c.json({ job });
+  });
+
+  api.get("/jobs/by-issue/:iid", async (c) => {
+    const iid = Number(c.req.param("iid"));
+    if (!Number.isFinite(iid) || iid <= 0) {
+      return c.json({ error: "invalid iid" }, 400);
+    }
+    const all = await listAssignedOpenIssues();
+    const issue = all.find((i) => i.issueIid === iid);
+    if (issue) {
+      const job = await loadJobByIssue(issue.projectId, iid);
+      return c.json({ job });
+    }
+    const fallback = (await listJobs()).find((j) => j.issue.issueIid === iid);
+    return c.json({ job: fallback ?? null });
   });
 
   api.get("/meta/completion-defaults", async (c) => {
@@ -273,9 +403,9 @@ export function createApiRoutes() {
     return c.json({ ok: true, job });
   });
 
-  /** Todolist / stats grouped by calendar day (Asia/Ho_Chi_Minh). */
+  /** Todolist / stats: only days with tasks, nested month → week → day (Asia/Ho_Chi_Minh). */
   api.get("/stats/daily", async (c) => {
-    const days = Math.min(90, Math.max(1, Number(c.req.query("days") ?? "14")));
+    const days = Math.min(365, Math.max(1, Number(c.req.query("days") ?? "90")));
     const jobs = await listJobDocs({ limit: 500 });
     const tz = "Asia/Ho_Chi_Minh";
     const dayKey = (iso?: string) => {
@@ -292,21 +422,63 @@ export function createApiRoutes() {
       }
     };
 
+    const formatYmdUtc = (d: Date) => {
+      const y = d.getUTCFullYear();
+      const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+      const day = String(d.getUTCDate()).padStart(2, "0");
+      return `${y}-${m}-${day}`;
+    };
+
+    /** ISO week from a civil YYYY-MM-DD (calendar day in tz). */
+    const isoWeekFromYmd = (ymd: string) => {
+      const [Y, M, D] = ymd.split("-").map(Number);
+      const utc = new Date(Date.UTC(Y, M - 1, D));
+      const dayNum = utc.getUTCDay() || 7; // Mon=1 … Sun=7
+      const thursday = new Date(utc);
+      thursday.setUTCDate(utc.getUTCDate() + 4 - dayNum);
+      const isoYear = thursday.getUTCFullYear();
+      const yearStart = new Date(Date.UTC(isoYear, 0, 1));
+      const week = Math.ceil(
+        ((thursday.getTime() - yearStart.getTime()) / 86400000 + 1) / 7,
+      );
+      const weekStart = new Date(utc);
+      weekStart.setUTCDate(utc.getUTCDate() - (dayNum - 1));
+      const weekEnd = new Date(weekStart);
+      weekEnd.setUTCDate(weekStart.getUTCDate() + 6);
+      const weekKey = `${isoYear}-W${String(week).padStart(2, "0")}`;
+      const ws = formatYmdUtc(weekStart);
+      const we = formatYmdUtc(weekEnd);
+      return {
+        weekKey,
+        week,
+        isoYear,
+        weekStart: ws,
+        weekEnd: we,
+        weekLabel: `Tuần ${week} · ${ws.slice(5).replace("-", "/")}–${we.slice(5).replace("-", "/")}`,
+      };
+    };
+
+    const monthLabel = (ym: string) => {
+      const [y, m] = ym.split("-").map(Number);
+      return `Tháng ${m}/${y}`;
+    };
+
+    type DayItem = {
+      jobId: string;
+      status: string;
+      issueIid: number;
+      title: string;
+      url: string;
+      at: string;
+      summary?: string;
+    };
     type DayBucket = {
       date: string;
       awaitingHandoff: number;
       succeeded: number;
       failed: number;
       runningLike: number;
-      items: Array<{
-        jobId: string;
-        status: string;
-        issueIid: number;
-        title: string;
-        url: string;
-        at: string;
-        summary?: string;
-      }>;
+      items: DayItem[];
     };
     const byDay = new Map<string, DayBucket>();
 
@@ -326,13 +498,9 @@ export function createApiRoutes() {
       return b;
     };
 
-    // Fill empty days for the window
-    const now = new Date();
-    for (let i = 0; i < days; i++) {
-      const d = new Date(now.getTime() - i * 86400000);
-      const key = dayKey(d.toISOString())!;
-      ensure(key);
-    }
+    const windowStart = new Date();
+    windowStart.setTime(windowStart.getTime() - (days - 1) * 86400000);
+    const windowStartKey = dayKey(windowStart.toISOString())!;
 
     for (const job of jobs) {
       const at =
@@ -341,16 +509,17 @@ export function createApiRoutes() {
         job.updatedAt ||
         job.createdAt;
       const key = dayKey(at);
-      if (!key) continue;
-      // Only include if within window (bucket exists) or create for older
-      const bucket = byDay.has(key) ? byDay.get(key)! : ensure(key);
+      if (!key || key < windowStartKey) continue;
+
+      const bucket = ensure(key);
       if (job.status === "awaiting_handoff") bucket.awaitingHandoff += 1;
       else if (job.status === "succeeded") bucket.succeeded += 1;
       else if (job.status === "failed") bucket.failed += 1;
       else if (
         job.status === "queued" ||
         job.status === "running" ||
-        job.status === "awaiting_clarification"
+        job.status === "awaiting_clarification" ||
+        job.status === "draft"
       ) {
         bucket.runningLike += 1;
       }
@@ -372,13 +541,82 @@ export function createApiRoutes() {
       }
     }
 
-    for (const b of byDay.values()) {
-      b.items.sort((a, c) => (a.at < c.at ? 1 : -1));
+    // Only days that have todolist items (handoff / done / fail)
+    const daily = [...byDay.values()]
+      .filter((b) => b.items.length > 0)
+      .map((b) => {
+        b.items.sort((a, c) => (a.at < c.at ? 1 : -1));
+        return b;
+      })
+      .sort((a, b) => (a.date < b.date ? 1 : -1));
+
+    type WeekNode = {
+      weekKey: string;
+      label: string;
+      weekStart: string;
+      weekEnd: string;
+      awaitingHandoff: number;
+      succeeded: number;
+      failed: number;
+      days: DayBucket[];
+    };
+    type MonthNode = {
+      monthKey: string;
+      label: string;
+      awaitingHandoff: number;
+      succeeded: number;
+      failed: number;
+      weeks: WeekNode[];
+    };
+
+    const monthMap = new Map<string, MonthNode>();
+    for (const day of daily) {
+      const monthKey = day.date.slice(0, 7);
+      const week = isoWeekFromYmd(day.date);
+      let month = monthMap.get(monthKey);
+      if (!month) {
+        month = {
+          monthKey,
+          label: monthLabel(monthKey),
+          awaitingHandoff: 0,
+          succeeded: 0,
+          failed: 0,
+          weeks: [],
+        };
+        monthMap.set(monthKey, month);
+      }
+      let weekNode = month.weeks.find((w) => w.weekKey === week.weekKey);
+      if (!weekNode) {
+        weekNode = {
+          weekKey: week.weekKey,
+          label: week.weekLabel,
+          weekStart: week.weekStart,
+          weekEnd: week.weekEnd,
+          awaitingHandoff: 0,
+          succeeded: 0,
+          failed: 0,
+          days: [],
+        };
+        month.weeks.push(weekNode);
+      }
+      weekNode.days.push(day);
+      weekNode.awaitingHandoff += day.awaitingHandoff;
+      weekNode.succeeded += day.succeeded;
+      weekNode.failed += day.failed;
+      month.awaitingHandoff += day.awaitingHandoff;
+      month.succeeded += day.succeeded;
+      month.failed += day.failed;
     }
 
-    const daily = [...byDay.values()].sort((a, b) =>
-      a.date < b.date ? 1 : -1,
-    );
+    const months = [...monthMap.values()]
+      .map((m) => {
+        m.weeks.sort((a, b) => (a.weekStart < b.weekStart ? 1 : -1));
+        for (const w of m.weeks) {
+          w.days.sort((a, b) => (a.date < b.date ? 1 : -1));
+        }
+        return m;
+      })
+      .sort((a, b) => (a.monthKey < b.monthKey ? 1 : -1));
 
     const pendingHandoff = jobs.filter((j) => j.status === "awaiting_handoff");
 
@@ -395,7 +633,10 @@ export function createApiRoutes() {
         completedAt: j.completedAt,
         summary: j.summary,
       })),
+      /** Flat list — only days with tasks */
       daily,
+      /** Nested: month → week → day */
+      months,
     });
   });
 

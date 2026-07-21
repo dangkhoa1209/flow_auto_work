@@ -1,7 +1,7 @@
 import { MongoClient, type Collection, type Db } from "mongodb";
 import { getConfig } from "../config.js";
 import { logger } from "../logger.js";
-import type { JobRecord, JobStatus } from "../types.js";
+import { jobIdForIssue, type JobRecord, type JobStatus } from "../types.js";
 
 export type JobDoc = JobRecord & {
   _id: string;
@@ -37,6 +37,17 @@ export async function connectMongo(): Promise<Db> {
   await client.connect();
   db = client.db(getConfig().MONGODB_DB);
   await db.collection("jobs").createIndex({ "issue.issueIid": 1, updatedAt: -1 });
+  try {
+    await db.collection("jobs").createIndex(
+      { "issue.projectId": 1, "issue.issueIid": 1 },
+      { unique: true },
+    );
+  } catch (err) {
+    logger.warn(
+      "Unique jobs index (projectId+issueIid) skipped — dedupe legacy jobs if needed",
+      { err: String(err) },
+    );
+  }
   await db.collection("jobs").createIndex({ status: 1, updatedAt: -1 });
   await db.collection("notes").createIndex({ issueIid: 1, createdAt: -1 });
   await db.collection("notes").createIndex({ jobId: 1, createdAt: -1 });
@@ -119,6 +130,22 @@ export async function listJobDocs(opts?: {
 export async function getJobDoc(id: string): Promise<JobDoc | null> {
   await connectMongo();
   return jobs().findOne({ _id: id });
+}
+
+/** One issue → one job: prefer stable id, else latest legacy doc for that issue */
+export async function getJobDocByIssue(
+  projectId: number,
+  issueIid: number,
+): Promise<JobDoc | null> {
+  await connectMongo();
+  const stable = await jobs().findOne({
+    _id: jobIdForIssue(projectId, issueIid),
+  });
+  if (stable) return stable;
+  return jobs().findOne(
+    { "issue.projectId": projectId, "issue.issueIid": issueIid },
+    { sort: { updatedAt: -1 } },
+  );
 }
 
 export async function addNote(input: {

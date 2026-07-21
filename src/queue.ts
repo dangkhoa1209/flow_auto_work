@@ -1,6 +1,7 @@
 import { getConfig } from "./config.js";
 import {
   commitAllTracked,
+  getHeadSha,
   hasUncommittedChanges,
   prepareRepoForIssue,
   scrubExcludedPathsFromLastCommit,
@@ -10,7 +11,7 @@ import {
   commentOnIssue,
   getProjectDefaultBranch,
 } from "./gitlab/client.js";
-import { saveJob } from "./job-store.js";
+import { ensureJob, loadJob, saveJob } from "./job-store.js";
 import { logger } from "./logger.js";
 import {
   cancelActiveAgentRun,
@@ -25,8 +26,8 @@ import {
 import { cancelDiffApproval } from "./review/diff-wait.js";
 import { addChatMessage } from "./db/mongo.js";
 import { commitMessageForIssue } from "./agent/prompt.js";
-import type { IssueJob, JobRecord } from "./types.js";
-import { randomUUID } from "node:crypto";
+import type { CompletionActions, IssueJob, JobRecord } from "./types.js";
+import { isJobBusy, resolveDevNotes } from "./types.js";
 
 type QueueItem = { job: JobRecord; source?: string };
 
@@ -49,36 +50,85 @@ export class JobQueue {
     };
   }
 
-  enqueue(
+  /**
+   * One issue → one job. Re-run reuses the same document (chat/notes/context).
+   */
+  async enqueue(
     issue: IssueJob,
     opts?: {
       source?: string;
-      completion?: import("./types.js").CompletionActions;
+      completion?: CompletionActions;
+      devNotes?: string;
+      /** @deprecated use devNotes */
+      techLeadNotes?: string;
     },
-  ): { enqueued: boolean; reason?: string; jobId?: string } {
+  ): Promise<{ enqueued: boolean; reason?: string; jobId?: string }> {
     const key = `${issue.projectId}:${issue.issueIid}`;
     if (this.activeIssueKeys.has(key)) {
       return { enqueued: false, reason: "Issue already queued or running" };
     }
+    if (this.queue.some((q) => `${q.job.issue.projectId}:${q.job.issue.issueIid}` === key)) {
+      return { enqueued: false, reason: "Issue already queued or running" };
+    }
 
-    const now = new Date().toISOString();
-    const job: JobRecord = {
-      id: randomUUID(),
-      status: "queued",
-      issue,
-      clarifyRound: 0,
+    const notes =
+      opts?.devNotes?.trim() ||
+      opts?.techLeadNotes?.trim() ||
+      undefined;
+
+    const job = await ensureJob(issue, {
+      source: opts?.source,
       completion: opts?.completion,
-      createdAt: now,
-      updatedAt: now,
-    };
+      devNotes: notes,
+    });
+
+    // If ensure didn't apply notes (undefined), keep existing; if explicit empty clear
+    if (notes !== undefined) {
+      job.devNotes = notes || undefined;
+    }
+    if (opts?.completion) job.completion = opts.completion;
+
+    if (isJobBusy(job.status) && job.id !== this.currentJobId) {
+      // DB says busy but not in memory — treat as interrupted earlier; allow requeue after failInterrupted
+      const fresh = await loadJob(job.id);
+      if (fresh && isJobBusy(fresh.status)) {
+        return { enqueued: false, reason: "Issue already queued or running" };
+      }
+    }
+
+    job.issue = issue;
+    job.status = "queued";
+    job.error = undefined;
+    job.clarifyRound = 0;
+    job.lastQuestion = undefined;
+    job.handedOffAt = undefined;
 
     this.activeIssueKeys.add(key);
     if (opts?.source) this.sources.set(job.id, opts.source);
     this.queue.push({ job, source: opts?.source });
-    void saveJob(job, { source: opts?.source });
-    logger.info("Enqueued job", { jobId: job.id, key, source: opts?.source });
+    await saveJob(job, { source: opts?.source });
+    logger.info("Enqueued job", {
+      jobId: job.id,
+      key,
+      source: opts?.source,
+      runCount: job.runCount,
+    });
     void this.pump();
     return { enqueued: true, jobId: job.id };
+  }
+
+  /** Enqueue existing draft/terminal jobs (Run all drafts). */
+  async enqueueExisting(
+    jobId: string,
+    opts?: { source?: string; completion?: CompletionActions },
+  ): Promise<{ enqueued: boolean; reason?: string; jobId?: string }> {
+    const job = await loadJob(jobId);
+    if (!job) return { enqueued: false, reason: "Job not found" };
+    return this.enqueue(job.issue, {
+      source: opts?.source ?? "rerun",
+      completion: opts?.completion ?? job.completion,
+      devNotes: resolveDevNotes(job) || undefined,
+    });
   }
 
   /**
@@ -117,12 +167,7 @@ export class JobQueue {
       const job = { ...doc } as JobRecord & { _id?: string; source?: string };
       delete job._id;
       delete job.source;
-      if (
-        job.status === "queued" ||
-        job.status === "running" ||
-        job.status === "awaiting_clarification" ||
-        job.status === "awaiting_diff_approval"
-      ) {
+      if (isJobBusy(job.status) || job.status === "awaiting_diff_approval") {
         job.status = "failed";
         job.error = reason;
         await saveJob(job);
@@ -177,9 +222,11 @@ export class JobQueue {
     const key = `${job.issue.projectId}:${job.issue.issueIid}`;
     this.currentJobId = job.id;
     job.status = "running";
+    job.runCount = (job.runCount ?? 0) + 1;
     await saveJob(job);
 
     const repoPath = config.AIHR_REPO_PATH;
+    const notes = resolveDevNotes(job);
 
     try {
       const startLabels = (job.completion?.onStartLabels ?? [])
@@ -198,7 +245,6 @@ export class JobQueue {
         }
       }
 
-
       const targetOverride =
         config.MR_TARGET_BRANCH ||
         (await getProjectDefaultBranch(job.issue.projectId));
@@ -211,7 +257,13 @@ export class JobQueue {
       job.branch = prepared.branch;
       await saveJob(job);
 
-      let result = await runNewAgent(job.issue, undefined, { jobId: job.id });
+      const headBefore = await getHeadSha(repoPath);
+
+      let result = await runNewAgent(job.issue, undefined, {
+        jobId: job.id,
+        techLeadNotes: notes || undefined,
+        devNotes: notes || undefined,
+      });
       job.agentId = result.agentId;
       await saveJob(job);
 
@@ -276,13 +328,16 @@ export class JobQueue {
       }
 
       // Done = local commit only (no push / MR / diff-approval gate)
-      let didCommit = false;
+      let madeCommit = false;
+      let commitSha: string | null = null;
       if (await hasUncommittedChanges(repoPath)) {
-        didCommit = await commitAllTracked(
+        commitSha = await commitAllTracked(
           repoPath,
           commitMessageForIssue(job.issue),
         );
-        if (!didCommit) {
+        if (commitSha) {
+          madeCommit = true;
+        } else {
           logger.info(
             "No non-WIP changes to commit — treating agent DONE as already committed",
             { jobId: job.id },
@@ -294,15 +349,29 @@ export class JobQueue {
         });
       }
       await scrubExcludedPathsFromLastCommit(repoPath);
+      commitSha = (await getHeadSha(repoPath)) ?? commitSha;
       this.assertNotKilled(job);
 
       const dirty = await hasUncommittedChanges(repoPath);
       if (dirty) {
-        // Agent already signaled DONE — leftover non-WIP dirt should not fail the job
         logger.warn(
           "Non-WIP uncommitted changes remain after DONE; continuing as succeeded",
           { jobId: job.id },
         );
+      }
+
+      const hasCodeChange =
+        madeCommit ||
+        Boolean(headBefore && commitSha && headBefore !== commitSha);
+
+      if (hasCodeChange && commitSha) {
+        job.commitSha = commitSha;
+        const prev = Array.isArray(job.commitShas) ? job.commitShas : [];
+        if (!prev.includes(commitSha)) {
+          job.commitShas = [...prev, commitSha].slice(-20);
+        } else {
+          job.commitShas = prev;
+        }
       }
 
       job.status = "awaiting_handoff";
@@ -310,26 +379,37 @@ export class JobQueue {
       job.error = undefined;
       await saveJob(job);
 
-      const defaultComment = [
-        "Task work 100% by AI",
-        result.summary?.trim() || null,
-      ]
-        .filter(Boolean)
-        .join("\n\n");
-      const extraComment = job.completion?.comment?.trim();
-      const finalComment = [defaultComment, extraComment]
-        .filter(Boolean)
-        .join("\n\n");
+      if (hasCodeChange) {
+        const defaultComment = [
+          "Task work 100% by AI",
+          result.summary?.trim() || null,
+        ]
+          .filter(Boolean)
+          .join("\n\n");
+        const extraComment = job.completion?.comment?.trim();
+        const finalComment = [defaultComment, extraComment]
+          .filter(Boolean)
+          .join("\n\n");
 
-      await commentOnIssue(
-        job.issue.projectId,
-        job.issue.issueIid,
-        finalComment,
-      );
+        await commentOnIssue(
+          job.issue.projectId,
+          job.issue.issueIid,
+          finalComment,
+        );
+      } else {
+        logger.info("No code changes this run — skip GitLab comment", {
+          jobId: job.id,
+          headBefore,
+          commitSha,
+        });
+      }
 
       logger.info("Job awaiting handoff (no auto assign/labels)", {
         jobId: job.id,
         branch: prepared.branch,
+        runCount: job.runCount,
+        commitSha: job.commitSha,
+        hasCodeChange,
       });
     } catch (err) {
       const message = isStartupError(err)

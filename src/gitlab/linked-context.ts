@@ -31,6 +31,69 @@ export type LinkedIssueSummary = {
 const IID_RE =
   /(?:^|[^A-Za-z0-9_/])#(\d+)\b|(?:gitlab\.com\/[^\s#]+\/-\/(?:issues|work_items)\/)(\d+)/gi;
 
+const MEDIA_EXT =
+  "png|jpe?g|gif|webp|svg|bmp|ico|tiff?|heic|mp4|webm|mov|avi|mkv|mp3|wav|ogg|pdf|zip|rar|7z|tar|gz|docx?|xlsx?|pptx?|csv|fig|sketch";
+
+/**
+ * Strip images / file attachments from GitLab markdown — agent must not "read" media.
+ * Keeps surrounding text; removes markdown/HTML media and bare upload/file URLs.
+ */
+export function stripMediaAndAttachments(text: string): string {
+  if (!text) return "";
+  let out = text;
+
+  // Markdown images ![alt](url)
+  out = out.replace(/!\[[^\]]*]\([^)]+\)/g, "");
+  // HTML <img ...>
+  out = out.replace(/<img\b[^>]*>/gi, "");
+  // Markdown / HTML links that only point at uploads or media files → drop link, keep label if useful
+  out = out.replace(
+    /\[([^\]]*)]\(\s*([^)]+)\s*\)/g,
+    (_m, label: string, url: string) => {
+      const u = String(url).trim();
+      if (isMediaOrUploadUrl(u)) {
+        const lab = String(label).trim();
+        // Keep non-filename labels (e.g. "see screenshot below" rare); drop pure filenames
+        if (lab && !looksLikeFilename(lab)) return lab;
+        return "";
+      }
+      return `[${label}](${url})`;
+    },
+  );
+  // Bare GitLab upload paths / URLs
+  out = out.replace(
+    /https?:\/\/[^\s)]+\/uploads\/[A-Za-z0-9/_%-]+\.[A-Za-z0-9]+/gi,
+    "",
+  );
+  out = out.replace(/\/uploads\/[A-Za-z0-9/_%-]+\.[A-Za-z0-9]+/gi, "");
+  // Bare media file URLs
+  out = out.replace(
+    new RegExp(
+      `https?:\\/\\/[^\\s)]+\\.(?:${MEDIA_EXT})(?:\\?[^\\s)]*)?`,
+      "gi",
+    ),
+    "",
+  );
+  // Collapse leftover empty lines / spaces
+  out = out
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+  return out;
+}
+
+function isMediaOrUploadUrl(url: string): boolean {
+  const u = url.trim();
+  if (/\/uploads\//i.test(u)) return true;
+  if (new RegExp(`\\.(?:${MEDIA_EXT})(?:\\?|#|$)`, "i").test(u)) return true;
+  if (/^data:image\//i.test(u)) return true;
+  return false;
+}
+
+function looksLikeFilename(label: string): boolean {
+  return new RegExp(`\\.(?:${MEDIA_EXT})$`, "i").test(label.trim());
+}
+
 export function extractIssueIids(
   text: string,
   excludeIid?: number,
@@ -38,7 +101,9 @@ export function extractIssueIids(
   const found = new Set<number>();
   let m: RegExpExecArray | null;
   const re = new RegExp(IID_RE.source, IID_RE.flags);
-  while ((m = re.exec(text)) !== null) {
+  // Still scan raw text so #iid inside alt text is rare; prefer stripped for mentions
+  const source = stripMediaAndAttachments(text) || text;
+  while ((m = re.exec(source)) !== null) {
     const iid = Number(m[1] || m[2]);
     if (!Number.isFinite(iid) || iid <= 0) continue;
     if (excludeIid !== undefined && iid === excludeIid) continue;
@@ -49,6 +114,7 @@ export function extractIssueIids(
 
 /**
  * Clean Context: drop short/noisy comments; keep technical signal.
+ * - Strip images/file attachments first
  * - Drop comments with fewer than 10 words (unless they have strong signal)
  * - Prefer / keep comments with code fences, checklist `- [ ]`, or `#iid` mentions
  * - Drop orchestrator bot noise
@@ -65,7 +131,7 @@ export function cleanCommentBodies(bodies: string[]): string[] {
   const scored: Scored[] = [];
 
   for (const raw of bodies) {
-    const body = raw.trim();
+    const body = stripMediaAndAttachments(raw);
     if (!body) continue;
     if (BOT_RE.test(body)) continue;
 
@@ -92,8 +158,8 @@ export function cleanCommentBodies(bodies: string[]): string[] {
   const top = scored.slice(0, 8);
   const selected = new Set(top.map((t) => t.body));
   return bodies
-    .map((b) => b.trim().slice(0, 1500))
-    .filter((b) => selected.has(b));
+    .map((b) => stripMediaAndAttachments(b).slice(0, 1500))
+    .filter((b) => b && selected.has(b));
 }
 
 async function listIssueNotes(
@@ -201,7 +267,7 @@ async function fetchIssueSummary(
     state: issue.state,
     url: issue.web_url,
     labels: issue.labels ?? [],
-    description: (issue.description ?? "").slice(0, 4000),
+    description: stripMediaAndAttachments(issue.description ?? "").slice(0, 4000),
     source,
   };
 }
@@ -224,7 +290,11 @@ export async function collectLinkedIssueContext(
     listIssueNotes(projectId, selfIid),
   ]);
 
-  const mentionText = [issue.title, issue.description, ...notes].join("\n");
+  const mentionText = [
+    issue.title,
+    stripMediaAndAttachments(issue.description ?? ""),
+    ...notes.map((n) => stripMediaAndAttachments(n)),
+  ].join("\n");
   const mentionedIids = extractIssueIids(mentionText, selfIid);
 
   const byIid = new Map<number, LinkedIssueSummary>();

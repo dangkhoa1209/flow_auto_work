@@ -66,7 +66,7 @@ export async function scanExistingAssignedIssues(
       continue;
     }
 
-    const result = jobQueue.enqueue(issue, { source });
+    const result = await jobQueue.enqueue(issue, { source });
     if (result.enqueued) enqueued += 1;
     else skipped += 1;
   }

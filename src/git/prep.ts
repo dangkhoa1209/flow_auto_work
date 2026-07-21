@@ -15,6 +15,17 @@ async function git(
   });
 }
 
+/** Full HEAD SHA, or null if unavailable */
+export async function getHeadSha(repoPath: string): Promise<string | null> {
+  try {
+    const { stdout } = await git(repoPath, ["rev-parse", "HEAD"]);
+    const sha = stdout.trim();
+    return sha || null;
+  } catch {
+    return null;
+  }
+}
+
 export async function detectDefaultBranch(repoPath: string): Promise<string> {
   try {
     const { stdout } = await git(repoPath, [
@@ -181,11 +192,11 @@ export async function scrubExcludedPathsFromLastCommit(
   await git(repoPath, ["commit", "-m", msg.trim()]);
 }
 
-/** Stage all (minus COMMIT_EXCLUDE_PATHS) and commit. Returns false if nothing to commit. */
+/** Stage all (minus COMMIT_EXCLUDE_PATHS) and commit. Returns new HEAD SHA, or null if nothing to commit. */
 export async function commitAllTracked(
   repoPath: string,
   message: string,
-): Promise<boolean> {
+): Promise<string | null> {
   await git(repoPath, ["add", "-A"]);
   const excluded = getConfig().commitExcludePaths;
   if (excluded.length) {
@@ -201,8 +212,8 @@ export async function commitAllTracked(
     "--name-only",
   ]);
   if (!staged.trim()) {
-    return false;
+    return null;
   }
   await git(repoPath, ["commit", "-m", message]);
-  return true;
+  return getHeadSha(repoPath);
 }

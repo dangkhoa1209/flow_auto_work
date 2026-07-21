@@ -43,6 +43,10 @@
       --teal: #14b8a6;
       --teal-deep: #0d9488;
       --teal-dim: rgba(20, 184, 166, 0.16);
+      --btn: #5eead4;
+      --btn-hover: #0f766e;
+      --btn-text: #042f2e;
+      --btn-text-hover: #ecfdf5;
     }
     html, body { height: 100%; }
     body {
@@ -90,7 +94,7 @@
       flex: 1;
       min-height: 0;
       display: grid;
-      grid-template-columns: minmax(260px, 300px) minmax(0, 1fr) minmax(280px, 340px);
+      grid-template-columns: minmax(310px, 350px) minmax(0, 1fr) minmax(330px, 390px);
       gap: 10px;
     }
     @media (max-width: 1100px) {
@@ -102,7 +106,7 @@
       background: var(--bg-card);
       border: 1px solid var(--line);
       border-radius: 14px;
-      padding: 12px;
+      padding: 14px;
       min-height: 0;
       display: flex;
       flex-direction: column;
@@ -118,21 +122,68 @@
     }
     .card h2 span { color: var(--mute); }
     .col-scroll { flex: 1; min-height: 0; overflow: auto; }
-    .toolbar { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; align-items: center; }
+    .toolbar { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; align-items: center; }
 
     button {
-      font: inherit; cursor: pointer; border: 0; border-radius: 9px;
-      padding: 7px 11px; background: var(--teal-deep); color: #fff; font-weight: 600; font-size: 0.84rem;
+      font: inherit; cursor: pointer; border: 0; border-radius: 10px;
+      padding: 9px 14px; background: var(--btn); color: var(--btn-text);
+      font-weight: 650; font-size: 0.84rem;
+      line-height: 1.25; min-height: 36px;
+      display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+      box-sizing: border-box;
+      transition: background .15s ease, color .15s ease, opacity .15s ease;
     }
-    button:hover { background: var(--teal); }
+    button:hover { background: var(--btn-hover); color: var(--btn-text-hover); }
+    button:active { background: #115e59; color: var(--btn-text-hover); }
+    button.btn-start,
+    button.btn-run,
+    button.btn-save-start,
+    button.danger,
+    button.icon-btn {
+      background: var(--btn);
+      color: var(--btn-text);
+      border: 0;
+      box-shadow: none;
+    }
     button.secondary {
-      background: var(--bg-soft); color: var(--text); border: 1px solid var(--line);
+      background: var(--bg-soft);
+      color: var(--text);
+      border: 1px solid var(--line);
+      box-shadow: none;
+      padding: 10px 16px;
+      min-height: 38px;
     }
-    button.secondary:hover { background: #243044; }
-    button:disabled { opacity: 0.45; cursor: not-allowed; }
+    #btnRefresh,
+    #btnStatsRefresh {
+      padding: 6px 12px;
+      min-height: 30px;
+      font-size: 0.8rem;
+      font-weight: 600;
+    }
+    button.btn-start:hover,
+    button.btn-run:hover,
+    button.btn-save-start:hover,
+    button.danger:hover,
+    button.icon-btn:hover {
+      background: var(--btn-hover);
+      color: var(--btn-text-hover);
+    }
+    button.secondary:hover {
+      background: #243044;
+      color: var(--text);
+      border-color: var(--line);
+    }
+    button.secondary.is-loading {
+      background: #243044;
+      color: var(--text);
+    }
+    button:disabled,
     button.is-loading {
-      opacity: 0.85; cursor: wait; pointer-events: none;
-      display: inline-flex; align-items: center; gap: 6px;
+      opacity: 0.75; cursor: wait; pointer-events: none;
+    }
+    button.is-loading {
+      background: var(--btn-hover);
+      color: var(--btn-text-hover);
     }
     .spinner {
       width: 12px; height: 12px; border: 2px solid currentColor;
@@ -149,20 +200,21 @@
       color: var(--mute);
     }
     .empty.loading .spinner { width: 14px; height: 14px; }
-    button.danger { background: #dc2626; }
-    button.danger:hover { background: #b91c1c; }
-    button.btn-start {
-      padding: 5px 12px;
-      font-size: 0.8rem;
-      font-weight: 600;
-      border-radius: 7px;
-      background: var(--teal-deep);
-      box-shadow: none;
+    button.btn-start,
+    button.btn-run,
+    button.btn-save-start {
+      padding: 9px 14px;
+      font-size: 0.84rem;
+      font-weight: 650;
+      border-radius: 10px;
     }
-    button.btn-start:hover { background: var(--teal); }
     .icon-btn {
-      width: 36px; height: 36px; padding: 0; border-radius: 10px;
+      width: 38px; height: 38px; min-height: 38px; padding: 0; border-radius: 10px;
       display: inline-flex; align-items: center; justify-content: center; font-size: 1.05rem;
+    }
+    button.secondary.icon-btn {
+      padding: 0;
+      min-height: 38px;
     }
 
     .mode {
@@ -171,7 +223,7 @@
     .mode label { cursor: pointer; color: var(--mute); font-size: 0.8rem; }
     .mode input { display: none; }
     .mode input:checked + span {
-      display: inline-block; background: var(--teal-deep); color: #fff; border-radius: 7px; padding: 5px 9px; font-weight: 600;
+      display: inline-block; background: var(--btn); color: var(--btn-text); border-radius: 7px; padding: 5px 9px; font-weight: 600;
     }
     .mode label span { display: inline-block; padding: 5px 9px; }
 
@@ -194,21 +246,40 @@
     .meta { color: var(--mute); font-size: 0.72rem; font-family: "IBM Plex Mono", monospace; }
     a { color: #5eead4; text-decoration: none; font-weight: 500; }
     a:hover { text-decoration: underline; color: #99f6e4; }
+    .iid-row {
+      display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap;
+      vertical-align: middle;
+    }
+    a.iid-view {
+      display: inline-flex; align-items: center; gap: 3px;
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 0.62rem; font-weight: 600; letter-spacing: 0.02em;
+      text-transform: uppercase; text-decoration: none;
+      padding: 2px 7px; border-radius: 999px;
+      color: var(--teal); background: var(--teal-dim);
+      border: 1px solid rgba(45,212,191,.35); line-height: 1.2;
+      flex-shrink: 0;
+    }
+    a.iid-view:hover {
+      color: #ecfdf5; background: rgba(20,184,166,.28);
+      border-color: var(--teal); text-decoration: none;
+    }
 
     .st { font-family: "IBM Plex Mono", monospace; font-size: 0.65rem; text-transform: uppercase; font-weight: 600; }
+    .st.draft { color: #c4b5fd; }
     .st.succeeded { color: #6ee7b7; }
     .st.failed { color: #fca5a5; }
     .st.running, .st.queued, .st.awaiting_clarification, .st.awaiting_diff_approval { color: #fcd34d; }
     .st.awaiting_handoff { color: #7dd3fc; }
     .job-actions { display: flex; gap: 6px; margin-top: 4px; flex-wrap: wrap; }
-    .job-actions button { padding: 4px 8px; font-size: 0.72rem; }
+    .job-actions button { padding: 6px 10px; font-size: 0.75rem; min-height: 30px; }
 
     .banner {
       background: rgba(245,158,11,.12); border: 1px solid rgba(251,191,36,.35); color: #fde68a;
-      border-radius: 10px; padding: 8px 10px; margin-bottom: 8px; font-size: 0.82rem; white-space: pre-wrap;
+      border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; font-size: 0.82rem; white-space: pre-wrap;
     }
-    .tabs { display: flex; gap: 4px; margin-bottom: 8px; flex-wrap: wrap; flex-shrink: 0; }
-    .tabs button { padding: 5px 9px; font-size: 0.78rem; }
+    .tabs { display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; flex-shrink: 0; }
+    .tabs button { padding: 8px 12px; font-size: 0.78rem; min-height: 34px; }
     .tabs button.active { outline: 2px solid var(--teal); outline-offset: 0; }
 
     pre.diff, .desc, .note-body {
@@ -257,6 +328,104 @@
       background: rgba(20,184,166,.15); border: 1px solid rgba(45,212,191,.35); color: #5eead4; font-weight: 500;
     }
     .section-title { font-weight: 600; font-size: 0.78rem; margin: 12px 0 6px; color: var(--text-soft); }
+
+    .dev-notes,
+    .compose-panel {
+      margin-top: 16px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--bg-elev);
+      overflow: hidden;
+      flex-shrink: 0;
+    }
+    .compose-panel { margin-top: 10px; }
+    .dev-notes__head,
+    .compose-panel__head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+      padding: 10px 12px 8px;
+      border-bottom: 1px solid var(--line-soft);
+      background: var(--bg-soft);
+    }
+    .dev-notes__title,
+    .compose-panel__title {
+      margin: 0;
+      font-size: 0.8rem;
+      font-weight: 650;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--text-soft);
+    }
+    .dev-notes__title span,
+    .compose-panel__title span {
+      color: var(--teal);
+      font-weight: 700;
+    }
+    .dev-notes__meta,
+    .compose-panel__meta {
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 0.68rem;
+      color: var(--mute);
+      text-align: right;
+    }
+    .dev-notes__meta code {
+      font-size: 0.68rem;
+      color: var(--text-soft);
+      background: transparent;
+      padding: 0;
+    }
+    .dev-notes__body,
+    .compose-panel__body { padding: 10px 12px 12px; }
+    .dev-notes__hint,
+    .compose-panel__hint {
+      margin: 0 0 8px;
+      font-size: 0.72rem;
+      line-height: 1.4;
+      color: var(--mute);
+    }
+    .dev-notes textarea,
+    .compose-panel textarea {
+      width: 100%;
+      min-height: 88px;
+      resize: vertical;
+      box-sizing: border-box;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: var(--bg);
+      color: var(--text);
+      padding: 12px 14px;
+      font-family: Outfit, system-ui, sans-serif;
+      font-size: 0.88rem;
+      line-height: 1.5;
+    }
+    .dev-notes textarea { min-height: 120px; }
+    .dev-notes textarea::placeholder,
+    .compose-panel textarea::placeholder { color: var(--mute); opacity: 0.75; }
+    .dev-notes textarea:focus,
+    .compose-panel textarea:focus {
+      outline: 2px solid rgba(20,184,166,.4);
+      outline-offset: 0;
+      border-color: var(--teal);
+    }
+    .dev-notes__actions,
+    .compose-panel__actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 12px;
+      flex-wrap: wrap;
+    }
+    .dev-notes__actions button,
+    .compose-panel__actions button {
+      flex: 1;
+      min-width: 110px;
+      margin: 0;
+      padding: 10px 16px;
+      min-height: 40px;
+      font-weight: 650;
+    }
     .scroll-mid { flex: 1; min-height: 0; overflow: auto; }
     .panel-block {
       margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line);
@@ -265,8 +434,10 @@
 
     textarea, input[type="text"], select {
       width: 100%; background: var(--bg-elev); color: var(--text); border: 1px solid var(--line);
-      border-radius: 9px; padding: 8px 10px; font: inherit; resize: vertical; box-sizing: border-box;
+      border-radius: 10px; padding: 10px 12px; font: inherit; font-size: 0.88rem;
+      line-height: 1.4; resize: vertical; box-sizing: border-box; min-height: 40px;
     }
+    textarea { min-height: 72px; padding: 11px 12px; }
     textarea::placeholder, input::placeholder { color: var(--mute); }
     textarea:focus, input:focus, select:focus, .dd-btn:focus {
       outline: 2px solid rgba(20,184,166,.45); outline-offset: 0; border-color: var(--teal);
@@ -275,16 +446,17 @@
 
     .toast {
       position: fixed; bottom: 16px; right: 16px; background: var(--bg-card); border: 1px solid var(--line);
-      padding: 10px 12px; border-radius: 12px; max-width: 340px; display: none; z-index: 40;
+      padding: 12px 14px; border-radius: 12px; max-width: 340px; display: none; z-index: 40;
       box-shadow: 0 12px 40px rgba(0,0,0,.4); color: var(--text); font-size: 0.86rem;
     }
     .toast.show { display: block; }
 
-    .dd { position: relative; margin-bottom: 8px; width: 100%; }
+    .dd { position: relative; margin-bottom: 10px; width: 100%; }
     .dd-btn {
       width: 100%; text-align: left; font-weight: 500; display: flex; justify-content: space-between;
       align-items: center; gap: 8px; background: var(--bg-elev); color: var(--text); border: 1px solid var(--line);
-      border-radius: 9px; padding: 8px 10px; font-size: 0.84rem;
+      border-radius: 10px; padding: 10px 12px; font-size: 0.86rem; min-height: 40px;
+      box-sizing: border-box;
     }
     .dd-btn:hover { background: var(--bg-soft); }
     .dd-btn .dd-value { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
@@ -294,20 +466,21 @@
     .dd-menu {
       display: none; position: absolute; z-index: 50; left: 0; right: 0; top: calc(100% + 4px);
       max-height: 220px; overflow: auto; background: var(--bg-card); border: 1px solid var(--line);
-      border-radius: 10px; box-shadow: 0 12px 32px rgba(0,0,0,.45); padding: 4px;
+      border-radius: 10px; box-shadow: 0 12px 32px rgba(0,0,0,.45); padding: 6px;
     }
     .dd.open .dd-menu { display: block; }
     .dd-search-wrap {
-      position: sticky; top: 0; z-index: 1; background: var(--bg-card); padding: 4px;
-      border-bottom: 1px solid var(--line); margin: -4px -4px 4px; border-radius: 10px 10px 0 0;
+      position: sticky; top: 0; z-index: 1; background: var(--bg-card); padding: 6px;
+      border-bottom: 1px solid var(--line); margin: -6px -6px 6px; border-radius: 10px 10px 0 0;
     }
     .dd-search {
       width: 100%; box-sizing: border-box; border: 1px solid var(--line); border-radius: 8px;
-      padding: 7px 9px; font: inherit; font-size: 0.84rem; background: var(--bg-elev); color: var(--text);
+      padding: 9px 11px; font: inherit; font-size: 0.84rem; background: var(--bg-elev); color: var(--text);
+      min-height: 36px;
     }
     .dd-search:focus { outline: 2px solid rgba(20,184,166,.45); border-color: var(--teal); background: #1a2336; }
     .dd-item {
-      display: flex; align-items: center; gap: 8px; padding: 7px 9px; border-radius: 8px;
+      display: flex; align-items: center; gap: 8px; padding: 9px 11px; border-radius: 8px;
       cursor: pointer; font-size: 0.84rem; color: var(--text);
     }
     .dd-item mark { background: rgba(20,184,166,.35); color: inherit; border-radius: 2px; padding: 0; }
@@ -330,7 +503,7 @@
     .progress-log {
       flex: 1; min-height: 140px; overflow: auto; font-family: "IBM Plex Mono", monospace;
       font-size: 0.72rem; line-height: 1.45; background: #0a101c; color: #e2e8f0;
-      border-radius: 10px; border: 1px solid var(--line); padding: 8px 10px;
+      border-radius: 10px; border: 1px solid var(--line); padding: 10px 12px;
     }
     .progress-log .empty { color: var(--mute); text-align: left; padding: 6px 0; }
     .progress-log .pline { margin-bottom: 4px; white-space: pre-wrap; word-break: break-word; }
@@ -348,7 +521,7 @@
     .modal-backdrop.show { display: flex; }
     .modal {
       width: min(480px, 100%); max-height: min(88vh, 720px); overflow: auto;
-      background: var(--bg-card); border: 1px solid var(--line); border-radius: 16px; padding: 16px;
+      background: var(--bg-card); border: 1px solid var(--line); border-radius: 16px; padding: 18px 20px;
       box-shadow: 0 24px 64px rgba(0,0,0,.5);
     }
     .modal h2 { margin: 0 0 6px; font-size: 1rem; color: var(--text); text-transform: none; letter-spacing: 0; }
@@ -362,11 +535,11 @@
 
     .nav-views {
       display: inline-flex; gap: 4px; background: var(--bg-soft); border: 1px solid var(--line);
-      border-radius: 10px; padding: 3px; margin-right: 8px;
+      border-radius: 10px; padding: 4px; margin-right: 8px;
     }
     .nav-views button {
-      background: transparent; color: var(--mute); padding: 6px 12px; font-size: 0.8rem;
-      font-weight: 600; box-shadow: none;
+      background: transparent; color: var(--mute); padding: 8px 14px; font-size: 0.8rem;
+      font-weight: 600; box-shadow: none; min-height: 34px; border-radius: 8px;
     }
     .nav-views button:hover { background: #243044; color: var(--text); }
     .nav-views button.active { background: var(--teal-deep); color: #fff; }
@@ -379,11 +552,69 @@
     .view-panel.active { display: flex; flex-direction: column; }
     .view-panel.active.layout { display: grid; }
     .stats-day {
-      background: var(--bg-card); border: 1px solid var(--line); border-radius: 12px;
-      padding: 12px; margin-bottom: 10px;
+      background: var(--bg-soft); border: 1px solid var(--line); border-radius: 12px;
+      padding: 10px 12px; margin-bottom: 8px;
     }
-    .stats-day h3 { margin: 0 0 8px; font-size: 0.95rem; color: var(--text); }
-    .stats-pills { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+    .stats-day h3 {
+      margin: 0 0 8px;
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: var(--text-soft);
+    }
+    .stats-pills { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 0; }
+    .stats-pills .pill { font-size: 0.68rem; }
+    .stats-month {
+      margin-bottom: 14px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: var(--bg-elev);
+      overflow: hidden;
+    }
+    .stats-month > summary,
+    .stats-week > summary {
+      list-style: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+      padding: 10px 12px;
+      user-select: none;
+    }
+    .stats-month > summary::-webkit-details-marker,
+    .stats-week > summary::-webkit-details-marker { display: none; }
+    .stats-month > summary {
+      background: var(--bg-soft);
+      border-bottom: 1px solid var(--line-soft);
+      font-weight: 650;
+      font-size: 0.92rem;
+      color: var(--text);
+    }
+    .stats-week {
+      margin: 8px 10px;
+      border: 1px solid var(--line-soft);
+      border-radius: 12px;
+      background: var(--bg-card);
+    }
+    .stats-week > summary {
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: var(--text-soft);
+    }
+    .stats-week-body { padding: 0 8px 8px; }
+    .stats-head-left { display: flex; align-items: center; gap: 8px; }
+    .stats-chevron {
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 0.7rem;
+      color: var(--mute);
+      width: 1em;
+    }
+    details.stats-month > summary .stats-chevron::before,
+    details.stats-week > summary .stats-chevron::before { content: "▸"; }
+    details.stats-month[open] > summary .stats-chevron::before,
+    details.stats-week[open] > summary .stats-chevron::before { content: "▾"; }
     .handoff-layout {
       flex: 1; min-height: 0; display: grid;
       grid-template-columns: minmax(280px, 380px) minmax(0, 1fr);
@@ -401,7 +632,7 @@
     <header class="topbar">
       <div>
         <h1>Flow Auto Work</h1>
-        <div class="sub">Work · Done chờ handoff · Thống kê ngày</div>
+        <div class="sub">Work · Done chờ handoff · Todolist tháng/tuần/ngày</div>
       </div>
       <div class="header-actions">
         <div class="nav-views" id="navViews">
@@ -418,22 +649,17 @@
       <section class="card">
         <div class="left-stack">
           <div class="left-pane">
-            <h2>Tasks <span style="font-weight:500;text-transform:none;letter-spacing:0;color:var(--mute)">(issue GitLab)</span></h2>
-            <div class="toolbar">
-              <div class="mode">
-                <label><input type="radio" name="mode" value="selected" checked /><span>Chọn</span></label>
-                <label><input type="radio" name="mode" value="auto" /><span>Auto</span></label>
-              </div>
-            </div>
+            <h2>Tasks <span style="font-weight:500;text-transform:none;letter-spacing:0;color:var(--mute)">(1 task = 1 job)</span></h2>
             <div class="toolbar">
               <button type="button" class="secondary" id="btnRefresh">Refresh</button>
-              <button type="button" class="btn-start" id="btnStart">Start</button>
+              <button type="button" class="btn-start" id="btnRunSelected" title="Chạy các task đang tick">Run chọn</button>
+              <button type="button" class="btn-save-start" id="btnRunDrafts" title="Chạy lại mọi task (tạo job nếu chưa có; bỏ qua đang chạy)">Run tất cả</button>
             </div>
             <div class="meta" id="settingsSummary" style="margin-bottom:6px"></div>
             <div class="list col-scroll" id="taskList"><div class="empty">…</div></div>
           </div>
           <div class="left-pane jobs">
-            <h2>Jobs <span style="font-weight:500;text-transform:none;letter-spacing:0;color:var(--mute)">(lần chạy agent)</span></h2>
+            <h2>Jobs <span style="font-weight:500;text-transform:none;letter-spacing:0;color:var(--mute)">(re-run cùng job)</span></h2>
             <div class="list col-scroll" id="jobList"><div class="empty">…</div></div>
           </div>
         </div>
@@ -454,6 +680,20 @@
             <div id="relatedList"><div class="empty">—</div></div>
             <div class="section-title">Comments <span class="meta" id="notesCount"></span></div>
             <div class="notes" id="notesList"><div class="empty">—</div></div>
+            <div class="dev-notes" id="techLeadBox">
+              <div class="dev-notes__head">
+                <h3 class="dev-notes__title"><span>Dev</span> Notes</h3>
+                <div class="dev-notes__meta" id="jobShellMeta"></div>
+              </div>
+              <div class="dev-notes__body">
+                <p class="dev-notes__hint">Ưu tiên cao cho agent · lưu trên job · re-run vẫn giữ</p>
+                <textarea id="devNotes" rows="5" placeholder="Chỉ dẫn kỹ thuật… vd. virtual scroll, index user_id, không map-reduce…"></textarea>
+                <div class="dev-notes__actions">
+                  <button type="button" class="secondary" id="btnSaveNotes">Save</button>
+                  <button type="button" class="btn-run" id="btnRunJob">Run</button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
         <div class="panel-block" style="flex:0.95;min-height:0">
@@ -476,14 +716,32 @@
         <div class="panel-block">
           <h2>Clarify / Q&amp;A</h2>
           <div class="chat" id="chatView"><div class="empty">Chọn job</div></div>
-          <div id="clarifyBox" style="display:none;margin-bottom:8px;flex-shrink:0">
-            <div class="meta" style="margin-bottom:4px">Trả lời clarification</div>
-            <textarea id="clarifyAnswer" rows="2" placeholder="Câu trả lời…"></textarea>
-            <button type="button" id="btnClarify" style="margin-top:6px;width:100%">Gửi clarify</button>
+          <div class="compose-panel" id="clarifyBox" style="display:none">
+            <div class="compose-panel__head">
+              <h3 class="compose-panel__title"><span>Clarify</span> Reply</h3>
+              <div class="compose-panel__meta">agent đang chờ</div>
+            </div>
+            <div class="compose-panel__body">
+              <p class="compose-panel__hint">Trả lời câu hỏi của agent để tiếp tục run</p>
+              <textarea id="clarifyAnswer" rows="3" placeholder="Câu trả lời…"></textarea>
+              <div class="compose-panel__actions">
+                <button type="button" id="btnClarify">Gửi clarify</button>
+              </div>
+            </div>
           </div>
-          <div class="meta" style="margin-bottom:4px;flex-shrink:0">Hỏi về task</div>
-          <textarea id="askInput" rows="2" placeholder="Vd: thay đổi ảnh hưởng API nào?" style="flex-shrink:0"></textarea>
-          <button type="button" id="btnAsk" style="margin-top:6px;width:100%;flex-shrink:0" class="secondary">Hỏi agent</button>
+          <div class="compose-panel" id="askPanel">
+            <div class="compose-panel__head">
+              <h3 class="compose-panel__title"><span>Hỏi</span> về task</h3>
+              <div class="compose-panel__meta">Q&amp;A · không sửa code trừ khi bạn yêu cầu</div>
+            </div>
+            <div class="compose-panel__body">
+              <p class="compose-panel__hint">Hỏi agent về task / diff / ảnh hưởng — chọn job trước</p>
+              <textarea id="askInput" rows="3" placeholder="Vd: thay đổi ảnh hưởng API nào?"></textarea>
+              <div class="compose-panel__actions">
+                <button type="button" id="btnAsk">Hỏi agent</button>
+              </div>
+            </div>
+          </div>
         </div>
       </section>
     </div>
@@ -516,7 +774,8 @@
 
     <div class="view-panel" id="viewStats">
       <section class="card" style="flex:1;min-height:0">
-        <h2>Todolist theo ngày <span class="meta" id="statsTz" style="text-transform:none;letter-spacing:0;font-weight:500"></span></h2>
+        <h2>Todolist <span class="meta" id="statsTz" style="text-transform:none;letter-spacing:0;font-weight:500"></span></h2>
+        <div class="meta" style="margin:-4px 0 8px">Tháng → tuần → ngày (chỉ ngày có task) · Asia/Ho_Chi_Minh</div>
         <div class="toolbar">
           <button type="button" class="secondary" id="btnStatsRefresh">Refresh</button>
           <span class="meta" id="statsPending"></span>
@@ -559,6 +818,7 @@
     let jobs = [];
     let selectedJobId = null;
     let selectedTaskIid = null;
+    let currentJob = null;
     let taskDetail = null;
     let progressAfterId = 0;
     let progressPollTimer = null;
@@ -641,22 +901,28 @@
     }
 
     function saveSettingsFromModal() {
-      const addLabels = ddOnLabelsAdd?.getSelected() || [];
-      const removeLabels = (ddOnLabelsRemove?.getSelected() || []).filter(
-        (l) => !addLabels.includes(l),
-      );
-      savedSettings = {
-        enabled: true,
-        assignee: ddOnAssignee?.getSelectedOne() || null,
-        onStartLabels: ddOnStartLabels?.getSelected() || [],
-        addLabels,
-        removeLabels,
-        comment: $("onCompleteComment").value.trim(),
-      };
-      localStorage.setItem(SETTINGS_KEY, JSON.stringify(savedSettings));
-      renderSettingsSummary();
-      $("settingsSavedHint").textContent = "Đã lưu — Start dùng labels Start; handoff dùng prefill";
-      toast("Đã lưu settings");
+      const btn = $("btnSettingsSave");
+      setButtonLoading(btn, true, "Lưu");
+      try {
+        const addLabels = ddOnLabelsAdd?.getSelected() || [];
+        const removeLabels = (ddOnLabelsRemove?.getSelected() || []).filter(
+          (l) => !addLabels.includes(l),
+        );
+        savedSettings = {
+          enabled: true,
+          assignee: ddOnAssignee?.getSelectedOne() || null,
+          onStartLabels: ddOnStartLabels?.getSelected() || [],
+          addLabels,
+          removeLabels,
+          comment: $("onCompleteComment").value.trim(),
+        };
+        localStorage.setItem(SETTINGS_KEY, JSON.stringify(savedSettings));
+        renderSettingsSummary();
+        $("settingsSavedHint").textContent = "Đã lưu — Start dùng labels Start; handoff dùng prefill";
+        toast("Đã lưu settings");
+      } finally {
+        setTimeout(() => setButtonLoading(btn, false, "Lưu"), 200);
+      }
     }
 
     /** Custom dropdown: click to open + type to autocomplete. mode single | multi */
@@ -871,6 +1137,13 @@
         "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
       })[c]);
     }
+    /** #iid + View chip → open GitLab (stopPropagation so parent click still works) */
+    function issueIdWithView(iid, url, opts = {}) {
+      const id = escapeHtml(String(iid ?? ""));
+      if (!url) return `#${id}`;
+      const label = opts.label ? escapeHtml(opts.label) : "View";
+      return `<span class="iid-row"><span>#${id}</span><a class="iid-view" href="${escapeHtml(url)}" target="_blank" rel="noopener" title="Open GitLab" onclick="event.stopPropagation()">${label}</a></span>`;
+    }
     async function api(path, opts) {
       const res = await fetch(path, { headers: { "Content-Type": "application/json" }, ...opts });
       const data = await res.json().catch(() => ({}));
@@ -937,7 +1210,9 @@
 
     async function killJob(jobId, ev) {
       if (ev) ev.stopPropagation();
+      const btn = ev?.currentTarget || ev?.target?.closest?.("button");
       if (!confirm(`Force stop job ${jobId.slice(0, 8)}…?`)) return;
+      setButtonLoading(btn, true, "Force Stop");
       try {
         await api(`/api/jobs/${jobId}/kill`, {
           method: "POST",
@@ -947,6 +1222,7 @@
         await loadJobs();
       } catch (e) {
         toast(e.message);
+        setButtonLoading(btn, false, "Force Stop");
       }
     }
 
@@ -966,23 +1242,47 @@
     }
 
     function renderTasks() {
-      const mode = document.querySelector('input[name="mode"]:checked').value;
       if (!tasks.length) {
         $("taskList").innerHTML = `<div class="empty">Không có issue</div>`;
         return;
       }
-      $("taskList").innerHTML = tasks.map((t) => `
+      $("taskList").innerHTML = tasks.map((t) => {
+        const job = jobs.find((j) => j.issue?.issueIid === t.issueIid);
+        const jobBit = job
+          ? `<span class="st ${job.status}">${job.status}</span>${job.runCount ? ` · run#${job.runCount}` : ""}`
+          : `<span class="meta">chưa có job</span>`;
+        return `
         <div class="task ${t.skip ? "skip" : ""} ${t.issueIid === selectedTaskIid ? "active" : ""}" data-open-iid="${t.issueIid}">
-          <input type="checkbox" data-iid="${t.issueIid}" ${t.skip || mode === "auto" ? "disabled" : ""} onclick="event.stopPropagation()" />
+          <input type="checkbox" data-iid="${t.issueIid}" ${t.skip ? "disabled" : ""} onclick="event.stopPropagation()" />
           <div>
-            <div class="title">#${t.issueIid} — ${escapeHtml(t.title)}</div>
-            <div class="meta"><a href="${t.url}" target="_blank" onclick="event.stopPropagation()">issue</a></div>
+            <div class="title">${issueIdWithView(t.issueIid, t.url)} — ${escapeHtml(t.title)}</div>
+            <div class="meta">${jobBit}</div>
           </div>
-        </div>
-      `).join("");
+        </div>`;
+      }).join("");
       $("taskList").querySelectorAll("[data-open-iid]").forEach((el) => {
         el.addEventListener("click", () => selectTask(Number(el.getAttribute("data-open-iid"))));
       });
+    }
+
+    function resolveJobNotes(job) {
+      return (job?.devNotes || job?.techLeadNotes || "").trim();
+    }
+
+    function fillDevNotesFromJob(job) {
+      currentJob = job || null;
+      const el = $("devNotes");
+      if (el) el.value = resolveJobNotes(job);
+      const meta = $("jobShellMeta");
+      if (!meta) return;
+      if (!job) {
+        meta.textContent = "";
+        return;
+      }
+      const sha = job.commitSha
+        ? ` · <code title="${escapeHtml(job.commitSha)}">${escapeHtml(job.commitSha.slice(0, 8))}</code>`
+        : "";
+      meta.innerHTML = `<span class="st ${job.status}">${job.status}</span>${job.runCount ? ` · #${job.runCount}` : ""}${sha}`;
     }
 
     function renderTaskDetail() {
@@ -1002,12 +1302,12 @@
       $("taskMetaEmpty").style.display = "none";
       $("taskMetaBody").style.display = "block";
       const d = taskDetail;
-      $("detailTitle").textContent = `#${d.issueIid} — ${d.title}`;
+      $("detailTitle").innerHTML = `${issueIdWithView(d.issueIid, d.url)} — ${escapeHtml(d.title)}`;
       const assignees = (d.assignees || []).map((a) => `@${a.username}`).join(", ") || "—";
       const tasksDone = d.taskCompletion
         ? ` · checklist ${d.taskCompletion.completedCount}/${d.taskCompletion.count}`
         : "";
-      $("detailMeta").innerHTML = `${escapeHtml(d.state)} · assignee ${escapeHtml(assignees)}${tasksDone} · <a href="${d.url}" target="_blank">GitLab</a>`;
+      $("detailMeta").innerHTML = `${escapeHtml(d.state)} · assignee ${escapeHtml(assignees)}${tasksDone}`;
       $("detailLabels").innerHTML = (d.labels || []).length
         ? d.labels.map((l) => `<span class="label-chip">${escapeHtml(l)}</span>`).join("")
         : `<span class="meta">no labels</span>`;
@@ -1018,8 +1318,8 @@
       $("relatedList").innerHTML = related.length
         ? related.map((r) => `
             <div class="related" data-rel-iid="${r.iid}" style="cursor:pointer">
-              <div class="title">#${r.iid} — ${escapeHtml(r.title)}</div>
-              <div class="meta">${escapeHtml(r.state)} · ${escapeHtml(r.source)}${r.linkType ? " · " + escapeHtml(r.linkType) : ""} · <a href="${r.url}" target="_blank" onclick="event.stopPropagation()">open</a></div>
+              <div class="title">${issueIdWithView(r.iid, r.url)} — ${escapeHtml(r.title)}</div>
+              <div class="meta">${escapeHtml(r.state)} · ${escapeHtml(r.source)}${r.linkType ? " · " + escapeHtml(r.linkType) : ""}</div>
             </div>
           `).join("")
         : `<div class="empty">Không có related / child</div>`;
@@ -1038,26 +1338,28 @@
           `).join("")
         : `<div class="empty">Chưa có comment</div>`;
 
-      // Hiện đúng assignee + labels đang có trên GitLab
       const firstAssignee = (d.assignees || [])[0]?.username || null;
       ddNowAssignee?.setSelected(firstAssignee ? [firstAssignee] : []);
       ddNowLabels?.setSelected(d.labels || []);
+      fillDevNotesFromJob(currentJob);
     }
 
     function renderJobs() {
       updateHandoffBadge();
       if (currentView === "handoff") renderHandoffList();
+      renderTasks();
       if (!jobs.length) {
         $("jobList").innerHTML = `<div class="empty">Chưa có job</div>`;
         return;
       }
       $("jobList").innerHTML = jobs.map((j) => {
         const killable = ["queued", "running", "awaiting_clarification", "awaiting_diff_approval"].includes(j.status);
+        const hasNotes = !!(j.devNotes || j.techLeadNotes);
         return `
         <div class="job ${j.id === selectedJobId ? "active" : ""}" data-job="${j.id}">
-          <div><span class="st ${j.status}">${j.status}</span> · #${j.issue?.issueIid}</div>
+          <div><span class="st ${j.status}">${j.status}</span> · ${issueIdWithView(j.issue?.issueIid, j.issue?.url)}${j.runCount ? ` · run#${j.runCount}` : ""}${hasNotes ? " · notes" : ""}${j.commitSha ? ` · <code>${escapeHtml(j.commitSha.slice(0, 7))}</code>` : ""}</div>
           <div class="title">${escapeHtml(j.issue?.title || "")}</div>
-          <div class="meta">${j.mrUrl ? `<a href="${j.mrUrl}" target="_blank" onclick="event.stopPropagation()">MR</a>` : (j.error || j.id.slice(0,8))}</div>
+          <div class="meta">${j.error ? escapeHtml(j.error).slice(0, 80) : escapeHtml(j.id)}</div>
           ${killable ? `<div class="job-actions"><button type="button" class="danger" data-kill="${j.id}">Force Stop</button></div>` : ""}
         </div>`;
       }).join("");
@@ -1101,11 +1403,21 @@
       showEmptyLoading($("taskMetaEmpty"), "Đang tải…");
       $("taskMetaBody").style.display = "none";
       try {
-        const res = await api(`/api/tasks/${iid}`);
+        const [res, ensured] = await Promise.all([
+          api(`/api/tasks/${iid}`),
+          api("/api/jobs/ensure", {
+            method: "POST",
+            body: JSON.stringify({ issueIid: iid }),
+          }),
+        ]);
         taskDetail = res.detail;
+        currentJob = ensured.job;
+        selectedJobId = ensured.job?.id || selectedJobId;
         renderTaskDetail();
+        await loadJobs();
       } catch (e) {
         taskDetail = null;
+        currentJob = null;
         $("detailEmpty").className = "empty";
         $("detailEmpty").textContent = e.message;
         $("detailEmpty").style.display = "block";
@@ -1127,10 +1439,14 @@
       setPanelLoading($("progressLog"), true);
       try {
         const detail = await api(`/api/jobs/${id}`);
+        currentJob = detail.job || null;
         if (detail.job?.issue?.issueIid) {
           selectedTaskIid = detail.job.issue.issueIid;
           renderTasks();
-          void selectTask(selectedTaskIid);
+          const res = await api(`/api/tasks/${selectedTaskIid}`);
+          taskDetail = res.detail;
+          fillDevNotesFromJob(currentJob);
+          renderTaskDetail();
         }
         renderChat(
           detail.chat,
@@ -1159,16 +1475,18 @@
     function setButtonLoading(btn, loading, idleLabel) {
       if (!btn) return;
       if (loading) {
-        btn.disabled = true;
-        btn.classList.add("is-loading");
         if (!btn.dataset.idleLabel) {
           btn.dataset.idleLabel = idleLabel || btn.textContent.trim();
         }
-        btn.innerHTML = `<span class="spinner"></span> Đang tải…`;
+        const label = btn.dataset.idleLabel;
+        btn.disabled = true;
+        btn.classList.add("is-loading");
+        btn.innerHTML = `<span class="spinner" aria-hidden="true"></span><span>${escapeHtml(label)}…</span>`;
       } else {
         btn.disabled = false;
         btn.classList.remove("is-loading");
-        btn.textContent = btn.dataset.idleLabel || idleLabel || "Refresh";
+        btn.textContent = btn.dataset.idleLabel || idleLabel || "OK";
+        delete btn.dataset.idleLabel;
       }
     }
 
@@ -1386,7 +1704,7 @@
       }
       box.innerHTML = list.map((j) => `
         <div class="job ${j.id === selectedHandoffJobId ? "active" : ""}" data-handoff="${j.id}">
-          <div><span class="st awaiting_handoff">awaiting_handoff</span> · #${j.issue?.issueIid}</div>
+          <div><span class="st awaiting_handoff">awaiting_handoff</span> · ${issueIdWithView(j.issue?.issueIid, j.issue?.url)}</div>
           <div class="title">${escapeHtml(j.issue?.title || "")}</div>
           <div class="meta">${j.completedAt ? new Date(j.completedAt).toLocaleString() : j.id.slice(0,8)}</div>
         </div>
@@ -1407,8 +1725,8 @@
       }
       $("handoffEmpty").style.display = "none";
       $("handoffBody").style.display = "block";
-      $("handoffTitle").textContent = `#${j.issue.issueIid} — ${j.issue.title}`;
-      $("handoffMeta").innerHTML = `${j.branch ? `<code>${escapeHtml(j.branch)}</code> · ` : ""}<a href="${j.issue.url}" target="_blank">issue</a>`;
+      $("handoffTitle").innerHTML = `${issueIdWithView(j.issue.issueIid, j.issue.url)} — ${escapeHtml(j.issue.title)}`;
+      $("handoffMeta").innerHTML = `${j.branch ? `<code>${escapeHtml(j.branch)}</code> · ` : ""}${j.commitSha ? `<code title="${escapeHtml(j.commitSha)}">${escapeHtml(j.commitSha.slice(0, 10))}</code>` : ""}`;
       $("handoffSummary").textContent = j.summary || "(no summary)";
       ddHandoffAssignee?.setSelected(savedSettings.assignee ? [savedSettings.assignee] : []);
       ddHandoffLabels?.setSelected(savedSettings.addLabels || []);
@@ -1449,39 +1767,63 @@
     }
 
     async function loadStats() {
-      if (!$("statsDaily").querySelector(".stats-day")) {
+      if (!$("statsDaily").querySelector(".stats-month, .stats-day")) {
         showEmptyLoading($("statsDaily"), "Đang tải thống kê…");
       }
-      const data = await api("/api/stats/daily?days=14");
+      const data = await api("/api/stats/daily?days=90");
       $("statsTz").textContent = `· ${data.timezone}`;
       $("statsPending").textContent = data.pendingHandoffCount
         ? `${data.pendingHandoffCount} đang chờ handoff`
         : "Không chờ handoff";
-      const days = data.daily || [];
-      if (!days.length) {
-        $("statsDaily").innerHTML = `<div class="empty">Chưa có dữ liệu</div>`;
-        return;
-      }
-      $("statsDaily").innerHTML = days.map((d) => {
+
+      const pills = (h, ok, bad) => `
+        <div class="stats-pills">
+          <span class="pill">handoff ${h || 0}</span>
+          <span class="pill ok">done ${ok || 0}</span>
+          <span class="pill bad">fail ${bad || 0}</span>
+        </div>`;
+
+      const renderDay = (d) => {
         const items = (d.items || []).map((it) => `
           <div class="job" style="cursor:default">
-            <div><span class="st ${escapeHtml(it.status)}">${escapeHtml(it.status)}</span> · #${it.issueIid}</div>
+            <div><span class="st ${escapeHtml(it.status)}">${escapeHtml(it.status)}</span> · ${issueIdWithView(it.issueIid, it.url)}</div>
             <div class="title">${escapeHtml(it.title)}</div>
-            <div class="meta"><a href="${it.url}" target="_blank">issue</a> · ${new Date(it.at).toLocaleTimeString()}</div>
+            <div class="meta">${new Date(it.at).toLocaleTimeString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" })}</div>
           </div>
         `).join("") || `<div class="empty">—</div>`;
         return `
           <div class="stats-day">
             <h3>${escapeHtml(d.date)}</h3>
-            <div class="stats-pills">
-              <span class="pill">handoff ${d.awaitingHandoff}</span>
-              <span class="pill ok">done ${d.succeeded}</span>
-              <span class="pill bad">fail ${d.failed}</span>
-            </div>
-            ${items}
-          </div>
-        `;
-      }).join("");
+            ${pills(d.awaitingHandoff, d.succeeded, d.failed)}
+            <div style="margin-top:8px">${items}</div>
+          </div>`;
+      };
+
+      const months = data.months || [];
+      if (!months.length) {
+        $("statsDaily").innerHTML = `<div class="empty">Chưa có ngày nào có task</div>`;
+        return;
+      }
+
+      $("statsDaily").innerHTML = months.map((m, mi) => `
+        <details class="stats-month" ${mi === 0 ? "open" : ""}>
+          <summary>
+            <span class="stats-head-left"><span class="stats-chevron"></span>${escapeHtml(m.label)}</span>
+            ${pills(m.awaitingHandoff, m.succeeded, m.failed)}
+          </summary>
+          ${(m.weeks || []).map((w, wi) => `
+            <details class="stats-week" ${mi === 0 && wi === 0 ? "open" : ""}>
+              <summary>
+                <span class="stats-head-left"><span class="stats-chevron"></span>${escapeHtml(w.label)}</span>
+                ${pills(w.awaitingHandoff, w.succeeded, w.failed)}
+              </summary>
+              <div class="stats-week-body">
+                ${(w.days || []).map(renderDay).join("")}
+              </div>
+            </details>
+          `).join("")}
+        </details>
+      `).join("");
     }
 
     function selectedIssueIids() {
@@ -1490,13 +1832,15 @@
       );
     }
 
-    async function applyMetaNow() {
-      if (!selectedTaskIid) return toast("Click chọn 1 task trước");
+    async function applyMetaNow(opts = {}) {
+      if (!selectedTaskIid) {
+        toast("Click chọn 1 task trước");
+        return false;
+      }
       const one = ddNowAssignee?.getSelectedOne();
       const assignees = one ? [one] : [];
       const labels = ddNowLabels?.getSelected() || [];
-      // Luôn lưu labels dạng set (thay toàn bộ) + assignee nếu có
-      setButtonLoading($("btnApplyMeta"), true, "Lưu");
+      if (!opts.skipButton) setButtonLoading($("btnApplyMeta"), true, "Lưu");
       try {
         const res = await api("/api/tasks/update", {
           method: "POST",
@@ -1510,35 +1854,134 @@
         const failed = (res.results || []).filter((r) => !r.ok);
         if (failed.length) {
           toast("Lỗi: " + (failed[0].error || `#${failed[0].issueIid}`));
-        } else {
-          toast(`Đã lưu #${selectedTaskIid}`);
+          return false;
+        }
+        if (!opts.silent) toast(`Đã lưu #${selectedTaskIid}`);
+        if (!opts.skipReload) {
           await selectTask(selectedTaskIid);
           await loadTasks();
         }
+        return true;
       } catch (e) {
         toast(e.message);
+        return false;
       } finally {
-        setButtonLoading($("btnApplyMeta"), false, "Lưu");
+        if (!opts.skipButton) setButtonLoading($("btnApplyMeta"), false, "Lưu");
       }
     }
 
-    async function startHandle() {
-      const mode = document.querySelector('input[name="mode"]:checked').value;
-      setButtonLoading($("btnStart"), true, "Start");
+    async function saveDevNotes(opts = {}) {
+      if (!currentJob?.id && !selectedTaskIid) {
+        toast("Chọn task trước");
+        return false;
+      }
+      const devNotes = ($("devNotes")?.value || "").trim();
+      if (!opts.skipButton) setButtonLoading($("btnSaveNotes"), true, "Save");
       try {
-        const payload = { mode, completion: readOnComplete() };
-        if (mode === "selected") {
-          const iids = selectedIssueIids();
-          if (!iids.length) throw new Error("Tick ít nhất 1 task để Start");
-          payload.issueIids = iids;
+        if (!currentJob?.id) {
+          const ensured = await api("/api/jobs/ensure", {
+            method: "POST",
+            body: JSON.stringify({ issueIid: selectedTaskIid, devNotes }),
+          });
+          currentJob = ensured.job;
+        } else {
+          const res = await api(`/api/jobs/${currentJob.id}/dev-notes`, {
+            method: "PUT",
+            body: JSON.stringify({ devNotes }),
+          });
+          currentJob = res.job;
         }
-        const res = await api("/api/jobs/start", { method: "POST", body: JSON.stringify(payload) });
+        fillDevNotesFromJob(currentJob);
+        selectedJobId = currentJob.id;
+        await loadJobs();
+        if (!opts.silent) toast("Đã lưu Dev Notes trên job");
+        return true;
+      } catch (e) {
+        toast(e.message);
+        return false;
+      } finally {
+        if (!opts.skipButton) setButtonLoading($("btnSaveNotes"), false, "Save");
+      }
+    }
+
+    async function runCurrentJob() {
+      if (!selectedTaskIid) return toast("Chọn 1 task trước");
+      setButtonLoading($("btnRunJob"), true, "Run");
+      try {
+        const metaOk = await applyMetaNow({ silent: true, skipButton: true, skipReload: true });
+        if (metaOk === false) return;
+        const saved = await saveDevNotes({ silent: true, skipButton: true });
+        if (!saved) return;
+        const res = await api("/api/jobs/start", {
+          method: "POST",
+          body: JSON.stringify({
+            mode: "manual",
+            issueIid: selectedTaskIid,
+            issueIids: [selectedTaskIid],
+            devNotes: ($("devNotes")?.value || "").trim() || undefined,
+            completion: readOnComplete(),
+          }),
+        });
+        toast(`Run #${selectedTaskIid} · enqueued ${res.enqueued}`);
+        if (res.jobIds?.[0]) await selectJob(res.jobIds[0]);
+        else await loadJobs();
+        await loadStatus();
+      } catch (e) {
+        toast(e.message);
+      } finally {
+        setButtonLoading($("btnRunJob"), false, "Run");
+      }
+    }
+
+    async function runSelectedTasks() {
+      const iids = selectedIssueIids();
+      if (!iids.length) return toast("Tick ít nhất 1 task");
+      setButtonLoading($("btnRunSelected"), true, "Run chọn");
+      try {
+        const res = await api("/api/jobs/start", {
+          method: "POST",
+          body: JSON.stringify({
+            mode: "selected",
+            issueIids: iids,
+            completion: readOnComplete(),
+          }),
+        });
         toast(`Enqueued ${res.enqueued}`);
         if (res.jobIds?.[0]) await selectJob(res.jobIds[0]);
         else await loadJobs();
         await loadStatus();
-      } catch (e) { toast(e.message); }
-      finally { setButtonLoading($("btnStart"), false, "Start"); }
+      } catch (e) {
+        toast(e.message);
+      } finally {
+        setButtonLoading($("btnRunSelected"), false, "Run chọn");
+      }
+    }
+
+    async function runAllDrafts() {
+      setButtonLoading($("btnRunDrafts"), true, "Run tất cả");
+      try {
+        const res = await api("/api/jobs/start", {
+          method: "POST",
+          body: JSON.stringify({
+            mode: "all",
+            runAll: true,
+            completion: readOnComplete(),
+          }),
+        });
+        const bits = [
+          `enqueued ${res.enqueued}/${res.found}`,
+          res.created ? `tạo mới ${res.created}` : null,
+          res.skippedBusy ? `bỏ busy ${res.skippedBusy}` : null,
+        ].filter(Boolean);
+        toast(`Run tất cả · ${bits.join(" · ")}`);
+        if (res.jobIds?.[0]) await selectJob(res.jobIds[0]);
+        else await loadJobs();
+        await loadStatus();
+      } catch (e) {
+        toast(e.message);
+      } finally {
+        setButtonLoading($("btnRunDrafts"), false, "Run tất cả");
+      }
     }
 
     async function sendClarify() {
@@ -1581,7 +2024,10 @@
 
     $("btnRefresh").onclick = () => refreshTasks().catch((e) => toast(e.message));
     $("btnApplyMeta").onclick = () => applyMetaNow();
-    $("btnStart").onclick = startHandle;
+    $("btnSaveNotes").onclick = () => saveDevNotes();
+    $("btnRunJob").onclick = () => runCurrentJob();
+    $("btnRunSelected").onclick = () => runSelectedTasks();
+    $("btnRunDrafts").onclick = () => runAllDrafts();
     $("btnClarify").onclick = sendClarify;
     $("btnAsk").onclick = askQuestion;
     $("btnSettings").onclick = () => openSettingsModal();
@@ -1593,7 +2039,6 @@
     document.querySelectorAll("#navViews [data-view]").forEach((btn) => {
       btn.addEventListener("click", () => setView(btn.dataset.view));
     });
-    document.querySelectorAll('input[name="mode"]').forEach((el) => el.addEventListener("change", renderTasks));
 
     showEmptyLoading($("taskList"), "Đang tải tasks…");
     showEmptyLoading($("jobList"), "Đang tải jobs…");

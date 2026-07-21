@@ -142,7 +142,7 @@ export type AgentRunResult = {
 export async function runNewAgent(
   issue: IssueJob,
   extraContext?: string,
-  opts?: { jobId?: string },
+  opts?: { jobId?: string; techLeadNotes?: string; devNotes?: string },
 ): Promise<AgentRunResult> {
   const config = getConfig();
   let linkedBlock = "";
@@ -160,7 +160,13 @@ export async function runNewAgent(
   });
 
   logger.info("Created local agent", { agentId: agent.agentId });
-  const prompt = buildWorkPrompt(issue, extraContext, linkedBlock);
+  const notes = opts?.devNotes?.trim() || opts?.techLeadNotes?.trim() || undefined;
+  const prompt = buildWorkPrompt(
+    issue,
+    extraContext,
+    linkedBlock,
+    notes,
+  );
   const run = await agent.send(prompt);
   logger.info("Agent run started", { runId: run.id, agentId: agent.agentId });
   trackRun(opts?.jobId, run);

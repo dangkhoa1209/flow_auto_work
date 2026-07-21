@@ -47,6 +47,7 @@ JobQueue (serial)
 | Status | Ý nghĩa |
 |--------|---------|
 | `queued` / `running` | Đang chờ / đang chạy agent |
+| `draft` | 1 job/issue — đang viết Dev Notes, chưa run |
 | `awaiting_clarification` | Agent hỏi — trả lời trên UI |
 | `awaiting_handoff` | Code xong — chờ assign/labels thủ công |
 | `succeeded` | Đã handoff |
@@ -59,9 +60,18 @@ JobQueue (serial)
 
 | Tab | Nội dung |
 |-----|----------|
-| Work | 3 cột: Tasks+Jobs · Detail+Progress · Assign+Clarify |
+| Work | 3 cột: Tasks+Jobs · Detail+Tech Lead notes+Progress · Assign+Clarify |
 | Done chờ | Jobs `awaiting_handoff`; handoff = assignee + **add** labels (không set/remove) |
 | Thống kê | `GET /api/stats/daily` — đếm / list theo ngày |
+
+### Cột giữa — user flow
+
+1. **Fetch & Review** — click task → ensure **1 job** (`draft` nếu mới) + đọc GitLab.
+2. **Dev Notes** — ghi chú kỹ thuật trên job (`devNotes` Mongo). **Save notes** hoặc **Run**.
+3. **Run** — re-run cùng job (`runCount++`), giữ chat/context.
+4. **Run tất cả** — mọi task assigned: tạo job nếu thiếu (kể cả draft), re-run; **bỏ qua** đang queued/running/clarify.
+
+`devNotes` chỉ trên job Mongo (không post GitLab). Prompt: **DEV NOTES (HIGHEST PRIORITY)**.
 
 - Dark theme (CSS variables).
 - Dropdown autocomplete (gõ để lọc).
@@ -84,7 +94,9 @@ JobQueue (serial)
 | GET | `/api/tasks` | open issues assigned |
 | GET | `/api/tasks/:iid` | detail + notes + related |
 | POST | `/api/tasks/update` | assign / labels ngay |
-| POST | `/api/jobs/start` | `{ mode, issueIids?, completion }` |
+| POST | `/api/jobs/start` | `{ mode: selected\|manual\|drafts\|auto, issueIid?, issueIids?, devNotes?, completion }` |
+| POST | `/api/jobs/ensure` | tạo/mở job duy nhất cho issue (`draft`) |
+| PUT | `/api/jobs/:id/dev-notes` | lưu Dev Notes trên job |
 | GET | `/api/jobs` | list jobs |
 | GET | `/api/jobs/:id` | job + chat |
 | GET | `/api/jobs/:id/progress` | stream log Cursor |
@@ -92,7 +104,7 @@ JobQueue (serial)
 | POST | `/api/jobs/:id/clarify` | trả lời agent |
 | POST | `/api/jobs/:id/ask` | Q&A |
 | POST | `/api/jobs/:id/completion-actions` | handoff → succeeded (`labelMode: add`) |
-| GET | `/api/stats/daily?days=14` | todolist theo ngày |
+| GET | `/api/stats/daily?days=90` | todolist: chỉ ngày có task · `months → weeks → days` |
 | GET | `/api/meta/members` | members |
 | GET | `/api/meta/labels` | labels |
 
@@ -108,7 +120,7 @@ JobQueue (serial)
 | `src/queue.ts` | serial jobs → awaiting_handoff |
 | `src/agent/run.ts` | Cursor SDK + stream progress |
 | `src/agent/progress.ts` | buffer tiến trình theo jobId |
-| `src/agent/prompt.ts` | prompt; DONE summary tiếng Việt |
+| `src/agent/prompt.ts` | MISSION + DEV NOTES (highest) + BUSINESS REQUIREMENTS; DONE summary VI |
 | `src/db/mongo.ts` | jobs / notes / chat (fix upsert `source`) |
 | `src/git/prep.ts` | stay branch, scrub WIP, parse porcelain |
 | `src/gitlab/linked-context.ts` | linked context + clean comments |
@@ -118,7 +130,7 @@ JobQueue (serial)
 
 ### Comment GitLab
 
-Chỉ **một** comment khi agent xong:
+Chỉ comment khi run **có thay đổi code** (commit mới / HEAD đổi):
 
 ```
 Task work 100% by AI
@@ -126,7 +138,7 @@ Task work 100% by AI
 <summary tiếng Việt>
 ```
 
-Không comment Start / Clarify / Fail.
+Không comment nếu không có diff; không comment Start / Clarify / Fail.
 
 ### Handoff labels
 

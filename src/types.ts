@@ -26,6 +26,8 @@ export type IssueJob = {
 };
 
 export type JobStatus =
+  /** Job shell — đã gắn issue, có thể đang viết Dev Notes, chưa (re)run */
+  | "draft"
   | "queued"
   | "running"
   | "awaiting_clarification"
@@ -36,6 +38,19 @@ export type JobStatus =
   | "succeeded"
   | "failed";
 
+/** Stable id: one GitLab issue → one job document forever */
+export function jobIdForIssue(projectId: number, issueIid: number): string {
+  return `issue-${projectId}-${issueIid}`;
+}
+
+export function isJobBusy(status: JobStatus): boolean {
+  return (
+    status === "queued" ||
+    status === "running" ||
+    status === "awaiting_clarification"
+  );
+}
+
 export type JobRecord = {
   id: string;
   status: JobStatus;
@@ -44,12 +59,22 @@ export type JobRecord = {
   runId?: string;
   branch?: string;
   mrUrl?: string;
+  /** Latest local commit SHA after a successful run (post-scrub) */
+  commitSha?: string;
+  /** History of commit SHAs across re-runs (newest last) */
+  commitShas?: string[];
   clarifyRound: number;
+  /** How many agent runs completed or started on this job */
+  runCount: number;
   lastQuestion?: string;
   lastTeamsMessageId?: string;
   error?: string;
   summary?: string;
   completion?: CompletionActions;
+  /** Dev notes — highest priority in agent prompt (Mongo only) */
+  devNotes?: string;
+  /** @deprecated use devNotes */
+  techLeadNotes?: string;
   /** When agent finished / entered awaiting_handoff */
   completedAt?: string;
   /** When user finished handoff → succeeded */
@@ -57,6 +82,11 @@ export type JobRecord = {
   createdAt: string;
   updatedAt: string;
 };
+
+/** Prefer devNotes; fall back to legacy techLeadNotes */
+export function resolveDevNotes(job: Pick<JobRecord, "devNotes" | "techLeadNotes">): string {
+  return (job.devNotes ?? job.techLeadNotes ?? "").trim();
+}
 
 export type ClarificationResult =
   | { kind: "done"; text: string }

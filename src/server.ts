@@ -62,7 +62,7 @@ export function createApp() {
       return c.json({ accepted: false, reason: "already active" });
     }
 
-    const result = jobQueue.enqueue(filtered.job, { source: "webhook" });
+    const result = await jobQueue.enqueue(filtered.job, { source: "webhook" });
 
     return c.json({
       accepted: result.enqueued,
