@@ -5,14 +5,18 @@ export function commitMessageForIssue(issue: IssueJob): string {
   return `feat #${issue.issueIid} ${title}`;
 }
 
-export function buildWorkPrompt(issue: IssueJob, extra?: string): string {
+export function buildWorkPrompt(
+  issue: IssueJob,
+  extra?: string,
+  linkedContext?: string,
+): string {
   const commitMsg = commitMessageForIssue(issue);
   return `You are the auto-work agent for AiHR v3.
 
 Follow AGENTS.md and .cursor/skills/aihr/SKILL.md in this repo.
 Load docs for the relevant module/feature (max ~3 doc files) before changing code.
 Do not touch .env, credentials, or secrets.
-Do not force-push, do not amend commits already on remote, do not merge the MR.
+Do not force-push, do not amend commits already on remote, do not create or merge MRs.
 Do NOT switch git branches. Stay on the branch that is already checked out.
 Do NOT stage or commit these local WIP files (leave them unstaged; do not add to .gitignore):
 - resources/js/composables/permission.js
@@ -28,6 +32,9 @@ Do NOT stage or commit these local WIP files (leave them unstaged; do not add to
 ## Description
 ${issue.description || "(empty)"}
 
+${linkedContext ? `${linkedContext}\n` : ""}
+Use linked/mentioned issues and comments above as additional requirements/context. Prefer the primary issue (#${issue.issueIid}) scope; do not expand work into unrelated linked tickets unless required.
+
 ## Required workflow
 1. Investigate via docs, then write a short plan.
 2. Implement on the CURRENT git branch only (do not checkout/create other branches). Keep the change scoped to this issue.
@@ -35,8 +42,9 @@ ${issue.description || "(empty)"}
 
    ${commitMsg}
 
-4. You do NOT need to push or open the MR — the orchestrator will do that after you finish.
+4. Stop after the commit — do NOT push and do NOT open an MR. The orchestrator treats a successful local commit as done.
 5. If requirements are ambiguous or you are not confident which approach to take, do NOT guess.
+   The human answers in the **Flow Auto Work UI** (not Teams).
    End your final reply with EXACTLY this block (and nothing after it):
 
 <<<NEED_CLARIFICATION>>>
@@ -46,27 +54,28 @@ Your specific question(s) for the human here.
 6. If you finished successfully, end with:
 
 <<<DONE>>>
-Short summary of what changed.
+Tóm tắt ngắn bằng tiếng Việt: đã làm gì / thay đổi chính (1–3 câu).
 <<<END_DONE>>>
 
-${extra ? `## Additional context from human (Teams)\n${extra}\n` : ""}`;
+The DONE summary MUST be written in Vietnamese (tiếng Việt).
+${extra ? `## Additional context from human (UI)\n${extra}\n` : ""}`;
 }
 
 export function buildResumePrompt(answer: string, issue: IssueJob): string {
   const commitMsg = commitMessageForIssue(issue);
-  return `The human answered your clarification via Teams:
+  return `The human answered your clarification in the Flow Auto Work UI:
 
 ---
 ${answer}
 ---
 
 Continue the same workflow on the CURRENT branch (do not switch branches).
-Implement if clear enough; otherwise ask again with the NEED_CLARIFICATION block.
+Implement if clear enough; otherwise ask again with the NEED_CLARIFICATION block (UI will collect the next answer).
 When finished, commit with message:
 
 ${commitMsg}
 
-Then use the DONE block. Do not push/MR yourself.`;
+Then use the DONE block. The DONE summary MUST be in Vietnamese (tiếng Việt). Do not push or open an MR.`;
 }
 
 export function parseAgentOutcome(text: string): {

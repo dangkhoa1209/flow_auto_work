@@ -1,0 +1,1605 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="dark" />
+  <title>Flow Auto Work</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ["Outfit", "system-ui", "sans-serif"],
+            mono: ["IBM Plex Mono", "ui-monospace", "monospace"],
+          },
+          colors: {
+            ink: { DEFAULT: "#e8eef7", soft: "#b6c2d6", mute: "#8b9bb3" },
+            surface: { DEFAULT: "#151c2c", soft: "#1a2336", line: "#2a3548" },
+            brand: { DEFAULT: "#0d9488", hover: "#14b8a6", soft: "#134e4a" },
+          },
+        },
+      },
+    };
+  </script>
+  <style type="text/tailwindcss">
+    /* component bridges for existing JS class names */
+  </style>
+  <style>
+    :root {
+      --bg: #0b1220;
+      --bg-elev: #111827;
+      --bg-card: #151c2c;
+      --bg-soft: #1a2336;
+      --line: #2a3548;
+      --line-soft: #243044;
+      --text: #e8eef7;
+      --text-soft: #b6c2d6;
+      --mute: #8b9bb3;
+      --teal: #14b8a6;
+      --teal-deep: #0d9488;
+      --teal-dim: rgba(20, 184, 166, 0.16);
+    }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      font-family: Outfit, system-ui, sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(900px 420px at 0% -10%, rgba(20,184,166,.18) 0%, transparent 55%),
+        radial-gradient(800px 380px at 100% 0%, rgba(56,189,248,.12) 0%, transparent 50%),
+        var(--bg);
+    }
+    .app-shell {
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      padding: 12px 14px 14px;
+      gap: 10px;
+      box-sizing: border-box;
+    }
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-shrink: 0;
+      background: rgba(21, 28, 44, .88);
+      backdrop-filter: blur(10px);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 10px 14px;
+    }
+    .topbar h1 { margin: 0; font-size: 1.15rem; font-weight: 700; letter-spacing: -0.02em; color: var(--text); }
+    .sub { color: var(--mute); font-size: 0.8rem; margin-top: 2px; }
+    .header-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .status { display: flex; gap: 6px; flex-wrap: wrap; font-family: "IBM Plex Mono", monospace; font-size: 0.68rem; }
+    .pill {
+      background: var(--bg-soft); border: 1px solid var(--line); border-radius: 999px;
+      padding: 4px 10px; color: var(--text-soft); font-weight: 500;
+    }
+    .pill.ok { color: #6ee7b7; background: rgba(16,185,129,.15); border-color: rgba(52,211,153,.35); }
+    .pill.bad { color: #fca5a5; background: rgba(239,68,68,.15); border-color: rgba(248,113,113,.35); }
+    .pill.warn { color: #fcd34d; background: rgba(245,158,11,.15); border-color: rgba(251,191,36,.35); }
+
+    .layout {
+      flex: 1;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: minmax(260px, 300px) minmax(0, 1fr) minmax(280px, 340px);
+      gap: 10px;
+    }
+    @media (max-width: 1100px) {
+      .layout { grid-template-columns: 1fr; overflow: auto; }
+      .app-shell { height: auto; min-height: 100vh; }
+    }
+
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 12px;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 1px 2px rgba(0,0,0,.25);
+    }
+    .card h2 {
+      margin: 0 0 8px;
+      font-size: 0.78rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--mute);
+    }
+    .card h2 span { color: var(--mute); }
+    .col-scroll { flex: 1; min-height: 0; overflow: auto; }
+    .toolbar { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; align-items: center; }
+
+    button {
+      font: inherit; cursor: pointer; border: 0; border-radius: 9px;
+      padding: 7px 11px; background: var(--teal-deep); color: #fff; font-weight: 600; font-size: 0.84rem;
+    }
+    button:hover { background: var(--teal); }
+    button.secondary {
+      background: var(--bg-soft); color: var(--text); border: 1px solid var(--line);
+    }
+    button.secondary:hover { background: #243044; }
+    button:disabled { opacity: 0.45; cursor: not-allowed; }
+    button.is-loading {
+      opacity: 0.85; cursor: wait; pointer-events: none;
+      display: inline-flex; align-items: center; gap: 6px;
+    }
+    .spinner {
+      width: 12px; height: 12px; border: 2px solid currentColor;
+      border-right-color: transparent; border-radius: 50%;
+      display: inline-block; animation: spin 0.7s linear infinite;
+      flex-shrink: 0;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .list.is-loading, .scroll-mid.is-loading, .panel-loading {
+      opacity: 0.55; pointer-events: none;
+    }
+    .empty.loading {
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+      color: var(--mute);
+    }
+    .empty.loading .spinner { width: 14px; height: 14px; }
+    button.danger { background: #dc2626; }
+    button.danger:hover { background: #b91c1c; }
+    button.btn-start {
+      padding: 5px 12px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      border-radius: 7px;
+      background: var(--teal-deep);
+      box-shadow: none;
+    }
+    button.btn-start:hover { background: var(--teal); }
+    .icon-btn {
+      width: 36px; height: 36px; padding: 0; border-radius: 10px;
+      display: inline-flex; align-items: center; justify-content: center; font-size: 1.05rem;
+    }
+
+    .mode {
+      display: inline-flex; background: var(--bg-soft); border-radius: 9px; padding: 3px; border: 1px solid var(--line);
+    }
+    .mode label { cursor: pointer; color: var(--mute); font-size: 0.8rem; }
+    .mode input { display: none; }
+    .mode input:checked + span {
+      display: inline-block; background: var(--teal-deep); color: #fff; border-radius: 7px; padding: 5px 9px; font-weight: 600;
+    }
+    .mode label span { display: inline-block; padding: 5px 9px; }
+
+    .list { overflow: auto; min-height: 0; }
+    .task, .job, .related {
+      display: grid; gap: 4px; padding: 8px 9px; border-radius: 10px;
+      background: var(--bg-soft); margin-bottom: 6px; border: 1px solid transparent;
+    }
+    .task { grid-template-columns: 18px 1fr; align-items: start; cursor: pointer; }
+    .task:hover, .job:hover, .job.active, .task.active {
+      border-color: var(--line); background: #1f2a3f;
+    }
+    .task.active, .job.active {
+      border-color: var(--teal);
+      box-shadow: 0 0 0 1px rgba(20,184,166,.35);
+      background: var(--teal-dim);
+    }
+    .task.skip { opacity: 0.5; }
+    .title { font-weight: 600; font-size: 0.84rem; color: var(--text); line-height: 1.35; }
+    .meta { color: var(--mute); font-size: 0.72rem; font-family: "IBM Plex Mono", monospace; }
+    a { color: #5eead4; text-decoration: none; font-weight: 500; }
+    a:hover { text-decoration: underline; color: #99f6e4; }
+
+    .st { font-family: "IBM Plex Mono", monospace; font-size: 0.65rem; text-transform: uppercase; font-weight: 600; }
+    .st.succeeded { color: #6ee7b7; }
+    .st.failed { color: #fca5a5; }
+    .st.running, .st.queued, .st.awaiting_clarification, .st.awaiting_diff_approval { color: #fcd34d; }
+    .st.awaiting_handoff { color: #7dd3fc; }
+    .job-actions { display: flex; gap: 6px; margin-top: 4px; flex-wrap: wrap; }
+    .job-actions button { padding: 4px 8px; font-size: 0.72rem; }
+
+    .banner {
+      background: rgba(245,158,11,.12); border: 1px solid rgba(251,191,36,.35); color: #fde68a;
+      border-radius: 10px; padding: 8px 10px; margin-bottom: 8px; font-size: 0.82rem; white-space: pre-wrap;
+    }
+    .tabs { display: flex; gap: 4px; margin-bottom: 8px; flex-wrap: wrap; flex-shrink: 0; }
+    .tabs button { padding: 5px 9px; font-size: 0.78rem; }
+    .tabs button.active { outline: 2px solid var(--teal); outline-offset: 0; }
+
+    pre.diff, .desc, .note-body {
+      margin: 0; padding: 10px; background: #0a101c; border-radius: 10px; border: 1px solid var(--line);
+      font-family: "IBM Plex Mono", monospace; font-size: 0.7rem; line-height: 1.45;
+      white-space: pre-wrap; word-break: break-word; color: #e2e8f0;
+    }
+    .desc {
+      max-height: none;
+      background: var(--bg-soft);
+      border-color: var(--line);
+      color: var(--text);
+      font-family: Outfit, system-ui, sans-serif;
+      font-size: 0.9rem;
+      line-height: 1.55;
+    }
+    #midDetail .title { color: var(--text); }
+    #midDetail .section-title { color: var(--text-soft); }
+    .bubble, .note {
+      padding: 9px 11px; border-radius: 10px; font-size: 0.86rem; white-space: pre-wrap;
+      background: var(--bg-soft); border: 1px solid var(--line); margin-bottom: 6px;
+      color: var(--text); line-height: 1.5;
+    }
+    .bubble.user { border-color: rgba(45,212,191,.45); background: rgba(19,78,74,.45); color: #ecfdf5; }
+    .bubble.agent { border-color: rgba(56,189,248,.45); background: rgba(12,74,110,.4); color: #e0f2fe; }
+    .bubble .who, .note .who {
+      font-size: 0.7rem; color: var(--mute); margin-bottom: 4px; font-family: "IBM Plex Mono", monospace;
+    }
+    .note .note-body {
+      background: transparent !important;
+      border: 0 !important;
+      padding: 0 !important;
+      color: var(--text);
+      font-family: Outfit, system-ui, sans-serif;
+      font-size: 0.86rem;
+      line-height: 1.5;
+    }
+    .notes { overflow: auto; min-height: 0; }
+    .related { background: var(--bg-soft); border: 1px solid var(--line); }
+    .related .title { color: var(--text); }
+    .add { color: #4ade80; } .del { color: #fca5a5; } .hunk { color: #7dd3fc; }
+    .chat { display: flex; flex-direction: column; gap: 6px; overflow: auto; margin-bottom: 8px; min-height: 0; flex: 1; }
+    .labels { display: flex; flex-wrap: wrap; gap: 5px; margin: 6px 0; }
+    .label-chip {
+      font-size: 0.68rem; padding: 2px 8px; border-radius: 999px;
+      background: rgba(20,184,166,.15); border: 1px solid rgba(45,212,191,.35); color: #5eead4; font-weight: 500;
+    }
+    .section-title { font-weight: 600; font-size: 0.78rem; margin: 12px 0 6px; color: var(--text-soft); }
+    .scroll-mid { flex: 1; min-height: 0; overflow: auto; }
+    .panel-block {
+      margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line);
+      display: flex; flex-direction: column; min-height: 0; flex: 1;
+    }
+
+    textarea, input[type="text"], select {
+      width: 100%; background: var(--bg-elev); color: var(--text); border: 1px solid var(--line);
+      border-radius: 9px; padding: 8px 10px; font: inherit; resize: vertical; box-sizing: border-box;
+    }
+    textarea::placeholder, input::placeholder { color: var(--mute); }
+    textarea:focus, input:focus, select:focus, .dd-btn:focus {
+      outline: 2px solid rgba(20,184,166,.45); outline-offset: 0; border-color: var(--teal);
+    }
+    .empty { color: var(--mute); padding: 14px 0; text-align: center; font-size: 0.84rem; }
+
+    .toast {
+      position: fixed; bottom: 16px; right: 16px; background: var(--bg-card); border: 1px solid var(--line);
+      padding: 10px 12px; border-radius: 12px; max-width: 340px; display: none; z-index: 40;
+      box-shadow: 0 12px 40px rgba(0,0,0,.4); color: var(--text); font-size: 0.86rem;
+    }
+    .toast.show { display: block; }
+
+    .dd { position: relative; margin-bottom: 8px; width: 100%; }
+    .dd-btn {
+      width: 100%; text-align: left; font-weight: 500; display: flex; justify-content: space-between;
+      align-items: center; gap: 8px; background: var(--bg-elev); color: var(--text); border: 1px solid var(--line);
+      border-radius: 9px; padding: 8px 10px; font-size: 0.84rem;
+    }
+    .dd-btn:hover { background: var(--bg-soft); }
+    .dd-btn .dd-value { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+    .dd-btn .dd-value.is-placeholder { color: var(--mute); }
+    .dd-btn .dd-caret { color: var(--mute); font-size: 0.75rem; flex-shrink: 0; }
+    .dd.open .dd-btn { border-color: var(--teal); }
+    .dd-menu {
+      display: none; position: absolute; z-index: 50; left: 0; right: 0; top: calc(100% + 4px);
+      max-height: 220px; overflow: auto; background: var(--bg-card); border: 1px solid var(--line);
+      border-radius: 10px; box-shadow: 0 12px 32px rgba(0,0,0,.45); padding: 4px;
+    }
+    .dd.open .dd-menu { display: block; }
+    .dd-search-wrap {
+      position: sticky; top: 0; z-index: 1; background: var(--bg-card); padding: 4px;
+      border-bottom: 1px solid var(--line); margin: -4px -4px 4px; border-radius: 10px 10px 0 0;
+    }
+    .dd-search {
+      width: 100%; box-sizing: border-box; border: 1px solid var(--line); border-radius: 8px;
+      padding: 7px 9px; font: inherit; font-size: 0.84rem; background: var(--bg-elev); color: var(--text);
+    }
+    .dd-search:focus { outline: 2px solid rgba(20,184,166,.45); border-color: var(--teal); background: #1a2336; }
+    .dd-item {
+      display: flex; align-items: center; gap: 8px; padding: 7px 9px; border-radius: 8px;
+      cursor: pointer; font-size: 0.84rem; color: var(--text);
+    }
+    .dd-item mark { background: rgba(20,184,166,.35); color: inherit; border-radius: 2px; padding: 0; }
+    .dd-item:hover { background: #243044; }
+    .dd-item.active { background: var(--teal-dim); }
+    .dd-item input { accent-color: var(--teal); }
+    .dd-empty { padding: 10px; color: var(--mute); font-size: 0.82rem; text-align: center; }
+
+    .diff-tools { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; align-items: center; }
+    .file-edit {
+      margin-top: 8px; padding: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg-soft);
+    }
+    .file-edit textarea { min-height: 200px; font-family: "IBM Plex Mono", monospace; font-size: 0.72rem; }
+    .path-chip {
+      font-size: 0.7rem; padding: 3px 8px; border-radius: 8px; cursor: pointer;
+      background: rgba(20,184,166,.15); border: 1px solid rgba(45,212,191,.35); color: #5eead4;
+      margin: 0 4px 4px 0; display: inline-block;
+    }
+    .path-chip:hover { border-color: var(--teal); }
+    .progress-log {
+      flex: 1; min-height: 140px; overflow: auto; font-family: "IBM Plex Mono", monospace;
+      font-size: 0.72rem; line-height: 1.45; background: #0a101c; color: #e2e8f0;
+      border-radius: 10px; border: 1px solid var(--line); padding: 8px 10px;
+    }
+    .progress-log .empty { color: var(--mute); text-align: left; padding: 6px 0; }
+    .progress-log .pline { margin-bottom: 4px; white-space: pre-wrap; word-break: break-word; }
+    .progress-log .pline .k { color: #67e8f9; margin-right: 6px; font-weight: 600; }
+    .progress-log .pline.tool .k { color: #fbbf24; }
+    .progress-log .pline.status .k { color: #4ade80; }
+    .progress-log .pline.thinking .k { color: #c4b5fd; }
+    .progress-log .pline.assistant .k { color: #93c5fd; }
+    .progress-log.live { box-shadow: inset 0 0 0 1px var(--teal); }
+
+    .modal-backdrop {
+      display: none; position: fixed; inset: 0; z-index: 60;
+      background: rgba(0,0,0,.55); align-items: center; justify-content: center; padding: 16px;
+    }
+    .modal-backdrop.show { display: flex; }
+    .modal {
+      width: min(480px, 100%); max-height: min(88vh, 720px); overflow: auto;
+      background: var(--bg-card); border: 1px solid var(--line); border-radius: 16px; padding: 16px;
+      box-shadow: 0 24px 64px rgba(0,0,0,.5);
+    }
+    .modal h2 { margin: 0 0 6px; font-size: 1rem; color: var(--text); text-transform: none; letter-spacing: 0; }
+    .modal-actions { display: flex; gap: 8px; margin-top: 12px; }
+    .modal-actions button { flex: 1; }
+    .settings-hint { font-size: 0.72rem; color: var(--mute); margin-top: 4px; }
+
+    .left-stack { display: flex; flex-direction: column; gap: 10px; min-height: 0; flex: 1; }
+    .left-pane { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+    .left-pane.jobs { flex: 0.85; }
+
+    .nav-views {
+      display: inline-flex; gap: 4px; background: var(--bg-soft); border: 1px solid var(--line);
+      border-radius: 10px; padding: 3px; margin-right: 8px;
+    }
+    .nav-views button {
+      background: transparent; color: var(--mute); padding: 6px 12px; font-size: 0.8rem;
+      font-weight: 600; box-shadow: none;
+    }
+    .nav-views button:hover { background: #243044; color: var(--text); }
+    .nav-views button.active { background: var(--teal-deep); color: #fff; }
+    .nav-views button .badge {
+      display: inline-block; min-width: 1.1rem; padding: 0 5px; margin-left: 4px;
+      border-radius: 999px; background: rgba(251,191,36,.2); color: #fcd34d; font-size: 0.68rem;
+    }
+    .nav-views button.active .badge { background: rgba(204,251,241,.25); color: #ccfbf1; }
+    .view-panel { display: none; flex: 1; min-height: 0; }
+    .view-panel.active { display: flex; flex-direction: column; }
+    .view-panel.active.layout { display: grid; }
+    .stats-day {
+      background: var(--bg-card); border: 1px solid var(--line); border-radius: 12px;
+      padding: 12px; margin-bottom: 10px;
+    }
+    .stats-day h3 { margin: 0 0 8px; font-size: 0.95rem; color: var(--text); }
+    .stats-pills { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+    .handoff-layout {
+      flex: 1; min-height: 0; display: grid;
+      grid-template-columns: minmax(280px, 380px) minmax(0, 1fr);
+      gap: 10px;
+    }
+    @media (max-width: 900px) { .handoff-layout { grid-template-columns: 1fr; } }
+    .stats-scroll { flex: 1; min-height: 0; overflow: auto; padding: 0 2px; }
+
+    /* checkbox accent */
+    input[type="checkbox"], input[type="radio"] { accent-color: var(--teal); }
+  </style>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div>
+        <h1>Flow Auto Work</h1>
+        <div class="sub">Work · Done chờ handoff · Thống kê ngày</div>
+      </div>
+      <div class="header-actions">
+        <div class="nav-views" id="navViews">
+          <button type="button" class="active" data-view="work">Work</button>
+          <button type="button" data-view="handoff">Done chờ <span class="badge" id="handoffBadge" style="display:none">0</span></button>
+          <button type="button" data-view="stats">Thống kê</button>
+        </div>
+        <div class="status" id="statusPills"><span class="pill">loading…</span></div>
+        <button type="button" class="secondary icon-btn" id="btnSettings" title="Settings">⚙</button>
+      </div>
+    </header>
+
+    <div class="layout view-panel active" id="viewWork">
+      <section class="card">
+        <div class="left-stack">
+          <div class="left-pane">
+            <h2>Tasks <span style="font-weight:500;text-transform:none;letter-spacing:0;color:var(--mute)">(issue GitLab)</span></h2>
+            <div class="toolbar">
+              <div class="mode">
+                <label><input type="radio" name="mode" value="selected" checked /><span>Chọn</span></label>
+                <label><input type="radio" name="mode" value="auto" /><span>Auto</span></label>
+              </div>
+            </div>
+            <div class="toolbar">
+              <button type="button" class="secondary" id="btnRefresh">Refresh</button>
+              <button type="button" class="btn-start" id="btnStart">Start</button>
+            </div>
+            <div class="meta" id="settingsSummary" style="margin-bottom:6px"></div>
+            <div class="list col-scroll" id="taskList"><div class="empty">…</div></div>
+          </div>
+          <div class="left-pane jobs">
+            <h2>Jobs <span style="font-weight:500;text-transform:none;letter-spacing:0;color:var(--mute)">(lần chạy agent)</span></h2>
+            <div class="list col-scroll" id="jobList"><div class="empty">…</div></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Task detail</h2>
+        <div id="clarifyBanner" class="banner" style="display:none"></div>
+        <div id="midDetail" class="scroll-mid" style="flex:1.1">
+          <div class="empty" id="detailEmpty">Chọn task bên trái để xem mô tả, comments, related</div>
+          <div id="detailBody" style="display:none">
+            <div class="title" id="detailTitle" style="font-size:1.05rem"></div>
+            <div class="meta" id="detailMeta" style="margin-top:6px"></div>
+            <div class="labels" id="detailLabels"></div>
+            <div class="section-title">Description</div>
+            <div class="desc" id="detailDesc"></div>
+            <div class="section-title">Related / child <span class="meta" id="relatedCount"></span></div>
+            <div id="relatedList"><div class="empty">—</div></div>
+            <div class="section-title">Comments <span class="meta" id="notesCount"></span></div>
+            <div class="notes" id="notesList"><div class="empty">—</div></div>
+          </div>
+        </div>
+        <div class="panel-block" style="flex:0.95;min-height:0">
+          <h2>Tiến trình Cursor <span class="meta" id="progressMeta" style="text-transform:none;letter-spacing:0;font-weight:500"></span></h2>
+          <div class="progress-log" id="progressLog"><div class="empty">Chọn job đang chạy để xem tiến trình</div></div>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Assign / Labels</h2>
+        <div id="taskMetaEmpty" class="empty" style="padding:8px 0">Chưa chọn task</div>
+        <div id="taskMetaBody" style="display:none">
+          <label class="meta" style="display:block;margin-bottom:4px">Assign (1 người)</label>
+          <div id="nowAssigneeDd" class="dd"></div>
+          <label class="meta" style="display:block;margin-bottom:4px">Labels</label>
+          <div id="nowLabelsDd" class="dd"></div>
+          <button type="button" id="btnApplyMeta" style="width:100%;margin-top:4px">Lưu</button>
+        </div>
+
+        <div class="panel-block">
+          <h2>Clarify / Q&amp;A</h2>
+          <div class="chat" id="chatView"><div class="empty">Chọn job</div></div>
+          <div id="clarifyBox" style="display:none;margin-bottom:8px;flex-shrink:0">
+            <div class="meta" style="margin-bottom:4px">Trả lời clarification</div>
+            <textarea id="clarifyAnswer" rows="2" placeholder="Câu trả lời…"></textarea>
+            <button type="button" id="btnClarify" style="margin-top:6px;width:100%">Gửi clarify</button>
+          </div>
+          <div class="meta" style="margin-bottom:4px;flex-shrink:0">Hỏi về task</div>
+          <textarea id="askInput" rows="2" placeholder="Vd: thay đổi ảnh hưởng API nào?" style="flex-shrink:0"></textarea>
+          <button type="button" id="btnAsk" style="margin-top:6px;width:100%;flex-shrink:0" class="secondary">Hỏi agent</button>
+        </div>
+      </section>
+    </div>
+
+    <div class="view-panel" id="viewHandoff">
+      <div class="handoff-layout" style="flex:1;min-height:0">
+        <section class="card">
+          <h2>Done — chờ assign</h2>
+          <div class="meta" style="margin-bottom:8px">Code đã xong. Chọn task → assign/labels → Xác nhận handoff (không auto).</div>
+          <div class="list col-scroll" id="handoffList"><div class="empty">…</div></div>
+        </section>
+        <section class="card">
+          <h2>Handoff</h2>
+          <div id="handoffEmpty" class="empty">Chọn một job bên trái</div>
+          <div id="handoffBody" style="display:none">
+            <div class="title" id="handoffTitle" style="font-size:1.05rem"></div>
+            <div class="meta" id="handoffMeta" style="margin:6px 0 10px"></div>
+            <div class="desc" id="handoffSummary" style="margin-bottom:12px;max-height:140px;overflow:auto"></div>
+            <label class="meta" style="display:block;margin-bottom:4px">Assign (1 người)</label>
+            <div id="handoffAssigneeDd" class="dd"></div>
+            <label class="meta" style="display:block;margin-bottom:4px">Thêm labels</label>
+            <div id="handoffLabelsDd" class="dd"></div>
+            <label class="meta" style="display:block;margin-bottom:4px">Comment (optional)</label>
+            <textarea id="handoffComment" rows="2" placeholder="Comment khi handoff…"></textarea>
+            <button type="button" id="btnHandoff" style="width:100%;margin-top:10px">Xác nhận handoff</button>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <div class="view-panel" id="viewStats">
+      <section class="card" style="flex:1;min-height:0">
+        <h2>Todolist theo ngày <span class="meta" id="statsTz" style="text-transform:none;letter-spacing:0;font-weight:500"></span></h2>
+        <div class="toolbar">
+          <button type="button" class="secondary" id="btnStatsRefresh">Refresh</button>
+          <span class="meta" id="statsPending"></span>
+        </div>
+        <div class="stats-scroll" id="statsDaily"><div class="empty">…</div></div>
+      </section>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="settingsModal" role="dialog" aria-modal="true">
+    <div class="modal" onclick="event.stopPropagation()">
+      <h2>Settings</h2>
+      <div class="meta" style="margin-bottom:12px">Không auto assign khi xong. Prefill form Handoff + labels khi Start.</div>
+      <input type="hidden" id="onCompleteEnabled" value="1" />
+      <div class="section-title" style="margin-top:0">Trước khi làm task</div>
+      <label class="meta" style="display:block;margin-bottom:4px">Thêm labels khi Start</label>
+      <div id="onStartLabelsDd" class="dd"></div>
+      <div class="section-title">Prefill khi handoff (không auto)</div>
+      <label class="meta" style="display:block;margin-bottom:4px">Assign (1 người)</label>
+      <div id="onCompleteAssigneeDd" class="dd"></div>
+      <label class="meta" style="display:block;margin-bottom:4px">Thêm labels</label>
+      <div id="onCompleteLabelsAddDd" class="dd"></div>
+      <label class="meta" style="display:block;margin-bottom:4px">Bỏ labels</label>
+      <div id="onCompleteLabelsRemoveDd" class="dd"></div>
+      <label class="meta" style="display:block;margin-bottom:4px;margin-top:8px">Comment (optional)</label>
+      <textarea id="onCompleteComment" rows="2" placeholder="Comment khi handoff…"></textarea>
+      <div class="modal-actions">
+        <button type="button" class="secondary" id="btnSettingsClose">Đóng</button>
+        <button type="button" id="btnSettingsSave">Lưu</button>
+      </div>
+      <div class="settings-hint" id="settingsSavedHint"></div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    let tasks = [];
+    let jobs = [];
+    let selectedJobId = null;
+    let selectedTaskIid = null;
+    let taskDetail = null;
+    let progressAfterId = 0;
+    let progressPollTimer = null;
+    let memberOptions = [];
+    let labelOptions = [];
+    let ddNowAssignee = null;
+    let ddNowLabels = null;
+    let ddOnAssignee = null;
+    let ddOnLabelsAdd = null;
+    let ddOnLabelsRemove = null;
+    let ddOnStartLabels = null;
+    let ddHandoffAssignee = null;
+    let ddHandoffLabels = null;
+    let selectedHandoffJobId = null;
+    let currentView = "work";
+    const SETTINGS_KEY = "flow_auto_work_settings";
+    let savedSettings = loadSavedSettings();
+
+
+    function loadSavedSettings() {
+      try {
+        const raw = localStorage.getItem(SETTINGS_KEY);
+        if (!raw) {
+          return {
+            enabled: true,
+            assignee: null,
+            onStartLabels: [],
+            addLabels: [],
+            removeLabels: [],
+            comment: "",
+          };
+        }
+        const parsed = JSON.parse(raw);
+        return {
+          enabled: parsed.enabled !== false,
+          assignee: parsed.assignee || null,
+          onStartLabels: Array.isArray(parsed.onStartLabels) ? parsed.onStartLabels : [],
+          addLabels: Array.isArray(parsed.addLabels) ? parsed.addLabels : [],
+          removeLabels: Array.isArray(parsed.removeLabels) ? parsed.removeLabels : [],
+          comment: parsed.comment || "",
+        };
+      } catch {
+        return {
+          enabled: true,
+          assignee: null,
+          onStartLabels: [],
+          addLabels: [],
+          removeLabels: [],
+          comment: "",
+        };
+      }
+    }
+
+    function renderSettingsSummary() {
+      const el = $("settingsSummary");
+      if (!el) return;
+      const bits = [];
+      if (savedSettings.onStartLabels?.length) {
+        bits.push(`start +${savedSettings.onStartLabels.length} label`);
+      }
+      if (savedSettings.assignee) bits.push(`handoff → @${savedSettings.assignee}`);
+      if (savedSettings.addLabels?.length) bits.push(`prefill +${savedSettings.addLabels.length}`);
+      el.textContent = bits.length
+        ? `Settings: ${bits.join(" · ")}`
+        : "Settings: labels Start + prefill handoff (không auto)";
+    }
+
+    function openSettingsModal() {
+      $("onCompleteComment").value = savedSettings.comment || "";
+      ddOnAssignee?.setSelected(savedSettings.assignee ? [savedSettings.assignee] : []);
+      ddOnStartLabels?.setSelected(savedSettings.onStartLabels || []);
+      ddOnLabelsAdd?.setSelected(savedSettings.addLabels || []);
+      ddOnLabelsRemove?.setSelected(savedSettings.removeLabels || []);
+      $("settingsSavedHint").textContent = "";
+      $("settingsModal").classList.add("show");
+    }
+
+    function closeSettingsModal() {
+      $("settingsModal").classList.remove("show");
+    }
+
+    function saveSettingsFromModal() {
+      const addLabels = ddOnLabelsAdd?.getSelected() || [];
+      const removeLabels = (ddOnLabelsRemove?.getSelected() || []).filter(
+        (l) => !addLabels.includes(l),
+      );
+      savedSettings = {
+        enabled: true,
+        assignee: ddOnAssignee?.getSelectedOne() || null,
+        onStartLabels: ddOnStartLabels?.getSelected() || [],
+        addLabels,
+        removeLabels,
+        comment: $("onCompleteComment").value.trim(),
+      };
+      localStorage.setItem(SETTINGS_KEY, JSON.stringify(savedSettings));
+      renderSettingsSummary();
+      $("settingsSavedHint").textContent = "Đã lưu — Start dùng labels Start; handoff dùng prefill";
+      toast("Đã lưu settings");
+    }
+
+    /** Custom dropdown: click to open + type to autocomplete. mode single | multi */
+    function createDropdown(mountEl, { mode, placeholder }) {
+      const state = {
+        mode,
+        placeholder,
+        options: [], // { value, label }
+        selected: new Set(),
+        query: "",
+      };
+      mountEl.innerHTML = `
+        <button type="button" class="dd-btn" aria-expanded="false">
+          <span class="dd-value is-placeholder">${escapeHtml(placeholder)}</span>
+          <span class="dd-caret">▾</span>
+        </button>
+        <div class="dd-menu" role="listbox">
+          <div class="dd-search-wrap">
+            <input type="text" class="dd-search" placeholder="Gõ để tìm…" autocomplete="off" />
+          </div>
+          <div class="dd-list"></div>
+        </div>
+      `;
+      const btn = mountEl.querySelector(".dd-btn");
+      const valueEl = mountEl.querySelector(".dd-value");
+      const menu = mountEl.querySelector(".dd-menu");
+      const listEl = mountEl.querySelector(".dd-list");
+      const searchEl = mountEl.querySelector(".dd-search");
+
+      function close() {
+        mountEl.classList.remove("open");
+        btn.setAttribute("aria-expanded", "false");
+        state.query = "";
+        searchEl.value = "";
+      }
+      function open() {
+        document.querySelectorAll(".dd.open").forEach((el) => {
+          if (el !== mountEl) el.classList.remove("open");
+        });
+        state.query = "";
+        searchEl.value = "";
+        mountEl.classList.add("open");
+        btn.setAttribute("aria-expanded", "true");
+        renderMenu();
+        requestAnimationFrame(() => {
+          searchEl.focus();
+          searchEl.select();
+        });
+      }
+      function toggle() {
+        if (mountEl.classList.contains("open")) close();
+        else open();
+      }
+      function filteredOptions() {
+        const q = state.query.trim().toLowerCase();
+        if (!q) return state.options;
+        return state.options.filter((o) =>
+          String(o.label).toLowerCase().includes(q) ||
+          String(o.value).toLowerCase().includes(q),
+        );
+      }
+      function highlight(text) {
+        const q = state.query.trim();
+        const raw = String(text ?? "");
+        if (!q) return escapeHtml(raw);
+        const i = raw.toLowerCase().indexOf(q.toLowerCase());
+        if (i < 0) return escapeHtml(raw);
+        return (
+          escapeHtml(raw.slice(0, i)) +
+          `<mark>${escapeHtml(raw.slice(i, i + q.length))}</mark>` +
+          escapeHtml(raw.slice(i + q.length))
+        );
+      }
+      function renderValue() {
+        const vals = [...state.selected];
+        if (!vals.length) {
+          valueEl.textContent = placeholder;
+          valueEl.classList.add("is-placeholder");
+          return;
+        }
+        valueEl.classList.remove("is-placeholder");
+        if (mode === "single") {
+          const opt = state.options.find((o) => o.value === vals[0]);
+          valueEl.textContent = opt?.label || vals[0];
+        } else {
+          valueEl.textContent = vals.length <= 2
+            ? vals.join(", ")
+            : `${vals.length} labels`;
+        }
+      }
+      function renderMenu() {
+        const opts = filteredOptions();
+        if (!state.options.length) {
+          listEl.innerHTML = `<div class="dd-empty">Không có option</div>`;
+          return;
+        }
+        if (!opts.length) {
+          listEl.innerHTML = `<div class="dd-empty">Không khớp “${escapeHtml(state.query)}”</div>`;
+          return;
+        }
+        listEl.innerHTML = opts.map((o) => {
+          const on = state.selected.has(o.value);
+          if (mode === "multi") {
+            return `<label class="dd-item ${on ? "active" : ""}" data-value="${escapeHtml(o.value)}">
+              <input type="checkbox" ${on ? "checked" : ""} />
+              <span>${highlight(o.label)}</span>
+            </label>`;
+          }
+          return `<div class="dd-item ${on ? "active" : ""}" data-value="${escapeHtml(o.value)}" role="option">
+            ${highlight(o.label)}
+          </div>`;
+        }).join("");
+
+        listEl.querySelectorAll("[data-value]").forEach((el) => {
+          el.addEventListener("click", (e) => {
+            e.stopPropagation();
+            const v = el.getAttribute("data-value");
+            if (mode === "single") {
+              state.selected = new Set([v]);
+              renderMenu();
+              renderValue();
+              close();
+            } else {
+              if (state.selected.has(v)) state.selected.delete(v);
+              else state.selected.add(v);
+              renderMenu();
+              renderValue();
+              searchEl.focus();
+            }
+          });
+        });
+      }
+
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        toggle();
+      });
+      menu.addEventListener("click", (e) => e.stopPropagation());
+      searchEl.addEventListener("click", (e) => e.stopPropagation());
+      searchEl.addEventListener("input", () => {
+        state.query = searchEl.value;
+        renderMenu();
+      });
+      searchEl.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") {
+          e.preventDefault();
+          close();
+          return;
+        }
+        if (e.key === "Enter") {
+          e.preventDefault();
+          const first = filteredOptions()[0];
+          if (!first) return;
+          if (mode === "single") {
+            state.selected = new Set([first.value]);
+            renderValue();
+            close();
+          } else {
+            if (state.selected.has(first.value)) state.selected.delete(first.value);
+            else state.selected.add(first.value);
+            renderMenu();
+            renderValue();
+          }
+        }
+      });
+
+      return {
+        setOptions(opts) {
+          state.options = opts || [];
+          state.selected = new Set(
+            [...state.selected].filter((v) => state.options.some((o) => o.value === v)),
+          );
+          renderMenu();
+          renderValue();
+        },
+        setSelected(values) {
+          const arr = Array.isArray(values) ? values : values ? [values] : [];
+          if (mode === "single") {
+            state.selected = new Set(arr.slice(0, 1).filter(Boolean));
+          } else {
+            state.selected = new Set(arr.filter(Boolean));
+          }
+          renderMenu();
+          renderValue();
+        },
+        getSelected() {
+          return [...state.selected];
+        },
+        getSelectedOne() {
+          return [...state.selected][0] || null;
+        },
+        close,
+      };
+    }
+
+    document.addEventListener("click", () => {
+      document.querySelectorAll(".dd.open").forEach((el) => {
+        el.classList.remove("open");
+        const search = el.querySelector(".dd-search");
+        if (search) search.value = "";
+      });
+    });
+
+    function toast(msg) {
+      const el = $("toast");
+      el.textContent = msg;
+      el.classList.add("show");
+      setTimeout(() => el.classList.remove("show"), 3200);
+    }
+    function escapeHtml(s) {
+      return String(s ?? "").replace(/[&<>"']/g, (c) => ({
+        "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
+      })[c]);
+    }
+    async function api(path, opts) {
+      const res = await fetch(path, { headers: { "Content-Type": "application/json" }, ...opts });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || res.statusText);
+      return data;
+    }
+
+    function appendProgressLines(lines) {
+      const box = $("progressLog");
+      if (!lines?.length) return;
+      const empty = box.querySelector(".empty");
+      if (empty) empty.remove();
+      const stick = box.scrollTop + box.clientHeight >= box.scrollHeight - 24;
+      for (const l of lines) {
+        const row = document.createElement("div");
+        row.className = `pline ${escapeHtml(l.kind)}`;
+        row.dataset.id = String(l.id);
+        const t = new Date(l.at).toLocaleTimeString();
+        row.innerHTML = `<span class="k">${escapeHtml(l.kind)}</span><span class="meta" style="color:var(--mute);margin-right:6px">${t}</span>${escapeHtml(l.text)}`;
+        // Update in place if coalesced same id already rendered
+        const prev = box.querySelector(`[data-id="${l.id}"]`);
+        if (prev) prev.replaceWith(row);
+        else box.appendChild(row);
+      }
+      if (stick) box.scrollTop = box.scrollHeight;
+    }
+
+    function resetProgressView(msg) {
+      progressAfterId = 0;
+      $("progressLog").innerHTML = `<div class="empty">${escapeHtml(msg || "…")}</div>`;
+      $("progressLog").classList.remove("live");
+      $("progressMeta").textContent = "";
+    }
+
+    async function pollProgress(reset) {
+      if (!selectedJobId) return;
+      try {
+        if (reset) progressAfterId = 0;
+        const q = reset ? "" : `?after=${progressAfterId}`;
+        const data = await api(`/api/jobs/${selectedJobId}/progress${q}`);
+        if (reset) {
+          $("progressLog").innerHTML = "";
+          if (!data.lines?.length) {
+            $("progressLog").innerHTML = `<div class="empty">${data.live ? "Đang chờ Cursor stream…" : "Chưa có log tiến trình (job cũ / chưa stream)"}</div>`;
+          }
+        }
+        appendProgressLines(data.lines || []);
+        progressAfterId = data.latestId || progressAfterId;
+        $("progressMeta").textContent = data.live
+          ? `· live · ${data.status}`
+          : data.status
+            ? `· ${data.status}`
+            : "";
+        $("progressLog").classList.toggle("live", Boolean(data.live));
+      } catch (e) {
+        /* ignore transient */
+      }
+    }
+
+    function startProgressPolling() {
+      if (progressPollTimer) clearInterval(progressPollTimer);
+      progressPollTimer = setInterval(() => { void pollProgress(false); }, 1200);
+    }
+
+    async function killJob(jobId, ev) {
+      if (ev) ev.stopPropagation();
+      if (!confirm(`Force stop job ${jobId.slice(0, 8)}…?`)) return;
+      try {
+        await api(`/api/jobs/${jobId}/kill`, {
+          method: "POST",
+          body: JSON.stringify({ reason: "Force-stopped from UI" }),
+        });
+        toast("Đã gửi kill — queue sẽ nhả");
+        await loadJobs();
+      } catch (e) {
+        toast(e.message);
+      }
+    }
+
+    async function loadStatus() {
+      try {
+        const s = await api("/api/status");
+        const pending = (s.pendingClarifications || []).length;
+        $("statusPills").innerHTML = `
+          <span class="pill ${s.mongo ? "ok" : "bad"}">mongo ${s.mongo ? "ok" : "down"}</span>
+          <span class="pill">@${s.assignee}</span>
+          <span class="pill">q ${s.queue.queued}${s.queue.running ? " · running" : ""}</span>
+          ${pending ? `<span class="pill warn">clarify ${pending}</span>` : ""}
+        `;
+      } catch (e) {
+        $("statusPills").innerHTML = `<span class="pill bad">${escapeHtml(e.message)}</span>`;
+      }
+    }
+
+    function renderTasks() {
+      const mode = document.querySelector('input[name="mode"]:checked').value;
+      if (!tasks.length) {
+        $("taskList").innerHTML = `<div class="empty">Không có issue</div>`;
+        return;
+      }
+      $("taskList").innerHTML = tasks.map((t) => `
+        <div class="task ${t.skip ? "skip" : ""} ${t.issueIid === selectedTaskIid ? "active" : ""}" data-open-iid="${t.issueIid}">
+          <input type="checkbox" data-iid="${t.issueIid}" ${t.skip || mode === "auto" ? "disabled" : ""} onclick="event.stopPropagation()" />
+          <div>
+            <div class="title">#${t.issueIid} — ${escapeHtml(t.title)}</div>
+            <div class="meta"><a href="${t.url}" target="_blank" onclick="event.stopPropagation()">issue</a></div>
+          </div>
+        </div>
+      `).join("");
+      $("taskList").querySelectorAll("[data-open-iid]").forEach((el) => {
+        el.addEventListener("click", () => selectTask(Number(el.getAttribute("data-open-iid"))));
+      });
+    }
+
+    function renderTaskDetail() {
+      if (!taskDetail) {
+        $("detailEmpty").className = "empty";
+        $("detailEmpty").textContent = "Chọn task bên trái để xem mô tả, comments, related";
+        $("detailEmpty").style.display = "block";
+        $("detailBody").style.display = "none";
+        $("taskMetaEmpty").className = "empty";
+        $("taskMetaEmpty").textContent = "Chưa chọn task";
+        $("taskMetaEmpty").style.display = "block";
+        $("taskMetaBody").style.display = "none";
+        return;
+      }
+      $("detailEmpty").style.display = "none";
+      $("detailBody").style.display = "block";
+      $("taskMetaEmpty").style.display = "none";
+      $("taskMetaBody").style.display = "block";
+      const d = taskDetail;
+      $("detailTitle").textContent = `#${d.issueIid} — ${d.title}`;
+      const assignees = (d.assignees || []).map((a) => `@${a.username}`).join(", ") || "—";
+      const tasksDone = d.taskCompletion
+        ? ` · checklist ${d.taskCompletion.completedCount}/${d.taskCompletion.count}`
+        : "";
+      $("detailMeta").innerHTML = `${escapeHtml(d.state)} · assignee ${escapeHtml(assignees)}${tasksDone} · <a href="${d.url}" target="_blank">GitLab</a>`;
+      $("detailLabels").innerHTML = (d.labels || []).length
+        ? d.labels.map((l) => `<span class="label-chip">${escapeHtml(l)}</span>`).join("")
+        : `<span class="meta">no labels</span>`;
+      $("detailDesc").textContent = d.description?.trim() || "(không có description)";
+
+      const related = d.related || [];
+      $("relatedCount").textContent = related.length ? `(${related.length})` : "";
+      $("relatedList").innerHTML = related.length
+        ? related.map((r) => `
+            <div class="related" data-rel-iid="${r.iid}" style="cursor:pointer">
+              <div class="title">#${r.iid} — ${escapeHtml(r.title)}</div>
+              <div class="meta">${escapeHtml(r.state)} · ${escapeHtml(r.source)}${r.linkType ? " · " + escapeHtml(r.linkType) : ""} · <a href="${r.url}" target="_blank" onclick="event.stopPropagation()">open</a></div>
+            </div>
+          `).join("")
+        : `<div class="empty">Không có related / child</div>`;
+      $("relatedList").querySelectorAll("[data-rel-iid]").forEach((el) => {
+        el.addEventListener("click", () => selectTask(Number(el.getAttribute("data-rel-iid"))));
+      });
+
+      const notes = (d.notes || []).filter((n) => !n.system && n.body?.trim());
+      $("notesCount").textContent = notes.length ? `(${notes.length})` : "";
+      $("notesList").innerHTML = notes.length
+        ? notes.map((n) => `
+            <div class="note">
+              <div class="who">@${escapeHtml(n.author)} · ${n.createdAt ? new Date(n.createdAt).toLocaleString() : ""}</div>
+              <div class="note-body">${escapeHtml(n.body)}</div>
+            </div>
+          `).join("")
+        : `<div class="empty">Chưa có comment</div>`;
+
+      // Hiện đúng assignee + labels đang có trên GitLab
+      const firstAssignee = (d.assignees || [])[0]?.username || null;
+      ddNowAssignee?.setSelected(firstAssignee ? [firstAssignee] : []);
+      ddNowLabels?.setSelected(d.labels || []);
+    }
+
+    function renderJobs() {
+      updateHandoffBadge();
+      if (currentView === "handoff") renderHandoffList();
+      if (!jobs.length) {
+        $("jobList").innerHTML = `<div class="empty">Chưa có job</div>`;
+        return;
+      }
+      $("jobList").innerHTML = jobs.map((j) => {
+        const killable = ["queued", "running", "awaiting_clarification", "awaiting_diff_approval"].includes(j.status);
+        return `
+        <div class="job ${j.id === selectedJobId ? "active" : ""}" data-job="${j.id}">
+          <div><span class="st ${j.status}">${j.status}</span> · #${j.issue?.issueIid}</div>
+          <div class="title">${escapeHtml(j.issue?.title || "")}</div>
+          <div class="meta">${j.mrUrl ? `<a href="${j.mrUrl}" target="_blank" onclick="event.stopPropagation()">MR</a>` : (j.error || j.id.slice(0,8))}</div>
+          ${killable ? `<div class="job-actions"><button type="button" class="danger" data-kill="${j.id}">Force Stop</button></div>` : ""}
+        </div>`;
+      }).join("");
+      $("jobList").querySelectorAll("[data-job]").forEach((el) => {
+        el.addEventListener("click", () => selectJob(el.getAttribute("data-job")));
+      });
+      $("jobList").querySelectorAll("[data-kill]").forEach((el) => {
+        el.addEventListener("click", (ev) => killJob(el.getAttribute("data-kill"), ev));
+      });
+    }
+
+    function renderChat(messages, pendingQuestion) {
+      const box = $("chatView");
+      if (!messages?.length && !pendingQuestion) {
+        box.innerHTML = `<div class="empty">Chưa có hội thoại</div>`;
+      } else {
+        box.innerHTML = (messages || []).map((m) => `
+          <div class="bubble ${m.role}">
+            <div class="who">${m.role} · ${m.kind} · ${new Date(m.createdAt).toLocaleTimeString()}</div>
+            ${escapeHtml(m.body)}
+          </div>
+        `).join("");
+        box.scrollTop = box.scrollHeight;
+      }
+      if (pendingQuestion) {
+        $("clarifyBanner").style.display = "block";
+        $("clarifyBanner").textContent = "Agent hỏi:\n" + pendingQuestion;
+        $("clarifyBox").style.display = "block";
+      } else {
+        $("clarifyBanner").style.display = "none";
+        $("clarifyBox").style.display = "none";
+      }
+    }
+
+    async function selectTask(iid) {
+      selectedTaskIid = iid;
+      renderTasks();
+      showEmptyLoading($("detailEmpty"), "Đang tải task detail…");
+      $("detailBody").style.display = "none";
+      setPanelLoading($("midDetail"), true);
+      showEmptyLoading($("taskMetaEmpty"), "Đang tải…");
+      $("taskMetaBody").style.display = "none";
+      try {
+        const res = await api(`/api/tasks/${iid}`);
+        taskDetail = res.detail;
+        renderTaskDetail();
+      } catch (e) {
+        taskDetail = null;
+        $("detailEmpty").className = "empty";
+        $("detailEmpty").textContent = e.message;
+        $("detailEmpty").style.display = "block";
+        $("taskMetaEmpty").className = "empty";
+        $("taskMetaEmpty").textContent = e.message;
+        $("taskMetaEmpty").style.display = "block";
+        $("taskMetaBody").style.display = "none";
+        toast(e.message);
+      } finally {
+        setPanelLoading($("midDetail"), false);
+      }
+    }
+
+    async function selectJob(id) {
+      selectedJobId = id;
+      renderJobs();
+      showEmptyLoading($("chatView"), "Đang tải chat…");
+      resetProgressView("Đang tải tiến trình…");
+      setPanelLoading($("progressLog"), true);
+      try {
+        const detail = await api(`/api/jobs/${id}`);
+        if (detail.job?.issue?.issueIid) {
+          selectedTaskIid = detail.job.issue.issueIid;
+          renderTasks();
+          void selectTask(selectedTaskIid);
+        }
+        renderChat(
+          detail.chat,
+          detail.pendingQuestion ||
+            (detail.job?.lastQuestion && detail.job.status === "awaiting_clarification"
+              ? detail.job.lastQuestion
+              : null),
+        );
+        await pollProgress(true);
+        startProgressPolling();
+      } catch (e) {
+        $("chatView").className = "chat";
+        $("chatView").innerHTML = `<div class="empty">${escapeHtml(e.message)}</div>`;
+        toast(e.message);
+      } finally {
+        setPanelLoading($("progressLog"), false);
+      }
+    }
+
+    async function loadTasks() {
+      const data = await api("/api/tasks");
+      tasks = data.tasks || [];
+      renderTasks();
+    }
+
+    function setButtonLoading(btn, loading, idleLabel) {
+      if (!btn) return;
+      if (loading) {
+        btn.disabled = true;
+        btn.classList.add("is-loading");
+        if (!btn.dataset.idleLabel) {
+          btn.dataset.idleLabel = idleLabel || btn.textContent.trim();
+        }
+        btn.innerHTML = `<span class="spinner"></span> Đang tải…`;
+      } else {
+        btn.disabled = false;
+        btn.classList.remove("is-loading");
+        btn.textContent = btn.dataset.idleLabel || idleLabel || "Refresh";
+      }
+    }
+
+    function showEmptyLoading(el, msg) {
+      if (!el) return;
+      el.style.display = el.id === "chatView" || el.id === "statsDaily" || el.id === "taskList" || el.id === "jobList" || el.id === "handoffList"
+        ? ""
+        : "block";
+      if (el.id === "chatView") {
+        el.innerHTML = `<div class="empty loading"><span class="spinner"></span> ${escapeHtml(msg || "Đang tải…")}</div>`;
+        return;
+      }
+      el.className = el.className.includes("list") || el.id === "statsDaily"
+        ? el.className.replace(/\bempty\b/g, "").trim()
+        : "empty loading";
+      if (el.id === "taskList" || el.id === "jobList" || el.id === "handoffList" || el.id === "statsDaily") {
+        el.innerHTML = `<div class="empty loading"><span class="spinner"></span> ${escapeHtml(msg || "Đang tải…")}</div>`;
+      } else {
+        el.className = "empty loading";
+        el.innerHTML = `<span class="spinner"></span> ${escapeHtml(msg || "Đang tải…")}`;
+      }
+    }
+
+    function setPanelLoading(el, loading) {
+      if (!el) return;
+      el.classList.toggle("is-loading", Boolean(loading));
+    }
+
+    async function refreshTasks() {
+      const btn = $("btnRefresh");
+      const list = $("taskList");
+      setButtonLoading(btn, true, "Refresh");
+      setPanelLoading(list, true);
+      if (!tasks.length) showEmptyLoading(list, "Đang tải tasks…");
+      try {
+        await loadTasks();
+      } finally {
+        setButtonLoading(btn, false, "Refresh");
+        setPanelLoading(list, false);
+      }
+    }
+
+    async function refreshStats() {
+      const btn = $("btnStatsRefresh");
+      const box = $("statsDaily");
+      setButtonLoading(btn, true, "Refresh");
+      showEmptyLoading(box, "Đang tải thống kê…");
+      try {
+        await loadStats();
+      } finally {
+        setButtonLoading(btn, false, "Refresh");
+      }
+    }
+
+    async function loadJobs() {
+      const list = $("jobList");
+      const firstLoad = !jobs.length;
+      if (firstLoad) showEmptyLoading(list, "Đang tải jobs…");
+      else setPanelLoading(list, true);
+      try {
+        const data = await api("/api/jobs?limit=40");
+        jobs = data.jobs || [];
+        renderJobs();
+        const pending = data.pendingClarifications || [];
+        const running = jobs.find((j) => j.status === "running" || j.status === "queued");
+        if (pending.length && !selectedJobId) {
+          await selectJob(pending[0].jobId);
+        } else if (running && !selectedJobId) {
+          await selectJob(running.id);
+        } else if (selectedJobId) {
+          const still = jobs.find((j) => j.id === selectedJobId);
+          if (still) {
+            const detail = await api(`/api/jobs/${selectedJobId}`);
+            renderChat(
+              detail.chat,
+              detail.pendingQuestion ||
+                (detail.job?.lastQuestion && detail.job.status === "awaiting_clarification"
+                  ? detail.job.lastQuestion
+                  : null),
+            );
+          }
+        }
+      } finally {
+        setPanelLoading(list, false);
+      }
+    }
+
+    async function loadCompletionDefaults() {
+      try {
+        const [defaults, membersRes, labelsRes] = await Promise.all([
+          api("/api/meta/completion-defaults").catch(() => ({ assignees: [], labels: [], comment: "" })),
+          api("/api/meta/members"),
+          api("/api/meta/labels"),
+        ]);
+
+        const members = membersRes.members || [];
+        const labels = labelsRes.labels || [];
+
+        memberOptions = members.map((m) => ({
+          value: m.username,
+          label: `${m.name || m.username} (@${m.username})`,
+        }));
+        labelOptions = labels.map((l) => ({
+          value: l.name,
+          label: l.name,
+        }));
+
+        if (!ddNowAssignee) {
+          ddNowAssignee = createDropdown($("nowAssigneeDd"), {
+            mode: "single",
+            placeholder: "Chọn 1 assignee…",
+          });
+          ddNowLabels = createDropdown($("nowLabelsDd"), {
+            mode: "multi",
+            placeholder: "Chọn labels của task…",
+          });
+          ddOnAssignee = createDropdown($("onCompleteAssigneeDd"), {
+            mode: "single",
+            placeholder: "Chọn 1 assignee khi xong…",
+          });
+          ddOnLabelsAdd = createDropdown($("onCompleteLabelsAddDd"), {
+            mode: "multi",
+            placeholder: "Thêm labels khi xong…",
+          });
+          ddOnLabelsRemove = createDropdown($("onCompleteLabelsRemoveDd"), {
+            mode: "multi",
+            placeholder: "Bỏ labels khi xong…",
+          });
+          ddOnStartLabels = createDropdown($("onStartLabelsDd"), {
+            mode: "multi",
+            placeholder: "Thêm labels khi Start…",
+          });
+          ddHandoffAssignee = createDropdown($("handoffAssigneeDd"), {
+            mode: "single",
+            placeholder: "Chọn assignee…",
+          });
+          ddHandoffLabels = createDropdown($("handoffLabelsDd"), {
+            mode: "multi",
+            placeholder: "Thêm labels (không xóa label cũ)…",
+          });
+        }
+
+        ddNowAssignee.setOptions(memberOptions);
+        ddNowLabels.setOptions(labelOptions);
+        ddOnAssignee.setOptions(memberOptions);
+        ddOnLabelsAdd.setOptions(labelOptions);
+        ddOnLabelsRemove.setOptions(labelOptions);
+        ddOnStartLabels.setOptions(labelOptions);
+        ddHandoffAssignee?.setOptions(memberOptions);
+        ddHandoffLabels?.setOptions(labelOptions);
+
+        const hasLocal = Boolean(localStorage.getItem(SETTINGS_KEY));
+        if (!hasLocal) {
+          const envAssignee = (defaults.assignees || [])[0] || null;
+          const envLabels = defaults.labels || [];
+          savedSettings = {
+            enabled: true,
+            assignee: envAssignee,
+            onStartLabels: [],
+            addLabels: envLabels,
+            removeLabels: [],
+            comment: defaults.comment || "",
+          };
+        }
+        renderSettingsSummary();
+      } catch (e) {
+        toast(e.message);
+      }
+    }
+
+    function readOnComplete() {
+      return {
+        assignees: [],
+        labels: [],
+        removeLabels: [],
+        onStartLabels: savedSettings.onStartLabels || [],
+        labelMode: "add",
+        comment: "",
+      };
+    }
+
+    function setView(view) {
+      currentView = view;
+      document.querySelectorAll("#navViews [data-view]").forEach((b) => {
+        b.classList.toggle("active", b.dataset.view === view);
+      });
+      $("viewWork").classList.toggle("active", view === "work");
+      $("viewHandoff").classList.toggle("active", view === "handoff");
+      $("viewStats").classList.toggle("active", view === "stats");
+      if (view === "handoff") {
+        if (!jobs.length) showEmptyLoading($("handoffList"), "Đang tải…");
+        renderHandoffList();
+        if (selectedHandoffJobId) selectHandoffJob(selectedHandoffJobId);
+      }
+      if (view === "stats") {
+        showEmptyLoading($("statsDaily"), "Đang tải thống kê…");
+        loadStats().catch((e) => toast(e.message));
+      }
+    }
+
+    function updateHandoffBadge() {
+      const n = jobs.filter((j) => j.status === "awaiting_handoff").length;
+      const badge = $("handoffBadge");
+      if (!badge) return;
+      badge.style.display = n > 0 ? "inline-block" : "none";
+      badge.textContent = String(n);
+    }
+
+    function renderHandoffList() {
+      const list = jobs.filter((j) => j.status === "awaiting_handoff");
+      const box = $("handoffList");
+      if (!list.length) {
+        box.innerHTML = `<div class="empty">Không có task chờ handoff</div>`;
+        return;
+      }
+      box.innerHTML = list.map((j) => `
+        <div class="job ${j.id === selectedHandoffJobId ? "active" : ""}" data-handoff="${j.id}">
+          <div><span class="st awaiting_handoff">awaiting_handoff</span> · #${j.issue?.issueIid}</div>
+          <div class="title">${escapeHtml(j.issue?.title || "")}</div>
+          <div class="meta">${j.completedAt ? new Date(j.completedAt).toLocaleString() : j.id.slice(0,8)}</div>
+        </div>
+      `).join("");
+      box.querySelectorAll("[data-handoff]").forEach((el) => {
+        el.addEventListener("click", () => selectHandoffJob(el.getAttribute("data-handoff")));
+      });
+    }
+
+    function selectHandoffJob(id) {
+      selectedHandoffJobId = id;
+      renderHandoffList();
+      const j = jobs.find((x) => x.id === id);
+      if (!j) {
+        $("handoffEmpty").style.display = "block";
+        $("handoffBody").style.display = "none";
+        return;
+      }
+      $("handoffEmpty").style.display = "none";
+      $("handoffBody").style.display = "block";
+      $("handoffTitle").textContent = `#${j.issue.issueIid} — ${j.issue.title}`;
+      $("handoffMeta").innerHTML = `${j.branch ? `<code>${escapeHtml(j.branch)}</code> · ` : ""}<a href="${j.issue.url}" target="_blank">issue</a>`;
+      $("handoffSummary").textContent = j.summary || "(no summary)";
+      ddHandoffAssignee?.setSelected(savedSettings.assignee ? [savedSettings.assignee] : []);
+      ddHandoffLabels?.setSelected(savedSettings.addLabels || []);
+      $("handoffComment").value = savedSettings.comment || "";
+    }
+
+    async function submitHandoff() {
+      if (!selectedHandoffJobId) return toast("Chọn job");
+      const assignees = ddHandoffAssignee?.getSelected() || [];
+      const labels = ddHandoffLabels?.getSelected() || [];
+      const comment = $("handoffComment").value.trim();
+      if (!assignees.length && !labels.length && !comment) {
+        return toast("Chọn assign / labels hoặc nhập comment");
+      }
+      setButtonLoading($("btnHandoff"), true, "Xác nhận handoff");
+      try {
+        await api(`/api/jobs/${selectedHandoffJobId}/completion-actions`, {
+          method: "POST",
+          body: JSON.stringify({
+            assignees,
+            labels,
+            removeLabels: [],
+            labelMode: "add",
+            comment: comment || undefined,
+          }),
+        });
+        toast("Handoff xong → succeeded");
+        selectedHandoffJobId = null;
+        $("handoffEmpty").style.display = "block";
+        $("handoffBody").style.display = "none";
+        await loadJobs();
+        renderHandoffList();
+      } catch (e) {
+        toast(e.message);
+      } finally {
+        setButtonLoading($("btnHandoff"), false, "Xác nhận handoff");
+      }
+    }
+
+    async function loadStats() {
+      if (!$("statsDaily").querySelector(".stats-day")) {
+        showEmptyLoading($("statsDaily"), "Đang tải thống kê…");
+      }
+      const data = await api("/api/stats/daily?days=14");
+      $("statsTz").textContent = `· ${data.timezone}`;
+      $("statsPending").textContent = data.pendingHandoffCount
+        ? `${data.pendingHandoffCount} đang chờ handoff`
+        : "Không chờ handoff";
+      const days = data.daily || [];
+      if (!days.length) {
+        $("statsDaily").innerHTML = `<div class="empty">Chưa có dữ liệu</div>`;
+        return;
+      }
+      $("statsDaily").innerHTML = days.map((d) => {
+        const items = (d.items || []).map((it) => `
+          <div class="job" style="cursor:default">
+            <div><span class="st ${escapeHtml(it.status)}">${escapeHtml(it.status)}</span> · #${it.issueIid}</div>
+            <div class="title">${escapeHtml(it.title)}</div>
+            <div class="meta"><a href="${it.url}" target="_blank">issue</a> · ${new Date(it.at).toLocaleTimeString()}</div>
+          </div>
+        `).join("") || `<div class="empty">—</div>`;
+        return `
+          <div class="stats-day">
+            <h3>${escapeHtml(d.date)}</h3>
+            <div class="stats-pills">
+              <span class="pill">handoff ${d.awaitingHandoff}</span>
+              <span class="pill ok">done ${d.succeeded}</span>
+              <span class="pill bad">fail ${d.failed}</span>
+            </div>
+            ${items}
+          </div>
+        `;
+      }).join("");
+    }
+
+    function selectedIssueIids() {
+      return [...document.querySelectorAll("#taskList input:checked")].map((el) =>
+        Number(el.dataset.iid),
+      );
+    }
+
+    async function applyMetaNow() {
+      if (!selectedTaskIid) return toast("Click chọn 1 task trước");
+      const one = ddNowAssignee?.getSelectedOne();
+      const assignees = one ? [one] : [];
+      const labels = ddNowLabels?.getSelected() || [];
+      // Luôn lưu labels dạng set (thay toàn bộ) + assignee nếu có
+      setButtonLoading($("btnApplyMeta"), true, "Lưu");
+      try {
+        const res = await api("/api/tasks/update", {
+          method: "POST",
+          body: JSON.stringify({
+            issueIids: [selectedTaskIid],
+            assignees,
+            labels,
+            labelMode: "set",
+          }),
+        });
+        const failed = (res.results || []).filter((r) => !r.ok);
+        if (failed.length) {
+          toast("Lỗi: " + (failed[0].error || `#${failed[0].issueIid}`));
+        } else {
+          toast(`Đã lưu #${selectedTaskIid}`);
+          await selectTask(selectedTaskIid);
+          await loadTasks();
+        }
+      } catch (e) {
+        toast(e.message);
+      } finally {
+        setButtonLoading($("btnApplyMeta"), false, "Lưu");
+      }
+    }
+
+    async function startHandle() {
+      const mode = document.querySelector('input[name="mode"]:checked').value;
+      setButtonLoading($("btnStart"), true, "Start");
+      try {
+        const payload = { mode, completion: readOnComplete() };
+        if (mode === "selected") {
+          const iids = selectedIssueIids();
+          if (!iids.length) throw new Error("Tick ít nhất 1 task để Start");
+          payload.issueIids = iids;
+        }
+        const res = await api("/api/jobs/start", { method: "POST", body: JSON.stringify(payload) });
+        toast(`Enqueued ${res.enqueued}`);
+        if (res.jobIds?.[0]) await selectJob(res.jobIds[0]);
+        else await loadJobs();
+        await loadStatus();
+      } catch (e) { toast(e.message); }
+      finally { setButtonLoading($("btnStart"), false, "Start"); }
+    }
+
+    async function sendClarify() {
+      if (!selectedJobId) return toast("Chọn job");
+      const answer = $("clarifyAnswer").value.trim();
+      if (!answer) return toast("Nhập câu trả lời");
+      setButtonLoading($("btnClarify"), true, "Gửi clarify");
+      try {
+        await api(`/api/jobs/${selectedJobId}/clarify`, {
+          method: "POST",
+          body: JSON.stringify({ answer }),
+        });
+        $("clarifyAnswer").value = "";
+        toast("Đã gửi clarify — agent tiếp tục");
+        await loadJobs();
+      } catch (e) { toast(e.message); }
+      finally { setButtonLoading($("btnClarify"), false, "Gửi clarify"); }
+    }
+
+    async function askQuestion() {
+      if (!selectedJobId) return toast("Chọn job để hỏi");
+      const question = $("askInput").value.trim();
+      if (!question) return toast("Nhập câu hỏi");
+      setButtonLoading($("btnAsk"), true, "Hỏi agent");
+      try {
+        await api(`/api/jobs/${selectedJobId}/ask`, {
+          method: "POST",
+          body: JSON.stringify({ question }),
+        });
+        $("askInput").value = "";
+        toast("Đã trả lời");
+        const detail = await api(`/api/jobs/${selectedJobId}`);
+        renderChat(
+          detail.chat,
+          detail.job?.status === "awaiting_clarification" ? detail.job.lastQuestion : null,
+        );
+      } catch (e) { toast(e.message); }
+      finally { setButtonLoading($("btnAsk"), false, "Hỏi agent"); }
+    }
+
+    $("btnRefresh").onclick = () => refreshTasks().catch((e) => toast(e.message));
+    $("btnApplyMeta").onclick = () => applyMetaNow();
+    $("btnStart").onclick = startHandle;
+    $("btnClarify").onclick = sendClarify;
+    $("btnAsk").onclick = askQuestion;
+    $("btnSettings").onclick = () => openSettingsModal();
+    $("btnSettingsClose").onclick = () => closeSettingsModal();
+    $("btnSettingsSave").onclick = () => saveSettingsFromModal();
+    $("settingsModal").onclick = () => closeSettingsModal();
+    $("btnHandoff").onclick = () => submitHandoff();
+    $("btnStatsRefresh").onclick = () => refreshStats().catch((e) => toast(e.message));
+    document.querySelectorAll("#navViews [data-view]").forEach((btn) => {
+      btn.addEventListener("click", () => setView(btn.dataset.view));
+    });
+    document.querySelectorAll('input[name="mode"]').forEach((el) => el.addEventListener("change", renderTasks));
+
+    showEmptyLoading($("taskList"), "Đang tải tasks…");
+    showEmptyLoading($("jobList"), "Đang tải jobs…");
+    Promise.all([loadStatus(), loadTasks(), loadJobs(), loadCompletionDefaults()]).catch((e) => toast(e.message));
+    setInterval(() => { loadStatus(); loadJobs(); }, 5000);
+    startProgressPolling();
+  </script>
+</body>
+</html>

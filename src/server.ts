@@ -1,4 +1,6 @@
 import { Hono } from "hono";
+import { serveStatic } from "@hono/node-server/serve-static";
+import { createApiRoutes } from "./api/routes.js";
 import { getConfig } from "./config.js";
 import { filterIssueHook, type GitlabIssueHookPayload } from "./gitlab/filter.js";
 import { verifyGitlabToken } from "./gitlab/verify.js";
@@ -14,8 +16,11 @@ export function createApp() {
       ok: true,
       ingest: getConfig().INGEST_MODE,
       teamsEnabled: getConfig().teamsEnabled,
+      ui: "/",
     }),
   );
+
+  app.route("/api", createApiRoutes());
 
   app.post("/webhooks/gitlab", async (c) => {
     const config = getConfig();
@@ -39,6 +44,17 @@ export function createApp() {
       return c.json({ accepted: false, reason: filtered.reason });
     }
 
+    if (!config.WEBHOOK_AUTO_ENQUEUE) {
+      logger.info("Webhook accepted but not enqueued (UI-only mode)", {
+        issueIid: filtered.job.issueIid,
+      });
+      return c.json({
+        accepted: false,
+        reason: "ui_only — start from UI",
+        issueIid: filtered.job.issueIid,
+      });
+    }
+
     const active = await listActiveIssueKeys();
     const key = issueKey(filtered.job.projectId, filtered.job.issueIid);
     if (active.has(key)) {
@@ -46,7 +62,7 @@ export function createApp() {
       return c.json({ accepted: false, reason: "already active" });
     }
 
-    const result = jobQueue.enqueue(filtered.job);
+    const result = jobQueue.enqueue(filtered.job, { source: "webhook" });
 
     return c.json({
       accepted: result.enqueued,
@@ -54,6 +70,14 @@ export function createApp() {
       reason: result.reason,
     });
   });
+
+  app.use(
+    "/*",
+    serveStatic({
+      root: "./public",
+      index: "index.html",
+    }),
+  );
 
   return app;
 }

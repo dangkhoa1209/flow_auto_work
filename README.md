@@ -1,142 +1,61 @@
 # Flow Auto Work
 
-Orchestrator chạy **local**: nhận task GitLab → Cursor SDK làm trên repo `aihr_v3` → commit trên **nhánh hiện tại** → push + mở **Merge Request** chờ review. Thiếu thông tin thì hỏi qua **Teams chat 1:1**.
+Orchestrator **local**: GitLab issues → UI Start → Cursor SDK trên `aihr_v3` → commit local → **`awaiting_handoff`** → user assign/labels → `succeeded`.
 
-## Đã làm gì (v1)
+> Chi tiết: [`docs/NOTES.md`](docs/NOTES.md) · Roadmap: [`docs/ROADMAP.md`](docs/ROADMAP.md).
+
+## Tính năng chính
 
 | Phần | Chi tiết |
 |------|----------|
-| Webhook GitLab | `POST /webhooks/gitlab` — verify `X-Gitlab-Token`, filter Issue Hook (assign/update), dedup theo project+iid |
-| Tunnel | `scripts/start.sh` chạy server + `cloudflared` quick tunnel |
-| Startup scan | Khi service lên: quét open issues đang assign → enqueue (song song với webhook) |
-| List/scan CLI | `npm run list-tasks` / `npm run scan` |
-| Job queue | 1 job tại một thời điểm; state `data/jobs/*.json` |
-| Cursor SDK | Agent local `cwd = AIHR_REPO_PATH`; clarify → Teams → `Agent.resume` |
-| Git | **Không đổi nhánh** — làm trên branch đang checkout; commit `feat #<iid> <title>` |
-| Commit exclude | Không commit WIP: `permission.js`, `directives/index.js` (không gitignore) |
-| MR | Push branch hiện tại + tạo MR vào default branch; comment Issue |
-| Guard | Skip label `auto-work:skip` / `wip-human`; placeholder `.env` bị chặn |
+| UI | Dark theme · Work / Done chờ / Thống kê · loading trên fetch |
+| Jobs | Queue serial; Force Stop; tiến trình Cursor live |
+| Done | Commit local → `awaiting_handoff` (không auto assign) |
+| Handoff | Assign + **add** labels (không xóa label cũ) → `succeeded` |
+| Comment | Chỉ khi xong: `Task work 100% by AI` + summary tiếng Việt |
+| Git | Giữ branch hiện tại; `feat #<iid> <title>`; exclude WIP paths |
+| Dev | `npm run dev` = **nodemon** (watch `src` + `public`) |
+| Mongo | `jobs` + `notes` + `chat` |
+| Boot | Không startup scan; webhook enqueue mặc định OFF |
 
-## Kiến trúc
-
-```
-GitLab Issue Hook ──cloudflared──► POST /webhooks/gitlab
-                                         │
-Startup scan (API) ──────────────────────┤
-                                         ▼
-                                   Serial JobQueue
-                                         ▼
-                              Cursor SDK (local agent)
-                         ┌───────────────┴───────────────┐
-                         │ NEED_CLARIFICATION            │ DONE
-                         ▼                               ▼
-                   Teams 1:1 ask/wait              scrub exclude paths
-                         │                               │
-                         └──► Agent.resume               ▼
-                                              push + create MR + comment
-```
-
-## Cấu trúc repo
+## Luồng
 
 ```
-src/
-  index.ts              # boot server + startup scan
-  server.ts             # Hono: /health, /webhooks/gitlab
-  config.ts             # env (zod)
-  queue.ts              # serial jobs
-  job-store.ts          # data/jobs/*.json
-  agent/prompt.ts       # prompt + DONE / NEED_CLARIFICATION markers
-  agent/run.ts          # Cursor SDK create / resume / wait
-  git/prep.ts           # stay on current branch, scrub exclude paths
-  gitlab/               # verify, filter, client, startup-scan, scan-config
-  teams/                # Graph send + poll reply
-scripts/
-  start.sh / stop.sh    # server + cloudflared
-  list-tasks.ts         # list / enqueue CLI
-  selfcheck.ts
-.env.example            # template (commit được)
-.env                    # secrets — KHÔNG commit (.gitignore)
+UI Start → JobQueue → Cursor agent (+ clarify UI)
+                ↓ DONE
+         commit local (nếu cần)
+                ↓
+         awaiting_handoff + comment GitLab
+                ↓
+         UI Done chờ (assign / add labels)
+                ↓
+            succeeded
 ```
-
-## Setup
-
-```bash
-cp .env.example .env
-# Điền thật: CURSOR_API_KEY, GITLAB_TOKEN, GITLAB_ASSIGNEE_USERNAME, …
-npm install
-chmod +x scripts/start.sh scripts/stop.sh
-```
-
-### `.env` quan trọng
-
-| Biến | Bắt buộc | Mục đích |
-|------|----------|----------|
-| `CURSOR_API_KEY` | Để chạy agent | [Cursor Integrations](https://cursor.com/dashboard/integrations) |
-| `GITLAB_TOKEN` | Có | PAT scope `api` |
-| `GITLAB_ASSIGNEE_USERNAME` | Có | Username GitLab (vd. `khoahdjobtestvn`) |
-| `ALLOWED_PROJECT_PATH` | Có | `kiemnv/aihr_v3` |
-| `AIHR_REPO_PATH` | Có | Path clone local `aihr_v3` |
-| `GITLAB_WEBHOOK_SECRET` | Webhook | Khớp secret trên GitLab |
-| `STARTUP_SCAN` | Không (default true) | Quét issue khi start |
-| `COMMIT_EXCLUDE_PATHS` | Không | File không đưa vào commit auto |
-| `TEAMS_*` | Khi cần clarify | Graph + `TEAMS_CHAT_ID` |
-
-**Lấy GitLab token:** Preferences → [Access Tokens](https://gitlab.com/-/user_settings/personal_access_tokens) → scope **`api`**.
 
 ## Chạy
 
 ```bash
-# Chỉ kiểm tra lấy được task (không cần Cursor key)
-npm run list-tasks
-
-# Server + startup scan (cần Cursor key để làm job)
+cp .env.example .env   # điền secrets
+npm install
+# mongod local
 npm run dev
-
-# Server + cloudflared tunnel
-./scripts/start.sh
-./scripts/stop.sh
+# → http://127.0.0.1:8787/
 ```
-
-Health: `curl http://127.0.0.1:8787/health`
-
-### GitLab webhook
-
-1. `./scripts/start.sh` → copy URL `https://….trycloudflare.com`
-2. Project → Settings → Webhooks  
-   - URL: `…/webhooks/gitlab`  
-   - Secret = `GITLAB_WEBHOOK_SECRET`  
-   - Trigger: **Issues events**
-
-Quick tunnel URL đổi mỗi lần start — cập nhật lại webhook hoặc dùng named tunnel cố định.
-
-## Luồng git (đã chốt)
-
-- Giữ nhánh đang đứng (vd. `bugs/dangkhoa/ykk/some-bugs`) — **không** checkout `main`, **không** tạo `auto/*`
-- Commit: `feat #<iid> <issue title>`
-- Không stage/commit: `resources/js/composables/permission.js`, `resources/js/directives/index.js` (vẫn tracked local)
-- Orchestrator push + mở MR; **không merge**
-
-## Teams clarify
-
-Khi agent emit `NEED_CLARIFICATION`: gửi câu hỏi vào chat 1:1 → poll reply → `Agent.resume` (tối đa `MAX_CLARIFY_ROUNDS`, timeout `TEAMS_CLARIFY_TIMEOUT_MIN`).
-
-## Job state
-
-- `data/jobs/*.json` — status queued/running/awaiting_clarification/succeeded/failed  
-- Restart process: job đang chạy → đánh dấu **failed** (scan lại sẽ enqueue issue chưa succeeded)  
-- Skip labels: `auto-work:skip`, `wip-human`
-
-## Scripts npm
 
 | Command | Mô tả |
 |---------|--------|
-| `npm run dev` | Chạy server |
+| `npm run dev` | Nodemon + server |
+| `npm start` | Chạy một lần (không watch) |
 | `npm run list-tasks` | List issue assigned |
-| `npm run scan` | List + enqueue |
-| `npm run selfcheck` | Unit check filter/prompt |
+| `npm run scan` | List + enqueue thủ công |
 | `npm run typecheck` | `tsc --noEmit` |
+
+## Job status
+
+`queued` → `running` → (`awaiting_clarification`) → `awaiting_handoff` → `succeeded`  
+(hoặc `failed`)
 
 ## Bảo mật
 
-- `.env` nằm trong `.gitignore` — **không commit** token/key  
-- Commit chỉ `.env.example` (placeholder)
+- `.env` trong `.gitignore` — không commit token/key  
+- Chỉ commit `.env.example` (placeholder)

@@ -1,48 +1,32 @@
-import fs from "node:fs/promises";
-import path from "node:path";
-import type { JobRecord } from "./types.js";
-import { getConfig } from "./config.js";
 import { logger } from "./logger.js";
+import {
+  getJobDoc,
+  listJobDocs,
+  upsertJobDoc,
+} from "./db/mongo.js";
+import type { JobRecord } from "./types.js";
 
-async function ensureDir() {
-  const { dataDir } = getConfig();
-  await fs.mkdir(path.join(dataDir, "jobs"), { recursive: true });
-  return path.join(dataDir, "jobs");
-}
-
-function jobPath(id: string) {
-  return path.join(getConfig().dataDir, "jobs", `${id}.json`);
-}
-
-export async function saveJob(job: JobRecord): Promise<void> {
-  await ensureDir();
+export async function saveJob(
+  job: JobRecord,
+  extra?: { source?: string },
+): Promise<void> {
   job.updatedAt = new Date().toISOString();
-  await fs.writeFile(jobPath(job.id), JSON.stringify(job, null, 2), "utf8");
+  await upsertJobDoc(job, extra);
 }
 
 export async function loadJob(id: string): Promise<JobRecord | null> {
-  try {
-    const raw = await fs.readFile(jobPath(id), "utf8");
-    return JSON.parse(raw) as JobRecord;
-  } catch {
-    return null;
-  }
+  const doc = await getJobDoc(id);
+  if (!doc) return null;
+  const { _id: _ignored, source: _src, ...job } = doc;
+  return job as JobRecord;
 }
 
 export async function listJobs(): Promise<JobRecord[]> {
-  const dir = await ensureDir();
-  const files = await fs.readdir(dir);
-  const jobs: JobRecord[] = [];
-  for (const file of files) {
-    if (!file.endsWith(".json")) continue;
-    try {
-      const raw = await fs.readFile(path.join(dir, file), "utf8");
-      jobs.push(JSON.parse(raw) as JobRecord);
-    } catch (err) {
-      logger.warn("Failed to read job file", { file, err: String(err) });
-    }
-  }
-  return jobs;
+  const docs = await listJobDocs({ limit: 500 });
+  return docs.map((doc) => {
+    const { _id: _ignored, source: _src, ...job } = doc;
+    return job as JobRecord;
+  });
 }
 
 export async function listActiveIssueKeys(): Promise<Set<string>> {
@@ -81,4 +65,29 @@ export async function failInterruptedJobs(): Promise<void> {
       logger.warn("Marked interrupted job as failed", { jobId: job.id });
     }
   }
+}
+
+/**
+ * Legacy gate: agent đã code/commit xong, chờ Approve push/MR.
+ * Flow mới coi commit = done → migrate sang succeeded.
+ */
+export async function resolveLegacyDiffApprovalJobs(): Promise<number> {
+  const jobs = await listJobs();
+  let n = 0;
+  for (const job of jobs) {
+    if (job.status !== "awaiting_diff_approval") continue;
+    job.status = "succeeded";
+    job.error = undefined;
+    if (!job.summary) {
+      job.summary =
+        "Legacy awaiting_diff_approval → succeeded (done at local commit; push/MR gate removed).";
+    }
+    await saveJob(job);
+    n += 1;
+    logger.info("Resolved legacy awaiting_diff_approval → succeeded", {
+      jobId: job.id,
+      issueIid: job.issue.issueIid,
+    });
+  }
+  return n;
 }

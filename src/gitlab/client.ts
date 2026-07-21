@@ -20,13 +20,15 @@ async function gitlabFetch(
 }
 
 export async function commentOnIssue(
-  projectId: number,
+  projectId: number | string,
   issueIid: number,
   body: string,
 ): Promise<void> {
+  const project =
+    typeof projectId === "string" ? encodeURIComponent(projectId) : projectId;
   const res = await gitlabFetch(
     "POST",
-    `/projects/${projectId}/issues/${issueIid}/notes`,
+    `/projects/${project}/issues/${issueIid}/notes`,
     { body },
   );
   if (!res.ok) {
@@ -91,6 +93,165 @@ async function resolveUserIds(usernames: string[]): Promise<number[]> {
     if (users[0]?.id) ids.push(users[0].id);
   }
   return ids;
+}
+
+export { resolveUserIds };
+
+/**
+ * Update a GitLab issue: optional comment + assign + add/remove labels.
+ * - labelMode "add" (default): append `labels`
+ * - labelMode "set": replace all with `labels`
+ * - `removeLabels` always uses GitLab remove_labels
+ */
+export async function applyIssueActions(opts: {
+  /** Numeric project id or URL-encoded-ready path (e.g. group/repo) */
+  projectId: number | string;
+  issueIid: number;
+  assignees?: string[];
+  labels?: string[];
+  removeLabels?: string[];
+  labelMode?: "add" | "set";
+  comment?: string;
+}): Promise<void> {
+  const assignees = (opts.assignees ?? []).map((s) => s.trim()).filter(Boolean);
+  const labels = (opts.labels ?? []).map((s) => s.trim()).filter(Boolean);
+  const removeLabels = (opts.removeLabels ?? [])
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const comment = opts.comment?.trim();
+  const labelMode = opts.labelMode ?? "add";
+  const project =
+    typeof opts.projectId === "string"
+      ? encodeURIComponent(opts.projectId)
+      : opts.projectId;
+
+  if (comment) {
+    await commentOnIssue(opts.projectId, opts.issueIid, comment);
+  }
+
+  if (
+    assignees.length === 0 &&
+    labels.length === 0 &&
+    removeLabels.length === 0 &&
+    labelMode !== "set"
+  ) {
+    return;
+  }
+
+  const payload: Record<string, unknown> = {};
+  if (assignees.length > 0) {
+    const ids = await resolveUserIds(assignees);
+    if (ids.length === 0) {
+      logger.warn("No GitLab user ids resolved for assignees", { assignees });
+    } else {
+      payload.assignee_ids = ids;
+    }
+  }
+  if (labels.length > 0 || labelMode === "set") {
+    if (labelMode === "set") {
+      // empty string clears all labels
+      payload.labels = labels.join(",");
+    } else {
+      payload.add_labels = labels.join(",");
+    }
+  }
+  if (removeLabels.length > 0) {
+    payload.remove_labels = removeLabels.join(",");
+  }
+
+  if (Object.keys(payload).length === 0) return;
+
+  const res = await gitlabFetch(
+    "PUT",
+    `/projects/${project}/issues/${opts.issueIid}`,
+    payload,
+  );
+  if (!res.ok) {
+    throw new Error(
+      `GitLab update issue failed (${res.status}): ${await res.text()}`,
+    );
+  }
+  logger.info("Applied issue actions", {
+    issueIid: opts.issueIid,
+    assignees,
+    labels,
+    removeLabels,
+    labelMode,
+  });
+}
+
+/** @deprecated alias — use applyIssueActions */
+export async function applyIssueCompletionActions(
+  opts: Parameters<typeof applyIssueActions>[0],
+): Promise<void> {
+  return applyIssueActions(opts);
+}
+
+export async function listProjectLabels(
+  projectIdOrPath?: number | string,
+): Promise<Array<{ name: string; color?: string; description?: string }>> {
+  const config = getConfig();
+  const project = encodeURIComponent(
+    String(projectIdOrPath ?? config.ALLOWED_PROJECT_PATH),
+  );
+  const labels: Array<{ name: string; color?: string; description?: string }> =
+    [];
+  let page = 1;
+  while (page <= 10) {
+    const res = await gitlabFetch(
+      "GET",
+      `/projects/${project}/labels?per_page=100&page=${page}`,
+    );
+    if (!res.ok) break;
+    const batch = (await res.json()) as Array<{
+      name: string;
+      color?: string;
+      description?: string;
+    }>;
+    if (!batch.length) break;
+    labels.push(
+      ...batch.map((l) => ({
+        name: l.name,
+        color: l.color,
+        description: l.description,
+      })),
+    );
+    if (batch.length < 100) break;
+    page += 1;
+  }
+  return labels;
+}
+
+export async function listProjectMembers(): Promise<
+  Array<{ id: number; username: string; name: string }>
+> {
+  const config = getConfig();
+  const project = encodeURIComponent(config.ALLOWED_PROJECT_PATH);
+  const members: Array<{ id: number; username: string; name: string }> = [];
+  let page = 1;
+  while (page <= 10) {
+    const res = await gitlabFetch(
+      "GET",
+      `/projects/${project}/members/all?per_page=100&page=${page}`,
+    );
+    if (!res.ok) break;
+    const batch = (await res.json()) as Array<{
+      id: number;
+      username: string;
+      name: string;
+    }>;
+    if (!batch.length) break;
+    members.push(
+      ...batch.map((m) => ({
+        id: m.id,
+        username: m.username,
+        name: m.name,
+      })),
+    );
+    if (batch.length < 100) break;
+    page += 1;
+  }
+  return members;
 }
 
 export async function getProjectDefaultBranch(
@@ -160,4 +321,248 @@ export async function listAssignedOpenIssues(): Promise<
     url: raw.web_url,
     action: "startup_scan",
   }));
+}
+
+export type IssueNoteUi = {
+  id: number;
+  body: string;
+  author: string;
+  createdAt: string;
+  system: boolean;
+};
+
+export type RelatedIssueUi = {
+  iid: number;
+  title: string;
+  state: string;
+  url: string;
+  labels: string[];
+  linkType?: string;
+  source: "issue_links" | "mention" | "task_list";
+};
+
+export type IssueDetailUi = {
+  projectId: number;
+  issueIid: number;
+  title: string;
+  description: string;
+  state: string;
+  url: string;
+  labels: string[];
+  assignees: Array<{ username: string; name: string }>;
+  author?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  taskCompletion?: { count: number; completedCount: number };
+  notes: IssueNoteUi[];
+  related: RelatedIssueUi[];
+};
+
+/**
+ * Full issue payload for UI: description, comments, related/child issues.
+ */
+export async function getIssueUiDetail(
+  issueIid: number,
+  projectIdOrPath?: number | string,
+): Promise<IssueDetailUi> {
+  const config = getConfig();
+  const project = encodeURIComponent(
+    String(projectIdOrPath ?? config.ALLOWED_PROJECT_PATH),
+  );
+
+  const issueRes = await gitlabFetch(
+    "GET",
+    `/projects/${project}/issues/${issueIid}`,
+  );
+  if (!issueRes.ok) {
+    throw new Error(
+      `GitLab issue #${issueIid} failed (${issueRes.status}): ${await issueRes.text()}`,
+    );
+  }
+  const issue = (await issueRes.json()) as {
+    iid: number;
+    project_id: number;
+    title: string;
+    description: string | null;
+    state: string;
+    web_url: string;
+    labels?: string[];
+    author?: { username?: string; name?: string };
+    assignees?: Array<{ username?: string; name?: string }>;
+    created_at?: string;
+    updated_at?: string;
+    task_completion_status?: {
+      count?: number;
+      completed_count?: number;
+    };
+  };
+
+  const projectId = issue.project_id;
+
+  const [notes, links] = await Promise.all([
+    listIssueNotesUi(projectId, issueIid),
+    listIssueLinksUi(projectId, issueIid),
+  ]);
+
+  const { extractIssueIids } = await import("./linked-context.js");
+  const mentionText = [
+    issue.title,
+    issue.description ?? "",
+    ...notes.map((n) => n.body),
+  ].join("\n");
+  const mentioned = extractIssueIids(mentionText, issueIid);
+
+  // Task-list style children: "- [ ] #123" / "* [x] #123"
+  const taskListIids = new Set<number>();
+  const taskListRe =
+    /^\s*[-*]\s*\[[ xX]\]\s*.*?#(\d+)\b/gm;
+  let tm: RegExpExecArray | null;
+  const desc = issue.description ?? "";
+  while ((tm = taskListRe.exec(desc)) !== null) {
+    const iid = Number(tm[1]);
+    if (iid > 0 && iid !== issueIid) taskListIids.add(iid);
+  }
+
+  const byIid = new Map<number, RelatedIssueUi>();
+  for (const link of links) byIid.set(link.iid, link);
+
+  const missing = [
+    ...new Set([...mentioned, ...taskListIids]),
+  ].filter((iid) => !byIid.has(iid));
+
+  const fetched = await Promise.all(
+    missing.slice(0, 20).map(async (iid) => {
+      const res = await gitlabFetch(
+        "GET",
+        `/projects/${projectId}/issues/${iid}`,
+      );
+      if (!res.ok) return null;
+      const row = (await res.json()) as {
+        iid: number;
+        title: string;
+        state: string;
+        web_url: string;
+        labels?: string[];
+      };
+      const source: RelatedIssueUi["source"] = taskListIids.has(iid)
+        ? "task_list"
+        : "mention";
+      return {
+        iid: row.iid,
+        title: row.title,
+        state: row.state,
+        url: row.web_url,
+        labels: row.labels ?? [],
+        source,
+      } satisfies RelatedIssueUi;
+    }),
+  );
+  for (const item of fetched) {
+    if (item) byIid.set(item.iid, item);
+  }
+
+  // Prefer task_list / is_child-like ordering
+  const related = [...byIid.values()].sort((a, b) => {
+    const rank = (s: RelatedIssueUi["source"]) =>
+      s === "task_list" ? 0 : s === "issue_links" ? 1 : 2;
+    return rank(a.source) - rank(b.source) || a.iid - b.iid;
+  });
+
+  return {
+    projectId,
+    issueIid: issue.iid,
+    title: issue.title,
+    description: issue.description ?? "",
+    state: issue.state,
+    url: issue.web_url,
+    labels: issue.labels ?? [],
+    assignees: (issue.assignees ?? [])
+      .filter((a) => a.username)
+      .map((a) => ({
+        username: a.username!,
+        name: a.name || a.username!,
+      })),
+    author: issue.author?.username,
+    createdAt: issue.created_at,
+    updatedAt: issue.updated_at,
+    taskCompletion: issue.task_completion_status
+      ? {
+          count: issue.task_completion_status.count ?? 0,
+          completedCount: issue.task_completion_status.completed_count ?? 0,
+        }
+      : undefined,
+    notes,
+    related,
+  };
+}
+
+async function listIssueNotesUi(
+  projectId: number,
+  issueIid: number,
+): Promise<IssueNoteUi[]> {
+  const notes: IssueNoteUi[] = [];
+  let page = 1;
+  while (page <= 10) {
+    const res = await gitlabFetch(
+      "GET",
+      `/projects/${projectId}/issues/${issueIid}/notes?per_page=100&page=${page}&sort=asc`,
+    );
+    if (!res.ok) break;
+    const batch = (await res.json()) as Array<{
+      id: number;
+      body?: string;
+      system?: boolean;
+      created_at?: string;
+      author?: { username?: string; name?: string };
+    }>;
+    if (!batch.length) break;
+    for (const n of batch) {
+      notes.push({
+        id: n.id,
+        body: n.body ?? "",
+        author: n.author?.username || n.author?.name || "unknown",
+        createdAt: n.created_at ?? "",
+        system: Boolean(n.system),
+      });
+    }
+    if (batch.length < 100) break;
+    page += 1;
+  }
+  return notes;
+}
+
+async function listIssueLinksUi(
+  projectId: number,
+  issueIid: number,
+): Promise<RelatedIssueUi[]> {
+  const res = await gitlabFetch(
+    "GET",
+    `/projects/${projectId}/issues/${issueIid}/links`,
+  );
+  if (!res.ok) return [];
+  const rows = (await res.json()) as Array<{
+    link_type?: string;
+    issue?: {
+      iid?: number;
+      title?: string;
+      state?: string;
+      web_url?: string;
+      labels?: string[];
+    };
+  }>;
+  return rows.flatMap((row) => {
+    const issue = row.issue;
+    if (!issue?.iid) return [];
+    return [
+      {
+        iid: issue.iid,
+        title: issue.title ?? `#${issue.iid}`,
+        state: issue.state ?? "unknown",
+        url: issue.web_url ?? "",
+        labels: issue.labels ?? [],
+        linkType: row.link_type,
+        source: "issue_links" as const,
+      },
+    ];
+  });
 }

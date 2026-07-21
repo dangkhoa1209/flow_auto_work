@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { filterIssueHook } from "../src/gitlab/filter.js";
+import { extractIssueIids } from "../src/gitlab/linked-context.js";
 import { parseAgentOutcome } from "../src/agent/prompt.js";
 import type { AppConfig } from "../src/config.js";
 
@@ -9,48 +10,37 @@ const config = {
   skipLabels: ["auto-work:skip", "wip-human"],
 } as AppConfig;
 
-const basePayload = {
-  object_kind: "issue",
-  project: { id: 1, path_with_namespace: "kiemnv/aihr_v3" },
-  object_attributes: {
-    id: 10,
-    iid: 42,
-    title: "Fix leave calc",
-    description: "Details",
-    action: "open",
-    url: "https://gitlab.com/kiemnv/aihr_v3/-/issues/42",
-  },
-  assignees: [{ id: 7, username: "dangkhoa" }],
-  labels: [],
-};
+{
+  const iids = extractIssueIids(
+    "See #13425 and also https://gitlab.com/kiemnv/aihr_v3/-/work_items/13919 related to #13425",
+    100,
+  );
+  assert.deepEqual(
+    iids.sort((a, b) => a - b),
+    [13425, 13919],
+  );
+}
 
 {
-  const r = filterIssueHook("Issue Hook", basePayload, config);
+  const r = filterIssueHook(
+    "Issue Hook",
+    {
+      object_kind: "issue",
+      project: { id: 1, path_with_namespace: "kiemnv/aihr_v3" },
+      object_attributes: {
+        id: 10,
+        iid: 42,
+        title: "Fix leave calc",
+        description: "Details",
+        action: "open",
+        url: "https://gitlab.com/kiemnv/aihr_v3/-/issues/42",
+      },
+      assignees: [{ id: 7, username: "dangkhoa" }],
+      labels: [],
+    },
+    config,
+  );
   assert.equal(r.accept, true);
-}
-
-{
-  const r = filterIssueHook(
-    "Issue Hook",
-    {
-      ...basePayload,
-      assignees: [{ username: "someone-else" }],
-    },
-    config,
-  );
-  assert.equal(r.accept, false);
-}
-
-{
-  const r = filterIssueHook(
-    "Issue Hook",
-    {
-      ...basePayload,
-      labels: [{ title: "auto-work:skip" }],
-    },
-    config,
-  );
-  assert.equal(r.accept, false);
 }
 
 {

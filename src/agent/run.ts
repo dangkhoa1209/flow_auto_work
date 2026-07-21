@@ -1,6 +1,7 @@
 import { Agent, CursorAgentError } from "@cursor/sdk";
 import { setMaxListeners } from "node:events";
 import { getConfig } from "../config.js";
+import { collectLinkedIssueContext } from "../gitlab/linked-context.js";
 import { logger } from "../logger.js";
 import type { IssueJob } from "../types.js";
 import {
@@ -8,24 +9,126 @@ import {
   buildWorkPrompt,
   parseAgentOutcome,
 } from "./prompt.js";
+import {
+  appendJobProgress,
+  appendSdkMessage,
+  clearJobProgress,
+} from "./progress.js";
 
 // Cursor SDK attaches many AbortSignal listeners during a run.
 setMaxListeners(50);
 
+type CancellableRun = {
+  cancel: () => Promise<void>;
+};
+
+/** Active Cursor runs keyed by jobId — used by Force Stop. */
+const activeRunsByJob = new Map<string, CancellableRun>();
+
+export async function cancelActiveAgentRun(jobId: string): Promise<boolean> {
+  const entry = activeRunsByJob.get(jobId);
+  if (!entry) return false;
+  try {
+    await entry.cancel();
+    return true;
+  } catch (err) {
+    logger.warn("cancelActiveAgentRun failed", {
+      jobId,
+      err: String(err),
+    });
+    return false;
+  }
+}
+
 async function collectAssistantText(
   run: Awaited<ReturnType<Awaited<ReturnType<typeof Agent.create>>["send"]>>,
+  jobId?: string,
 ): Promise<string> {
-  // Prefer wait() only — streaming adds many abort listeners and triggers
-  // MaxListenersExceededWarning under Node's default limit of 10.
-  const result = await run.wait();
-  if (result.status === "error") {
-    throw new Error(`Agent run failed: ${result.id}`);
+  if (jobId) {
+    clearJobProgress(jobId);
+    appendJobProgress(jobId, "status", "Cursor agent started");
   }
-  const text = (result.result ?? "").trim();
+
+  let streamed = "";
+  try {
+    if (typeof run.stream === "function" && run.supports?.("stream") !== false) {
+      for await (const message of run.stream()) {
+        appendSdkMessage(jobId, message);
+        if (message.type === "assistant") {
+          for (const block of message.message.content) {
+            if (block.type === "text") streamed += block.text;
+          }
+        }
+      }
+    }
+  } catch (err) {
+    appendJobProgress(jobId, "status", `stream error: ${String(err)}`);
+    logger.warn("Agent stream failed; falling back to wait()", {
+      err: String(err),
+    });
+  }
+
+  const result = await run.wait();
+  if (result.status === "cancelled") {
+    appendJobProgress(jobId, "status", "cancelled");
+    throw new Error("Agent run cancelled (force stop)");
+  }
+  if (result.status === "error") {
+    const detail = result as {
+      id: string;
+      result?: string;
+      durationMs?: number;
+      errorCode?: string;
+      requestId?: string;
+    };
+    const bits = [
+      detail.errorCode && `code=${detail.errorCode}`,
+      detail.requestId && `req=${detail.requestId}`,
+      detail.durationMs != null && `${detail.durationMs}ms`,
+      detail.result?.trim()?.slice(0, 500),
+    ].filter(Boolean);
+    const msg = bits.length
+      ? `Agent run failed (${detail.id}): ${bits.join(" · ")}`
+      : `Agent run failed: ${detail.id}`;
+    appendJobProgress(jobId, "status", msg);
+    logger.error("Cursor run status=error", {
+      runId: detail.id,
+      errorCode: detail.errorCode,
+      requestId: detail.requestId,
+      durationMs: detail.durationMs,
+      resultPreview: detail.result?.slice(0, 800),
+    });
+    throw new Error(msg);
+  }
+  const text = (result.result ?? streamed).trim();
   if (text) {
     process.stdout.write(text.endsWith("\n") ? text : `${text}\n`);
   }
+  appendJobProgress(jobId, "status", "Cursor agent finished");
   return text;
+}
+
+function trackRun(
+  jobId: string | undefined,
+  run: Awaited<ReturnType<Awaited<ReturnType<typeof Agent.create>>["send"]>>,
+): void {
+  if (!jobId) return;
+  activeRunsByJob.set(jobId, {
+    cancel: async () => {
+      const supports =
+        typeof (run as { supports?: (f: string) => boolean }).supports ===
+        "function"
+          ? (run as { supports: (f: string) => boolean }).supports("cancel")
+          : true;
+      if (supports && typeof run.cancel === "function") {
+        await run.cancel();
+      }
+    },
+  });
+}
+
+function untrackRun(jobId: string | undefined): void {
+  if (jobId) activeRunsByJob.delete(jobId);
 }
 
 export type AgentRunResult = {
@@ -39,8 +142,17 @@ export type AgentRunResult = {
 export async function runNewAgent(
   issue: IssueJob,
   extraContext?: string,
+  opts?: { jobId?: string },
 ): Promise<AgentRunResult> {
   const config = getConfig();
+  let linkedBlock = "";
+  try {
+    const linked = await collectLinkedIssueContext(issue);
+    linkedBlock = linked.promptBlock;
+  } catch (err) {
+    logger.warn("Linked context load failed", { err: String(err) });
+  }
+
   await using agent = await Agent.create({
     apiKey: config.CURSOR_API_KEY,
     model: { id: config.CURSOR_MODEL },
@@ -48,24 +160,30 @@ export async function runNewAgent(
   });
 
   logger.info("Created local agent", { agentId: agent.agentId });
-  const prompt = buildWorkPrompt(issue, extraContext);
+  const prompt = buildWorkPrompt(issue, extraContext, linkedBlock);
   const run = await agent.send(prompt);
   logger.info("Agent run started", { runId: run.id, agentId: agent.agentId });
-  const text = await collectAssistantText(run);
-  const parsed = parseAgentOutcome(text);
-  return {
-    agentId: agent.agentId,
-    kind: parsed.kind,
-    text,
-    question: parsed.question,
-    summary: parsed.summary,
-  };
+  trackRun(opts?.jobId, run);
+  try {
+    const text = await collectAssistantText(run, opts?.jobId);
+    const parsed = parseAgentOutcome(text);
+    return {
+      agentId: agent.agentId,
+      kind: parsed.kind,
+      text,
+      question: parsed.question,
+      summary: parsed.summary,
+    };
+  } finally {
+    untrackRun(opts?.jobId);
+  }
 }
 
 export async function resumeAgent(
   agentId: string,
   answer: string,
   issue: IssueJob,
+  opts?: { jobId?: string },
 ): Promise<AgentRunResult> {
   const config = getConfig();
   await using agent = await Agent.resume(agentId, {
@@ -77,15 +195,20 @@ export async function resumeAgent(
   logger.info("Resumed agent", { agentId: agent.agentId });
   const run = await agent.send(buildResumePrompt(answer, issue));
   logger.info("Resume run started", { runId: run.id, agentId: agent.agentId });
-  const text = await collectAssistantText(run);
-  const parsed = parseAgentOutcome(text);
-  return {
-    agentId: agent.agentId,
-    kind: parsed.kind,
-    text,
-    question: parsed.question,
-    summary: parsed.summary,
-  };
+  trackRun(opts?.jobId, run);
+  try {
+    const text = await collectAssistantText(run, opts?.jobId);
+    const parsed = parseAgentOutcome(text);
+    return {
+      agentId: agent.agentId,
+      kind: parsed.kind,
+      text,
+      question: parsed.question,
+      summary: parsed.summary,
+    };
+  } finally {
+    untrackRun(opts?.jobId);
+  }
 }
 
 export function isStartupError(err: unknown): err is CursorAgentError {

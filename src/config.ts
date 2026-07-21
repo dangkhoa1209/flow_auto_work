@@ -1,6 +1,5 @@
 import { config as loadDotenv } from "dotenv";
 import { z } from "zod";
-import path from "node:path";
 
 loadDotenv();
 
@@ -28,12 +27,16 @@ const envSchema = z.object({
   TEAMS_CLARIFY_TIMEOUT_MIN: z.coerce.number().default(60),
   TEAMS_POLL_INTERVAL_SEC: z.coerce.number().default(20),
   MAX_CLARIFY_ROUNDS: z.coerce.number().default(3),
-  DATA_DIR: z.string().default("./data"),
   STARTUP_SCAN: z
     .string()
     .optional()
-    .transform((v) => v !== "false" && v !== "0"),
+    .transform((v) => v === "true" || v === "1"),
   STARTUP_SCAN_INCLUDE_SUCCEEDED: z
+    .string()
+    .optional()
+    .transform((v) => v === "true" || v === "1"),
+  // Webhook may still be received; enqueue only if true (default: UI-only)
+  WEBHOOK_AUTO_ENQUEUE: z
     .string()
     .optional()
     .transform((v) => v === "true" || v === "1"),
@@ -43,16 +46,24 @@ const envSchema = z.object({
     .default(
       "resources/js/composables/permission.js,resources/js/directives/index.js",
     ),
+  MONGODB_URI: z.string().default("mongodb://127.0.0.1:27017"),
+  MONGODB_DB: z.string().default("flow_auto_work"),
+  // Applied to GitLab issue when auto-work succeeds
+  ON_COMPLETE_ASSIGN_USERNAMES: z.string().optional(),
+  ON_COMPLETE_LABELS: z.string().optional(),
+  ON_COMPLETE_COMMENT: z.string().optional(),
 });
 
 export type AppConfig = z.infer<typeof envSchema> & {
   skipLabels: string[];
   mrReviewerUsernames: string[];
   commitExcludePaths: string[];
-  dataDir: string;
+  onCompleteAssignUsernames: string[];
+  onCompleteLabels: string[];
   teamsEnabled: boolean;
   STARTUP_SCAN: boolean;
   STARTUP_SCAN_INCLUDE_SUCCEEDED: boolean;
+  WEBHOOK_AUTO_ENQUEUE: boolean;
 };
 
 let cached: AppConfig | null = null;
@@ -88,7 +99,14 @@ export function getConfig(): AppConfig {
     commitExcludePaths: env.COMMIT_EXCLUDE_PATHS.split(",")
       .map((s) => s.trim())
       .filter(Boolean),
-    dataDir: path.resolve(env.DATA_DIR),
+    onCompleteAssignUsernames: (env.ON_COMPLETE_ASSIGN_USERNAMES ?? "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean),
+    onCompleteLabels: (env.ON_COMPLETE_LABELS ?? "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean),
     teamsEnabled,
   };
 

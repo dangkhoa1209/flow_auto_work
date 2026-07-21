@@ -97,18 +97,24 @@ function parsePorcelainPaths(porcelain: string): string[] {
     .trim()
     .split("\n")
     .filter(Boolean)
-    .map((line) => line.slice(3).replace(/^"|"$/g, "").trim())
+    .map((line) => {
+      // Always "XY PATH" (2 status chars + space). Renames: "XY old -> new".
+      const m = line.match(/^.. (.+)$/);
+      if (!m?.[1]) return "";
+      let path = m[1].trim();
+      const arrow = path.lastIndexOf(" -> ");
+      if (arrow >= 0) path = path.slice(arrow + 4).trim();
+      return path.replace(/^"(.*)"$/, "$1").trim();
+    })
     .filter(Boolean);
 }
 
 function isExcludedPath(filePath: string, excluded: string[]): boolean {
-  const normalized = filePath.replace(/^\.\//, "");
-  return excluded.some(
-    (ex) =>
-      normalized === ex ||
-      normalized.endsWith("/" + ex) ||
-      normalized.endsWith(ex),
-  );
+  const normalized = filePath.replace(/^\.\//, "").replace(/\\/g, "/");
+  return excluded.some((ex) => {
+    const e = ex.replace(/^\.\//, "").replace(/\\/g, "/");
+    return normalized === e || normalized.endsWith("/" + e);
+  });
 }
 
 /** True if there are uncommitted changes outside COMMIT_EXCLUDE_PATHS. */
@@ -173,4 +179,30 @@ export async function scrubExcludedPathsFromLastCommit(
     return;
   }
   await git(repoPath, ["commit", "-m", msg.trim()]);
+}
+
+/** Stage all (minus COMMIT_EXCLUDE_PATHS) and commit. Returns false if nothing to commit. */
+export async function commitAllTracked(
+  repoPath: string,
+  message: string,
+): Promise<boolean> {
+  await git(repoPath, ["add", "-A"]);
+  const excluded = getConfig().commitExcludePaths;
+  if (excluded.length) {
+    try {
+      await git(repoPath, ["restore", "--staged", "--", ...excluded]);
+    } catch {
+      // ignore
+    }
+  }
+  const { stdout: staged } = await git(repoPath, [
+    "diff",
+    "--cached",
+    "--name-only",
+  ]);
+  if (!staged.trim()) {
+    return false;
+  }
+  await git(repoPath, ["commit", "-m", message]);
+  return true;
 }

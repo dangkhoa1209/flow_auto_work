@@ -1,8 +1,11 @@
 import { serve } from "@hono/node-server";
 import { setMaxListeners } from "node:events";
 import { getConfig } from "./config.js";
-import { scanExistingAssignedIssues } from "./gitlab/startup-scan.js";
-import { failInterruptedJobs } from "./job-store.js";
+import { connectMongo } from "./db/mongo.js";
+import {
+  failInterruptedJobs,
+  resolveLegacyDiffApprovalJobs,
+} from "./job-store.js";
 import { logger } from "./logger.js";
 import { createApp } from "./server.js";
 
@@ -10,7 +13,14 @@ setMaxListeners(50);
 
 async function main() {
   const config = getConfig();
+  await connectMongo();
   await failInterruptedJobs();
+  const legacy = await resolveLegacyDiffApprovalJobs();
+  if (legacy > 0) {
+    logger.info("Migrated legacy diff-approval jobs to succeeded", {
+      count: legacy,
+    });
+  }
   const app = createApp();
 
   logger.info("Starting flow_auto_work", {
@@ -19,7 +29,9 @@ async function main() {
     repo: config.AIHR_REPO_PATH,
     project: config.ALLOWED_PROJECT_PATH,
     teamsEnabled: config.teamsEnabled,
-    startupScan: config.STARTUP_SCAN,
+    webhookAutoEnqueue: config.WEBHOOK_AUTO_ENQUEUE,
+    mongo: config.MONGODB_URI,
+    ui: `http://${config.HOST}:${config.PORT}/`,
   });
 
   serve(
@@ -30,12 +42,13 @@ async function main() {
     },
     (info) => {
       logger.info(`Listening on http://${info.address}:${info.port}`);
-      logger.info("Webhook path: POST /webhooks/gitlab");
-
-      // Webhook listens immediately; then backfill existing assigned issues.
-      void scanExistingAssignedIssues().catch((err) => {
-        logger.error("Startup scan failed", { err: String(err) });
-      });
+      logger.info(`UI: http://${info.address}:${info.port}/`);
+      logger.info("Jobs only start from UI (Start / Auto) — no startup scan");
+      if (config.WEBHOOK_AUTO_ENQUEUE) {
+        logger.info("Webhook auto-enqueue: ON");
+      } else {
+        logger.info("Webhook auto-enqueue: OFF (UI-only)");
+      }
     },
   );
 }

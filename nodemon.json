@@ -1,0 +1,8 @@
+{
+  "watch": ["src", "public"],
+  "ext": "ts,js,json,html,css",
+  "ignore": ["node_modules", "data", "**/*.test.ts"],
+  "exec": "tsx src/index.ts",
+  "signal": "SIGTERM",
+  "delay": 400
+}
