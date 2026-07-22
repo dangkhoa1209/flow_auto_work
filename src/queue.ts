@@ -215,13 +215,36 @@ export class JobQueue {
     if (!loaded) throw new Error("Job not found");
     let job: JobRecord = loaded;
 
-    if (hasActiveAgentRun(jobId) || isJobBusy(job.status)) {
-      throw new Error(
-        "Agent đang chạy trên job này — đợi xong hoặc Force Stop",
-      );
-    }
     if (job.status === "awaiting_clarification") {
       throw new Error("Đang chờ clarify — trả lời ở ô Clarify");
+    }
+
+    // Orphaned busy (no in-memory Cursor run) — reclaim so user can retry after hang/restart
+    if (isJobBusy(job.status) && !hasActiveAgentRun(jobId)) {
+      const reclaimTo =
+        job.handedOffAt
+          ? "succeeded"
+          : job.completedAt
+            ? "awaiting_handoff"
+            : "draft";
+      logger.warn("Reclaiming orphaned busy job before follow-up", {
+        jobId,
+        from: job.status,
+        to: reclaimTo,
+        currentJobId: this.currentJobId,
+      });
+      job.status = reclaimTo;
+      job.error =
+        job.error ||
+        "Previous agent run was stuck / interrupted — reclaimed for retry";
+      await saveJob(job);
+      if (this.currentJobId === jobId) this.currentJobId = null;
+    }
+
+    if (hasActiveAgentRun(jobId) || isJobBusy(job.status)) {
+      throw new Error(
+        "Agent đang chạy trên job này — đợi xong hoặc bấm Force Stop rồi Gửi lại",
+      );
     }
 
     const prevStatus = job.status;
@@ -247,6 +270,21 @@ export class JobQueue {
       const rt = getRuntimeContext();
       const repoPath = rt?.repoPath ?? config.AIHR_REPO_PATH;
       if (!repoPath) throw new Error("No repo path in workspace context");
+
+      // Prefer fixed workBranch; only auto-create feat/hotfix when none configured
+      const fixedWork = (job.workBranch || rt?.workBranch || "").trim();
+      const prepared = await prepareRepoForIssue({
+        issueIid: Math.max(job.issue.issueIid, 0),
+        title: job.issue.title,
+        baseBranch: job.baseBranch || rt?.baseBranch,
+        // Configured work branch OR adhoc hotfix name (create only if not configured work)
+        workBranch: fixedWork || (job.kind === "adhoc" ? job.branch : undefined),
+        createWorkBranchIfMissing: !fixedWork,
+        repoPath,
+      });
+      job.branch = fixedWork || prepared.branch;
+      if (fixedWork) job.workBranch = fixedWork;
+      await saveJob(job);
 
       const priorChat = await listChatMessages({ jobId: job.id, limit: 40 });
       const chatHistory = priorChat
@@ -424,7 +462,14 @@ export class JobQueue {
         job.status === "awaiting_diff_approval" ||
         job.status === "awaiting_docs_approval"
       ) {
-        job.status = "failed";
+        // Follow-up kill on already-done work → restore handoff/done, don't force failed
+        if (job.handedOffAt) {
+          job.status = "succeeded";
+        } else if (job.completedAt) {
+          job.status = "awaiting_handoff";
+        } else {
+          job.status = "failed";
+        }
         job.error = reason;
         await saveJob(job);
         this.activeIssueKeys.delete(
@@ -640,6 +685,8 @@ export class JobQueue {
         targetBranchOverride: targetOverride,
         baseBranch: job.baseBranch || rt?.baseBranch,
         workBranch: job.workBranch || rt?.workBranch,
+        // Workspace work branch must already exist — do not create
+        createWorkBranchIfMissing: false,
         repoPath,
       });
       job.branch = prepared.branch;
@@ -768,7 +815,7 @@ export class JobQueue {
 
       if (hasChange) {
         const defaultComment = [
-          "Task work 100% by AI",
+          "AI-Generated",
           result.summary?.trim() || null,
         ]
           .filter(Boolean)

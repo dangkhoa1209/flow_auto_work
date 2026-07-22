@@ -3,6 +3,9 @@ import { stripMediaAndAttachments } from "../gitlab/linked-context.js";
 
 export function commitMessageForIssue(issue: IssueJob): string {
   const title = issue.title.replace(/\s+/g, " ").trim();
+  if (issue.issueIid <= 0 || issue.action === "adhoc") {
+    return `hotfix: ${title}`;
+  }
   return `feat #${issue.issueIid} ${title}`;
 }
 
@@ -270,6 +273,43 @@ ${message.trim()}
    ${commitMsg}
 
 6. If you need more info, end with NEED_CLARIFICATION. If finished this follow-up, end with DONE (summary in Vietnamese).
+
+<<<NEED_CLARIFICATION>>> / <<<DONE>>> blocks same as usual when applicable.`;
+}
+
+/** Free session (hotfix / adhoc) — no GitLab issue yet. */
+export function buildAdhocFollowUpPrompt(
+  message: string,
+  sessionTitle: string,
+  opts?: { chatHistory?: string },
+): string {
+  const title = sessionTitle.replace(/\s+/g, " ").trim() || "Ad-hoc session";
+  const commitMsg = `hotfix: ${title}`;
+  const history = opts?.chatHistory?.trim();
+  const historyBlock = history
+    ? `
+## Prior chat on this session (context only)
+${history}
+
+`
+    : "";
+
+  return `You are in a **free Cursor agent session** (hotfix / ad-hoc) titled "${title}".
+There is **no GitLab issue yet** — a human may create one later from your summary.
+This may be a **new** window — use prior chat + the repo (inspect if needed).
+${historyBlock}## Human request (this turn)
+${message.trim()}
+
+## How to behave (IDE-like)
+1. If they ask a question → answer clearly (Vietnamese if they wrote Vietnamese). You may briefly inspect the repo.
+2. If they ask to fix / add / change / re-test / seed data / run something → **do it** on the CURRENT branch (do not switch branches).
+3. Prefer small, correct changes. Stay scoped to the request.
+4. Do NOT push, force-push, amend remote commits, or open/merge MRs.
+5. If you changed code and are done with this request, commit with:
+
+   ${commitMsg}
+
+6. If you need more info, end with NEED_CLARIFICATION. If finished this follow-up, end with DONE (summary in Vietnamese — useful as issue description later).
 
 <<<NEED_CLARIFICATION>>> / <<<DONE>>> blocks same as usual when applicable.`;
 }

@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, ref, watch, nextTick } from "vue";
 import { message } from "ant-design-vue";
 import { storeToRefs } from "pinia";
 import { useRouter } from "vue-router";
 import { useSessionStore } from "@/stores/session";
-import { useWorkStore } from "@/stores/work";
+import { useWorkStore, isAdhocJob } from "@/stores/work";
 import { statusLabel } from "@/utils/status";
+import { PlusOutlined } from "@ant-design/icons-vue";
 
 const router = useRouter();
 const session = useSessionStore();
@@ -22,6 +23,7 @@ const {
   progressLive,
   loading,
   jobLoading,
+  labels,
 } = storeToRefs(work);
 
 const midTab = ref("detail");
@@ -33,6 +35,19 @@ const notesSaving = ref(false);
 const notesDraft = ref("");
 const requireDocsFirst = ref(false);
 const milestoneFilter = ref<string>("all");
+
+const adhocOpen = ref(false);
+const adhocTitle = ref("");
+const adhocMessage = ref("");
+const adhocBusy = ref(false);
+
+const issueCreateOpen = ref(false);
+const issueCreateBusy = ref(false);
+const issueTitle = ref("");
+const issueDescription = ref("");
+const issueLabels = ref<string[]>([]);
+
+const isCurrentAdhoc = computed(() => isAdhocJob(currentJob.value));
 
 const milestones = computed(() => {
   const set = new Set<string>();
@@ -107,6 +122,16 @@ watch(selectedJobId, (id) => {
   }
 });
 
+const progressBox = ref<HTMLElement | null>(null);
+watch(
+  () => progressLines.value.length,
+  async () => {
+    await nextTick();
+    const el = progressBox.value;
+    if (el) el.scrollTop = el.scrollHeight;
+  },
+);
+
 async function onSelectTask(iid: number) {
   midTab.value = "detail";
   try {
@@ -173,7 +198,7 @@ async function runSelected() {
       requireDocsFirst: requireDocsFirst.value,
     });
     midTab.value = "progress";
-    message.success("Đã enqueue");
+    message.success("Đã đưa task vào hàng chờ chạy agent");
   } catch (e) {
     message.error(e instanceof Error ? e.message : String(e));
   } finally {
@@ -186,7 +211,7 @@ async function runAll() {
   busy.value = true;
   try {
     await work.startJobs({ mode: "all" });
-    message.success("Đã enqueue all");
+    message.success("Đã đưa tất cả task vào hàng chờ");
   } catch (e) {
     message.error(e instanceof Error ? e.message : String(e));
   } finally {
@@ -231,12 +256,109 @@ async function sendClarify() {
   }
 }
 
+async function forceStop() {
+  if (!selectedJobId.value) return;
+  busy.value = true;
+  try {
+    await work.killJob(selectedJobId.value);
+    message.success("Đã Force Stop");
+    await work.selectJob(selectedJobId.value);
+    await work.loadJobs();
+  } catch (e) {
+    message.error(e instanceof Error ? e.message : String(e));
+  } finally {
+    busy.value = false;
+  }
+}
+
 function statusColor(st: string) {
   if (st === "succeeded") return "success";
   if (st === "failed") return "error";
   if (st === "running" || st === "queued") return "processing";
   if (st?.startsWith("awaiting")) return "warning";
   return "default";
+}
+
+function jobDisplayIid(j: { issue?: { issueIid?: number }; kind?: string }) {
+  const iid = j.issue?.issueIid;
+  if (!iid || iid <= 0 || j.kind === "adhoc") return "Hotfix";
+  return `#${iid}`;
+}
+
+async function openAdhocModal() {
+  adhocTitle.value = "";
+  adhocMessage.value = "";
+  adhocOpen.value = true;
+}
+
+async function startAdhoc() {
+  const title = adhocTitle.value.trim();
+  if (!title) {
+    message.warning("Nhập tiêu đề session");
+    return;
+  }
+  if (!(await ensureCursorKey())) return;
+  adhocBusy.value = true;
+  try {
+    const res = await work.createAdhocSession({
+      title,
+      message: adhocMessage.value.trim() || undefined,
+    });
+    adhocOpen.value = false;
+    midTab.value = res.started ? "progress" : "detail";
+    if (res.started) work.watchProgress();
+    message.success(
+      res.started ? "Đã mở Hotfix + gửi agent" : "Đã tạo session Hotfix",
+    );
+  } catch (e) {
+    message.error(e instanceof Error ? e.message : String(e));
+  } finally {
+    adhocBusy.value = false;
+  }
+}
+
+async function openCreateIssueModal() {
+  if (!selectedJobId.value || !isCurrentAdhoc.value) return;
+  issueCreateBusy.value = true;
+  issueCreateOpen.value = true;
+  try {
+    const draft = await work.fetchIssueDraft(selectedJobId.value);
+    issueTitle.value = draft.title;
+    issueDescription.value = draft.description;
+    issueLabels.value = [...(draft.labels || [])];
+  } catch (e) {
+    message.error(e instanceof Error ? e.message : String(e));
+    issueCreateOpen.value = false;
+  } finally {
+    issueCreateBusy.value = false;
+  }
+}
+
+async function submitCreateIssue() {
+  if (!selectedJobId.value) return;
+  const title = issueTitle.value.trim();
+  if (!title) {
+    message.warning("Nhập title issue");
+    return;
+  }
+  issueCreateBusy.value = true;
+  try {
+    const res = await work.createGitlabIssue(selectedJobId.value, {
+      title,
+      description: issueDescription.value,
+      labels: issueLabels.value,
+    });
+    issueCreateOpen.value = false;
+    message.success(
+      res.issueUrl
+        ? `Đã tạo issue — ${res.issueUrl}`
+        : "Đã tạo GitLab issue",
+    );
+  } catch (e) {
+    message.error(e instanceof Error ? e.message : String(e));
+  } finally {
+    issueCreateBusy.value = false;
+  }
 }
 </script>
 
@@ -251,7 +373,11 @@ function statusColor(st: string) {
       <div class="shrink-0 p-3 border-b border-line space-y-2">
         <div class="flex items-center justify-between gap-2">
           <span class="text-sm font-semibold text-ink">Tasks</span>
-          <div class="flex gap-1">
+          <div class="flex gap-1 flex-wrap justify-end">
+            <a-button size="small" @click="openAdhocModal">
+              <template #icon><PlusOutlined /></template>
+              Hotfix
+            </a-button>
             <a-button size="small" type="primary" :loading="busy" @click="runSelected"
               >Run</a-button
             >
@@ -345,9 +471,9 @@ function statusColor(st: string) {
             <a-tag :color="statusColor(j.status)" class="m-0 text-[10px]">{{
               statusLabel(j.status)
             }}</a-tag>
-            <span class="text-accent text-xs font-semibold"
-              >#{{ j.issue?.issueIid }}</span
-            >
+            <span class="text-accent text-xs font-semibold">{{
+              jobDisplayIid(j)
+            }}</span>
             <a-spin
               v-if="jobLoading && selectedJobId === j.id"
               size="small"
@@ -378,30 +504,68 @@ function statusColor(st: string) {
         <a-tab-pane key="detail" tab="Issue">
           <div class="h-full min-h-0 overflow-y-auto pr-2 pb-3 space-y-4">
             <template v-if="taskDetail || currentJob">
+              <a-alert
+                v-if="isCurrentAdhoc"
+                type="info"
+                show-icon
+                class="mt-2"
+                message="Session Hotfix — chưa có GitLab issue"
+                description="Làm việc với agent trước. Khi xong, bấm «Tạo issue GitLab» để tạo task và gắn session này."
+              >
+                <template #action>
+                  <a-button
+                    size="small"
+                    type="primary"
+                    :loading="issueCreateBusy"
+                    @click="openCreateIssueModal"
+                    >Tạo issue GitLab</a-button
+                  >
+                </template>
+              </a-alert>
+
               <div>
                 <h2 class="text-base font-semibold text-ink mt-2 mb-1">
-                  <a
-                    v-if="taskDetail?.url"
-                    :href="taskDetail.url"
-                    target="_blank"
-                    rel="noopener"
-                    class="text-accent hover:underline"
-                    >#{{ taskDetail.issueIid || selectedTaskIid }}</a
-                  >
-                  <span v-else
-                    >#{{
-                      taskDetail?.issueIid ||
-                      currentJob?.issue?.issueIid ||
-                      selectedTaskIid
-                    }}</span
-                  >
-                  {{ detailTitle }}
+                  <template v-if="isCurrentAdhoc">
+                    <span class="text-accent">Hotfix</span>
+                    {{ detailTitle }}
+                  </template>
+                  <template v-else>
+                    <a
+                      v-if="taskDetail?.url || currentJob?.issue?.url"
+                      :href="taskDetail?.url || currentJob?.issue?.url"
+                      target="_blank"
+                      rel="noopener"
+                      class="text-accent hover:underline"
+                      >#{{
+                        taskDetail?.issueIid ||
+                        currentJob?.issue?.issueIid ||
+                        selectedTaskIid
+                      }}</a
+                    >
+                    <span v-else
+                      >#{{
+                        taskDetail?.issueIid ||
+                        currentJob?.issue?.issueIid ||
+                        selectedTaskIid
+                      }}</span
+                    >
+                    {{ detailTitle }}
+                  </template>
                 </h2>
-                <p v-if="detailMeta" class="text-xs text-ink-faint m-0 mb-2">
+                <p
+                  v-if="isCurrentAdhoc && currentJob?.branch"
+                  class="text-xs text-ink-faint m-0 mb-2 font-mono"
+                >
+                  {{ currentJob.branch }}
+                  <span v-if="currentJob.commitSha">
+                    · {{ currentJob.commitSha.slice(0, 8) }}</span
+                  >
+                </p>
+                <p v-else-if="detailMeta" class="text-xs text-ink-faint m-0 mb-2">
                   {{ detailMeta }}
                 </p>
                 <div
-                  v-if="taskDetail?.labels?.length"
+                  v-if="!isCurrentAdhoc && taskDetail?.labels?.length"
                   class="flex flex-wrap gap-1 mb-3"
                 >
                   <a-tag
@@ -412,6 +576,16 @@ function statusColor(st: string) {
                   >
                 </div>
                 <div
+                  v-if="isCurrentAdhoc"
+                  class="text-sm text-ink-soft whitespace-pre-wrap rounded-xl bg-surface-soft border border-line p-3"
+                >
+                  {{
+                    currentJob?.summary?.trim() ||
+                    "Chưa có summary — chat với agent hoặc mô tả việc cần làm."
+                  }}
+                </div>
+                <div
+                  v-else
                   class="text-sm text-ink-soft whitespace-pre-wrap rounded-xl bg-surface-soft border border-line p-3"
                 >
                   {{
@@ -420,6 +594,7 @@ function statusColor(st: string) {
                 </div>
               </div>
 
+              <template v-if="!isCurrentAdhoc">
               <div>
                 <div
                   class="text-xs font-semibold uppercase tracking-wide text-ink-faint mb-2"
@@ -480,6 +655,7 @@ function statusColor(st: string) {
                 </div>
                 <div v-else class="text-xs text-ink-faint">Chưa có comment</div>
               </div>
+              </template>
 
               <div class="rounded-xl border border-line bg-accent-soft/30 p-3">
                 <div class="flex items-center justify-between gap-2 mb-2">
@@ -511,6 +687,7 @@ function statusColor(st: string) {
         </a-tab-pane>
         <a-tab-pane key="progress" tab="Progress">
           <div
+            ref="progressBox"
             class="mono-log h-full min-h-0 overflow-y-auto p-3 rounded-xl bg-surface-soft border border-line"
             :class="progressLive ? 'ring-2 ring-accent-glow/50' : ''"
           >
@@ -555,9 +732,24 @@ function statusColor(st: string) {
         class="shrink-0 px-3 py-2.5 border-b border-line flex items-center justify-between bg-gradient-to-r from-accent-soft/60 to-transparent"
       >
         <span class="font-semibold text-sm text-ink">Chat agent</span>
-        <a-tag v-if="currentJob" :color="statusColor(currentJob.status)">{{
-          statusLabel(currentJob.status)
-        }}</a-tag>
+        <div class="flex items-center gap-2">
+          <a-button
+            v-if="
+              currentJob &&
+              ['running', 'queued', 'awaiting_clarification'].includes(
+                currentJob.status,
+              )
+            "
+            size="small"
+            danger
+            :loading="busy"
+            @click="forceStop"
+            >Force Stop</a-button
+          >
+          <a-tag v-if="currentJob" :color="statusColor(currentJob.status)">{{
+            statusLabel(currentJob.status)
+          }}</a-tag>
+        </div>
       </div>
 
       <div class="flex-1 min-h-0 overflow-y-auto p-3 space-y-2">
@@ -620,5 +812,61 @@ function statusColor(st: string) {
         </div>
       </div>
     </aside>
+
+    <a-modal
+      v-model:open="adhocOpen"
+      title="New session / Hotfix"
+      ok-text="Bắt đầu"
+      cancel-text="Hủy"
+      :confirm-loading="adhocBusy"
+      @ok="startAdhoc"
+    >
+      <a-form layout="vertical" class="mt-2">
+        <a-form-item label="Tiêu đề" required>
+          <a-input
+            v-model:value="adhocTitle"
+            placeholder="vd. Hotfix crash login mobile"
+            @pressEnter="startAdhoc"
+          />
+        </a-form-item>
+        <a-form-item label="Yêu cầu đầu (optional)">
+          <a-textarea
+            v-model:value="adhocMessage"
+            :rows="4"
+            placeholder="Mô tả việc cần agent làm…"
+          />
+        </a-form-item>
+      </a-form>
+    </a-modal>
+
+    <a-modal
+      v-model:open="issueCreateOpen"
+      title="Tạo GitLab issue"
+      ok-text="Tạo issue"
+      cancel-text="Hủy"
+      :confirm-loading="issueCreateBusy"
+      :width="640"
+      @ok="submitCreateIssue"
+    >
+      <a-spin :spinning="issueCreateBusy && !issueTitle">
+        <a-form layout="vertical" class="mt-2">
+          <a-form-item label="Title" required>
+            <a-input v-model:value="issueTitle" />
+          </a-form-item>
+          <a-form-item label="Description">
+            <a-textarea v-model:value="issueDescription" :rows="10" />
+          </a-form-item>
+          <a-form-item label="Labels">
+            <a-select
+              v-model:value="issueLabels"
+              mode="multiple"
+              class="w-full"
+              :options="labels.map((l) => ({ value: l, label: l }))"
+              placeholder="Optional"
+            />
+          </a-form-item>
+        </a-form>
+      </a-spin>
+    </a-modal>
   </div>
 </template>

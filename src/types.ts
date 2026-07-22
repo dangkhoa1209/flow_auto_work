@@ -35,6 +35,49 @@ export type IssueJob = {
   milestone?: IssueMilestone | null;
 };
 
+/** Stable id: one GitLab issue → one job document forever */
+export function jobIdForIssue(projectId: number, issueIid: number): string {
+  return `issue-${projectId}-${issueIid}`;
+}
+
+/** Ad-hoc / hotfix session id (not tied to a GitLab issue yet) */
+export function newAdhocJobId(): string {
+  return `adhoc-${crypto.randomUUID().replace(/-/g, "").slice(0, 16)}`;
+}
+
+/**
+ * Unique negative placeholder iid so Mongo unique (projectId, issueIid) works
+ * for multiple adhoc jobs on the same project.
+ */
+export function syntheticAdhocIssueIid(jobId: string): number {
+  let h = 0;
+  for (let i = 0; i < jobId.length; i++) {
+    h = (Math.imul(31, h) + jobId.charCodeAt(i)) | 0;
+  }
+  const n = Math.abs(h) % 1_000_000_000;
+  return -(n || 1);
+}
+
+export function isAdhocJob(
+  job: Pick<JobRecord, "kind" | "issue"> | null | undefined,
+): boolean {
+  if (!job) return false;
+  if (job.kind === "adhoc") return true;
+  return (job.issue?.issueIid ?? 0) <= 0 || job.issue?.action === "adhoc";
+}
+
+export function slugifyBranchPart(title: string, max = 40): string {
+  const s = title
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, max)
+    .replace(/-+$/g, "");
+  return s || "session";
+}
+
 export type JobStatus =
   /** Job shell — đã gắn issue, có thể đang viết Dev Notes, chưa (re)run */
   | "draft"
@@ -50,11 +93,6 @@ export type JobStatus =
   | "succeeded"
   | "failed";
 
-/** Stable id: one GitLab issue → one job document forever */
-export function jobIdForIssue(projectId: number, issueIid: number): string {
-  return `issue-${projectId}-${issueIid}`;
-}
-
 export function isJobBusy(status: JobStatus): boolean {
   return (
     status === "queued" ||
@@ -66,6 +104,8 @@ export function isJobBusy(status: JobStatus): boolean {
 export type JobRecord = {
   id: string;
   status: JobStatus;
+  /** issue = linked GitLab task; adhoc = free session until create-issue */
+  kind?: "issue" | "adhoc";
   issue: IssueJob;
   /** GitLab username who owns/runs this job */
   ownerUsername?: string;

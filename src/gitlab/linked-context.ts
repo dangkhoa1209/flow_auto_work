@@ -122,7 +122,7 @@ export function extractIssueIids(
  */
 export function cleanCommentBodies(bodies: string[]): string[] {
   const BOT_RE =
-    /flow_auto_work|Task work 100% by AI|auto-work (started|finished|failed)|Need clarification —|Opened by flow_auto_work/i;
+    /flow_auto_work|AI-Generated|Task work 100% by AI|auto-work (started|finished|failed)|Need clarification —|Opened by flow_auto_work/i;
   const CODE_RE = /```[\s\S]*?```|~~~[\s\S]*?~~~/;
   const CHECKLIST_RE = /^\s*[-*]\s*\[[ xX]\]/m;
   const MENTION_RE =

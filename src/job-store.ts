@@ -1,16 +1,23 @@
 import { logger } from "./logger.js";
 import {
+  deleteJobDoc,
   getJobDoc,
   getJobDocByIssue,
   listJobDocs,
+  rekeyJobSideDocs,
   upsertJobDoc,
 } from "./db/mongo.js";
 import type { CompletionActions, IssueJob, JobRecord } from "./types.js";
 import {
   isJobBusy,
   jobIdForIssue,
+  newAdhocJobId,
   resolveDevNotes,
+  slugifyBranchPart,
+  syntheticAdhocIssueIid,
 } from "./types.js";
+import { getRuntimeContext } from "./workspace/runtime.js";
+import { fetchGitlabProject } from "./gitlab/client.js";
 
 export async function saveJob(
   job: JobRecord,
@@ -28,6 +35,12 @@ function normalizeJob(doc: JobRecord & { _id?: string; source?: string }): JobRe
   const notes = resolveDevNotes(job);
   if (notes) job.devNotes = notes;
   if (typeof job.runCount !== "number") job.runCount = 0;
+  if (!job.kind) {
+    job.kind =
+      job.issue?.action === "adhoc" || (job.issue?.issueIid ?? 1) <= 0
+        ? "adhoc"
+        : "issue";
+  }
   return job;
 }
 
@@ -64,6 +77,7 @@ export async function ensureJob(
 
   if (existing) {
     existing.issue = issue;
+    existing.kind = "issue";
     if (opts?.completion) existing.completion = opts.completion;
     if (opts?.devNotes !== undefined) {
       existing.devNotes = opts.devNotes.trim() || undefined;
@@ -78,6 +92,7 @@ export async function ensureJob(
   const job: JobRecord = {
     id: jobIdForIssue(issue.projectId, issue.issueIid),
     status: "draft",
+    kind: "issue",
     issue,
     clarifyRound: 0,
     runCount: 0,
@@ -90,6 +105,107 @@ export async function ensureJob(
   await saveJob(job, { source: opts?.source ?? "ensure" });
   logger.info("Ensured draft job", { jobId: job.id, issueIid: issue.issueIid });
   return job;
+}
+
+/** Create a free Hotfix / ad-hoc agent session (no GitLab issue yet). */
+export async function createAdhocJob(opts: {
+  title: string;
+  labels?: string[];
+  source?: string;
+}): Promise<JobRecord> {
+  const title = opts.title.trim();
+  if (!title) throw new Error("title required");
+
+  const rt = getRuntimeContext();
+  if (!rt) throw new Error("No workspace runtime context");
+
+  let projectId = rt.gitlabProjectId;
+  if (!projectId) {
+    const p = await fetchGitlabProject(rt.gitlabPath, rt.gitlabToken);
+    projectId = p.id;
+  }
+
+  const id = newAdhocJobId();
+  const fixedWork = rt.workBranch?.trim() || "";
+  // Có work branch workspace → dùng luôn, không tạo hotfix/...
+  const branch = fixedWork
+    ? fixedWork
+    : `hotfix/${slugifyBranchPart(title)}-${id.slice(-6)}`;
+  const now = new Date().toISOString();
+  const syntheticIid = syntheticAdhocIssueIid(id);
+
+  const job: JobRecord = {
+    id,
+    status: "draft",
+    kind: "adhoc",
+    issue: {
+      projectId,
+      projectPath: rt.gitlabPath,
+      issueIid: syntheticIid,
+      issueId: 0,
+      title,
+      description: "",
+      labels: opts.labels || [],
+      url: "",
+      action: "adhoc",
+    },
+    ownerUsername: rt.gitlabUsername,
+    workspaceProjectId: rt.projectId,
+    baseBranch: rt.baseBranch,
+    workBranch: fixedWork || undefined,
+    branch,
+    clarifyRound: 0,
+    runCount: 0,
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  await saveJob(job, { source: opts.source ?? "adhoc" });
+  logger.info("Created adhoc job", {
+    jobId: job.id,
+    title,
+    branch,
+    reusedWorkBranch: Boolean(fixedWork),
+  });
+  return job;
+}
+
+/**
+ * After GitLab issue is created: rematerialize adhoc job as issue-* id.
+ */
+export async function migrateAdhocJobToIssue(
+  adhocJob: JobRecord,
+  issue: IssueJob,
+): Promise<JobRecord> {
+  const newId = jobIdForIssue(issue.projectId, issue.issueIid);
+  if (await loadJob(newId)) {
+    throw new Error(`Job already exists for #${issue.issueIid}`);
+  }
+
+  const oldId = adhocJob.id;
+  const now = new Date().toISOString();
+  const migrated: JobRecord = {
+    ...adhocJob,
+    id: newId,
+    kind: "issue",
+    issue,
+    updatedAt: now,
+  };
+
+  await saveJob(migrated, { source: "adhoc_migrate" });
+  await rekeyJobSideDocs({
+    fromJobId: oldId,
+    toJobId: newId,
+    issueIid: issue.issueIid,
+  });
+  await deleteJobDoc(oldId);
+
+  logger.info("Migrated adhoc job → issue job", {
+    from: oldId,
+    to: newId,
+    issueIid: issue.issueIid,
+  });
+  return migrated;
 }
 
 export async function listJobs(): Promise<JobRecord[]> {

@@ -105,7 +105,8 @@ export type PreparedRepo = {
 };
 
 /**
- * - If workBranch set: checkout & stay on that branch (create from projectBranch if missing).
+ * - If workBranch set: checkout existing work branch (local or origin).
+ *   Does not create unless createWorkBranchIfMissing=true.
  * - If workBranch empty: create feat/<iid>/<slug> from projectBranch (or default).
  */
 export async function prepareRepoForIssue(opts: {
@@ -117,6 +118,12 @@ export async function prepareRepoForIssue(opts: {
   /** Base / project branch to fork from when auto-creating */
   baseBranch?: string;
   repoPath?: string;
+  /**
+   * When using workBranch: if missing locally/on origin, create from base.
+   * Default false for configured workspace work branch (must already exist).
+   * Pass true for one-off hotfix/... branches.
+   */
+  createWorkBranchIfMissing?: boolean;
 }): Promise<PreparedRepo> {
   const repoPath = opts.repoPath?.trim() || resolveRepoPath();
   const rt = getRuntimeContext();
@@ -141,15 +148,26 @@ export async function prepareRepoForIssue(opts: {
   let autoCreated = false;
 
   if (workBranch) {
-    // Fixed work branch: only work here
     if (await branchExists(repoPath, workBranch)) {
       await checkoutBranch(repoPath, workBranch);
-    } else {
+    } else if (await branchExists(repoPath, `origin/${workBranch}`)) {
+      await git(repoPath, [
+        "checkout",
+        "-b",
+        workBranch,
+        "--track",
+        `origin/${workBranch}`,
+      ]);
+    } else if (opts.createWorkBranchIfMissing) {
       await createBranchFromBase(repoPath, workBranch, projectBranch);
       autoCreated = true;
+    } else {
+      throw new Error(
+        `Work branch "${workBranch}" chưa có (local/origin). Tạo nhánh này trước, hoặc bỏ Work branch trong Settings → Project.`,
+      );
     }
     branch = workBranch;
-    logger.info("Using fixed work branch", {
+    logger.info("Using work branch", {
       branch,
       projectBranch,
       issueIid: opts.issueIid,

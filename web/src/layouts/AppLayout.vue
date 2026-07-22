@@ -37,10 +37,10 @@ onMounted(async () => {
   pollTimer = setInterval(() => {
     void work.loadJobs().catch(() => undefined);
     void work.loadStatus().catch(() => undefined);
-    if (work.selectedJobId && work.progressLive) {
+    if (work.shouldPollProgress()) {
       void work.pollProgress(false).catch(() => undefined);
     }
-  }, 4000);
+  }, 1500);
 });
 
 onUnmounted(() => {

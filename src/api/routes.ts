@@ -26,18 +26,28 @@ import {
   mongoPing,
 } from "../db/mongo.js";
 import { getReviewDiff } from "../git/diff.js";
-import { listAssignedOpenIssues } from "../gitlab/client.js";
-import { scanExistingAssignedIssues } from "../gitlab/startup-scan.js";
-import { ensureJob, loadJob, loadJobByIssue, listJobs, saveJob } from "../job-store.js";
+import { ensureJob, loadJob, loadJobByIssue, listJobs, saveJob, createAdhocJob, migrateAdhocJobToIssue } from "../job-store.js";
 import { logger } from "../logger.js";
 import { jobQueue } from "../queue.js";
-import { isJobBusy, resolveDevNotes, type CompletionActions } from "../types.js";
+import {
+  isAdhocJob,
+  isJobBusy,
+  resolveDevNotes,
+  type CompletionActions,
+  type IssueJob,
+} from "../types.js";
 import {
   createWorkspaceRoutes,
   headerProject,
   headerUser,
   withWorkspaceContext,
 } from "../workspace/routes.js";
+import {
+  commentOnIssue,
+  createIssue,
+  listAssignedOpenIssues,
+} from "../gitlab/client.js";
+import { scanExistingAssignedIssues } from "../gitlab/startup-scan.js";
 
 export function createApiRoutes() {
   const api = new Hono();
@@ -359,6 +369,175 @@ export function createApiRoutes() {
       requireDocsFirst: body.requireDocsFirst,
     });
     return c.json({ job });
+  });
+
+  /** Free Hotfix / ad-hoc agent session (no GitLab issue yet). */
+  api.post("/jobs/adhoc", async (c) => {
+    const body = (await c.req.json().catch(() => ({}))) as {
+      title?: string;
+      message?: string;
+      labels?: string[];
+    };
+    const title = body.title?.trim();
+    if (!title) return c.json({ error: "title required" }, 400);
+    try {
+      const job = await createAdhocJob({
+        title,
+        labels: body.labels,
+        source: "ui_adhoc",
+      });
+      const message = body.message?.trim();
+      if (message) {
+        // Fire follow-up async so UI can select job + stream progress
+        void jobQueue.followUpChat(job.id, message).catch((err) => {
+          logger.error("Adhoc first message failed", {
+            jobId: job.id,
+            err: err instanceof Error ? err.message : String(err),
+          });
+        });
+      }
+      return c.json({ job, started: Boolean(message) });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.error("Create adhoc job failed", { err: msg });
+      return c.json({ error: msg }, 500);
+    }
+  });
+
+  /** Prefill suggestion for «Tạo issue GitLab» modal */
+  api.get("/jobs/:id/issue-draft", async (c) => {
+    const job = await getJobDoc(c.req.param("id"));
+    if (!job) return c.json({ error: "not found" }, 404);
+    if (!isAdhocJob(job)) {
+      return c.json({ error: "Only adhoc sessions can create a new issue" }, 400);
+    }
+    const chat = await listChatMessages({ jobId: job.id, limit: 40 });
+    const humanBits = chat
+      .filter((m) => m.role === "user" && m.body?.trim())
+      .map((m) => m.body.trim())
+      .slice(-5);
+    const agentBits = chat
+      .filter((m) => m.role === "agent" && m.body?.trim())
+      .map((m) => m.body.trim())
+      .slice(-3);
+    const summary = (job.summary || "").trim();
+    const title =
+      job.issue.title?.trim() ||
+      summary.split("\n")[0]?.slice(0, 120) ||
+      "Hotfix session";
+    const parts: string[] = [];
+    if (summary) parts.push(`## Summary\n${summary}`);
+    if (humanBits.length) {
+      parts.push(
+        `## Requests\n${humanBits.map((b) => `- ${b.slice(0, 500)}`).join("\n")}`,
+      );
+    }
+    if (agentBits.length) {
+      parts.push(
+        `## Agent notes\n${agentBits.map((b) => b.slice(0, 800)).join("\n\n---\n\n")}`,
+      );
+    }
+    if (job.branch) parts.push(`## Branch\n\`${job.branch}\``);
+    if (job.commitSha) parts.push(`## Commit\n\`${job.commitSha.slice(0, 8)}\``);
+    return c.json({
+      title,
+      description: parts.join("\n\n") || title,
+      labels: job.issue.labels || [],
+      branch: job.branch || null,
+      commitSha: job.commitSha || null,
+      summary: summary || null,
+    });
+  });
+
+  /** Create GitLab issue from adhoc session and migrate job id. */
+  api.post("/jobs/:id/create-issue", async (c) => {
+    const loaded = await loadJob(c.req.param("id"));
+    if (!loaded) return c.json({ error: "not found" }, 404);
+    if (!isAdhocJob(loaded)) {
+      return c.json({ error: "Only adhoc sessions can create a new issue" }, 400);
+    }
+    if (isJobBusy(loaded.status)) {
+      return c.json(
+        { error: "Agent đang chạy — đợi xong rồi tạo issue" },
+        409,
+      );
+    }
+    const body = (await c.req.json().catch(() => ({}))) as {
+      title?: string;
+      description?: string;
+      labels?: string[];
+      assignee?: string;
+    };
+    const title = body.title?.trim() || loaded.issue.title?.trim();
+    if (!title) return c.json({ error: "title required" }, 400);
+    const description = body.description?.trim() || "";
+    const labels = body.labels?.length
+      ? body.labels
+      : loaded.issue.labels || [];
+
+    const { getRuntimeContext } = await import("../workspace/runtime.js");
+    const rt = getRuntimeContext();
+    const assignee =
+      body.assignee?.trim().replace(/^@/, "") ||
+      loaded.ownerUsername?.trim() ||
+      rt?.gitlabUsername?.trim() ||
+      "";
+
+    try {
+      const created = await createIssue({
+        title,
+        description,
+        labels,
+        assignees: assignee ? [assignee] : undefined,
+        projectIdOrPath: loaded.issue.projectId || loaded.issue.projectPath,
+      });
+
+      const issue: IssueJob = {
+        projectId: created.projectId,
+        projectPath: loaded.issue.projectPath,
+        issueIid: created.iid,
+        issueId: created.id,
+        title: created.title,
+        description: created.description,
+        labels: created.labels.length ? created.labels : labels,
+        url: created.webUrl,
+        action: "adhoc_linked",
+      };
+
+      const migrated = await migrateAdhocJobToIssue(loaded, issue);
+
+      const commentParts = [
+        "Linked from Flow Auto Work ad-hoc / Hotfix session.",
+      ];
+      if (assignee) commentParts.push(`Assignee: @${assignee}`);
+      if (migrated.branch) commentParts.push(`Branch: \`${migrated.branch}\``);
+      if (migrated.commitSha) {
+        commentParts.push(`Commit: \`${migrated.commitSha.slice(0, 12)}\``);
+      }
+      if (migrated.summary?.trim()) {
+        commentParts.push(`\n### Summary\n${migrated.summary.trim()}`);
+      }
+      await commentOnIssue(
+        created.projectId,
+        created.iid,
+        commentParts.join("\n"),
+      ).catch((err) => {
+        logger.warn("Post-create issue comment failed", {
+          err: String(err),
+          iid: created.iid,
+        });
+      });
+
+      return c.json({
+        job: migrated,
+        issueUrl: created.webUrl,
+        assignee: created.assignees[0] || assignee || null,
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.error("create-issue failed", { jobId: loaded.id, err: msg });
+      return c.json({ error: msg }, 500);
+    }
   });
 
   api.put("/jobs/:id/dev-notes", async (c) => {

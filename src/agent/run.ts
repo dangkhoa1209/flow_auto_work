@@ -9,6 +9,7 @@ import {
   resolveRepoPath,
 } from "../workspace/creds.js";
 import {
+  buildAdhocFollowUpPrompt,
   buildDocsPhasePrompt,
   buildFollowUpPrompt,
   buildResumePrompt,
@@ -27,7 +28,7 @@ import {
 // Cursor SDK attaches many AbortSignal listeners during a run.
 setMaxListeners(100);
 
-/** Cursor HTTP/2 rate-limit / stream kill / hang — must not crash the Node process. */
+/** Cursor HTTP/2 rate-limit / stream kill / hang / auth exchange — must not crash the Node process. */
 export function isTransientCursorTransportError(err: unknown): boolean {
   const msg =
     err instanceof Error
@@ -37,10 +38,35 @@ export function isTransientCursorTransportError(err: unknown): boolean {
     /ENHANCE_YOUR_CALM/i.test(msg) ||
     /ERR_HTTP2_STREAM_ERROR/i.test(msg) ||
     (/ConnectError/i.test(msg) && /Stream closed/i.test(msg)) ||
+    /API key exchange endpoint/i.test(msg) ||
+    (/ConnectError/i.test(msg) && /fetch failed/i.test(msg)) ||
+    /Failed to connect to API key exchange/i.test(msg) ||
     /timed out after/i.test(msg) ||
     /waiting for first (event|message)/i.test(msg) ||
-    /already has active run/i.test(msg)
+    /already has active run/i.test(msg) ||
+    /Cursor API unreachable/i.test(msg)
   );
+}
+
+/** Human-readable Cursor connectivity / auth failures */
+export function formatCursorAgentFailure(err: unknown, fallback: string): string {
+  const msg =
+    err instanceof Error
+      ? `${err.message} ${String((err as Error & { cause?: unknown }).cause ?? "")}`
+      : String(err);
+  if (
+    /API key exchange endpoint/i.test(msg) ||
+    (/ConnectError/i.test(msg) && /fetch failed/i.test(msg))
+  ) {
+    return (
+      "Cursor API unreachable (API key exchange / fetch failed). " +
+      "Kiểm tra mạng, VPN, hoặc Cursor API key trong Settings → Cursor, rồi thử lại."
+    );
+  }
+  if (/ENHANCE_YOUR_CALM|ERR_HTTP2/i.test(msg)) {
+    return "Cursor rate-limit / HTTP2 closed — đợi vài giây rồi Gửi lại.";
+  }
+  return fallback;
 }
 
 async function withTimeout<T>(
@@ -201,9 +227,17 @@ async function collectAssistantText(
       detail.durationMs != null && `${detail.durationMs}ms`,
       detail.result?.trim()?.slice(0, 500),
     ].filter(Boolean);
-    const msg = bits.length
+    const raw = bits.length
       ? `Agent run failed (${detail.id}): ${bits.join(" · ")}`
       : `Agent run failed: ${detail.id}`;
+    // Short-lived errors often mean Cursor never connected (see unhandled ConnectError)
+    const msg =
+      detail.durationMs != null && detail.durationMs < 15_000 && !detail.result?.trim()
+        ? formatCursorAgentFailure(
+            new Error("Failed to connect to API key exchange endpoint: fetch failed"),
+            raw,
+          )
+        : formatCursorAgentFailure(new Error(detail.result || raw), raw);
     appendJobProgress(jobId, "status", msg);
     logger.error("Cursor run status=error", {
       runId: detail.id,
@@ -489,9 +523,14 @@ export async function continueAgentWindow(
   opts?: { jobId?: string; chatHistory?: string },
 ): Promise<AgentRunResult> {
   const modelId = resolveCursorModel();
-  const prompt = buildFollowUpPrompt(message, issue, {
-    chatHistory: opts?.chatHistory,
-  });
+  const isAdhoc = issue.issueIid <= 0 || issue.action === "adhoc";
+  const prompt = isAdhoc
+    ? buildAdhocFollowUpPrompt(message, issue.title, {
+        chatHistory: opts?.chatHistory,
+      })
+    : buildFollowUpPrompt(message, issue, {
+        chatHistory: opts?.chatHistory,
+      });
 
   if (opts?.jobId) {
     clearJobProgress(opts.jobId);
@@ -502,6 +541,13 @@ export async function continueAgentWindow(
     apiKey: resolveCursorApiKey(),
     model: { id: modelId },
     local: { cwd: resolveRepoPath() },
+  }).catch((err) => {
+    throw new Error(
+      formatCursorAgentFailure(
+        err,
+        err instanceof Error ? err.message : String(err),
+      ),
+    );
   });
   logger.info("Follow-up new agent window", {
     agentId: agent.agentId,
@@ -522,18 +568,22 @@ export async function continueAgentWindow(
   try {
     run = await withTimeout(disposed.send(prompt), 60_000, "agent.send");
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = formatCursorAgentFailure(
+      err,
+      err instanceof Error ? err.message : String(err),
+    );
     if (opts?.jobId) {
       appendJobProgress(opts.jobId, "status", `Gửi prompt lỗi: ${msg}`);
     }
-    throw err instanceof Error ? err : new Error(msg);
+    throw new Error(msg);
   }
 
   trackRun(opts?.jobId, run);
   try {
     const { text, usage } = await collectAssistantText(run, opts?.jobId, {
       promptChars: prompt.length,
-      firstEventTimeoutMs: 90_000,
+      // Fail faster on Cursor network hangs so UI can Force Stop / retry
+      firstEventTimeoutMs: 45_000,
     });
     const parsed = parseAgentOutcome(text);
     return {

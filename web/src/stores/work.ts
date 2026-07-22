@@ -15,7 +15,14 @@ export type Task = {
 export type Job = {
   id: string;
   status: string;
-  issue?: { issueIid?: number; title?: string; url?: string };
+  kind?: "issue" | "adhoc";
+  issue?: {
+    issueIid?: number;
+    title?: string;
+    url?: string;
+    action?: string;
+    labels?: string[];
+  };
   runCount?: number;
   agentId?: string;
   commitSha?: string;
@@ -27,6 +34,14 @@ export type Job = {
   devNotes?: string;
   techLeadNotes?: string;
 };
+
+export function isAdhocJob(job: Job | null | undefined): boolean {
+  if (!job) return false;
+  if (job.kind === "adhoc") return true;
+  return (
+    (job.issue?.issueIid ?? 0) <= 0 || job.issue?.action === "adhoc"
+  );
+}
 
 export type TaskNote = {
   id: number;
@@ -94,6 +109,15 @@ export const useWorkStore = defineStore("work", () => {
   async function loadJobs() {
     const data = await api<{ jobs: Job[] }>("/api/jobs?limit=40");
     jobs.value = data.jobs || [];
+    // Keep currentJob.status in sync so Progress polling knows job is live
+    if (selectedJobId.value) {
+      const j = jobs.value.find((x) => x.id === selectedJobId.value);
+      if (j) {
+        currentJob.value = currentJob.value
+          ? { ...currentJob.value, ...j }
+          : j;
+      }
+    }
   }
 
   async function loadMeta() {
@@ -137,14 +161,14 @@ export const useWorkStore = defineStore("work", () => {
       if (selectedJobId.value !== id) return;
       currentJob.value = detail.job;
       chat.value = detail.chat || [];
-      if (detail.job?.issue?.issueIid) {
-        selectedTaskIid.value = detail.job.issue.issueIid;
-        const res = await api<{ detail: TaskDetail }>(
-          `/api/tasks/${detail.job.issue.issueIid}`,
-        );
+      const iid = detail.job?.issue?.issueIid;
+      if (iid && iid > 0 && !isAdhocJob(detail.job)) {
+        selectedTaskIid.value = iid;
+        const res = await api<{ detail: TaskDetail }>(`/api/tasks/${iid}`);
         if (selectedJobId.value !== id) return;
         taskDetail.value = res.detail;
       } else {
+        selectedTaskIid.value = null;
         taskDetail.value = null;
       }
       await pollProgress(true);
@@ -241,6 +265,30 @@ export const useWorkStore = defineStore("work", () => {
     }
     progressAfterId.value = data.latestId || progressAfterId.value;
     progressLive.value = Boolean(data.live);
+    if (data.status && currentJob.value?.id === selectedJobId.value) {
+      currentJob.value = { ...currentJob.value, status: data.status };
+    }
+  }
+
+  /** Call when starting Run / Gửi so Progress polls immediately */
+  function watchProgress() {
+    progressLive.value = true;
+    if (currentJob.value) {
+      currentJob.value = { ...currentJob.value, status: "running" };
+    }
+  }
+
+  function isJobStatusBusy(st?: string) {
+    return ["queued", "running", "awaiting_clarification"].includes(st || "");
+  }
+
+  /** Whether UI should keep polling progress for the selected job */
+  function shouldPollProgress() {
+    if (!selectedJobId.value) return false;
+    if (progressLive.value) return true;
+    const j =
+      jobs.value.find((x) => x.id === selectedJobId.value) || currentJob.value;
+    return isJobStatusBusy(j?.status);
   }
 
   async function startJobs(opts: {
@@ -251,6 +299,7 @@ export const useWorkStore = defineStore("work", () => {
     requireDocsFirst?: boolean;
   }) {
     const settings = useSettingsStore();
+    watchProgress();
     const res = await api<{ jobId?: string; enqueued?: number }>(
       "/api/jobs/start",
       {
@@ -268,6 +317,7 @@ export const useWorkStore = defineStore("work", () => {
 
   async function sendContinue(message: string) {
     if (!selectedJobId.value) throw new Error("Chưa chọn job");
+    watchProgress();
     await api(`/api/jobs/${selectedJobId.value}/continue`, {
       method: "POST",
       body: JSON.stringify({ message }),
@@ -277,6 +327,7 @@ export const useWorkStore = defineStore("work", () => {
 
   async function sendAsk(question: string) {
     if (!selectedJobId.value) throw new Error("Chưa chọn job");
+    watchProgress();
     await api(`/api/jobs/${selectedJobId.value}/ask`, {
       method: "POST",
       body: JSON.stringify({ question }),
@@ -298,6 +349,47 @@ export const useWorkStore = defineStore("work", () => {
       body: JSON.stringify({}),
     });
     await loadJobs();
+  }
+
+  async function createAdhocSession(opts: {
+    title: string;
+    message?: string;
+    labels?: string[];
+  }) {
+    const res = await api<{ job: Job; started?: boolean }>("/api/jobs/adhoc", {
+      method: "POST",
+      body: JSON.stringify(opts),
+    });
+    await loadJobs();
+    if (res.job?.id) await selectJob(res.job.id);
+    return res;
+  }
+
+  async function fetchIssueDraft(jobId: string) {
+    return api<{
+      title: string;
+      description: string;
+      labels: string[];
+      branch: string | null;
+      commitSha: string | null;
+      summary: string | null;
+    }>(`/api/jobs/${jobId}/issue-draft`);
+  }
+
+  async function createGitlabIssue(
+    jobId: string,
+    opts: { title: string; description: string; labels?: string[] },
+  ) {
+    const res = await api<{ job: Job; issueUrl?: string }>(
+      `/api/jobs/${jobId}/create-issue`,
+      {
+        method: "POST",
+        body: JSON.stringify(opts),
+      },
+    );
+    await loadJobs();
+    if (res.job?.id) await selectJob(res.job.id);
+    return res;
   }
 
   async function refreshAll() {
@@ -333,11 +425,16 @@ export const useWorkStore = defineStore("work", () => {
     selectTask,
     saveDevNotes,
     pollProgress,
+    watchProgress,
+    shouldPollProgress,
     startJobs,
     sendContinue,
     sendAsk,
     sendClarify,
     killJob,
+    createAdhocSession,
+    fetchIssueDraft,
+    createGitlabIssue,
     refreshAll,
   };
 });

@@ -195,6 +195,82 @@ export async function commentOnIssue(
   logger.info("Commented on issue", { projectId, issueIid });
 }
 
+/** Create a GitLab issue in the current workspace project. */
+export async function createIssue(opts: {
+  title: string;
+  description?: string;
+  labels?: string[];
+  /** GitLab usernames to assign (usually the logged-in Flow user) */
+  assignees?: string[];
+  projectIdOrPath?: number | string;
+}): Promise<{
+  id: number;
+  iid: number;
+  title: string;
+  description: string;
+  webUrl: string;
+  labels: string[];
+  projectId: number;
+  assignees: string[];
+}> {
+  const project = encodeURIComponent(
+    String(opts.projectIdOrPath ?? resolveGitlabProjectPath()),
+  );
+  const title = opts.title.trim();
+  if (!title) throw new Error("title required");
+  const payload: Record<string, unknown> = {
+    title,
+    description: opts.description?.trim() || undefined,
+  };
+  if (opts.labels?.length) {
+    payload.labels = opts.labels.join(",");
+  }
+  const assignees = (opts.assignees ?? [])
+    .map((s) => s.trim().replace(/^@/, ""))
+    .filter(Boolean);
+  if (assignees.length) {
+    const ids = await resolveUserIds(assignees);
+    if (ids.length) payload.assignee_ids = ids;
+    else {
+      logger.warn("createIssue: no user ids for assignees", { assignees });
+    }
+  }
+  const res = await gitlabFetch("POST", `/projects/${project}/issues`, payload);
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`GitLab create issue failed (${res.status}): ${text}`);
+  }
+  const data = (await res.json()) as {
+    id: number;
+    iid: number;
+    title: string;
+    description: string | null;
+    web_url: string;
+    labels?: string[];
+    project_id: number;
+    assignees?: Array<{ username?: string }>;
+  };
+  const assigned = (data.assignees ?? [])
+    .map((a) => a.username)
+    .filter((u): u is string => Boolean(u));
+  logger.info("Created GitLab issue", {
+    projectId: data.project_id,
+    iid: data.iid,
+    title: data.title,
+    assignees: assigned,
+  });
+  return {
+    id: data.id,
+    iid: data.iid,
+    title: data.title,
+    description: data.description ?? "",
+    webUrl: data.web_url,
+    labels: data.labels ?? [],
+    projectId: data.project_id,
+    assignees: assigned,
+  };
+}
+
 export async function createMergeRequest(opts: {
   projectId: number;
   sourceBranch: string;

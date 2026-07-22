@@ -129,6 +129,33 @@ export async function getJobDoc(id: string): Promise<JobDoc | null> {
   return jobs().findOne({ _id: id });
 }
 
+export async function deleteJobDoc(id: string): Promise<boolean> {
+  await connectMongo();
+  const res = await jobs().deleteOne({ _id: id });
+  return res.deletedCount > 0;
+}
+
+/** Remap chat + notes from oldJobId → newJobId and update issueIid. */
+export async function rekeyJobSideDocs(opts: {
+  fromJobId: string;
+  toJobId: string;
+  issueIid: number;
+}): Promise<{ chat: number; notes: number }> {
+  await connectMongo();
+  const chatRes = await chat().updateMany(
+    { jobId: opts.fromJobId },
+    { $set: { jobId: opts.toJobId, issueIid: opts.issueIid } },
+  );
+  const notesRes = await notes().updateMany(
+    { jobId: opts.fromJobId },
+    { $set: { jobId: opts.toJobId, issueIid: opts.issueIid } },
+  );
+  return {
+    chat: chatRes.modifiedCount,
+    notes: notesRes.modifiedCount,
+  };
+}
+
 /** One issue → one job: prefer stable id, else latest legacy doc for that issue */
 export async function getJobDocByIssue(
   projectId: number,
