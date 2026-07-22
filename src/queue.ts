@@ -7,7 +7,6 @@ import {
   scrubExcludedPathsFromLastCommit,
 } from "./git/prep.js";
 import {
-  applyIssueActions,
   commentOnIssue,
   getProjectDefaultBranch,
 } from "./gitlab/client.js";
@@ -15,6 +14,8 @@ import { ensureJob, loadJob, saveJob } from "./job-store.js";
 import { logger } from "./logger.js";
 import {
   cancelActiveAgentRun,
+  continueAgentWindow,
+  hasActiveAgentRun,
   isStartupError,
   resumeAgent,
   runNewAgent,
@@ -189,6 +190,173 @@ export class JobQueue {
   }
 
   /**
+   * Cursor-IDE-style follow-up on the same agent window (ask / fix / do more).
+   * Keeps context; commits if code changed; stays awaiting_handoff when done.
+   */
+  async followUpChat(
+    jobId: string,
+    message: string,
+  ): Promise<{
+    ok: boolean;
+    job: JobRecord;
+    kind: string;
+    summary?: string;
+    question?: string;
+    resumed?: boolean;
+    hasChange?: boolean;
+  }> {
+    const msg = message.trim();
+    if (!msg) throw new Error("message required");
+
+    const loaded = await loadJob(jobId);
+    if (!loaded) throw new Error("Job not found");
+    let job: JobRecord = loaded;
+
+    if (hasActiveAgentRun(jobId) || isJobBusy(job.status)) {
+      throw new Error(
+        "Agent đang chạy trên job này — đợi xong hoặc Force Stop",
+      );
+    }
+    if (job.status === "awaiting_clarification") {
+      throw new Error("Đang chờ clarify — trả lời ở ô Clarify");
+    }
+
+    const prevStatus = job.status;
+    const key = `${job.issue.projectId}:${job.issue.issueIid}`;
+    this.activeIssueKeys.add(key);
+    this.currentJobId = job.id;
+    job.status = "running";
+    job.error = undefined;
+    await saveJob(job);
+
+    const runFollowUp = async (): Promise<{
+      ok: boolean;
+      job: JobRecord;
+      kind: string;
+      summary?: string;
+      question?: string;
+      resumed?: boolean;
+      hasChange?: boolean;
+    }> => {
+      const config = getConfig();
+      const rt = getRuntimeContext();
+      const repoPath = rt?.repoPath ?? config.AIHR_REPO_PATH;
+      if (!repoPath) throw new Error("No repo path in workspace context");
+
+      await addChatMessage({
+        jobId: job.id,
+        issueIid: job.issue.issueIid,
+        role: "user",
+        kind: "qa",
+        body: msg,
+      });
+
+      const headBefore = await getHeadSha(repoPath);
+      let result = await continueAgentWindow(job.issue, msg, {
+        jobId: job.id,
+        existingAgentId: job.agentId,
+      });
+      job.agentId = result.agentId;
+      if (result.usage) {
+        job.tokenUsage = {
+          inputTokens: result.usage.inputTokens,
+          outputTokens: result.usage.outputTokens,
+          totalTokens: result.usage.totalTokens,
+          lastInputTokens: result.usage.lastInputTokens,
+          contextWindow: result.usage.contextWindow,
+          contextPct: result.usage.contextPct,
+          updatedAt: result.usage.updatedAt,
+        };
+      }
+      await saveJob(job);
+
+      result = await this.runClarifyLoop(job, result);
+
+      await addChatMessage({
+        jobId: job.id,
+        issueIid: job.issue.issueIid,
+        role: "agent",
+        kind: "qa",
+        body:
+          result.summary?.trim() ||
+          result.text.trim().slice(0, 8000) ||
+          "(no reply)",
+      });
+
+      if (result.kind === "need_clarification") {
+        const refreshed = await loadJob(job.id);
+        if (refreshed) job = refreshed;
+        return {
+          ok: true,
+          job,
+          kind: result.kind,
+          question: result.question,
+          summary: result.summary,
+          resumed: result.resumed,
+        };
+      }
+
+      const { hasChange } = await this.finalizeLocalCommit(
+        job,
+        repoPath,
+        headBefore,
+        commitMessageForIssue(job.issue),
+      );
+
+      if (result.summary) job.summary = result.summary;
+
+      job.status = "awaiting_handoff";
+      job.completedAt = new Date().toISOString();
+      job.error = undefined;
+      await saveJob(job);
+
+      logger.info("IDE follow-up finished", {
+        jobId: job.id,
+        kind: result.kind,
+        hasChange,
+        resumed: result.resumed,
+        agentId: job.agentId,
+        prevStatus,
+      });
+
+      return {
+        ok: true,
+        job,
+        kind: result.kind,
+        summary: result.summary,
+        question: result.question,
+        resumed: result.resumed,
+        hasChange,
+      };
+    };
+
+    try {
+      if (job.ownerUsername && job.workspaceProjectId) {
+        return await withWorkspaceContext(
+          job.ownerUsername,
+          job.workspaceProjectId,
+          runFollowUp,
+        );
+      }
+      return await runFollowUp();
+    } catch (err) {
+      const message = isStartupError(err)
+        ? `Cursor SDK startup error: ${err.message}`
+        : err instanceof Error
+          ? err.message
+          : String(err);
+      job.status = "failed";
+      job.error = message;
+      await saveJob(job);
+      throw err instanceof Error ? err : new Error(message);
+    } finally {
+      this.activeIssueKeys.delete(key);
+      if (this.currentJobId === job.id) this.currentJobId = null;
+      this.killedJobs.delete(job.id);
+    }
+  }
+
+  /**
    * Force-stop: cancel Cursor run, reject waiters, mark failed, free queue slot.
    */
   async killJob(
@@ -323,6 +491,17 @@ export class JobQueue {
         jobId: job.id,
       });
       job.agentId = result.agentId;
+      if (result.usage) {
+        job.tokenUsage = {
+          inputTokens: result.usage.inputTokens,
+          outputTokens: result.usage.outputTokens,
+          totalTokens: result.usage.totalTokens,
+          lastInputTokens: result.usage.lastInputTokens,
+          contextWindow: result.usage.contextWindow,
+          contextPct: result.usage.contextPct,
+          updatedAt: result.usage.updatedAt,
+        };
+      }
       await saveJob(job);
     }
     return result;
@@ -425,18 +604,14 @@ export class JobQueue {
       const startLabels = (job.completion?.onStartLabels ?? [])
         .map((s) => s.trim())
         .filter(Boolean);
-      if (startLabels.length > 0) {
-        try {
-          await applyIssueActions({
-            projectId: job.issue.projectId,
-            issueIid: job.issue.issueIid,
-            labels: startLabels,
-            labelMode: "add",
-          });
-        } catch (err) {
-          logger.warn("On-start labels failed", { err: String(err) });
-        }
-      }
+      const { markIssueProcessing } = await import(
+        "./gitlab/processing-label.js"
+      );
+      await markIssueProcessing({
+        projectId: job.issue.projectId,
+        issueIid: job.issue.issueIid,
+        extraStartLabels: startLabels,
+      });
 
       const targetOverride =
         config.MR_TARGET_BRANCH ||
@@ -474,6 +649,7 @@ export class JobQueue {
         techLeadNotes: notes || undefined,
         devNotes: notes || undefined,
         chatContext: chatContext || undefined,
+        existingAgentId: job.agentId,
         phase: runDocsPhase ? "docs" : "code",
         approvedDocsPaths:
           !runDocsPhase && job.docsApprovedAt
@@ -485,6 +661,17 @@ export class JobQueue {
             : undefined,
       });
       job.agentId = result.agentId;
+      if (result.usage) {
+        job.tokenUsage = {
+          inputTokens: result.usage.inputTokens,
+          outputTokens: result.usage.outputTokens,
+          totalTokens: result.usage.totalTokens,
+          lastInputTokens: result.usage.lastInputTokens,
+          contextWindow: result.usage.contextWindow,
+          contextPct: result.usage.contextPct,
+          updatedAt: result.usage.updatedAt,
+        };
+      }
       await saveJob(job);
 
       result = await this.runClarifyLoop(job, result);
@@ -611,6 +798,13 @@ export class JobQueue {
       job.status = "failed";
       job.error = message;
       await saveJob(job);
+      const { clearIssueProcessing } = await import(
+        "./gitlab/processing-label.js"
+      );
+      await clearIssueProcessing({
+        projectId: job.issue.projectId,
+        issueIid: job.issue.issueIid,
+      });
       logger.error("Job failed", { jobId: job.id, message });
     } finally {
       this.activeIssueKeys.delete(key);

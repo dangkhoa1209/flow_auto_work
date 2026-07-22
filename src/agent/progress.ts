@@ -1,4 +1,5 @@
 import type { SDKMessage } from "@cursor/sdk";
+import { getConfig } from "../config.js";
 
 export type ProgressLine = {
   id: number;
@@ -7,8 +8,19 @@ export type ProgressLine = {
   text: string;
 };
 
+export type JobTokenSnapshot = {
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  lastInputTokens: number;
+  contextWindow: number;
+  contextPct: number;
+  updatedAt: string;
+};
+
 const MAX_LINES = 400;
 const buffers = new Map<string, ProgressLine[]>();
+const tokenByJob = new Map<string, JobTokenSnapshot>();
 let seq = 0;
 
 export function clearJobProgress(jobId: string): void {
@@ -53,6 +65,60 @@ function summarizeToolArgs(name: string, args: unknown): string {
   if (typeof a.target_directory === "string")
     return `${name}: ${a.target_directory}`;
   return name;
+}
+
+type UsageLike = {
+  inputTokens?: number;
+  outputTokens?: number;
+  totalTokens?: number;
+  cacheReadTokens?: number;
+  cacheWriteTokens?: number;
+};
+
+/** Best-effort context fill % from last-turn inputTokens / configured window. */
+export function recordTokenUsage(
+  jobId: string | undefined,
+  usage: UsageLike | undefined | null,
+  opts?: { lastTurnInput?: number },
+): JobTokenSnapshot | null {
+  if (!jobId || !usage) return null;
+  const window = Math.max(1, getConfig().CURSOR_CONTEXT_WINDOW || 200_000);
+  const inputTokens = Number(usage.inputTokens) || 0;
+  const outputTokens = Number(usage.outputTokens) || 0;
+  const totalTokens =
+    Number(usage.totalTokens) ||
+    inputTokens +
+      outputTokens +
+      (Number(usage.cacheReadTokens) || 0) +
+      (Number(usage.cacheWriteTokens) || 0);
+  const lastInput =
+    opts?.lastTurnInput != null && opts.lastTurnInput > 0
+      ? opts.lastTurnInput
+      : inputTokens;
+  const contextPct = Math.min(
+    100,
+    Math.round((lastInput / window) * 1000) / 10,
+  );
+  const snap: JobTokenSnapshot = {
+    inputTokens,
+    outputTokens,
+    totalTokens,
+    lastInputTokens: lastInput,
+    contextWindow: window,
+    contextPct,
+    updatedAt: new Date().toISOString(),
+  };
+  tokenByJob.set(jobId, snap);
+  appendJobProgress(
+    jobId,
+    "usage",
+    `tokens · window ~${contextPct}% (${lastInput.toLocaleString()}/${window.toLocaleString()} in) · total ${totalTokens.toLocaleString()}`,
+  );
+  return snap;
+}
+
+export function getJobTokenUsage(jobId: string): JobTokenSnapshot | null {
+  return tokenByJob.get(jobId) ?? null;
 }
 
 export function appendSdkMessage(
@@ -113,8 +179,15 @@ export function appendSdkMessage(
     case "system":
       appendJobProgress(jobId, "system", `init · ${message.run_id}`);
       break;
-    default:
+    default: {
+      const raw = message as { type?: string; usage?: UsageLike };
+      if (raw.type === "usage" && raw.usage) {
+        recordTokenUsage(jobId, raw.usage, {
+          lastTurnInput: Number(raw.usage.inputTokens) || undefined,
+        });
+      }
       break;
+    }
   }
 }
 

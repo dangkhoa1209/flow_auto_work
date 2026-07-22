@@ -73,6 +73,7 @@ export type JobRecord = {
   baseBranch?: string;
   /** Fixed work branch; empty → auto feat/<iid>/slug */
   workBranch?: string;
+  /** Cursor SDK agent id — one job ↔ one agent window (resume across runs) */
   agentId?: string;
   runId?: string;
   branch?: string;
@@ -81,6 +82,18 @@ export type JobRecord = {
   commitSha?: string;
   /** History of commit SHAs across re-runs (newest last) */
   commitShas?: string[];
+  /** Last reported Cursor token usage (for context-window % UI) */
+  tokenUsage?: {
+    inputTokens: number;
+    outputTokens: number;
+    totalTokens: number;
+    /** Last-turn inputTokens (best proxy for context fill) */
+    lastInputTokens?: number;
+    contextWindow: number;
+    /** 0–100 estimate: lastInputTokens / contextWindow */
+    contextPct: number;
+    updatedAt: string;
+  };
   clarifyRound: number;
   /** How many agent runs completed or started on this job */
   runCount: number;

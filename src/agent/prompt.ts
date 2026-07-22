@@ -239,6 +239,33 @@ ${commitMsg}
 Then use the DONE block. The DONE summary MUST be in Vietnamese (tiếng Việt). Do not push or open an MR.`;
 }
 
+/**
+ * Cursor-IDE-style follow-up on the same agent window (after DONE or mid-task).
+ * Keeps conversation/tool context; human can ask, fix, or request more work.
+ */
+export function buildFollowUpPrompt(message: string, issue: IssueJob): string {
+  const commitMsg = commitMessageForIssue(issue);
+  return `You are continuing the **same Cursor agent window** for GitLab issue #${issue.issueIid} ("${issue.title}").
+Prior turns, tool results, and code edits in this window are still your context — like Cursor IDE Agent chat.
+
+## Human follow-up (this turn)
+${message.trim()}
+
+## How to behave (IDE-like)
+1. If they ask a question → answer clearly (Vietnamese if they wrote Vietnamese). You may briefly inspect the repo.
+2. If they ask to fix / add / change / re-test / seed data / run something → **do it** on the CURRENT branch (do not switch branches).
+3. Prefer small, correct changes. Stay scoped to this issue unless they explicitly expand scope.
+4. Do NOT push, force-push, amend remote commits, or open/merge MRs.
+5. Do NOT stage WIP exclude files: resources/js/composables/permission.js, resources/js/directives/index.js.
+6. If you changed code and are done with this request, commit with:
+
+   ${commitMsg}
+
+7. If you need more info, end with NEED_CLARIFICATION. If finished this follow-up, end with DONE (summary in Vietnamese).
+
+<<<NEED_CLARIFICATION>>> / <<<DONE>>> blocks same as usual when applicable.`;
+}
+
 export function parseAgentOutcome(text: string): {
   kind: "done" | "docs_ready" | "need_clarification" | "unknown";
   question?: string;

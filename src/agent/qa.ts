@@ -13,6 +13,8 @@ import {
   appendJobProgress,
   appendSdkMessage,
   clearJobProgress,
+  recordTokenUsage,
+  type JobTokenSnapshot,
 } from "./progress.js";
 import {
   cancelActiveAgentRun,
@@ -26,6 +28,13 @@ export type QaHistoryTurn = {
   role: string;
   kind?: string;
   body: string;
+};
+
+export type QaResult = {
+  answer: string;
+  agentId: string;
+  usage: JobTokenSnapshot | null;
+  resumed: boolean;
 };
 
 const QA_TIMEOUT_MS = 3 * 60 * 1000;
@@ -52,14 +61,14 @@ function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
   });
 }
 
-/** Q&A with stream → Progress; advisory only (no long DB/queue execution). */
+/** Q&A on the same agent window as the job Run when possible. */
 export async function answerTaskQuestion(opts: {
   issue: IssueJob;
   question: string;
-  /** Prior clarify/qa turns (oldest → newest), excluding the current question */
   history?: QaHistoryTurn[];
   jobId?: string;
-}): Promise<string> {
+  existingAgentId?: string;
+}): Promise<QaResult> {
   const jobId = opts.jobId;
   const [diff, linked] = await Promise.all([
     getReviewDiff({ issueIid: opts.issue.issueIid }),
@@ -84,14 +93,14 @@ export async function answerTaskQuestion(opts: {
     })
     .join("\n\n");
 
-  const prompt = `You are in **Q&A / review mode** (NOT a full coding Run).
+  const prompt = `You are in **Q&A / review mode** on the same agent window as this job (NOT a full coding Run).
 
 ## Hard rules for this turn
 1. Answer the human's question using the issue, diff, and codebase.
 2. Prefer a clear Vietnamese answer with concrete file/paths/commands they can run.
 3. Do **NOT** execute long-running work: no DB mutations that take minutes, no queue workers left running, no seed scripts that hang.
-4. You may briefly grep/read files to find how YKKSUB / queue / employee APIs work — then **stop and answer**.
-5. If they ask you to *do* the work (connect DB, insert NV, run queue), explain the exact steps briefly and tell them to click the green **"Bật Run"** button in the Clarify / Q&A panel (same as Dev Notes → Run). Do not try to finish the whole operation in this Q&A turn.
+4. You may briefly grep/read files — then **stop and answer**.
+5. If they ask you to *do* the work, tell them to click **"Bật Run"** in the Clarify / Q&A panel.
 6. Keep the final answer concise (roughly under ~40 lines).
 
 ## Issue #${opts.issue.issueIid}
@@ -128,6 +137,7 @@ ${opts.question}`;
     historyTurns: opts.history?.length ?? 0,
     model: modelId,
     jobId,
+    existingAgentId: opts.existingAgentId || null,
   });
 
   if (jobId) {
@@ -135,19 +145,56 @@ ${opts.question}`;
     appendJobProgress(jobId, "status", `Q&A started · model ${modelId}`);
   }
 
-  const work = async (): Promise<string> => {
-    await using agent = await Agent.create({
-      apiKey: resolveCursorApiKey(),
-      model: { id: modelId },
-      local: { cwd: resolveRepoPath() },
-    });
+  const work = async (): Promise<QaResult> => {
+    let resumed = false;
+    let agent: Awaited<ReturnType<typeof Agent.create>>;
+    const existing = opts.existingAgentId?.trim();
+    if (existing) {
+      try {
+        agent = await Agent.resume(existing, {
+          apiKey: resolveCursorApiKey(),
+          model: { id: modelId },
+          local: { cwd: resolveRepoPath() },
+        });
+        resumed = true;
+      } catch (err) {
+        logger.warn("Q&A resume failed — new window", { err: String(err) });
+        agent = await Agent.create({
+          apiKey: resolveCursorApiKey(),
+          model: { id: modelId },
+          local: { cwd: resolveRepoPath() },
+        });
+      }
+    } else {
+      agent = await Agent.create({
+        apiKey: resolveCursorApiKey(),
+        model: { id: modelId },
+        local: { cwd: resolveRepoPath() },
+      });
+    }
 
-    const run = await agent.send(prompt);
-    logger.info("Q&A run started", { runId: run.id, agentId: agent.agentId });
+    await using disposed = agent;
+    if (jobId) {
+      appendJobProgress(
+        jobId,
+        "status",
+        resumed
+          ? `Q&A on agent window ${disposed.agentId}`
+          : `Q&A new agent window ${disposed.agentId}`,
+      );
+    }
+
+    const run = await disposed.send(prompt);
+    logger.info("Q&A run started", {
+      runId: run.id,
+      agentId: disposed.agentId,
+      resumed,
+    });
     if (jobId) trackExternalRun(jobId, run);
 
     try {
       let streamed = "";
+      let lastTurnInput = 0;
       try {
         if (
           typeof run.stream === "function" &&
@@ -159,6 +206,13 @@ ${opts.question}`;
               for (const block of message.message.content) {
                 if (block.type === "text") streamed += block.text;
               }
+            }
+            const raw = message as {
+              type?: string;
+              usage?: { inputTokens?: number };
+            };
+            if (raw.type === "usage" && raw.usage?.inputTokens) {
+              lastTurnInput = raw.usage.inputTokens;
             }
           }
         }
@@ -182,8 +236,20 @@ ${opts.question}`;
         );
       }
       const text = (result.result ?? streamed).trim() || "(no answer)";
+      const usage = jobId
+        ? recordTokenUsage(
+            jobId,
+            (result as { usage?: Parameters<typeof recordTokenUsage>[1] }).usage,
+            { lastTurnInput: lastTurnInput || undefined },
+          )
+        : null;
       appendJobProgress(jobId, "status", "Q&A finished");
-      return text;
+      return {
+        answer: text,
+        agentId: disposed.agentId,
+        usage,
+        resumed,
+      };
     } finally {
       if (jobId) untrackExternalRun(jobId);
     }

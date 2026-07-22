@@ -703,6 +703,7 @@
     .progress-log .pline.status .k { color: #4ade80; }
     .progress-log .pline.thinking .k { color: #c4b5fd; }
     .progress-log .pline.assistant .k { color: #93c5fd; }
+    .progress-log .pline.usage .k { color: #f9a8d4; }
     .progress-log.live { box-shadow: inset 0 0 0 1px var(--teal); }
 
     .modal-backdrop {
@@ -1417,15 +1418,16 @@
           </div>
           <div class="compose-panel" id="askPanel">
             <div class="compose-panel__head">
-              <h3 class="compose-panel__title"><span>Hỏi</span> về task</h3>
-              <div class="compose-panel__meta">Q&amp;A · không sửa code trừ khi bạn yêu cầu</div>
+              <h3 class="compose-panel__title"><span>Chat</span> agent</h3>
+              <div class="compose-panel__meta">cùng window · như Cursor IDE</div>
             </div>
             <div class="compose-panel__body">
-              <p class="compose-panel__hint">Q&amp;A chỉ trả lời. Muốn agent <strong>tự chạy end-to-end</strong> (DB / queue / test) → bấm <strong>Bật Run</strong>.</p>
-              <textarea id="askInput" rows="3" placeholder="Vd: Connect YKKSUB, tạo NV 2670348, chạy queue, verify…"></textarea>
+              <p class="compose-panel__hint">Sau khi xong task vẫn hỏi / fix / làm thêm trên <strong>cùng agent window</strong> (giữ context). Lần đầu mở window: bấm <strong>Run</strong> hoặc gửi chat.</p>
+              <textarea id="askInput" rows="3" placeholder="Vd: fix lỗi X… / thêm test… / giải thích đoạn này…"></textarea>
               <div class="compose-panel__actions">
-                <button type="button" class="secondary" id="btnAsk">Hỏi agent</button>
-                <button type="button" class="btn-run" id="btnEnableRun" title="Chạy agent end-to-end trên job/task đang chọn">Bật Run</button>
+                <button type="button" class="btn-run" id="btnContinueChat" title="Gửi follow-up trên cùng agent window">Gửi</button>
+                <button type="button" class="secondary" id="btnAsk" title="Chỉ hỏi, không sửa code">Chỉ hỏi</button>
+                <button type="button" class="secondary" id="btnEnableRun" title="Run mission đầy đủ (mở/reuse window)">Run</button>
               </div>
             </div>
           </div>
@@ -1653,14 +1655,14 @@
       <div class="meta" style="margin:16px 0 12px">Handoff / labels — không auto assign khi xong.</div>
       <input type="hidden" id="onCompleteEnabled" value="1" />
       <div class="section-title">Trước khi làm task</div>
-      <label class="meta" style="display:block;margin-bottom:4px">Thêm labels khi Start</label>
+      <label class="meta" style="display:block;margin-bottom:4px">Thêm labels khi Start (+ luôn thêm <code>on-processing</code>)</label>
       <div id="onStartLabelsDd" class="dd"></div>
-      <div class="section-title">Prefill khi handoff (không auto)</div>
+      <div class="section-title">Prefill khi handoff QC (không auto)</div>
       <label class="meta" style="display:block;margin-bottom:4px">Assign (1 người)</label>
       <div id="onCompleteAssigneeDd" class="dd"></div>
       <label class="meta" style="display:block;margin-bottom:4px">Thêm labels</label>
       <div id="onCompleteLabelsAddDd" class="dd"></div>
-      <label class="meta" style="display:block;margin-bottom:4px">Bỏ labels</label>
+      <label class="meta" style="display:block;margin-bottom:4px">Bỏ labels (+ luôn bỏ <code>on-processing</code>)</label>
       <div id="onCompleteLabelsRemoveDd" class="dd"></div>
       <label class="meta" style="display:block;margin-bottom:4px;margin-top:8px">Comment (optional)</label>
       <textarea id="onCompleteComment" rows="2" placeholder="Comment khi handoff…"></textarea>
@@ -2717,12 +2719,27 @@
         }
         appendProgressLines(data.lines || []);
         progressAfterId = data.latestId || progressAfterId;
-        $("progressMeta").textContent = data.live
-          ? `· live · ${data.status}`
-          : data.status
-            ? `· ${data.status}`
+        const tu = data.tokenUsage;
+        const pct =
+          tu && typeof tu.contextPct === "number"
+            ? ` · window ~${tu.contextPct}%`
             : "";
+        const agentBit = data.agentId
+          ? ` · agent ${String(data.agentId).slice(0, 10)}…`
+          : "";
+        $("progressMeta").textContent = data.live
+          ? `· live · ${data.status}${pct}${agentBit}`
+          : data.status
+            ? `· ${data.status}${pct}${agentBit}`
+            : pct || agentBit
+              ? `${pct}${agentBit}`.replace(/^ · /, "· ")
+              : "";
         $("progressLog").classList.toggle("live", Boolean(data.live));
+        // Keep job tokenUsage fresh for list badges
+        if (tu && selectedJobId) {
+          const j = jobs.find((x) => x.id === selectedJobId);
+          if (j) j.tokenUsage = tu;
+        }
       } catch (e) {
         /* ignore transient */
       }
@@ -3058,9 +3075,14 @@
         const killable = ["queued", "running", "awaiting_clarification", "awaiting_diff_approval"].includes(j.status);
         const hasNotes = !!(j.devNotes || j.techLeadNotes);
         const docsBit = j.requireDocsFirst ? " · docs-first" : "";
+        const tok =
+          j.tokenUsage && typeof j.tokenUsage.contextPct === "number"
+            ? ` · ~${j.tokenUsage.contextPct}% ctx`
+            : "";
+        const agentBit = j.agentId ? ` · win` : "";
         return `
         <div class="job ${j.id === selectedJobId ? "active" : ""}" data-job="${j.id}">
-          <div><span class="st ${j.status}">${j.status}</span> · ${issueIdWithView(j.issue?.issueIid, j.issue?.url)}${j.runCount ? ` · run#${j.runCount}` : ""}${hasNotes ? " · notes" : ""}${docsBit}${j.commitSha ? ` · <code>${escapeHtml(j.commitSha.slice(0, 7))}</code>` : ""}</div>
+          <div><span class="st ${j.status}">${j.status}</span> · ${issueIdWithView(j.issue?.issueIid, j.issue?.url)}${j.runCount ? ` · run#${j.runCount}` : ""}${hasNotes ? " · notes" : ""}${docsBit}${tok}${agentBit}${j.commitSha ? ` · <code>${escapeHtml(j.commitSha.slice(0, 7))}</code>` : ""}</div>
           <div class="title">${escapeHtml(j.issue?.title || "")}</div>
           <div class="meta">${j.error ? escapeHtml(j.error).slice(0, 80) : escapeHtml(j.id)}</div>
           ${killable ? `<div class="job-actions"><button type="button" class="danger" data-kill="${j.id}">Force Stop</button></div>` : ""}
@@ -3638,7 +3660,7 @@
             assignee: envAssignee,
             onStartLabels: [],
             addLabels: envLabels,
-            removeLabels: [],
+            removeLabels: ["on-processing"],
             comment: defaults.comment || "",
           };
         }
@@ -3870,7 +3892,7 @@
           body: JSON.stringify({
             assignees,
             labels,
-            removeLabels: [],
+            removeLabels: savedSettings.removeLabels || [],
             labelMode: "add",
             comment: comment || undefined,
           }),
@@ -4041,7 +4063,7 @@
         const runBtn = $("btnRunJob");
         const enableBtn = $("btnEnableRun");
         setButtonLoading(runBtn, true, "Run");
-        setButtonLoading(enableBtn, true, "Bật Run");
+        setButtonLoading(enableBtn, true, "Run");
         try {
           const askText = ($("askInput")?.value || "").trim();
           const notesEl = $("devNotes");
@@ -4109,7 +4131,7 @@
           toast(e.message);
         } finally {
           setButtonLoading(runBtn, false, "Run");
-          setButtonLoading(enableBtn, false, "Bật Run");
+          setButtonLoading(enableBtn, false, "Run");
         }
       };
       await ensureCursorKeyThen(doRun);
@@ -4234,27 +4256,26 @@
       if (!selectedJobId) return toast("Chọn job để hỏi");
       const question = $("askInput").value.trim();
       if (!question) return toast("Nhập câu hỏi");
-      setButtonLoading($("btnAsk"), true, "Hỏi agent");
-      // Show question immediately + watch Progress while Q&A streams
+      setButtonLoading($("btnAsk"), true, "Chỉ hỏi");
       const box = $("chatView");
       if (box) {
         const prev = box.innerHTML.includes("empty") ? "" : box.innerHTML;
         box.innerHTML =
           prev +
           `<div class="bubble user"><div class="who">user · qa · ${new Date().toLocaleTimeString()}</div>${escapeHtml(question)}</div>` +
-          `<div class="bubble agent"><div class="who">agent · qa</div><span class="meta">Đang trả lời… xem tab Progress</span></div>`;
+          `<div class="bubble agent"><div class="who">agent · qa</div><span class="meta">Đang trả lời (read-only)… Progress</span></div>`;
         box.scrollTop = box.scrollHeight;
       }
       $("askInput").value = "";
       setMidTab("progress");
-      resetProgressView("Q&A đang chạy…");
+      resetProgressView("Q&A read-only…");
       void pollProgress(true);
       try {
         await api(`/api/jobs/${selectedJobId}/ask`, {
           method: "POST",
           body: JSON.stringify({ question }),
         });
-        toast("Đã trả lời — xem Clarify / Q&A");
+        toast("Đã trả lời (chỉ hỏi)");
         lastChatFingerprint = "";
         const detail = await api(`/api/jobs/${selectedJobId}`);
         renderChat(
@@ -4273,7 +4294,62 @@
           );
         } catch { /* */ }
       } finally {
-        setButtonLoading($("btnAsk"), false, "Hỏi agent");
+        setButtonLoading($("btnAsk"), false, "Chỉ hỏi");
+      }
+    }
+
+    async function continueChat() {
+      if (!selectedJobId) return toast("Chọn job");
+      const message = $("askInput").value.trim();
+      if (!message) return toast("Nhập tin nhắn (hỏi / fix / làm thêm)");
+      setButtonLoading($("btnContinueChat"), true, "Gửi");
+      const box = $("chatView");
+      if (box) {
+        const prev = box.innerHTML.includes("empty") ? "" : box.innerHTML;
+        box.innerHTML =
+          prev +
+          `<div class="bubble user"><div class="who">user · chat · ${new Date().toLocaleTimeString()}</div>${escapeHtml(message)}</div>` +
+          `<div class="bubble agent"><div class="who">agent · window</div><span class="meta">Đang làm trên cùng window… xem Progress</span></div>`;
+        box.scrollTop = box.scrollHeight;
+      }
+      $("askInput").value = "";
+      setMidTab("progress");
+      resetProgressView("IDE follow-up…");
+      void pollProgress(true);
+      try {
+        const res = await api(`/api/jobs/${selectedJobId}/continue`, {
+          method: "POST",
+          body: JSON.stringify({ message }),
+        });
+        toast(
+          res.hasChange
+            ? `Đã làm + commit · ${res.resumed ? "cùng window" : "window mới"}`
+            : res.kind === "need_clarification"
+              ? "Agent hỏi lại — xem Clarify"
+              : `Xong follow-up · ${res.resumed ? "cùng window" : "window mới"}`,
+        );
+        lastChatFingerprint = "";
+        lastJobsFingerprint = "";
+        await loadJobs();
+        const detail = await api(`/api/jobs/${selectedJobId}`);
+        currentJob = detail.job || currentJob;
+        renderChat(
+          detail.chat,
+          detail.job?.status === "awaiting_clarification" ? detail.job.lastQuestion : null,
+        );
+        await pollProgress(true);
+      } catch (e) {
+        toast(e.message);
+        lastChatFingerprint = "";
+        try {
+          const detail = await api(`/api/jobs/${selectedJobId}`);
+          renderChat(
+            detail.chat,
+            detail.job?.status === "awaiting_clarification" ? detail.job.lastQuestion : null,
+          );
+        } catch { /* */ }
+      } finally {
+        setButtonLoading($("btnContinueChat"), false, "Gửi");
       }
     }
 
@@ -4339,6 +4415,13 @@
     $("btnRunDrafts").onclick = () => runAllDrafts();
     $("btnClarify").onclick = sendClarify;
     $("btnAsk").onclick = askQuestion;
+    $("btnContinueChat").onclick = () => continueChat();
+    $("askInput")?.addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter" && (ev.metaKey || ev.ctrlKey)) {
+        ev.preventDefault();
+        void continueChat();
+      }
+    });
     $("milestoneFilter").onchange = () => {
       milestoneFilter = $("milestoneFilter").value || "all";
       renderTasks();

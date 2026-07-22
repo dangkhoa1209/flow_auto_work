@@ -50,6 +50,10 @@ const envSchema = z.object({
     ),
   MONGODB_URI: z.string().default("mongodb://127.0.0.1:27017"),
   MONGODB_DB: z.string().default("flow_auto_work"),
+  /** GitLab label added when a job starts; removed on QC handoff */
+  PROCESSING_LABEL: z.string().default("on-processing"),
+  /** Estimated model context window for % display (SDK has no remaining-% API) */
+  CURSOR_CONTEXT_WINDOW: z.coerce.number().default(200_000),
   ON_COMPLETE_ASSIGN_USERNAMES: z.string().optional(),
   ON_COMPLETE_LABELS: z.string().optional(),
   ON_COMPLETE_COMMENT: z.string().optional(),

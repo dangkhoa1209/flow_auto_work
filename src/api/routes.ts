@@ -519,12 +519,19 @@ export function createApiRoutes() {
     }
 
     const { applyIssueActions } = await import("../gitlab/client.js");
+    const { processingLabel } = await import("../gitlab/processing-label.js");
+    const proc = processingLabel();
+    const removeWithProcessing = [
+      ...new Set(
+        [...removeLabels, proc].map((s) => s.trim()).filter(Boolean),
+      ),
+    ];
     await applyIssueActions({
       projectId: job.issue.projectId,
       issueIid: job.issue.issueIid,
       assignees,
       labels,
-      removeLabels,
+      removeLabels: removeWithProcessing,
       labelMode: body.labelMode === "set" ? "set" : "add",
       comment,
     });
@@ -1138,15 +1145,30 @@ export function createApiRoutes() {
       Number.isFinite(after) ? after : 0,
     );
     const { hasActiveAgentRun } = await import("../agent/run.js");
+    const { getJobTokenUsage } = await import("../agent/progress.js");
     const live =
       hasActiveAgentRun(jobId) ||
       ["queued", "running", "awaiting_clarification"].includes(job.status);
+    const liveUsage = getJobTokenUsage(jobId);
+    const tokenUsage = liveUsage
+      ? {
+          inputTokens: liveUsage.inputTokens,
+          outputTokens: liveUsage.outputTokens,
+          totalTokens: liveUsage.totalTokens,
+          lastInputTokens: liveUsage.lastInputTokens,
+          contextWindow: liveUsage.contextWindow,
+          contextPct: liveUsage.contextPct,
+          updatedAt: liveUsage.updatedAt,
+        }
+      : job.tokenUsage ?? null;
     return c.json({
       jobId,
       status: job.status,
+      agentId: job.agentId ?? null,
       lines,
       latestId,
       live,
+      tokenUsage,
     });
   });
 
@@ -1315,7 +1337,32 @@ export function createApiRoutes() {
     return c.json({ ok: true });
   });
 
-  /** Freeform Q&A / review questions about the task + diff. */
+  /**
+   * Cursor-IDE-style chat on the same agent window.
+   * Ask / fix / do more after DONE — keeps conversation context.
+   */
+  api.post("/jobs/:id/continue", async (c) => {
+    const job = await getJobDoc(c.req.param("id"));
+    if (!job) return c.json({ error: "not found" }, 404);
+    const body = (await c.req.json().catch(() => ({}))) as {
+      message?: string;
+    };
+    if (!body.message?.trim()) {
+      return c.json({ error: "message required" }, 400);
+    }
+    try {
+      const result = await jobQueue.followUpChat(job.id, body.message);
+      return c.json(result);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.error("IDE continue failed", { jobId: job.id, err: msg });
+      const status =
+        /đang chạy|Force Stop|clarify/i.test(msg) ? 409 : 500;
+      return c.json({ error: msg }, status);
+    }
+  });
+
+  /** Freeform Q&A / review-only (optional; prefer /continue for IDE-like chat). */
   api.post("/jobs/:id/ask", async (c) => {
     const job = await getJobDoc(c.req.param("id"));
     if (!job) return c.json({ error: "not found" }, 404);
@@ -1348,24 +1395,43 @@ export function createApiRoutes() {
     });
 
     try {
-      const answer = await answerTaskQuestion({
+      const qa = await answerTaskQuestion({
         issue: job.issue,
         question: body.question,
         jobId: job.id,
+        existingAgentId: job.agentId,
         history: priorChat.map((m) => ({
           role: m.role,
           kind: m.kind,
           body: m.body,
         })),
       });
+      job.agentId = qa.agentId;
+      if (qa.usage) {
+        job.tokenUsage = {
+          inputTokens: qa.usage.inputTokens,
+          outputTokens: qa.usage.outputTokens,
+          totalTokens: qa.usage.totalTokens,
+          lastInputTokens: qa.usage.lastInputTokens,
+          contextWindow: qa.usage.contextWindow,
+          contextPct: qa.usage.contextPct,
+          updatedAt: qa.usage.updatedAt,
+        };
+      }
+      await saveJob(job);
       await addChatMessage({
         jobId: job.id,
         issueIid: job.issue.issueIid,
         role: "agent",
         kind: "qa",
-        body: answer,
+        body: qa.answer,
       });
-      return c.json({ answer });
+      return c.json({
+        answer: qa.answer,
+        agentId: qa.agentId,
+        resumed: qa.resumed,
+        tokenUsage: job.tokenUsage ?? null,
+      });
     } catch (err) {
       logger.error("Q&A failed", { err: String(err) });
       await addChatMessage({
