@@ -1137,12 +1137,16 @@ export function createApiRoutes() {
       jobId,
       Number.isFinite(after) ? after : 0,
     );
+    const { hasActiveAgentRun } = await import("../agent/run.js");
+    const live =
+      hasActiveAgentRun(jobId) ||
+      ["queued", "running", "awaiting_clarification"].includes(job.status);
     return c.json({
       jobId,
       status: job.status,
       lines,
       latestId,
-      live: ["queued", "running", "awaiting_clarification"].includes(job.status),
+      live,
     });
   });
 
@@ -1322,6 +1326,19 @@ export function createApiRoutes() {
       return c.json({ error: "question required" }, 400);
     }
 
+    const { hasActiveAgentRun } = await import("../agent/run.js");
+    if (hasActiveAgentRun(job.id)) {
+      return c.json(
+        {
+          error:
+            "Agent đang chạy trên job này — đợi xong hoặc Force Stop rồi hỏi Q&A lại",
+        },
+        409,
+      );
+    }
+
+    const priorChat = await listChatMessages({ jobId: job.id, limit: 40 });
+
     await addChatMessage({
       jobId: job.id,
       issueIid: job.issue.issueIid,
@@ -1334,6 +1351,12 @@ export function createApiRoutes() {
       const answer = await answerTaskQuestion({
         issue: job.issue,
         question: body.question,
+        jobId: job.id,
+        history: priorChat.map((m) => ({
+          role: m.role,
+          kind: m.kind,
+          body: m.body,
+        })),
       });
       await addChatMessage({
         jobId: job.id,
@@ -1345,6 +1368,13 @@ export function createApiRoutes() {
       return c.json({ answer });
     } catch (err) {
       logger.error("Q&A failed", { err: String(err) });
+      await addChatMessage({
+        jobId: job.id,
+        issueIid: job.issue.issueIid,
+        role: "system",
+        kind: "qa",
+        body: `Q&A lỗi: ${err instanceof Error ? err.message : String(err)}`,
+      }).catch(() => undefined);
       return c.json({ error: String(err) }, 500);
     }
   });

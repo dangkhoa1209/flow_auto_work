@@ -132,6 +132,22 @@ function untrackRun(jobId: string | undefined): void {
   if (jobId) activeRunsByJob.delete(jobId);
 }
 
+/** Used by Q&A / merge-resolve so Force Stop can cancel. */
+export function trackExternalRun(
+  jobId: string,
+  run: Awaited<ReturnType<Awaited<ReturnType<typeof Agent.create>>["send"]>>,
+): void {
+  trackRun(jobId, run);
+}
+
+export function untrackExternalRun(jobId: string): void {
+  untrackRun(jobId);
+}
+
+export function hasActiveAgentRun(jobId: string): boolean {
+  return activeRunsByJob.has(jobId);
+}
+
 export type AgentRunResult = {
   agentId: string;
   kind: "done" | "docs_ready" | "need_clarification" | "unknown";

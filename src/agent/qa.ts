@@ -1,4 +1,5 @@
-import { Agent } from "@cursor/sdk";
+import { Agent, CursorAgentError } from "@cursor/sdk";
+import { setMaxListeners } from "node:events";
 import { getReviewDiff } from "../git/diff.js";
 import { collectLinkedIssueContext } from "../gitlab/linked-context.js";
 import { logger } from "../logger.js";
@@ -8,12 +9,58 @@ import {
   resolveCursorModel,
   resolveRepoPath,
 } from "../workspace/creds.js";
+import {
+  appendJobProgress,
+  appendSdkMessage,
+  clearJobProgress,
+} from "./progress.js";
+import {
+  cancelActiveAgentRun,
+  trackExternalRun,
+  untrackExternalRun,
+} from "./run.js";
 
-/** One-shot Q&A about a task + current diff (no Teams). */
+setMaxListeners(50);
+
+export type QaHistoryTurn = {
+  role: string;
+  kind?: string;
+  body: string;
+};
+
+const QA_TIMEOUT_MS = 3 * 60 * 1000;
+
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(() => {
+      reject(
+        new Error(
+          `${label} timed out after ${Math.round(ms / 1000)}s — hỏi ngắn hơn, hoặc dùng Run nếu cần agent thực thi DB/queue`,
+        ),
+      );
+    }, ms);
+    p.then(
+      (v) => {
+        clearTimeout(t);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(t);
+        reject(e);
+      },
+    );
+  });
+}
+
+/** Q&A with stream → Progress; advisory only (no long DB/queue execution). */
 export async function answerTaskQuestion(opts: {
   issue: IssueJob;
   question: string;
+  /** Prior clarify/qa turns (oldest → newest), excluding the current question */
+  history?: QaHistoryTurn[];
+  jobId?: string;
 }): Promise<string> {
+  const jobId = opts.jobId;
   const [diff, linked] = await Promise.all([
     getReviewDiff({ issueIid: opts.issue.issueIid }),
     collectLinkedIssueContext(opts.issue).catch(() => ({
@@ -25,9 +72,27 @@ export async function answerTaskQuestion(opts: {
   const diffClip = [diff.rangeDiff, diff.staged, diff.unstaged]
     .filter((s) => s.trim())
     .join("\n\n")
-    .slice(0, 24000);
+    .slice(0, 16000);
 
-  const prompt = `You are helping a developer review / understand work on AiHR v3.
+  const historyBlock = (opts.history ?? [])
+    .filter((t) => t.body?.trim())
+    .slice(-24)
+    .map((t) => {
+      const who = t.role === "user" ? "Human" : "Assistant";
+      const kind = t.kind ? ` (${t.kind})` : "";
+      return `### ${who}${kind}\n${t.body.trim()}`;
+    })
+    .join("\n\n");
+
+  const prompt = `You are in **Q&A / review mode** (NOT a full coding Run).
+
+## Hard rules for this turn
+1. Answer the human's question using the issue, diff, and codebase.
+2. Prefer a clear Vietnamese answer with concrete file/paths/commands they can run.
+3. Do **NOT** execute long-running work: no DB mutations that take minutes, no queue workers left running, no seed scripts that hang.
+4. You may briefly grep/read files to find how YKKSUB / queue / employee APIs work — then **stop and answer**.
+5. If they ask you to *do* the work (connect DB, insert NV, run queue), explain the exact steps from this repo and tell them to use **Run** (or run those commands themselves). Do not try to finish the whole operation in this Q&A turn.
+6. Keep the final answer concise (roughly under ~40 lines).
 
 ## Issue #${opts.issue.issueIid}
 Title: ${opts.issue.title}
@@ -49,20 +114,92 @@ ${diff.recentCommits || "(none)"}
 ${diffClip || "(no diff)"}
 \`\`\`
 
+${
+  historyBlock
+    ? `## Prior conversation on this job (use as context)\n${historyBlock}\n`
+    : ""
+}
 ## Question from the human
-${opts.question}
+${opts.question}`;
 
-Answer clearly in Vietnamese if they wrote Vietnamese. Use linked issues/comments when relevant. Reference files/lines when useful. Do not modify code unless they explicitly ask you to change something — this is a Q&A / review turn.`;
-
-  logger.info("Q&A agent prompt", { issueIid: opts.issue.issueIid });
   const modelId = resolveCursorModel();
-  const result = await Agent.prompt(prompt, {
-    apiKey: resolveCursorApiKey(),
-    model: { id: modelId },
-    local: { cwd: resolveRepoPath() },
+  logger.info("Q&A agent starting", {
+    issueIid: opts.issue.issueIid,
+    historyTurns: opts.history?.length ?? 0,
+    model: modelId,
+    jobId,
   });
-  if (result.status === "error") {
-    throw new Error(`Q&A agent failed: ${result.id}`);
+
+  if (jobId) {
+    clearJobProgress(jobId);
+    appendJobProgress(jobId, "status", `Q&A started · model ${modelId}`);
   }
-  return (result.result ?? "").trim() || "(no answer)";
+
+  const work = async (): Promise<string> => {
+    await using agent = await Agent.create({
+      apiKey: resolveCursorApiKey(),
+      model: { id: modelId },
+      local: { cwd: resolveRepoPath() },
+    });
+
+    const run = await agent.send(prompt);
+    logger.info("Q&A run started", { runId: run.id, agentId: agent.agentId });
+    if (jobId) trackExternalRun(jobId, run);
+
+    try {
+      let streamed = "";
+      try {
+        if (
+          typeof run.stream === "function" &&
+          run.supports?.("stream") !== false
+        ) {
+          for await (const message of run.stream()) {
+            appendSdkMessage(jobId, message);
+            if (message.type === "assistant") {
+              for (const block of message.message.content) {
+                if (block.type === "text") streamed += block.text;
+              }
+            }
+          }
+        }
+      } catch (err) {
+        appendJobProgress(jobId, "status", `Q&A stream error: ${String(err)}`);
+        logger.warn("Q&A stream failed; wait()", { err: String(err) });
+      }
+
+      const result = await run.wait();
+      if (result.status === "cancelled") {
+        throw new Error("Q&A cancelled (force stop)");
+      }
+      if (result.status === "error") {
+        const detail = result as {
+          id: string;
+          result?: string;
+          errorCode?: string;
+        };
+        throw new Error(
+          `Q&A failed (${detail.id})${detail.errorCode ? ` · ${detail.errorCode}` : ""}${detail.result ? `: ${detail.result.slice(0, 300)}` : ""}`,
+        );
+      }
+      const text = (result.result ?? streamed).trim() || "(no answer)";
+      appendJobProgress(jobId, "status", "Q&A finished");
+      return text;
+    } finally {
+      if (jobId) untrackExternalRun(jobId);
+    }
+  };
+
+  try {
+    return await withTimeout(work(), QA_TIMEOUT_MS, "Q&A");
+  } catch (err) {
+    if (jobId) {
+      appendJobProgress(jobId, "status", `Q&A error: ${String(err)}`);
+      await cancelActiveAgentRun(jobId).catch(() => undefined);
+      untrackExternalRun(jobId);
+    }
+    if (err instanceof CursorAgentError) {
+      throw new Error(`Q&A Cursor error: ${err.message}`);
+    }
+    throw err;
+  }
 }

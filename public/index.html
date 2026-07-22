@@ -1705,6 +1705,10 @@
     const collapsedMilestones = new Set();
     let progressAfterId = 0;
     let progressPollTimer = null;
+    let lastJobsFingerprint = "";
+    let lastChatFingerprint = "";
+    /** Auto-open Progress tab once per live run */
+    let autoProgressJobId = null;
     let memberOptions = [];
     let labelOptions = [];
     let ddNowAssignee = null;
@@ -3015,6 +3019,32 @@
       fillDevNotesFromJob(currentJob);
     }
 
+    function jobsFingerprint(list) {
+      return (list || [])
+        .map(
+          (j) =>
+            `${j.id}:${j.status}:${j.runCount || 0}:${j.error || ""}:${j.commitSha || ""}:${(j.lastQuestion || "").slice(0, 40)}`,
+        )
+        .join("|");
+    }
+
+    function chatFingerprint(messages, pendingQuestion) {
+      const last = messages?.length ? messages[messages.length - 1] : null;
+      const lastId = last?.id || last?._id || "";
+      return `${messages?.length || 0}:${lastId}:${last?.createdAt || ""}:${pendingQuestion || ""}`;
+    }
+
+    function maybeOpenProgressTab(job) {
+      if (!job?.id) return;
+      const live = job.status === "queued" || job.status === "running";
+      if (live && autoProgressJobId !== job.id) {
+        autoProgressJobId = job.id;
+        setMidTab("progress");
+      } else if (!live && autoProgressJobId === job.id) {
+        autoProgressJobId = null;
+      }
+    }
+
     function renderJobs() {
       updateHandoffBadge();
       if (currentView === "handoff") renderHandoffList();
@@ -3045,6 +3075,9 @@
 
     function renderChat(messages, pendingQuestion) {
       const box = $("chatView");
+      const nearBottom =
+        !box.scrollHeight ||
+        box.scrollHeight - box.scrollTop - box.clientHeight < 100;
       if (!messages?.length && !pendingQuestion) {
         box.innerHTML = `<div class="empty">Chưa có hội thoại</div>`;
       } else {
@@ -3054,7 +3087,7 @@
             ${escapeHtml(m.body)}
           </div>
         `).join("");
-        box.scrollTop = box.scrollHeight;
+        if (nearBottom) box.scrollTop = box.scrollHeight;
       }
       if (pendingQuestion) {
         $("clarifyBanner").style.display = "block";
@@ -3064,6 +3097,7 @@
         $("clarifyBanner").style.display = "none";
         $("clarifyBox").style.display = "none";
       }
+      lastChatFingerprint = chatFingerprint(messages, pendingQuestion);
     }
 
     async function selectTask(iid) {
@@ -3360,6 +3394,8 @@
 
     async function selectJob(id) {
       selectedJobId = id;
+      lastChatFingerprint = "";
+      autoProgressJobId = null;
       renderJobs();
       showEmptyLoading($("chatView"), "Đang tải chat…");
       resetProgressView("Đang tải tiến trình…");
@@ -3382,6 +3418,7 @@
               ? detail.job.lastQuestion
               : null),
         );
+        maybeOpenProgressTab(detail.job);
         await pollProgress(true);
         startProgressPolling();
         // Prefetch diff in background for review tab
@@ -3470,15 +3507,25 @@
       }
     }
 
-    async function loadJobs() {
+    async function loadJobs(opts = {}) {
+      const soft = opts.soft === true;
       const list = $("jobList");
       const firstLoad = !jobs.length;
-      if (firstLoad) showEmptyLoading(list, "Đang tải jobs…");
-      else setPanelLoading(list, true);
+      if (!soft) {
+        if (firstLoad) showEmptyLoading(list, "Đang tải jobs…");
+        else setPanelLoading(list, true);
+      }
       try {
         const data = await api("/api/jobs?limit=40");
         jobs = data.jobs || [];
-        renderJobs();
+        const fp = jobsFingerprint(jobs);
+        if (!soft || fp !== lastJobsFingerprint || firstLoad) {
+          lastJobsFingerprint = fp;
+          renderJobs();
+        } else {
+          updateHandoffBadge();
+        }
+
         const pending = data.pendingClarifications || [];
         const running = jobs.find((j) => j.status === "running" || j.status === "queued");
         if (pending.length && !selectedJobId) {
@@ -3487,19 +3534,33 @@
           await selectJob(running.id);
         } else if (selectedJobId) {
           const still = jobs.find((j) => j.id === selectedJobId);
-          if (still) {
-            const detail = await api(`/api/jobs/${selectedJobId}`);
-            renderChat(
-              detail.chat,
-              detail.pendingQuestion ||
-                (detail.job?.lastQuestion && detail.job.status === "awaiting_clarification"
-                  ? detail.job.lastQuestion
-                  : null),
-            );
+          if (!still) return;
+          const detail = await api(`/api/jobs/${selectedJobId}`);
+          currentJob = detail.job || currentJob;
+          const pendingQ =
+            detail.pendingQuestion ||
+            (detail.job?.lastQuestion && detail.job.status === "awaiting_clarification"
+              ? detail.job.lastQuestion
+              : null);
+          const cfp = chatFingerprint(detail.chat, pendingQ);
+          if (!soft || cfp !== lastChatFingerprint) {
+            const askEl = $("askInput");
+            const clarifyEl = $("clarifyAnswer");
+            const active = document.activeElement;
+            const askVal = askEl?.value ?? "";
+            const clarifyVal = clarifyEl?.value ?? "";
+            const askFocused = active === askEl;
+            const clarifyFocused = active === clarifyEl;
+            renderChat(detail.chat, pendingQ);
+            if (askEl) askEl.value = askVal;
+            if (clarifyEl) clarifyEl.value = clarifyVal;
+            if (askFocused) askEl.focus();
+            if (clarifyFocused) clarifyEl.focus();
           }
+          if (!soft) maybeOpenProgressTab(detail.job);
         }
       } finally {
-        setPanelLoading(list, false);
+        if (!soft) setPanelLoading(list, false);
       }
     }
 
@@ -4126,21 +4187,48 @@
       const question = $("askInput").value.trim();
       if (!question) return toast("Nhập câu hỏi");
       setButtonLoading($("btnAsk"), true, "Hỏi agent");
+      // Show question immediately + watch Progress while Q&A streams
+      const box = $("chatView");
+      if (box) {
+        const prev = box.innerHTML.includes("empty") ? "" : box.innerHTML;
+        box.innerHTML =
+          prev +
+          `<div class="bubble user"><div class="who">user · qa · ${new Date().toLocaleTimeString()}</div>${escapeHtml(question)}</div>` +
+          `<div class="bubble agent"><div class="who">agent · qa</div><span class="meta">Đang trả lời… xem tab Progress</span></div>`;
+        box.scrollTop = box.scrollHeight;
+      }
+      $("askInput").value = "";
+      setMidTab("progress");
+      resetProgressView("Q&A đang chạy…");
+      void pollProgress(true);
       try {
         await api(`/api/jobs/${selectedJobId}/ask`, {
           method: "POST",
           body: JSON.stringify({ question }),
         });
-        $("askInput").value = "";
-        toast("Đã trả lời");
+        toast("Đã trả lời — xem Clarify / Q&A");
+        lastChatFingerprint = "";
         const detail = await api(`/api/jobs/${selectedJobId}`);
         renderChat(
           detail.chat,
           detail.job?.status === "awaiting_clarification" ? detail.job.lastQuestion : null,
         );
-      } catch (e) { toast(e.message); }
-      finally { setButtonLoading($("btnAsk"), false, "Hỏi agent"); }
+        await pollProgress(true);
+      } catch (e) {
+        toast(e.message);
+        lastChatFingerprint = "";
+        try {
+          const detail = await api(`/api/jobs/${selectedJobId}`);
+          renderChat(
+            detail.chat,
+            detail.job?.status === "awaiting_clarification" ? detail.job.lastQuestion : null,
+          );
+        } catch { /* */ }
+      } finally {
+        setButtonLoading($("btnAsk"), false, "Hỏi agent");
+      }
     }
+
 
     $("btnLogin").onclick = () => doLoginStep1();
     $("btnWizBack2").onclick = () => setWizardStep(1);
@@ -4248,7 +4336,7 @@
     setInterval(() => {
       if (session.username && session.projectId) {
         loadStatus();
-        loadJobs();
+        loadJobs({ soft: true });
       }
     }, 5000);
     startProgressPolling();
