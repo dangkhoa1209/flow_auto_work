@@ -53,7 +53,8 @@ function isAssignedToMe(
   payload: GitlabIssueHookPayload,
   config: AppConfig,
 ): boolean {
-  const username = config.GITLAB_ASSIGNEE_USERNAME.toLowerCase();
+  const username = (config.GITLAB_ASSIGNEE_USERNAME ?? "").toLowerCase();
+  if (!username) return false;
   const assignees = payload.assignees ?? [];
   if (
     assignees.some((a) => (a.username ?? "").toLowerCase() === username)
@@ -90,7 +91,10 @@ export function filterIssueHook(
   }
 
   const projectPath = payload.project?.path_with_namespace ?? "";
-  if (projectPath !== config.ALLOWED_PROJECT_PATH) {
+  if (
+    config.ALLOWED_PROJECT_PATH &&
+    projectPath !== config.ALLOWED_PROJECT_PATH
+  ) {
     return {
       accept: false,
       reason: `Project mismatch: ${projectPath || "(empty)"}`,
@@ -107,7 +111,8 @@ export function filterIssueHook(
     return { accept: false, reason: `Ignored action: ${action || "(none)"}` };
   }
 
-  if (!isAssignedToMe(payload, config)) {
+  // Legacy single-user .env filter; multi-user relies on UI assignee = logged-in user
+  if (config.GITLAB_ASSIGNEE_USERNAME && !isAssignedToMe(payload, config)) {
     return { accept: false, reason: "Not assigned to configured user" };
   }
 

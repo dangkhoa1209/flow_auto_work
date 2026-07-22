@@ -32,9 +32,18 @@ import { ensureJob, loadJob, loadJobByIssue, listJobs, saveJob } from "../job-st
 import { logger } from "../logger.js";
 import { jobQueue } from "../queue.js";
 import { isJobBusy, resolveDevNotes, type CompletionActions } from "../types.js";
+import {
+  createWorkspaceRoutes,
+  headerProject,
+  headerUser,
+  withWorkspaceContext,
+} from "../workspace/routes.js";
 
 export function createApiRoutes() {
   const api = new Hono();
+
+  // Auth / workspace (no project context required for login/join)
+  api.route("/", createWorkspaceRoutes());
 
   api.get("/status", async (c) => {
     const config = getConfig();
@@ -42,11 +51,50 @@ export function createApiRoutes() {
     return c.json({
       ok: true,
       mongo: mongoOk,
-      project: config.ALLOWED_PROJECT_PATH,
-      assignee: config.GITLAB_ASSIGNEE_USERNAME,
+      project: config.ALLOWED_PROJECT_PATH ?? null,
+      assignee: config.GITLAB_ASSIGNEE_USERNAME ?? null,
+      multiUser: true,
+      secretsEncrypted: true,
       queue: jobQueue.snapshot(),
       pendingClarifications: listPendingClarifications(),
     });
+  });
+
+  /** Require login + project; decrypt tokens into AsyncLocalStorage */
+  api.use("*", async (c, next) => {
+    const path = c.req.path;
+    if (
+      path === "/status" ||
+      path.startsWith("/auth/") ||
+      path === "/me" ||
+      path.startsWith("/me/") ||
+      path.startsWith("/projects/") ||
+      path.startsWith("/gitlab/") ||
+      path === "/context"
+    ) {
+      return next();
+    }
+    const username = headerUser(c);
+    const projectId = headerProject(c);
+    if (!username || !projectId) {
+      return c.json(
+        {
+          error:
+            "X-Flow-User + X-Flow-Project required — login and select a project",
+        },
+        401,
+      );
+    }
+    try {
+      await withWorkspaceContext(username, projectId, async () => {
+        await next();
+      });
+    } catch (err) {
+      return c.json(
+        { error: err instanceof Error ? err.message : String(err) },
+        401,
+      );
+    }
   });
 
   api.get("/tasks", async (c) => {
@@ -88,6 +136,7 @@ export function createApiRoutes() {
       runAll?: boolean;
       devNotes?: string;
       techLeadNotes?: string;
+      requireDocsFirst?: boolean;
       completion?: CompletionActions;
     };
     const mode =
@@ -101,6 +150,10 @@ export function createApiRoutes() {
           : "auto";
     const devNotes =
       body.devNotes?.trim() || body.techLeadNotes?.trim() || undefined;
+    const requireDocsFirst =
+      body.requireDocsFirst !== undefined
+        ? Boolean(body.requireDocsFirst)
+        : undefined;
     const completion = body.completion
       ? {
           assignees: body.completion.assignees
@@ -158,6 +211,7 @@ export function createApiRoutes() {
           completion: completion ?? existing?.completion,
           devNotes:
             resolveDevNotes(existing ?? { devNotes: undefined }) || undefined,
+          requireDocsFirst: existing?.requireDocsFirst,
         });
         if (result.enqueued && result.jobId) {
           enqueued += 1;
@@ -249,6 +303,8 @@ export function createApiRoutes() {
         completion,
         // Single-issue Run: attach notes; multi: same notes only if provided
         devNotes: iids.length === 1 ? devNotes : undefined,
+        requireDocsFirst:
+          iids.length === 1 ? requireDocsFirst : undefined,
       });
       if (result.enqueued && result.jobId) {
         enqueued += 1;
@@ -274,6 +330,7 @@ export function createApiRoutes() {
     const body = (await c.req.json().catch(() => ({}))) as {
       issueIid?: number;
       devNotes?: string;
+      requireDocsFirst?: boolean;
     };
     const iid = Number(body.issueIid);
     if (!Number.isFinite(iid) || iid <= 0) {
@@ -287,16 +344,17 @@ export function createApiRoutes() {
       if (!existing) return c.json({ error: `Issue #${iid} not found` }, 404);
       if (body.devNotes !== undefined) {
         existing.devNotes = body.devNotes.trim() || undefined;
-        if (existing.status !== "draft" && !existing.runCount) {
-          /* keep */
-        }
-        await saveJob(existing);
       }
+      if (body.requireDocsFirst !== undefined) {
+        existing.requireDocsFirst = Boolean(body.requireDocsFirst);
+      }
+      await saveJob(existing);
       return c.json({ job: existing });
     }
     const job = await ensureJob(issue, {
       source: "ui_ensure",
       devNotes: body.devNotes,
+      requireDocsFirst: body.requireDocsFirst,
     });
     return c.json({ job });
   });
@@ -304,10 +362,85 @@ export function createApiRoutes() {
   api.put("/jobs/:id/dev-notes", async (c) => {
     const job = await loadJob(c.req.param("id"));
     if (!job) return c.json({ error: "job not found" }, 404);
-    const body = (await c.req.json().catch(() => ({}))) as { devNotes?: string };
-    job.devNotes = body.devNotes?.trim() || undefined;
+    const body = (await c.req.json().catch(() => ({}))) as {
+      devNotes?: string;
+      requireDocsFirst?: boolean;
+    };
+    if (body.devNotes !== undefined) {
+      job.devNotes = body.devNotes.trim() || undefined;
+    }
+    if (body.requireDocsFirst !== undefined) {
+      job.requireDocsFirst = Boolean(body.requireDocsFirst);
+    }
     await saveJob(job);
     return c.json({ job });
+  });
+
+  /** Feature docs (.md/.mdc) for PM review while awaiting_docs_approval */
+  api.get("/jobs/:id/docs", async (c) => {
+    const job = await loadJob(c.req.param("id"));
+    if (!job) return c.json({ error: "job not found" }, 404);
+    const { readRepoDocs } = await import("../docs/analysis.js");
+    const { resolveRepoPath } = await import("../workspace/creds.js");
+    const paths =
+      job.docsPaths?.length
+        ? job.docsPaths
+        : job.docsPath
+          ? [job.docsPath]
+          : [];
+    const files = paths.length
+      ? await readRepoDocs(resolveRepoPath(), paths)
+      : [];
+    return c.json({
+      jobId: job.id,
+      status: job.status,
+      requireDocsFirst: Boolean(job.requireDocsFirst),
+      docsSummary: job.docsSummary ?? null,
+      docsApprovedAt: job.docsApprovedAt ?? null,
+      paths,
+      files,
+    });
+  });
+
+  /** PM approves feature docs → enqueue code phase */
+  api.post("/jobs/:id/approve-docs", async (c) => {
+    const job = await loadJob(c.req.param("id"));
+    if (!job) return c.json({ error: "job not found" }, 404);
+    if (job.status !== "awaiting_docs_approval") {
+      return c.json(
+        { error: "Approve docs only when status is awaiting_docs_approval" },
+        409,
+      );
+    }
+    const result = await jobQueue.enqueueCodeAfterDocsApproval(job.id);
+    if (!result.enqueued) {
+      return c.json({ error: result.reason ?? "Could not enqueue" }, 409);
+    }
+    const updated = await loadJob(job.id);
+    return c.json({ ok: true, job: updated, jobId: result.jobId });
+  });
+
+  /** Re-run docs phase only (from awaiting_docs_approval or with flag) */
+  api.post("/jobs/:id/rerun-docs", async (c) => {
+    const job = await loadJob(c.req.param("id"));
+    if (!job) return c.json({ error: "job not found" }, 404);
+    if (isJobBusy(job.status)) {
+      return c.json({ error: "Job is busy" }, 409);
+    }
+    job.requireDocsFirst = true;
+    job.docsApprovedAt = undefined;
+    await saveJob(job);
+    const result = await jobQueue.enqueue(job.issue, {
+      source: "ui_rerun_docs",
+      completion: job.completion,
+      devNotes: resolveDevNotes(job) || undefined,
+      requireDocsFirst: true,
+      forceCodePhase: false,
+    });
+    if (!result.enqueued) {
+      return c.json({ error: result.reason ?? "Could not enqueue" }, 409);
+    }
+    return c.json({ ok: true, jobId: result.jobId });
   });
 
   api.get("/jobs/by-issue/:iid", async (c) => {
@@ -401,6 +534,244 @@ export function createApiRoutes() {
     job.error = undefined;
     await saveJob(job);
     return c.json({ ok: true, job });
+  });
+
+  /**
+   * Merge job work branch into project/base branch, then push target to origin.
+   * On conflict → Cursor agent resolves markers, then finalize merge commit.
+   */
+  api.post("/jobs/:id/merge", async (c) => {
+    const job = await getJobDoc(c.req.param("id"));
+    if (!job) return c.json({ error: "not found" }, 404);
+    if (job.status !== "awaiting_handoff" && job.status !== "succeeded") {
+      return c.json(
+        { error: "Merge only for awaiting_handoff or succeeded jobs" },
+        409,
+      );
+    }
+    const source = (job.branch || job.workBranch || "").trim();
+    if (!source) {
+      return c.json({ error: "Job has no work branch to merge" }, 400);
+    }
+    const body = (await c.req.json().catch(() => ({}))) as {
+      targetBranch?: string;
+    };
+    const { resolveRepoPath } = await import("../workspace/creds.js");
+    const { getRuntimeContext } = await import("../workspace/runtime.js");
+    const {
+      attemptMergeIntoBase,
+      abortMerge,
+      finalizeMergeCommit,
+      listConflictedFiles,
+      tryCheckoutBranch,
+      restoreWipAfterMerge,
+    } = await import("../git/merge.js");
+    const { pushBranch } = await import("../git/prep.js");
+    const { resolveMergeConflictsWithAi } = await import(
+      "../agent/merge-resolve.js"
+    );
+
+    const rt = getRuntimeContext();
+    const repoPath = resolveRepoPath();
+    const targetHint =
+      body.targetBranch?.trim() ||
+      job.baseBranch?.trim() ||
+      rt?.baseBranch?.trim() ||
+      undefined;
+
+    job.mergeError = undefined;
+    job.mergePushError = undefined;
+    await saveJob(job);
+
+    let previousBranch: string | null | undefined;
+    let wipStashMarker: string | null | undefined;
+    let wipWarning: string | undefined;
+
+    const finishRestore = async (restoreTo?: string | null) => {
+      const branch = restoreTo || previousBranch || source;
+      if (branch) await tryCheckoutBranch(repoPath, branch);
+      const wip = await restoreWipAfterMerge(repoPath, wipStashMarker);
+      if (wip.warning) wipWarning = wip.warning;
+      wipStashMarker = null; // avoid double-pop
+      return wip;
+    };
+
+    try {
+      let result = await attemptMergeIntoBase({
+        repoPath,
+        sourceBranch: source,
+        targetBranch: targetHint,
+      });
+      previousBranch = result.previousBranch;
+      wipStashMarker = result.wipStashMarker;
+
+      let aiResolved = false;
+      let aiSummary: string | undefined;
+
+      if (result.status === "conflict") {
+        const resolved = await resolveMergeConflictsWithAi({
+          sourceBranch: result.sourceBranch,
+          targetBranch: result.targetBranch,
+          conflictedFiles: result.conflictedFiles,
+          issue: job.issue,
+        });
+        aiSummary = resolved.text;
+        if (resolved.remaining.length) {
+          const again = await resolveMergeConflictsWithAi({
+            sourceBranch: result.sourceBranch,
+            targetBranch: result.targetBranch,
+            conflictedFiles: resolved.remaining,
+            issue: job.issue,
+          });
+          aiSummary = `${aiSummary}\n---\n${again.text}`;
+          if (again.remaining.length) {
+            const left = again.remaining;
+            await abortMerge(repoPath).catch(() => undefined);
+            await finishRestore(previousBranch || result.sourceBranch);
+            job.mergeError = `AI could not clear conflicts: ${left.join(", ")}`;
+            await saveJob(job);
+            return c.json(
+              {
+                error: job.mergeError,
+                conflictedFiles: left,
+                aiSummary,
+                wipWarning,
+              },
+              409,
+            );
+          }
+        }
+        const stillUnmerged = await listConflictedFiles(repoPath);
+        if (stillUnmerged.length) {
+          await abortMerge(repoPath).catch(() => undefined);
+          await finishRestore(previousBranch || result.sourceBranch);
+          job.mergeError = `Still unmerged: ${stillUnmerged.join(", ")}`;
+          await saveJob(job);
+          return c.json(
+            { error: job.mergeError, conflictedFiles: stillUnmerged, wipWarning },
+            409,
+          );
+        }
+
+        const sha = await finalizeMergeCommit(
+          repoPath,
+          `Merge branch '${result.sourceBranch}' into ${result.targetBranch} (AI conflict resolve)`,
+        );
+        aiResolved = true;
+        result = {
+          status: "merged",
+          targetBranch: result.targetBranch,
+          sourceBranch: result.sourceBranch,
+          commitSha: sha,
+          previousBranch,
+          wipStashMarker,
+        };
+      }
+
+      // Push target while still on merge commit (before restoring work branch / WIP)
+      let pushed = false;
+      let pushError: string | undefined;
+      try {
+        await pushBranch(repoPath, result.targetBranch);
+        pushed = true;
+        logger.info("Pushed merge target to origin", {
+          jobId: job.id,
+          target: result.targetBranch,
+          sha: result.commitSha,
+        });
+      } catch (err) {
+        pushError = err instanceof Error ? err.message : String(err);
+        logger.warn("Merge ok but push failed", {
+          jobId: job.id,
+          target: result.targetBranch,
+          err: pushError,
+        });
+      }
+
+      const restoreTo = result.sourceBranch || previousBranch || undefined;
+      await finishRestore(restoreTo);
+
+      job.mergedAt = new Date().toISOString();
+      job.mergeTarget = result.targetBranch;
+      job.mergeSource = result.sourceBranch;
+      job.mergeSha = result.commitSha ?? undefined;
+      job.mergeAiResolved = aiResolved;
+      job.mergeError = undefined;
+      if (pushed) {
+        job.mergePushedAt = new Date().toISOString();
+        job.mergePushError = undefined;
+      } else {
+        job.mergePushError = pushError || "push failed";
+      }
+      if (result.commitSha) {
+        job.commitSha = result.commitSha;
+        job.commitShas = [...(job.commitShas ?? []), result.commitSha].slice(
+          -20,
+        );
+      }
+      await saveJob(job);
+
+      logger.info("Job branch merged into base", {
+        jobId: job.id,
+        source: result.sourceBranch,
+        target: result.targetBranch,
+        sha: result.commitSha,
+        aiResolved,
+        pushed,
+        restoredBranch: restoreTo ?? null,
+        wipWarning,
+      });
+
+      if (!pushed) {
+        return c.json(
+          {
+            error: `Merged local ${result.sourceBranch} → ${result.targetBranch} nhưng push origin thất bại: ${pushError}`,
+            job,
+            merge: {
+              source: result.sourceBranch,
+              target: result.targetBranch,
+              commitSha: result.commitSha,
+              alreadyUpToDate: result.alreadyUpToDate ?? false,
+              aiResolved,
+              aiSummary,
+              pushed: false,
+              pushError,
+              restoredBranch: restoreTo ?? null,
+              wipWarning: wipWarning ?? null,
+            },
+          },
+          502,
+        );
+      }
+
+      return c.json({
+        ok: true,
+        job,
+        merge: {
+          source: result.sourceBranch,
+          target: result.targetBranch,
+          commitSha: result.commitSha,
+          alreadyUpToDate: result.alreadyUpToDate ?? false,
+          aiResolved,
+          aiSummary,
+          pushed: true,
+          restoredBranch: restoreTo ?? null,
+          wipWarning: wipWarning ?? null,
+        },
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      try {
+        await abortMerge(repoPath);
+      } catch {
+        /* */
+      }
+      await finishRestore(previousBranch || source).catch(() => undefined);
+      job.mergeError = msg;
+      await saveJob(job);
+      logger.warn("Merge failed", { jobId: job.id, err: msg, wipWarning });
+      return c.json({ error: msg, wipWarning }, 500);
+    }
   });
 
   /** Todolist / stats: only days with tasks, nested month → week → day (Asia/Ho_Chi_Minh). */
@@ -681,6 +1052,7 @@ export function createApiRoutes() {
 
     const config = getConfig();
     const { applyIssueActions } = await import("../gitlab/client.js");
+    const { resolveGitlabProjectPath } = await import("../workspace/creds.js");
     const assigned = await listAssignedOpenIssues();
     const byIid = new Map(assigned.map((i) => [i.issueIid, i]));
     const results: Array<{ issueIid: number; ok: boolean; error?: string }> =
@@ -690,7 +1062,7 @@ export function createApiRoutes() {
       try {
         const issue = byIid.get(iid);
         await applyIssueActions({
-          projectId: issue?.projectId ?? config.ALLOWED_PROJECT_PATH,
+          projectId: issue?.projectId ?? resolveGitlabProjectPath(),
           issueIid: iid,
           assignees,
           labels,
@@ -719,6 +1091,7 @@ export function createApiRoutes() {
       | "queued"
       | "running"
       | "awaiting_clarification"
+      | "awaiting_docs_approval"
       | "awaiting_diff_approval"
       | "awaiting_handoff"
       | "succeeded"
@@ -776,20 +1149,34 @@ export function createApiRoutes() {
   api.get("/jobs/:id/diff", async (c) => {
     const job = await getJobDoc(c.req.param("id"));
     if (!job) return c.json({ error: "not found" }, 404);
-    const diff = await getReviewDiff({ issueIid: job.issue.issueIid });
-    const text = [
-      diff.rangeDiff,
-      diff.staged,
-      diff.unstaged,
-    ]
+    const { getRuntimeContext } = await import("../workspace/runtime.js");
+    const rt = getRuntimeContext();
+    const diff = await getReviewDiff({
+      issueIid: job.issue.issueIid,
+      branch: job.branch || job.workBranch,
+      baseBranch:
+        job.baseBranch ||
+        rt?.baseBranch ||
+        job.mergeTarget ||
+        undefined,
+      commitSha: job.commitSha,
+    });
+    const text = [diff.rangeDiff, diff.staged, diff.unstaged]
       .filter(Boolean)
       .join("\n");
-    const paths = extractPathsFromUnifiedDiff(text);
+    const paths =
+      diff.files?.length > 0
+        ? diff.files.map((f) => f.path)
+        : extractPathsFromUnifiedDiff(text);
     return c.json({
       jobId: job.id,
       issueIid: job.issue.issueIid,
+      status: job.status,
+      branch: job.branch || null,
+      commitSha: job.commitSha || null,
       diff,
       paths,
+      files: diff.files,
       awaitingDiffApproval:
         job.status === "awaiting_diff_approval" ||
         isAwaitingDiffApproval(job.id),
@@ -1012,10 +1399,11 @@ export function createApiRoutes() {
     if (!body.body?.trim() || body.issueIid === undefined) {
       return c.json({ error: "issueIid and body required" }, 400);
     }
+    const { resolveGitlabProjectPath } = await import("../workspace/creds.js");
     const note = await addNote({
       jobId: body.jobId,
       issueIid: Number(body.issueIid),
-      projectPath: getConfig().ALLOWED_PROJECT_PATH,
+      projectPath: resolveGitlabProjectPath(),
       body: body.body,
     });
     return c.json({ note });

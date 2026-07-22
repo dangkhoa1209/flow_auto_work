@@ -1,10 +1,9 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { getConfig } from "../config.js";
+import { resolveRepoPath } from "../workspace/creds.js";
 
 function resolveSafePath(repoRelative: string): string {
-  const config = getConfig();
-  const root = path.resolve(config.AIHR_REPO_PATH);
+  const root = path.resolve(resolveRepoPath());
   const cleaned = repoRelative.replace(/^\/+/, "").replace(/\\/g, "/");
   if (
     !cleaned ||

@@ -1,6 +1,7 @@
 import { getConfig } from "../config.js";
 import { logger } from "../logger.js";
 import type { IssueJob } from "../types.js";
+import { resolveGitlabToken } from "../workspace/creds.js";
 
 async function gitlabFetch(
   method: string,
@@ -11,7 +12,7 @@ async function gitlabFetch(
   return fetch(url, {
     method,
     headers: {
-      "PRIVATE-TOKEN": config.GITLAB_TOKEN,
+      "PRIVATE-TOKEN": resolveGitlabToken(),
       "Content-Type": "application/json",
     },
   });

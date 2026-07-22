@@ -2,6 +2,9 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { getConfig } from "../config.js";
 import { logger } from "../logger.js";
+import { resolveRepoPath } from "../workspace/creds.js";
+import { getRuntimeContext } from "../workspace/runtime.js";
+import { autoWorkBranchName } from "./branch-name.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -58,42 +61,120 @@ export async function currentBranch(repoPath: string): Promise<string> {
   return branch;
 }
 
+async function branchExists(repoPath: string, name: string): Promise<boolean> {
+  try {
+    await git(repoPath, ["rev-parse", "--verify", name]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function checkoutBranch(repoPath: string, name: string): Promise<void> {
+  await git(repoPath, ["checkout", name]);
+}
+
+/**
+ * Create branch from base (local or origin/base), checkout it.
+ */
+async function createBranchFromBase(
+  repoPath: string,
+  newBranch: string,
+  baseBranch: string,
+): Promise<void> {
+  // Prefer local base, else origin/base
+  let startPoint = baseBranch;
+  if (!(await branchExists(repoPath, baseBranch))) {
+    const remote = `origin/${baseBranch}`;
+    if (await branchExists(repoPath, remote)) {
+      startPoint = remote;
+    } else {
+      throw new Error(
+        `Project branch "${baseBranch}" not found locally or on origin`,
+      );
+    }
+  }
+  await git(repoPath, ["checkout", "-B", newBranch, startPoint]);
+}
+
 export type PreparedRepo = {
   repoPath: string;
   branch: string;
   defaultBranch: string;
+  /** true if we auto-created feat/<iid>/slug */
+  autoCreated?: boolean;
 };
 
 /**
- * Stay on the current local branch (e.g. bugs/dangkhoa/ykk/some-bugs).
- * Do not checkout main / create auto/* branches / stash.
+ * - If workBranch set: checkout & stay on that branch (create from projectBranch if missing).
+ * - If workBranch empty: create feat/<iid>/<slug> from projectBranch (or default).
  */
 export async function prepareRepoForIssue(opts: {
   issueIid: number;
   title: string;
   targetBranchOverride?: string;
+  /** Explicit work branch — commit only here */
+  workBranch?: string;
+  /** Base / project branch to fork from when auto-creating */
+  baseBranch?: string;
+  repoPath?: string;
 }): Promise<PreparedRepo> {
-  const repoPath = getConfig().AIHR_REPO_PATH;
-  const branch = await currentBranch(repoPath);
+  const repoPath = opts.repoPath?.trim() || resolveRepoPath();
+  const rt = getRuntimeContext();
   const defaultBranch =
     opts.targetBranchOverride || (await detectDefaultBranch(repoPath));
+  const projectBranch =
+    opts.baseBranch?.trim() ||
+    rt?.baseBranch?.trim() ||
+    defaultBranch;
+  const workBranch =
+    opts.workBranch?.trim() || rt?.workBranch?.trim() || undefined;
 
   const { stdout: status } = await git(repoPath, ["status", "--porcelain"]);
   if (status.trim()) {
-    logger.warn("Working tree has local changes — keeping them on current branch", {
-      branch,
+    logger.warn("Working tree has local changes — keeping them on branch", {
       issueIid: opts.issueIid,
       files: status.trim().split("\n").slice(0, 20),
     });
   }
 
-  logger.info("Using current branch (no checkout)", {
-    branch,
-    defaultBranch,
-    issueIid: opts.issueIid,
-  });
+  let branch: string;
+  let autoCreated = false;
 
-  return { repoPath, branch, defaultBranch };
+  if (workBranch) {
+    // Fixed work branch: only work here
+    if (await branchExists(repoPath, workBranch)) {
+      await checkoutBranch(repoPath, workBranch);
+    } else {
+      await createBranchFromBase(repoPath, workBranch, projectBranch);
+      autoCreated = true;
+    }
+    branch = workBranch;
+    logger.info("Using fixed work branch", {
+      branch,
+      projectBranch,
+      issueIid: opts.issueIid,
+      created: autoCreated,
+    });
+  } else {
+    // Auto feat/<iid>/<slug> from project branch
+    const auto = autoWorkBranchName(opts.issueIid, opts.title);
+    if (await branchExists(repoPath, auto)) {
+      await checkoutBranch(repoPath, auto);
+    } else {
+      await createBranchFromBase(repoPath, auto, projectBranch);
+      autoCreated = true;
+    }
+    branch = auto;
+    logger.info("Using auto feat branch", {
+      branch,
+      projectBranch,
+      issueIid: opts.issueIid,
+      created: autoCreated,
+    });
+  }
+
+  return { repoPath, branch, defaultBranch, autoCreated };
 }
 
 export async function pushBranch(
@@ -109,7 +190,6 @@ function parsePorcelainPaths(porcelain: string): string[] {
     .split("\n")
     .filter(Boolean)
     .map((line) => {
-      // Always "XY PATH" (2 status chars + space). Renames: "XY old -> new".
       const m = line.match(/^.. (.+)$/);
       if (!m?.[1]) return "";
       let path = m[1].trim();
@@ -138,8 +218,6 @@ export async function hasUncommittedChanges(repoPath: string): Promise<boolean> 
 
 /**
  * Ensure excluded WIP files are not in the latest commit (not gitignored).
- * If HEAD includes them, rewrite that local commit without those paths.
- * Leaves the files as local modifications on disk.
  */
 export async function scrubExcludedPathsFromLastCommit(
   repoPath: string,
@@ -147,11 +225,10 @@ export async function scrubExcludedPathsFromLastCommit(
   const excluded = getConfig().commitExcludePaths;
   if (excluded.length === 0) return;
 
-  // Unstage excluded paths if staged
   try {
     await git(repoPath, ["restore", "--staged", "--", ...excluded]);
   } catch {
-    // ignore if not staged / not present
+    // ignore
   }
 
   let headFiles: string[] = [];
@@ -182,10 +259,12 @@ export async function scrubExcludedPathsFromLastCommit(
   const { stdout: msg } = await git(repoPath, ["log", "-1", "--pretty=%B"]);
   await git(repoPath, ["reset", "--soft", "HEAD~1"]);
   await git(repoPath, ["restore", "--staged", "--", ...hit]);
-  // Keep working tree versions; unstage only. Re-commit remaining staged files.
-  const { stdout: staged } = await git(repoPath, ["diff", "--cached", "--name-only"]);
+  const { stdout: staged } = await git(repoPath, [
+    "diff",
+    "--cached",
+    "--name-only",
+  ]);
   if (!staged.trim()) {
-    // Nothing else to commit — leave soft-reset state with only excluded dirty files
     logger.warn("After scrub, no other staged files — no commit left to recreate");
     return;
   }

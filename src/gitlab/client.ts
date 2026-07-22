@@ -1,22 +1,179 @@
 import { getConfig } from "../config.js";
 import { logger } from "../logger.js";
+import {
+  resolveAssigneeUsername,
+  resolveGitlabProjectPath,
+  resolveGitlabToken,
+} from "../workspace/creds.js";
 
 async function gitlabFetch(
   method: string,
   apiPath: string,
   body?: unknown,
+  tokenOverride?: string,
 ): Promise<Response> {
   const config = getConfig();
   const url = `${config.GITLAB_BASE_URL.replace(/\/$/, "")}/api/v4${apiPath}`;
   const res = await fetch(url, {
     method,
     headers: {
-      "PRIVATE-TOKEN": config.GITLAB_TOKEN,
+      "PRIVATE-TOKEN": tokenOverride ?? resolveGitlabToken(),
       "Content-Type": "application/json",
     },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   return res;
+}
+
+/** Verify PAT and return GitLab user profile. */
+export async function verifyGitlabTokenUser(token: string): Promise<{
+  id: number;
+  username: string;
+  name?: string;
+}> {
+  const res = await gitlabFetch("GET", "/user", undefined, token);
+  if (!res.ok) {
+    throw new Error(
+      `GitLab token invalid (${res.status}): ${await res.text()}`,
+    );
+  }
+  const data = (await res.json()) as {
+    id: number;
+    username: string;
+    name?: string;
+  };
+  if (!data.username) throw new Error("GitLab /user missing username");
+  return data;
+}
+
+/** Resolve project id + path with a given token. */
+export async function fetchGitlabProject(
+  gitlabPath: string,
+  token?: string,
+): Promise<{ id: number; pathWithNamespace: string; name: string }> {
+  const project = encodeURIComponent(gitlabPath.trim());
+  const res = await gitlabFetch(
+    "GET",
+    `/projects/${project}`,
+    undefined,
+    token,
+  );
+  if (!res.ok) {
+    throw new Error(
+      `GitLab project ${gitlabPath} failed (${res.status}): ${await res.text()}`,
+    );
+  }
+  const data = (await res.json()) as {
+    id: number;
+    path_with_namespace: string;
+    name: string;
+  };
+  return {
+    id: data.id,
+    pathWithNamespace: data.path_with_namespace,
+    name: data.name,
+  };
+}
+
+/** Projects the token owner is a member of. */
+export async function listMyGitlabProjects(token: string): Promise<
+  Array<{
+    id: number;
+    pathWithNamespace: string;
+    name: string;
+    defaultBranch?: string;
+  }>
+> {
+  const out: Array<{
+    id: number;
+    pathWithNamespace: string;
+    name: string;
+    defaultBranch?: string;
+  }> = [];
+  let page = 1;
+  while (page <= 10) {
+    const qs = new URLSearchParams({
+      membership: "true",
+      simple: "true",
+      per_page: "100",
+      page: String(page),
+      order_by: "last_activity_at",
+      sort: "desc",
+    });
+    const res = await gitlabFetch(
+      "GET",
+      `/projects?${qs.toString()}`,
+      undefined,
+      token,
+    );
+    if (!res.ok) {
+      throw new Error(
+        `GitLab list projects failed (${res.status}): ${await res.text()}`,
+      );
+    }
+    const batch = (await res.json()) as Array<{
+      id: number;
+      path_with_namespace: string;
+      name: string;
+      default_branch?: string;
+    }>;
+    if (!batch.length) break;
+    for (const p of batch) {
+      out.push({
+        id: p.id,
+        pathWithNamespace: p.path_with_namespace,
+        name: p.name,
+        defaultBranch: p.default_branch,
+      });
+    }
+    if (batch.length < 100) break;
+    page += 1;
+  }
+  return out;
+}
+
+/** Remote branches for a project (GitLab API). */
+export async function listGitlabBranches(
+  gitlabPathOrId: string | number,
+  token: string,
+): Promise<Array<{ name: string; default?: boolean; protected?: boolean }>> {
+  const project = encodeURIComponent(String(gitlabPathOrId));
+  const out: Array<{ name: string; default?: boolean; protected?: boolean }> =
+    [];
+  let page = 1;
+  while (page <= 20) {
+    const qs = new URLSearchParams({
+      per_page: "100",
+      page: String(page),
+    });
+    const res = await gitlabFetch(
+      "GET",
+      `/projects/${project}/repository/branches?${qs.toString()}`,
+      undefined,
+      token,
+    );
+    if (!res.ok) {
+      throw new Error(
+        `GitLab list branches failed (${res.status}): ${await res.text()}`,
+      );
+    }
+    const batch = (await res.json()) as Array<{
+      name: string;
+      default?: boolean;
+      protected?: boolean;
+    }>;
+    if (!batch.length) break;
+    out.push(
+      ...batch.map((b) => ({
+        name: b.name,
+        default: b.default,
+        protected: b.protected,
+      })),
+    );
+    if (batch.length < 100) break;
+    page += 1;
+  }
+  return out;
 }
 
 export async function commentOnIssue(
@@ -190,9 +347,8 @@ export async function applyIssueCompletionActions(
 export async function listProjectLabels(
   projectIdOrPath?: number | string,
 ): Promise<Array<{ name: string; color?: string; description?: string }>> {
-  const config = getConfig();
   const project = encodeURIComponent(
-    String(projectIdOrPath ?? config.ALLOWED_PROJECT_PATH),
+    String(projectIdOrPath ?? resolveGitlabProjectPath()),
   );
   const labels: Array<{ name: string; color?: string; description?: string }> =
     [];
@@ -225,8 +381,7 @@ export async function listProjectLabels(
 export async function listProjectMembers(): Promise<
   Array<{ id: number; username: string; name: string }>
 > {
-  const config = getConfig();
-  const project = encodeURIComponent(config.ALLOWED_PROJECT_PATH);
+  const project = encodeURIComponent(resolveGitlabProjectPath());
   const members: Array<{ id: number; username: string; name: string }> = [];
   let page = 1;
   while (page <= 10) {
@@ -274,21 +429,38 @@ type GitlabIssueApi = {
   description: string | null;
   web_url: string;
   labels: string[];
+  milestone?: {
+    id: number;
+    title: string;
+    state?: string;
+  } | null;
 };
 
-/** Open issues assigned to configured user in ALLOWED_PROJECT_PATH. */
+function mapMilestone(
+  raw: GitlabIssueApi["milestone"],
+): import("../types.js").IssueMilestone | null {
+  if (!raw?.id || !raw.title?.trim()) return null;
+  return {
+    id: raw.id,
+    title: raw.title.trim(),
+    state: raw.state,
+  };
+}
+
+/** Open issues assigned to the current workspace user in the selected project. */
 export async function listAssignedOpenIssues(): Promise<
   import("../types.js").IssueJob[]
 > {
-  const config = getConfig();
-  const project = encodeURIComponent(config.ALLOWED_PROJECT_PATH);
+  const projectPath = resolveGitlabProjectPath();
+  const assignee = resolveAssigneeUsername();
+  const project = encodeURIComponent(projectPath);
   const issues: GitlabIssueApi[] = [];
   let page = 1;
 
   while (page <= 20) {
     const qs = new URLSearchParams({
       state: "opened",
-      assignee_username: config.GITLAB_ASSIGNEE_USERNAME,
+      assignee_username: assignee,
       per_page: "100",
       page: String(page),
       order_by: "updated_at",
@@ -312,7 +484,7 @@ export async function listAssignedOpenIssues(): Promise<
 
   return issues.map((raw) => ({
     projectId: raw.project_id,
-    projectPath: config.ALLOWED_PROJECT_PATH,
+    projectPath,
     issueIid: raw.iid,
     issueId: raw.id,
     title: raw.title,
@@ -320,6 +492,7 @@ export async function listAssignedOpenIssues(): Promise<
     labels: raw.labels ?? [],
     url: raw.web_url,
     action: "startup_scan",
+    milestone: mapMilestone(raw.milestone),
   }));
 }
 
@@ -353,6 +526,7 @@ export type IssueDetailUi = {
   author?: string;
   createdAt?: string;
   updatedAt?: string;
+  milestone?: import("../types.js").IssueMilestone | null;
   taskCompletion?: { count: number; completedCount: number };
   notes: IssueNoteUi[];
   related: RelatedIssueUi[];
@@ -365,9 +539,8 @@ export async function getIssueUiDetail(
   issueIid: number,
   projectIdOrPath?: number | string,
 ): Promise<IssueDetailUi> {
-  const config = getConfig();
   const project = encodeURIComponent(
-    String(projectIdOrPath ?? config.ALLOWED_PROJECT_PATH),
+    String(projectIdOrPath ?? resolveGitlabProjectPath()),
   );
 
   const issueRes = await gitlabFetch(
@@ -391,6 +564,11 @@ export async function getIssueUiDetail(
     assignees?: Array<{ username?: string; name?: string }>;
     created_at?: string;
     updated_at?: string;
+    milestone?: {
+      id: number;
+      title: string;
+      state?: string;
+    } | null;
     task_completion_status?: {
       count?: number;
       completed_count?: number;
@@ -485,6 +663,7 @@ export async function getIssueUiDetail(
     author: issue.author?.username,
     createdAt: issue.created_at,
     updatedAt: issue.updated_at,
+    milestone: mapMilestone(issue.milestone),
     taskCompletion: issue.task_completion_status
       ? {
           count: issue.task_completion_status.count ?? 0,

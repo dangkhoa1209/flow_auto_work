@@ -25,11 +25,25 @@ import {
 } from "./clarify/ui-wait.js";
 import { cancelDiffApproval } from "./review/diff-wait.js";
 import { addChatMessage } from "./db/mongo.js";
-import { commitMessageForIssue } from "./agent/prompt.js";
+import {
+  commitMessageForIssue,
+  docsCommitMessageForIssue,
+} from "./agent/prompt.js";
+import {
+  docsReadySummaryText,
+  parseDocsReadyPaths,
+} from "./docs/analysis.js";
 import type { CompletionActions, IssueJob, JobRecord } from "./types.js";
 import { isJobBusy, resolveDevNotes } from "./types.js";
+import { getRuntimeContext } from "./workspace/runtime.js";
+import { withWorkspaceContext } from "./workspace/routes.js";
 
-type QueueItem = { job: JobRecord; source?: string };
+type QueueItem = {
+  job: JobRecord;
+  source?: string;
+  /** After PM approves docs — force code phase even if requireDocsFirst */
+  forceCodePhase?: boolean;
+};
 
 export class JobQueue {
   private queue: QueueItem[] = [];
@@ -61,6 +75,8 @@ export class JobQueue {
       devNotes?: string;
       /** @deprecated use devNotes */
       techLeadNotes?: string;
+      requireDocsFirst?: boolean;
+      forceCodePhase?: boolean;
     },
   ): Promise<{ enqueued: boolean; reason?: string; jobId?: string }> {
     const key = `${issue.projectId}:${issue.issueIid}`;
@@ -80,16 +96,18 @@ export class JobQueue {
       source: opts?.source,
       completion: opts?.completion,
       devNotes: notes,
+      requireDocsFirst: opts?.requireDocsFirst,
     });
 
-    // If ensure didn't apply notes (undefined), keep existing; if explicit empty clear
     if (notes !== undefined) {
       job.devNotes = notes || undefined;
     }
     if (opts?.completion) job.completion = opts.completion;
+    if (opts?.requireDocsFirst !== undefined) {
+      job.requireDocsFirst = opts.requireDocsFirst;
+    }
 
     if (isJobBusy(job.status) && job.id !== this.currentJobId) {
-      // DB says busy but not in memory — treat as interrupted earlier; allow requeue after failInterrupted
       const fresh = await loadJob(job.id);
       if (fresh && isJobBusy(fresh.status)) {
         return { enqueued: false, reason: "Issue already queued or running" };
@@ -103,15 +121,29 @@ export class JobQueue {
     job.lastQuestion = undefined;
     job.handedOffAt = undefined;
 
+    const rt = getRuntimeContext();
+    if (rt) {
+      job.ownerUsername = rt.gitlabUsername;
+      job.workspaceProjectId = rt.projectId;
+      job.baseBranch = rt.baseBranch;
+      job.workBranch = rt.workBranch;
+    }
+
     this.activeIssueKeys.add(key);
     if (opts?.source) this.sources.set(job.id, opts.source);
-    this.queue.push({ job, source: opts?.source });
+    this.queue.push({
+      job,
+      source: opts?.source,
+      forceCodePhase: opts?.forceCodePhase,
+    });
     await saveJob(job, { source: opts?.source });
     logger.info("Enqueued job", {
       jobId: job.id,
       key,
       source: opts?.source,
       runCount: job.runCount,
+      requireDocsFirst: job.requireDocsFirst,
+      forceCodePhase: opts?.forceCodePhase,
     });
     void this.pump();
     return { enqueued: true, jobId: job.id };
@@ -128,6 +160,30 @@ export class JobQueue {
       source: opts?.source ?? "rerun",
       completion: opts?.completion ?? job.completion,
       devNotes: resolveDevNotes(job) || undefined,
+      requireDocsFirst: job.requireDocsFirst,
+    });
+  }
+
+  /** After PM approves feature docs → enqueue code phase. */
+  async enqueueCodeAfterDocsApproval(
+    jobId: string,
+  ): Promise<{ enqueued: boolean; reason?: string; jobId?: string }> {
+    const job = await loadJob(jobId);
+    if (!job) return { enqueued: false, reason: "Job not found" };
+    if (job.status !== "awaiting_docs_approval") {
+      return {
+        enqueued: false,
+        reason: "Job is not awaiting_docs_approval",
+      };
+    }
+    job.docsApprovedAt = new Date().toISOString();
+    await saveJob(job);
+    return this.enqueue(job.issue, {
+      source: "docs_approved",
+      completion: job.completion,
+      devNotes: resolveDevNotes(job) || undefined,
+      requireDocsFirst: job.requireDocsFirst,
+      forceCodePhase: true,
     });
   }
 
@@ -167,7 +223,11 @@ export class JobQueue {
       const job = { ...doc } as JobRecord & { _id?: string; source?: string };
       delete job._id;
       delete job.source;
-      if (isJobBusy(job.status) || job.status === "awaiting_diff_approval") {
+      if (
+        isJobBusy(job.status) ||
+        job.status === "awaiting_diff_approval" ||
+        job.status === "awaiting_docs_approval"
+      ) {
         job.status = "failed";
         job.error = reason;
         await saveJob(job);
@@ -210,14 +270,135 @@ export class JobQueue {
     try {
       while (this.queue.length > 0) {
         const item = this.queue.shift()!;
-        await this.runJob(item.job);
+        await this.runJob(item.job, { forceCodePhase: item.forceCodePhase });
       }
     } finally {
       this.running = false;
     }
   }
 
-  private async runJob(job: JobRecord) {
+  private async runClarifyLoop(
+    job: JobRecord,
+    initial: Awaited<ReturnType<typeof runNewAgent>>,
+  ): Promise<Awaited<ReturnType<typeof runNewAgent>>> {
+    const config = getConfig();
+    let result = initial;
+    while (result.kind === "need_clarification") {
+      job.clarifyRound += 1;
+      if (job.clarifyRound > config.MAX_CLARIFY_ROUNDS) {
+        throw new Error(
+          `Exceeded MAX_CLARIFY_ROUNDS (${config.MAX_CLARIFY_ROUNDS})`,
+        );
+      }
+      const question = result.question ?? "(no question text)";
+      job.status = "awaiting_clarification";
+      job.lastQuestion = question;
+      await saveJob(job);
+
+      await addChatMessage({
+        jobId: job.id,
+        issueIid: job.issue.issueIid,
+        role: "agent",
+        kind: "clarify",
+        body: question,
+      });
+
+      const answer = await waitForUiClarification({
+        jobId: job.id,
+        question,
+      });
+
+      await addChatMessage({
+        jobId: job.id,
+        issueIid: job.issue.issueIid,
+        role: "user",
+        kind: "clarify",
+        body: answer,
+      });
+
+      job.status = "running";
+      await saveJob(job);
+      result = await resumeAgent(result.agentId, answer, job.issue, {
+        jobId: job.id,
+      });
+      job.agentId = result.agentId;
+      await saveJob(job);
+    }
+    return result;
+  }
+
+  private async finalizeLocalCommit(
+    job: JobRecord,
+    repoPath: string,
+    headBefore: string | null,
+    commitMsg: string,
+  ): Promise<{ commitSha: string | null; hasChange: boolean }> {
+    let madeCommit = false;
+    let commitSha: string | null = null;
+    if (await hasUncommittedChanges(repoPath)) {
+      commitSha = await commitAllTracked(repoPath, commitMsg);
+      if (commitSha) {
+        madeCommit = true;
+      } else {
+        logger.info(
+          "No non-WIP changes to commit — treating agent output as already committed",
+          { jobId: job.id },
+        );
+      }
+    } else {
+      logger.info("Working tree clean (excl. WIP) — already committed", {
+        jobId: job.id,
+      });
+    }
+    await scrubExcludedPathsFromLastCommit(repoPath);
+    commitSha = (await getHeadSha(repoPath)) ?? commitSha;
+    this.assertNotKilled(job);
+
+    const dirty = await hasUncommittedChanges(repoPath);
+    if (dirty) {
+      logger.warn(
+        "Non-WIP uncommitted changes remain after agent finish; continuing",
+        { jobId: job.id },
+      );
+    }
+
+    const hasChange =
+      madeCommit ||
+      Boolean(headBefore && commitSha && headBefore !== commitSha);
+
+    if (hasChange && commitSha) {
+      job.commitSha = commitSha;
+      const prev = Array.isArray(job.commitShas) ? job.commitShas : [];
+      if (!prev.includes(commitSha)) {
+        job.commitShas = [...prev, commitSha].slice(-20);
+      } else {
+        job.commitShas = prev;
+      }
+    }
+
+    return { commitSha, hasChange };
+  }
+
+  private async runJob(
+    job: JobRecord,
+    opts?: { forceCodePhase?: boolean },
+  ) {
+    const execute = () => this.executeJob(job, opts);
+    if (job.ownerUsername && job.workspaceProjectId) {
+      await withWorkspaceContext(
+        job.ownerUsername,
+        job.workspaceProjectId,
+        execute,
+      );
+      return;
+    }
+    await execute();
+  }
+
+  private async executeJob(
+    job: JobRecord,
+    opts?: { forceCodePhase?: boolean },
+  ) {
     const config = getConfig();
     const key = `${job.issue.projectId}:${job.issue.issueIid}`;
     this.currentJobId = job.id;
@@ -225,8 +406,19 @@ export class JobQueue {
     job.runCount = (job.runCount ?? 0) + 1;
     await saveJob(job);
 
-    const repoPath = config.AIHR_REPO_PATH;
+    const rt = getRuntimeContext();
+    const repoPath = rt?.repoPath ?? config.AIHR_REPO_PATH;
+    if (!repoPath) {
+      job.status = "failed";
+      job.error = "No repo path in workspace context";
+      await saveJob(job);
+      this.activeIssueKeys.delete(key);
+      this.currentJobId = null;
+      return;
+    }
     const notes = resolveDevNotes(job);
+    const runDocsPhase =
+      Boolean(job.requireDocsFirst) && !opts?.forceCodePhase;
 
     try {
       const startLabels = (job.completion?.onStartLabels ?? [])
@@ -253,6 +445,9 @@ export class JobQueue {
         issueIid: job.issue.issueIid,
         title: job.issue.title,
         targetBranchOverride: targetOverride,
+        baseBranch: job.baseBranch || rt?.baseBranch,
+        workBranch: job.workBranch || rt?.workBranch,
+        repoPath,
       });
       job.branch = prepared.branch;
       await saveJob(job);
@@ -263,50 +458,70 @@ export class JobQueue {
         jobId: job.id,
         techLeadNotes: notes || undefined,
         devNotes: notes || undefined,
+        phase: runDocsPhase ? "docs" : "code",
+        approvedDocsPaths:
+          !runDocsPhase && job.docsApprovedAt
+            ? job.docsPaths?.length
+              ? job.docsPaths
+              : job.docsPath
+                ? [job.docsPath]
+                : undefined
+            : undefined,
       });
       job.agentId = result.agentId;
       await saveJob(job);
 
-      while (result.kind === "need_clarification") {
-        job.clarifyRound += 1;
-        if (job.clarifyRound > config.MAX_CLARIFY_ROUNDS) {
-          throw new Error(
-            `Exceeded MAX_CLARIFY_ROUNDS (${config.MAX_CLARIFY_ROUNDS})`,
-          );
+      result = await this.runClarifyLoop(job, result);
+
+      if (runDocsPhase) {
+        if (result.kind !== "docs_ready" && result.kind !== "unknown") {
+          // unexpected DONE during docs phase — still try to harvest docs
+          logger.warn("Docs phase ended without DOCS_READY", {
+            jobId: job.id,
+            kind: result.kind,
+          });
         }
-        const question = result.question ?? "(no question text)";
-        job.status = "awaiting_clarification";
-        job.lastQuestion = question;
+
+        const body = result.summary ?? "";
+        const paths = parseDocsReadyPaths(body);
+        const summary = docsReadySummaryText(body) || body.slice(0, 500);
+        job.docsSummary = summary || undefined;
+        if (paths.length) {
+          job.docsPaths = paths;
+          job.docsPath = paths[0];
+        }
+
+        await this.finalizeLocalCommit(
+          job,
+          repoPath,
+          headBefore,
+          docsCommitMessageForIssue(job.issue),
+        );
+
+        if (result.summary) {
+          await addChatMessage({
+            jobId: job.id,
+            issueIid: job.issue.issueIid,
+            role: "agent",
+            kind: "qa",
+            body: `DOCS READY:\n${summary}${
+              paths.length ? `\n\nPaths:\n${paths.map((p) => `- ${p}`).join("\n")}` : ""
+            }`,
+          });
+        }
+
+        job.status = "awaiting_docs_approval";
+        job.error = undefined;
+        // Clear prior approval so PM must re-approve this docs pass
+        job.docsApprovedAt = undefined;
         await saveJob(job);
 
-        await addChatMessage({
+        logger.info("Job awaiting docs approval", {
           jobId: job.id,
-          issueIid: job.issue.issueIid,
-          role: "agent",
-          kind: "clarify",
-          body: question,
+          docsPaths: job.docsPaths,
+          runCount: job.runCount,
         });
-
-        const answer = await waitForUiClarification({
-          jobId: job.id,
-          question,
-        });
-
-        await addChatMessage({
-          jobId: job.id,
-          issueIid: job.issue.issueIid,
-          role: "user",
-          kind: "clarify",
-          body: answer,
-        });
-
-        job.status = "running";
-        await saveJob(job);
-        result = await resumeAgent(result.agentId, answer, job.issue, {
-          jobId: job.id,
-        });
-        job.agentId = result.agentId;
-        await saveJob(job);
+        return;
       }
 
       if (result.kind === "unknown") {
@@ -327,59 +542,19 @@ export class JobQueue {
         });
       }
 
-      // Done = local commit only (no push / MR / diff-approval gate)
-      let madeCommit = false;
-      let commitSha: string | null = null;
-      if (await hasUncommittedChanges(repoPath)) {
-        commitSha = await commitAllTracked(
-          repoPath,
-          commitMessageForIssue(job.issue),
-        );
-        if (commitSha) {
-          madeCommit = true;
-        } else {
-          logger.info(
-            "No non-WIP changes to commit — treating agent DONE as already committed",
-            { jobId: job.id },
-          );
-        }
-      } else {
-        logger.info("Working tree clean (excl. WIP) — already committed", {
-          jobId: job.id,
-        });
-      }
-      await scrubExcludedPathsFromLastCommit(repoPath);
-      commitSha = (await getHeadSha(repoPath)) ?? commitSha;
-      this.assertNotKilled(job);
-
-      const dirty = await hasUncommittedChanges(repoPath);
-      if (dirty) {
-        logger.warn(
-          "Non-WIP uncommitted changes remain after DONE; continuing as succeeded",
-          { jobId: job.id },
-        );
-      }
-
-      const hasCodeChange =
-        madeCommit ||
-        Boolean(headBefore && commitSha && headBefore !== commitSha);
-
-      if (hasCodeChange && commitSha) {
-        job.commitSha = commitSha;
-        const prev = Array.isArray(job.commitShas) ? job.commitShas : [];
-        if (!prev.includes(commitSha)) {
-          job.commitShas = [...prev, commitSha].slice(-20);
-        } else {
-          job.commitShas = prev;
-        }
-      }
+      const { commitSha, hasChange } = await this.finalizeLocalCommit(
+        job,
+        repoPath,
+        headBefore,
+        commitMessageForIssue(job.issue),
+      );
 
       job.status = "awaiting_handoff";
       job.completedAt = new Date().toISOString();
       job.error = undefined;
       await saveJob(job);
 
-      if (hasCodeChange) {
+      if (hasChange) {
         const defaultComment = [
           "Task work 100% by AI",
           result.summary?.trim() || null,
@@ -409,7 +584,7 @@ export class JobQueue {
         branch: prepared.branch,
         runCount: job.runCount,
         commitSha: job.commitSha,
-        hasCodeChange,
+        hasCodeChange: hasChange,
       });
     } catch (err) {
       const message = isStartupError(err)

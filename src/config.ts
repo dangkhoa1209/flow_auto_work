@@ -7,14 +7,18 @@ const envSchema = z.object({
   INGEST_MODE: z.enum(["webhook"]).default("webhook"),
   PORT: z.coerce.number().default(8787),
   HOST: z.string().default("127.0.0.1"),
-  CURSOR_API_KEY: z.string().min(1),
-  CURSOR_MODEL: z.string().default("composer-2.5"),
-  AIHR_REPO_PATH: z.string().min(1),
-  ALLOWED_PROJECT_PATH: z.string().min(1),
+  /** Server master key to encrypt user GitLab/Cursor tokens at rest */
+  FLOW_SECRETS_KEY: z.string().min(16),
+  /** Optional legacy defaults — prefer per-user tokens in Mongo (encrypted) */
+  CURSOR_API_KEY: z.string().optional(),
+  /** `auto` = server picks; or a concrete id e.g. composer-2.5 */
+  CURSOR_MODEL: z.string().default("auto"),
+  AIHR_REPO_PATH: z.string().optional(),
+  ALLOWED_PROJECT_PATH: z.string().optional(),
   GITLAB_BASE_URL: z.string().url().default("https://gitlab.com"),
-  GITLAB_TOKEN: z.string().min(1),
+  GITLAB_TOKEN: z.string().optional(),
   GITLAB_WEBHOOK_SECRET: z.string().min(1),
-  GITLAB_ASSIGNEE_USERNAME: z.string().min(1),
+  GITLAB_ASSIGNEE_USERNAME: z.string().optional(),
   GITLAB_ASSIGNEE_ID: z.string().optional(),
   MR_TARGET_BRANCH: z.string().optional(),
   MR_REVIEWER_USERNAMES: z.string().optional(),
@@ -35,12 +39,10 @@ const envSchema = z.object({
     .string()
     .optional()
     .transform((v) => v === "true" || v === "1"),
-  // Webhook may still be received; enqueue only if true (default: UI-only)
   WEBHOOK_AUTO_ENQUEUE: z
     .string()
     .optional()
     .transform((v) => v === "true" || v === "1"),
-  // Paths excluded from auto commits (still tracked — NOT gitignore)
   COMMIT_EXCLUDE_PATHS: z
     .string()
     .default(
@@ -48,7 +50,6 @@ const envSchema = z.object({
     ),
   MONGODB_URI: z.string().default("mongodb://127.0.0.1:27017"),
   MONGODB_DB: z.string().default("flow_auto_work"),
-  // Applied to GitLab issue when auto-work succeeds
   ON_COMPLETE_ASSIGN_USERNAMES: z.string().optional(),
   ON_COMPLETE_LABELS: z.string().optional(),
   ON_COMPLETE_COMMENT: z.string().optional(),
@@ -111,7 +112,7 @@ export function getConfig(): AppConfig {
   };
 
   // Fail fast on leftover .env.example placeholders (common cause of 401 on scan)
-  const placeholders: Array<[string, string, string[]]> = [
+  const placeholders: Array<[string, string | undefined, string[]]> = [
     ["GITLAB_TOKEN", cached.GITLAB_TOKEN, ["glpat-...", "change-me"]],
     [
       "GITLAB_ASSIGNEE_USERNAME",
@@ -120,8 +121,10 @@ export function getConfig(): AppConfig {
     ],
     ["CURSOR_API_KEY", cached.CURSOR_API_KEY, ["cursor_..."]],
     ["GITLAB_WEBHOOK_SECRET", cached.GITLAB_WEBHOOK_SECRET, ["change-me"]],
+    ["FLOW_SECRETS_KEY", cached.FLOW_SECRETS_KEY, ["change-me", "replace-me"]],
   ];
   for (const [name, value, bads] of placeholders) {
+    if (value == null || !String(value).trim()) continue;
     const v = value.trim().toLowerCase();
     // Allow internal list-tasks dummies
     if (v.includes("list-tasks-placeholder-ok")) continue;

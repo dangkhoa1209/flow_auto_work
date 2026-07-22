@@ -8,12 +8,16 @@ import {
 } from "./job-store.js";
 import { logger } from "./logger.js";
 import { createApp } from "./server.js";
+import { ensureWorkspaceIndexes } from "./workspace/store.js";
+import { applyGitlabAssigneeFromEnvToken } from "./gitlab/identity.js";
 
 setMaxListeners(50);
 
 async function main() {
   const config = getConfig();
+  await applyGitlabAssigneeFromEnvToken();
   await connectMongo();
+  await ensureWorkspaceIndexes();
   await failInterruptedJobs();
   const legacy = await resolveLegacyDiffApprovalJobs();
   if (legacy > 0) {
@@ -26,8 +30,11 @@ async function main() {
   logger.info("Starting flow_auto_work", {
     host: config.HOST,
     port: config.PORT,
-    repo: config.AIHR_REPO_PATH,
-    project: config.ALLOWED_PROJECT_PATH,
+    multiUser: true,
+    secretsEncrypted: true,
+    gitlabAssignee: config.GITLAB_ASSIGNEE_USERNAME ?? null,
+    legacyRepo: config.AIHR_REPO_PATH ?? null,
+    legacyProject: config.ALLOWED_PROJECT_PATH ?? null,
     teamsEnabled: config.teamsEnabled,
     webhookAutoEnqueue: config.WEBHOOK_AUTO_ENQUEUE,
     mongo: config.MONGODB_URI,
@@ -43,7 +50,9 @@ async function main() {
     (info) => {
       logger.info(`Listening on http://${info.address}:${info.port}`);
       logger.info(`UI: http://${info.address}:${info.port}/`);
-      logger.info("Jobs only start from UI (Start / Auto) — no startup scan");
+      logger.info(
+        "Multi-user: login with GitLab username + encrypted tokens; join projects; paste work branch",
+      );
       if (config.WEBHOOK_AUTO_ENQUEUE) {
         logger.info("Webhook auto-enqueue: ON");
       } else {

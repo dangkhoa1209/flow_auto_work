@@ -4,14 +4,15 @@ Tài liệu ghi lại những gì đã xây trong project (local orchestrator Gi
 
 ## Mục tiêu
 
-- Làm task GitLab trên repo `aihr_v3` bằng Cursor SDK (local).
-- Điều khiển **qua UI** (`npm run dev` = nodemon; không auto-run job khi boot).
-- Clarify / Q&A / tiến trình Cursor trên UI.
-- Commit trên **nhánh hiện tại** (không checkout `main`, không tạo `auto/*`).
-- Khi agent xong: status **`awaiting_handoff`** — chờ user assign / thêm labels thủ công (**không** auto).
-- Handoff xong → `succeeded`. Chỉ comment GitLab khi xong: `Task work 100% by AI` + summary **tiếng Việt**.
-- Tab **Thống kê**: todolist theo ngày (`Asia/Ho_Chi_Minh`).
-- Theme UI tối; loading spinner trên mọi chỗ fetch.
+- Orchestrator GitLab + Cursor SDK + UI — **multi-user / multi-project**.
+- Mỗi dev login bằng **GitLab username**; nhập **GitLab PAT + Cursor API key** (mã hóa AES-256-GCM trước khi lưu Mongo).
+- **Cursor model** chọn trên UI (Settings / modal Run); lưu theo user (`auto` hoặc model cụ thể). Fallback `.env` `CURSOR_MODEL`.
+- Một user join nhiều project; mỗi membership có **nhánh project (base)** + **nhánh làm việc (optional)**.
+- **Nhánh làm việc trống** → khi Run tự tạo `feat/<iid>/<short-english-slug>` từ nhánh project rồi commit.
+- **Nhánh làm việc có giá trị** → chỉ checkout & commit trên nhánh đó.
+- Khi agent xong: **`awaiting_handoff`** → user có thể **Merge → nhánh project** (local; conflict → AI fix) rồi assign/labels thủ công.
+- Tab **Thống kê**; Tasks group theo **Milestone**. Click job trong thống kê → modal **Code Diff**.
+- Cột giữa Work: tabs **Detail | Diff | Commits | Progress** — diff theo `base...job.branch`, list file +/−, highlight. Done chờ cũng có panel Diff trước merge.
 
 ---
 
@@ -30,13 +31,17 @@ UI (http://127.0.0.1:8787)
 
 JobQueue (serial)
   → on-start labels (optional)
-  → Cursor agent (stream → progress UI)
-  → clarify loop (UI only, không comment GitLab)
+  → [optional] Docs phase (feature docs .md/.mdc) → awaiting_docs_approval → Approve
+  → Cursor agent code (AiHR rules + approved docs) → clarify loop
   → commit local (nếu dirty, excl. WIP) → awaiting_handoff
   → comment "Task work 100% by AI" + summary VI
   → user handoff (add_labels + assignee) → succeeded
   (không push / không MR)
 ```
+
+**Tasks UI**: group + filter theo **GitLab Milestone**.
+
+**Onboarding**: GitLab PAT (link lấy token trên UI) → chọn project (+ local path) → **nhánh project** + **nhánh làm việc optional**. Cursor key chỉ hỏi khi **Run** nếu chưa có (link Dashboard Integrations trên UI).
 
 **Boot**: server + UI. Không startup scan. Webhook mặc định không enqueue (`WEBHOOK_AUTO_ENQUEUE=false`).
 
@@ -49,6 +54,7 @@ JobQueue (serial)
 | `queued` / `running` | Đang chờ / đang chạy agent |
 | `draft` | 1 job/issue — đang viết Dev Notes, chưa run |
 | `awaiting_clarification` | Agent hỏi — trả lời trên UI |
+| `awaiting_docs_approval` | Docs feature (`.md`/`.mdc` trong `docs/`) xong — PM duyệt trên UI rồi mới code |
 | `awaiting_handoff` | Code xong — chờ assign/labels thủ công |
 | `succeeded` | Đã handoff |
 | `failed` | Lỗi / force stop / restart giữa chừng |
@@ -60,7 +66,7 @@ JobQueue (serial)
 
 | Tab | Nội dung |
 |-----|----------|
-| Work | 3 cột: Tasks+Jobs · Detail+Tech Lead notes+Progress · Assign+Clarify |
+| Work | 3 cột: Tasks (group theo Milestone) + Jobs · Detail+Dev Notes+Docs review · Assign+Clarify |
 | Done chờ | Jobs `awaiting_handoff`; handoff = assignee + **add** labels (không set/remove) |
 | Thống kê | `GET /api/stats/daily` — đếm / list theo ngày |
 
@@ -68,10 +74,13 @@ JobQueue (serial)
 
 1. **Fetch & Review** — click task → ensure **1 job** (`draft` nếu mới) + đọc GitLab.
 2. **Dev Notes** — ghi chú kỹ thuật trên job (`devNotes` Mongo). **Save notes** hoặc **Run**.
-3. **Run** — re-run cùng job (`runCount++`), giữ chat/context.
-4. **Run tất cả** — mọi task assigned: tạo job nếu thiếu (kể cả draft), re-run; **bỏ qua** đang queued/running/clarify.
+3. **Docs trước code** (optional checkbox) — Phase A: đọc/sửa **feature docs** AiHR (`docs/modules/...`, `.md` hoặc `.mdc`, không theo issue). Code phase bắt buộc theo **AiHR rules** (`.cursor/rules/**/*.mdc` + AGENTS.md + skill). Status `awaiting_docs_approval` → xem docs trên UI → **Approve → Code**.
+4. **Run** — re-run cùng job (`runCount++`), giữ chat/context.
+5. **Run tất cả** — mọi task assigned: tạo job nếu thiếu (kể cả draft), re-run; **bỏ qua** đang queued/running/clarify.
 
 `devNotes` chỉ trên job Mongo (không post GitLab). Prompt: **DEV NOTES (HIGHEST PRIORITY)**.
+
+Docs gate API: `GET /api/jobs/:id/docs`, `POST /api/jobs/:id/approve-docs`, `POST /api/jobs/:id/rerun-docs`.
 
 - Dark theme (CSS variables).
 - Dropdown autocomplete (gõ để lọc).

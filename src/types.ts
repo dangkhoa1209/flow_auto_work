@@ -13,6 +13,12 @@ export type CompletionActions = {
   comment?: string;
 };
 
+export type IssueMilestone = {
+  id: number;
+  title: string;
+  state?: string;
+};
+
 export type IssueJob = {
   projectId: number;
   projectPath: string;
@@ -23,6 +29,8 @@ export type IssueJob = {
   labels: string[];
   url: string;
   action: string;
+  /** GitLab milestone (null/undefined = chưa gán) */
+  milestone?: IssueMilestone | null;
 };
 
 export type JobStatus =
@@ -31,6 +39,8 @@ export type JobStatus =
   | "queued"
   | "running"
   | "awaiting_clarification"
+  /** Docs phase xong — chờ PM duyệt analysis trong UI */
+  | "awaiting_docs_approval"
   /** @deprecated legacy — migrated to succeeded on boot (push/MR gate removed) */
   | "awaiting_diff_approval"
   /** Code done (local commit) — chờ user assign / labels thủ công */
@@ -55,6 +65,14 @@ export type JobRecord = {
   id: string;
   status: JobStatus;
   issue: IssueJob;
+  /** GitLab username who owns/runs this job */
+  ownerUsername?: string;
+  /** Workspace project id (multi-project) */
+  workspaceProjectId?: string;
+  /** Project / base branch used when auto-creating feat branches */
+  baseBranch?: string;
+  /** Fixed work branch; empty → auto feat/<iid>/slug */
+  workBranch?: string;
   agentId?: string;
   runId?: string;
   branch?: string;
@@ -70,15 +88,36 @@ export type JobRecord = {
   lastTeamsMessageId?: string;
   error?: string;
   summary?: string;
+  /** Docs-phase summary (Vietnamese) while awaiting approval */
+  docsSummary?: string;
   completion?: CompletionActions;
   /** Dev notes — highest priority in agent prompt (Mongo only) */
   devNotes?: string;
   /** @deprecated use devNotes */
   techLeadNotes?: string;
+  /** Hard gate: read/update AiHR feature docs before any app code */
+  requireDocsFirst?: boolean;
+  /** Feature doc paths from docs phase (.md / .mdc under docs/), for PM review */
+  docsPaths?: string[];
+  /** @deprecated prefer docsPaths */
+  docsPath?: string;
+  /** Set when PM approves docs → next run is code phase */
+  docsApprovedAt?: string;
   /** When agent finished / entered awaiting_handoff */
   completedAt?: string;
   /** When user finished handoff → succeeded */
   handedOffAt?: string;
+  /** Local merge of work branch into project/base branch */
+  mergedAt?: string;
+  mergeTarget?: string;
+  mergeSource?: string;
+  mergeSha?: string;
+  /** True if Cursor agent resolved conflicts during merge */
+  mergeAiResolved?: boolean;
+  /** When target branch was pushed to origin after merge */
+  mergePushedAt?: string;
+  mergePushError?: string;
+  mergeError?: string;
   createdAt: string;
   updatedAt: string;
 };

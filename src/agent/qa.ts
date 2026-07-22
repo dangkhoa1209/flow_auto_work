@@ -1,16 +1,19 @@
 import { Agent } from "@cursor/sdk";
-import { getConfig } from "../config.js";
 import { getReviewDiff } from "../git/diff.js";
 import { collectLinkedIssueContext } from "../gitlab/linked-context.js";
 import { logger } from "../logger.js";
 import type { IssueJob } from "../types.js";
+import {
+  resolveCursorApiKey,
+  resolveCursorModel,
+  resolveRepoPath,
+} from "../workspace/creds.js";
 
 /** One-shot Q&A about a task + current diff (no Teams). */
 export async function answerTaskQuestion(opts: {
   issue: IssueJob;
   question: string;
 }): Promise<string> {
-  const config = getConfig();
   const [diff, linked] = await Promise.all([
     getReviewDiff({ issueIid: opts.issue.issueIid }),
     collectLinkedIssueContext(opts.issue).catch(() => ({
@@ -52,10 +55,11 @@ ${opts.question}
 Answer clearly in Vietnamese if they wrote Vietnamese. Use linked issues/comments when relevant. Reference files/lines when useful. Do not modify code unless they explicitly ask you to change something — this is a Q&A / review turn.`;
 
   logger.info("Q&A agent prompt", { issueIid: opts.issue.issueIid });
+  const modelId = resolveCursorModel();
   const result = await Agent.prompt(prompt, {
-    apiKey: config.CURSOR_API_KEY,
-    model: { id: config.CURSOR_MODEL },
-    local: { cwd: config.AIHR_REPO_PATH },
+    apiKey: resolveCursorApiKey(),
+    model: { id: modelId },
+    local: { cwd: resolveRepoPath() },
   });
   if (result.status === "error") {
     throw new Error(`Q&A agent failed: ${result.id}`);

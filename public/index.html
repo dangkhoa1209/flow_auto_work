@@ -242,6 +242,25 @@
       background: var(--teal-dim);
     }
     .task.skip { opacity: 0.5; }
+    .milestone-group { margin-bottom: 10px; }
+    .milestone-group__head {
+      display: flex; align-items: center; justify-content: space-between; gap: 8px;
+      padding: 6px 8px; margin-bottom: 4px;
+      border-radius: 8px; background: rgba(125,211,252,.08);
+      border: 1px solid rgba(125,211,252,.22);
+      cursor: pointer; user-select: none;
+    }
+    .milestone-group__head:hover { border-color: rgba(125,211,252,.4); }
+    .milestone-group__title {
+      font-size: 0.72rem; font-weight: 650; color: #7dd3fc;
+      letter-spacing: 0.02em; line-height: 1.3;
+    }
+    .milestone-group__title.none { color: var(--mute); font-weight: 500; }
+    .milestone-group__count {
+      font-family: "IBM Plex Mono", monospace; font-size: 0.65rem; color: var(--mute);
+    }
+    .milestone-group__body { padding-left: 2px; }
+    .milestone-group.collapsed .milestone-group__body { display: none; }
     .title { font-weight: 600; font-size: 0.84rem; color: var(--text); line-height: 1.35; }
     .meta { color: var(--mute); font-size: 0.72rem; font-family: "IBM Plex Mono", monospace; }
     a { color: #5eead4; text-decoration: none; font-weight: 500; }
@@ -270,6 +289,7 @@
     .st.succeeded { color: #6ee7b7; }
     .st.failed { color: #fca5a5; }
     .st.running, .st.queued, .st.awaiting_clarification, .st.awaiting_diff_approval { color: #fcd34d; }
+    .st.awaiting_docs_approval { color: #f9a8d4; }
     .st.awaiting_handoff { color: #7dd3fc; }
     .job-actions { display: flex; gap: 6px; margin-top: 4px; flex-wrap: wrap; }
     .job-actions button { padding: 6px 10px; font-size: 0.75rem; min-height: 30px; }
@@ -426,6 +446,30 @@
       min-height: 40px;
       font-weight: 650;
     }
+    .docs-gate-row {
+      display: flex; align-items: flex-start; gap: 8px;
+      margin: 8px 0 0; padding: 8px 10px;
+      border-radius: 8px; background: rgba(244,114,182,.08);
+      border: 1px solid rgba(244,114,182,.28);
+      font-size: 0.78rem; color: var(--text-soft); line-height: 1.4;
+    }
+    .docs-gate-row input { margin-top: 2px; flex-shrink: 0; }
+    .docs-gate-row strong { color: #f9a8d4; font-weight: 600; }
+    .docs-viewer { margin-top: 4px; }
+    .docs-viewer .doc-file { margin-bottom: 10px; }
+    .docs-viewer .doc-path {
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 0.68rem; color: #f9a8d4; margin-bottom: 4px;
+    }
+    .docs-viewer pre.doc-body {
+      margin: 0; padding: 10px; max-height: 280px; overflow: auto;
+      background: #0a101c; border-radius: 10px; border: 1px solid var(--line);
+      font-family: "IBM Plex Mono", monospace; font-size: 0.68rem; line-height: 1.45;
+      white-space: pre-wrap; word-break: break-word; color: #e2e8f0;
+    }
+    .docs-viewer pre.doc-body.missing {
+      color: #fca5a5; border-color: rgba(248,113,113,.35);
+    }
     .scroll-mid { flex: 1; min-height: 0; overflow: auto; }
     .panel-block {
       margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line);
@@ -490,16 +534,163 @@
     .dd-empty { padding: 10px; color: var(--mute); font-size: 0.82rem; text-align: center; }
 
     .diff-tools { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; align-items: center; }
-    .file-edit {
-      margin-top: 8px; padding: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg-soft);
+
+    /* —— GitLab-style diff review —— */
+    .diff-review {
+      display: flex; flex-direction: column; gap: 8px; min-height: 0; flex: 1;
     }
-    .file-edit textarea { min-height: 200px; font-family: "IBM Plex Mono", monospace; font-size: 0.72rem; }
-    .path-chip {
-      font-size: 0.7rem; padding: 3px 8px; border-radius: 8px; cursor: pointer;
-      background: rgba(20,184,166,.15); border: 1px solid rgba(45,212,191,.35); color: #5eead4;
-      margin: 0 4px 4px 0; display: inline-block;
+    .diff-review__meta {
+      font-family: "IBM Plex Mono", monospace; font-size: 0.72rem; color: var(--mute);
+      line-height: 1.45;
     }
-    .path-chip:hover { border-color: var(--teal); }
+    .diff-review__meta strong { color: var(--text-soft); font-weight: 650; }
+    .diff-review__layout {
+      flex: 1; min-height: 0; display: grid;
+      grid-template-columns: minmax(160px, 220px) minmax(0, 1fr);
+      gap: 0; border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
+      background: #0b1220;
+    }
+    @media (max-width: 900px) {
+      .diff-review__layout { grid-template-columns: 1fr; }
+      .diff-review__sidebar { max-height: 140px; border-right: 0; border-bottom: 1px solid var(--line); }
+    }
+    .diff-review__sidebar {
+      background: #111827; border-right: 1px solid var(--line);
+      overflow: auto; -webkit-overflow-scrolling: touch;
+    }
+    .diff-review__sidebar-head {
+      position: sticky; top: 0; z-index: 2;
+      padding: 8px 10px; font-size: 0.68rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.04em; color: var(--mute);
+      background: #151c2c; border-bottom: 1px solid var(--line);
+    }
+    .diff-file-nav {
+      list-style: none; margin: 0; padding: 4px 0;
+    }
+    .diff-file-nav__item {
+      display: flex; align-items: flex-start; gap: 6px;
+      width: 100%; text-align: left; padding: 7px 10px;
+      border: 0; border-radius: 0; background: transparent; color: var(--text-soft);
+      font-family: "IBM Plex Mono", monospace; font-size: 0.68rem; font-weight: 500;
+      line-height: 1.35; min-height: 0; cursor: pointer;
+      border-left: 2px solid transparent;
+    }
+    .diff-file-nav__item:hover { background: #1a2336; color: var(--text); }
+    .diff-file-nav__item.active {
+      background: rgba(20,184,166,.12);
+      border-left-color: var(--teal);
+      color: #ecfdf5;
+    }
+    .diff-file-nav__path { flex: 1; word-break: break-all; }
+    .diff-file-nav__delta { flex-shrink: 0; white-space: nowrap; }
+    .diff-file-nav__delta .p { color: #3dd68c; }
+    .diff-file-nav__delta .m { color: #f87171; }
+
+    .diff-review__main {
+      min-width: 0; min-height: 0; overflow: auto; -webkit-overflow-scrolling: touch;
+      background: #0d1117;
+    }
+    .gl-file {
+      border-bottom: 1px solid #30363d;
+    }
+    .gl-file:last-child { border-bottom: 0; }
+    .gl-file__head {
+      position: sticky; top: 0; z-index: 3;
+      display: flex; align-items: center; justify-content: space-between; gap: 10px;
+      padding: 8px 12px;
+      background: #161b22; border-bottom: 1px solid #30363d;
+      font-family: "IBM Plex Mono", monospace; font-size: 0.75rem;
+    }
+    .gl-file__title {
+      display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1;
+      color: #e6edf3; font-weight: 600; word-break: break-all;
+    }
+    .gl-file__stats {
+      flex-shrink: 0; font-size: 0.7rem; color: #8b949e;
+      display: flex; gap: 8px; align-items: center;
+    }
+    .gl-file__stats .p { color: #3dd68c; font-weight: 650; }
+    .gl-file__stats .m { color: #f87171; font-weight: 650; }
+    .gl-badge {
+      flex-shrink: 0; font-size: 0.62rem; font-weight: 700;
+      padding: 1px 6px; border-radius: 4px; border: 1px solid #30363d;
+      text-transform: uppercase;
+    }
+    .gl-badge.A { color: #3dd68c; border-color: rgba(61,214,140,.45); background: rgba(46,160,67,.15); }
+    .gl-badge.M { color: #d29922; border-color: rgba(210,153,34,.4); background: rgba(187,128,9,.12); }
+    .gl-badge.D { color: #f85149; border-color: rgba(248,81,73,.4); background: rgba(248,81,73,.12); }
+    .gl-badge.R { color: #58a6ff; border-color: rgba(88,166,255,.4); background: rgba(56,139,253,.12); }
+
+    .gl-table {
+      width: 100%; border-collapse: collapse; table-layout: fixed;
+      font-family: ui-monospace, "IBM Plex Mono", SFMono-Regular, Menlo, monospace;
+      font-size: 12px; line-height: 20px;
+    }
+    .gl-table .ln {
+      width: 46px; min-width: 46px; max-width: 52px;
+      text-align: right; padding: 0 8px; user-select: none;
+      color: #6e7681; vertical-align: top;
+      border-right: 1px solid #21262d;
+      background: #0d1117;
+    }
+    .gl-table .sign {
+      width: 18px; min-width: 18px; text-align: center; padding: 0;
+      user-select: none; vertical-align: top; color: #8b949e;
+      border-right: 1px solid #21262d;
+    }
+    .gl-table .code {
+      padding: 0 12px; white-space: pre-wrap; word-break: break-word;
+      vertical-align: top; color: #e6edf3;
+    }
+    .gl-table tr.ctx .code { background: transparent; }
+    .gl-table tr.add .ln,
+    .gl-table tr.add .sign,
+    .gl-table tr.add .code {
+      background: rgba(46, 160, 67, 0.15);
+    }
+    .gl-table tr.add .sign { color: #3dd68c; font-weight: 700; }
+    .gl-table tr.add .code { color: #aff5b4; }
+    .gl-table tr.del .ln,
+    .gl-table tr.del .sign,
+    .gl-table tr.del .code {
+      background: rgba(248, 81, 73, 0.15);
+    }
+    .gl-table tr.del .sign { color: #f85149; font-weight: 700; }
+    .gl-table tr.del .code { color: #ffdcd7; }
+    .gl-table tr.hunk .ln,
+    .gl-table tr.hunk .sign,
+    .gl-table tr.hunk .code {
+      background: rgba(56, 139, 253, 0.1);
+      color: #79c0ff;
+      border-top: 1px solid #30363d;
+      border-bottom: 1px solid #30363d;
+    }
+    .gl-table tr.meta .code { color: #8b949e; font-style: italic; }
+    .gl-empty {
+      padding: 24px; color: #8b949e; text-align: center; font-size: 0.85rem;
+    }
+
+    .diff-scroll {
+      flex: 1; min-height: 180px; overflow: auto; -webkit-overflow-scrolling: touch;
+    }
+    .commits-log {
+      font-family: "IBM Plex Mono", monospace; font-size: 0.75rem; line-height: 1.55;
+      white-space: pre-wrap; color: #e2e8f0; background: #0a101c;
+      border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px;
+    }
+    .mid-panes { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+    .mid-pane { flex: 1; min-height: 0; display: none; flex-direction: column; overflow: hidden; }
+    .mid-pane.active { display: flex; }
+    .stats-job { cursor: pointer; }
+    .stats-job:hover { border-color: var(--teal); }
+    #diffModal .modal {
+      width: min(1100px, 100%);
+      max-height: min(94dvh, 920px);
+      padding: 14px 16px;
+    }
+    #diffModal .diff-review { min-height: min(70dvh, 640px); }
+    #diffModal .diff-review__layout { min-height: min(62dvh, 560px); }
+
     .progress-log {
       flex: 1; min-height: 140px; overflow: auto; font-family: "IBM Plex Mono", monospace;
       font-size: 0.72rem; line-height: 1.45; background: #0a101c; color: #e2e8f0;
@@ -528,6 +719,9 @@
     .modal-actions { display: flex; gap: 8px; margin-top: 12px; }
     .modal-actions button { flex: 1; }
     .settings-hint { font-size: 0.72rem; color: var(--mute); margin-top: 4px; }
+    .token-help a { color: var(--teal); text-decoration: underline; text-underline-offset: 2px; }
+    .token-help a:hover { opacity: 0.9; }
+    .token-help code { font-size: 0.68rem; }
 
     .left-stack { display: flex; flex-direction: column; gap: 10px; min-height: 0; flex: 1; }
     .left-pane { display: flex; flex-direction: column; min-height: 0; flex: 1; }
@@ -625,6 +819,419 @@
 
     /* checkbox accent */
     input[type="checkbox"], input[type="radio"] { accent-color: var(--teal); }
+
+    .workspace-bar {
+      display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end;
+      padding: 8px 10px; border-radius: 12px;
+      background: var(--bg-elev); border: 1px solid var(--line);
+      margin-bottom: 2px;
+    }
+    .workspace-bar label { display: block; font-size: 0.68rem; color: var(--mute); margin-bottom: 3px; }
+    .workspace-bar .wb-field { min-width: 140px; flex: 1; }
+    .workspace-bar select, .workspace-bar input[type="text"], .workspace-bar input[type="password"] {
+      min-height: 34px; font-size: 0.8rem; padding: 6px 10px;
+    }
+    .workspace-bar .wb-user {
+      font-family: "IBM Plex Mono", monospace; font-size: 0.78rem; color: #5eead4;
+      padding-bottom: 8px;
+    }
+    #loginGate.modal-backdrop {
+      display: flex;
+      background:
+        radial-gradient(ellipse 80% 60% at 50% -10%, rgba(20,184,166,.22), transparent 55%),
+        radial-gradient(ellipse 50% 40% at 100% 100%, rgba(56,189,248,.1), transparent 50%),
+        rgba(6, 10, 18, .72);
+      backdrop-filter: blur(10px);
+    }
+    #loginGate.hidden { display: none !important; }
+    #loginGate .login-card {
+      width: min(400px, 100%);
+      padding: 0;
+      overflow: hidden;
+      border-radius: 18px;
+      border: 1px solid rgba(45,212,191,.28);
+      background: linear-gradient(165deg, #152033 0%, #0d1422 55%, #0a101c 100%);
+      box-shadow:
+        0 0 0 1px rgba(255,255,255,.04) inset,
+        0 28px 80px rgba(0,0,0,.55);
+    }
+    #loginGate .login-card__hero {
+      padding: 28px 28px 18px;
+      border-bottom: 1px solid var(--line-soft);
+      text-align: center;
+    }
+    #loginGate .login-card__mark {
+      width: 48px; height: 48px; margin: 0 auto 14px;
+      border-radius: 14px;
+      display: grid; place-items: center;
+      font-family: "IBM Plex Mono", monospace;
+      font-weight: 700; font-size: 0.85rem; letter-spacing: -0.02em;
+      color: #ecfdf5;
+      background: linear-gradient(145deg, #14b8a6, #0f766e);
+      box-shadow: 0 8px 24px rgba(20,184,166,.35);
+    }
+    #loginGate .login-card__hero h2 {
+      margin: 0 0 6px;
+      font-size: 1.25rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: var(--text);
+      text-transform: none;
+    }
+    #loginGate .login-card__hero p {
+      margin: 0;
+      font-size: 0.82rem;
+      color: var(--mute);
+      line-height: 1.45;
+    }
+    #loginGate .login-card__body {
+      padding: 20px 28px 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    #loginGate .login-field label {
+      display: block;
+      margin-bottom: 5px;
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: var(--text-soft);
+      letter-spacing: 0.02em;
+    }
+    #loginGate .login-field input {
+      width: 100%;
+      min-height: 42px;
+      border-radius: 11px;
+      background: rgba(10,16,28,.85);
+      border: 1px solid var(--line);
+      font-size: 0.88rem;
+    }
+    #loginGate .login-field input:focus {
+      border-color: var(--teal);
+      outline: 2px solid rgba(20,184,166,.28);
+    }
+    #loginGate .login-username-row {
+      display: flex; gap: 8px; align-items: stretch;
+    }
+    #loginGate .login-username-row input { flex: 1; }
+    #loginGate .login-detect {
+      flex-shrink: 0;
+      min-width: auto;
+      padding: 0 12px;
+      font-size: 0.72rem;
+      min-height: 42px;
+    }
+    #cursorKeyModal.modal-backdrop {
+      background:
+        radial-gradient(ellipse 70% 50% at 50% 0%, rgba(56,189,248,.18), transparent 55%),
+        radial-gradient(ellipse 45% 40% at 0% 100%, rgba(20,184,166,.12), transparent 50%),
+        rgba(6, 10, 18, .75);
+      backdrop-filter: blur(10px);
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+    }
+    #cursorKeyModal .cursor-card {
+      width: min(400px, 100%);
+      padding: 0;
+      overflow: hidden;
+      border-radius: 18px;
+      border: 1px solid rgba(56,189,248,.32);
+      background: linear-gradient(165deg, #152033 0%, #0d1422 55%, #0a101c 100%);
+      box-shadow:
+        0 0 0 1px rgba(255,255,255,.04) inset,
+        0 28px 80px rgba(0,0,0,.55);
+    }
+    #cursorKeyModal .cursor-card__hero {
+      padding: 28px 28px 18px;
+      border-bottom: 1px solid var(--line-soft);
+      text-align: center;
+    }
+    #cursorKeyModal .cursor-card__mark {
+      width: 52px; height: 52px; margin: 0 auto 14px;
+      border-radius: 15px;
+      display: grid; place-items: center;
+      font-family: "IBM Plex Mono", monospace;
+      font-weight: 700; font-size: 1.05rem;
+      color: #e0f2fe;
+      background: linear-gradient(145deg, #38bdf8, #0284c7);
+      box-shadow: 0 10px 28px rgba(56,189,248,.35);
+    }
+    #cursorKeyModal .cursor-card__hero h2 {
+      margin: 0 0 6px;
+      font-size: 1.2rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: var(--text);
+      text-transform: none;
+    }
+    #cursorKeyModal .cursor-card__hero p {
+      margin: 0;
+      font-size: 0.82rem;
+      color: var(--mute);
+      line-height: 1.45;
+    }
+    #cursorKeyModal .cursor-card__body {
+      padding: 20px 28px 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    #cursorKeyModal .login-field label {
+      display: block;
+      margin-bottom: 5px;
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: var(--text-soft);
+    }
+    #cursorKeyModal .login-field input {
+      width: 100%;
+      min-height: 44px;
+      border-radius: 11px;
+      background: rgba(10,16,28,.85);
+      border: 1px solid var(--line);
+      font-size: 0.88rem;
+      font-family: "IBM Plex Mono", monospace;
+      letter-spacing: 0.02em;
+    }
+    #cursorKeyModal .login-field input:focus {
+      border-color: #38bdf8;
+      outline: 2px solid rgba(56,189,248,.28);
+    }
+    #cursorKeyModal .cursor-nav {
+      display: flex; gap: 8px;
+    }
+    #cursorKeyModal .cursor-nav button {
+      flex: 1;
+      min-height: 44px;
+      border-radius: 11px;
+      font-weight: 650;
+    }
+    #cursorKeyModal #btnCursorSave {
+      font-weight: 700;
+    }
+    #cursorKeyModal #cursorHint {
+      min-height: 1.2em;
+      text-align: center;
+      color: #fca5a5;
+      font-size: 0.75rem;
+      margin: 0;
+    }
+    #cursorKeyModal #cursorHint.ok { color: #6ee7b7; }
+
+    #loginGate #btnLogin,
+    #loginGate #btnWizNext2,
+    #loginGate #btnWizFinish {
+      width: 100%;
+      margin-top: 4px;
+      min-height: 44px;
+      font-size: 0.92rem;
+      font-weight: 700;
+      border-radius: 11px;
+    }
+    #loginGate #loginHint {
+      min-height: 1.2em;
+      text-align: center;
+      color: #fca5a5;
+      font-size: 0.75rem;
+    }
+    #loginGate #loginHint.ok { color: #6ee7b7; }
+    .wizard-steps {
+      display: flex; gap: 6px; justify-content: center; margin-top: 14px;
+    }
+    .wizard-steps span {
+      width: 28px; height: 4px; border-radius: 99px;
+      background: rgba(148,163,184,.25);
+    }
+    .wizard-steps span.on { background: var(--teal); }
+    .wizard-nav {
+      display: flex; gap: 8px; margin-top: 4px;
+    }
+    .wizard-nav button { flex: 1; min-height: 42px; }
+    #loginUsername[readonly] { opacity: 0.85; }
+
+    .cursor-manage {
+      padding: 12px;
+      border-radius: 12px;
+      border: 1px solid rgba(56,189,248,.28);
+      background: rgba(56,189,248,.06);
+      margin-bottom: 4px;
+    }
+    .cursor-manage__status {
+      display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    }
+    .cursor-pill {
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 0.65rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.04em;
+      padding: 3px 8px; border-radius: 999px;
+      border: 1px solid var(--line);
+      color: var(--mute);
+    }
+    .cursor-pill.ok {
+      color: #6ee7b7;
+      border-color: rgba(110,231,183,.4);
+      background: rgba(16,185,129,.12);
+    }
+    .cursor-pill.missing {
+      color: #fcd34d;
+      border-color: rgba(251,191,36,.4);
+      background: rgba(245,158,11,.12);
+    }
+
+    /* —— Mobile —— */
+    @media (max-width: 768px) {
+      .app-shell {
+        padding: 8px 8px calc(10px + env(safe-area-inset-bottom, 0px));
+        gap: 8px;
+        height: auto;
+        min-height: 100dvh;
+      }
+      .topbar {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 10px;
+        padding: 10px 12px;
+        border-radius: 12px;
+      }
+      .topbar h1 { font-size: 1.05rem; }
+      .sub { display: none; }
+      .header-actions {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 8px;
+      }
+      .nav-views {
+        width: 100%;
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+      }
+      .nav-views button {
+        min-height: 40px;
+        font-size: 0.78rem;
+        padding: 8px 6px;
+      }
+      .status {
+        max-width: 100%;
+        overflow-x: auto;
+        flex-wrap: nowrap;
+        -webkit-overflow-scrolling: touch;
+        padding-bottom: 2px;
+      }
+      .status .pill { flex-shrink: 0; }
+      .workspace-bar {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 10px;
+        padding: 10px;
+      }
+      .workspace-bar .wb-user { padding-bottom: 0; }
+      .workspace-bar .wb-field {
+        min-width: 0;
+        width: 100%;
+        flex: none;
+      }
+      .workspace-bar button {
+        width: 100%;
+        min-height: 42px;
+      }
+      #wsBranchHint { padding: 0 4px 6px; font-size: 0.68rem; }
+      .layout {
+        grid-template-columns: 1fr;
+        gap: 8px;
+        overflow: visible;
+      }
+      .card { padding: 12px; border-radius: 12px; }
+      .left-stack { gap: 8px; }
+      .left-pane { min-height: 220px; max-height: 42vh; }
+      .col-scroll { -webkit-overflow-scrolling: touch; }
+      .toolbar button { flex: 1 1 auto; min-height: 40px; }
+      .handoff-layout { grid-template-columns: 1fr; gap: 8px; }
+      .modal {
+        width: min(100%, 100vw - 16px) !important;
+        max-width: none !important;
+        max-height: min(92dvh, 920px);
+        overflow: auto;
+        margin: 8px;
+        -webkit-overflow-scrolling: touch;
+      }
+      #loginGate .login-card {
+        width: min(100%, 100vw - 16px);
+      }
+      #loginGate .login-card__hero,
+      #loginGate .login-card__body {
+        padding-left: 18px;
+        padding-right: 18px;
+      }
+      .wizard-nav button { min-height: 44px; }
+      .compose-panel__actions button,
+      #btnHandoff,
+      #btnMergeToBase {
+        min-height: 44px;
+      }
+      .dd-panel { max-height: 40vh; }
+      button, .task, .job { touch-action: manipulation; }
+    }
+
+    @media (max-width: 420px) {
+      .nav-views button { font-size: 0.72rem; letter-spacing: -0.01em; }
+      .header-actions .icon-btn { align-self: flex-end; }
+    }
+
+    .merge-actions {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid var(--line);
+    }
+    .merge-actions .merge-row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .merge-actions .merge-row button { flex: 1; min-width: 140px; }
+    #btnMergeToBase {
+      flex-direction: column;
+      align-items: stretch;
+      gap: 4px;
+      min-height: 52px;
+      padding: 10px 12px;
+      text-align: left;
+      line-height: 1.35;
+      white-space: normal;
+      height: auto;
+    }
+    #btnMergeToBase .merge-btn-label {
+      font-size: 0.72rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--mute);
+    }
+    #btnMergeToBase .merge-btn-path {
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 0.78rem;
+      font-weight: 650;
+      color: var(--text);
+      word-break: break-all;
+    }
+    #btnMergeToBase .merge-btn-path .arrow {
+      color: var(--teal);
+      font-weight: 700;
+      padding: 0 4px;
+    }
+    #mergeFromTo {
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 0.78rem;
+      line-height: 1.45;
+      color: var(--text-soft);
+      word-break: break-all;
+    }
+    #mergeFromTo .arrow { color: var(--teal); font-weight: 700; padding: 0 6px; }
+    #mergeHint.ok { color: #6ee7b7; }
+    #mergeHint.err { color: #fca5a5; }
   </style>
 </head>
 <body>
@@ -632,7 +1239,7 @@
     <header class="topbar">
       <div>
         <h1>Flow Auto Work</h1>
-        <div class="sub">Work · Done chờ handoff · Todolist tháng/tuần/ngày</div>
+        <div class="sub">Multi-user · token mã hóa · nhiều project · paste nhánh</div>
       </div>
       <div class="header-actions">
         <div class="nav-views" id="navViews">
@@ -645,6 +1252,28 @@
       </div>
     </header>
 
+    <div class="workspace-bar" id="workspaceBar">
+      <div class="wb-user" id="wsUserLabel">Chưa login</div>
+      <div class="wb-field">
+        <label>Project</label>
+        <select id="wsProject"></select>
+      </div>
+      <div class="wb-field" style="flex:1">
+        <label title="Nhánh gốc / project — fork điểm khi tự tạo feat/…">Nhánh project</label>
+        <input type="text" id="wsBaseBranch" list="wsBranchList" placeholder="main / develop…" />
+      </div>
+      <div class="wb-field" style="flex:1.2">
+        <label title="Để trống → mỗi task tạo feat/&lt;iid&gt;/&lt;slug&gt;">Nhánh làm việc</label>
+        <input type="text" id="wsBranch" list="wsBranchList" placeholder="(trống = auto feat/…)" />
+      </div>
+      <datalist id="wsBranchList"></datalist>
+      <button type="button" class="secondary" id="btnSaveBranch" style="min-height:34px">Lưu nhánh</button>
+      <button type="button" class="secondary" id="btnJoinProject" style="min-height:34px">Join project</button>
+      <button type="button" class="secondary" id="btnCursorManage" style="min-height:34px" title="Quản lý Cursor API key">Cursor key</button>
+      <button type="button" class="secondary" id="btnLogout" style="min-height:34px">Logout</button>
+    </div>
+    <div class="meta" id="wsBranchHint" style="padding:0 18px 8px;line-height:1.45"></div>
+
     <div class="layout view-panel active" id="viewWork">
       <section class="card">
         <div class="left-stack">
@@ -655,6 +1284,10 @@
               <button type="button" class="btn-start" id="btnRunSelected" title="Chạy các task đang tick">Run chọn</button>
               <button type="button" class="btn-save-start" id="btnRunDrafts" title="Chạy lại mọi task (tạo job nếu chưa có; bỏ qua đang chạy)">Run tất cả</button>
             </div>
+            <label class="meta" style="display:block;margin:0 0 6px">Milestone</label>
+            <select id="milestoneFilter" style="margin-bottom:8px;min-height:36px;font-size:0.8rem">
+              <option value="all">Tất cả milestone</option>
+            </select>
             <div class="meta" id="settingsSummary" style="margin-bottom:6px"></div>
             <div class="list col-scroll" id="taskList"><div class="empty">…</div></div>
           </div>
@@ -666,39 +1299,92 @@
       </section>
 
       <section class="card">
-        <h2>Task detail</h2>
-        <div id="clarifyBanner" class="banner" style="display:none"></div>
-        <div id="midDetail" class="scroll-mid" style="flex:1.1">
-          <div class="empty" id="detailEmpty">Chọn task bên trái để xem mô tả, comments, related</div>
-          <div id="detailBody" style="display:none">
-            <div class="title" id="detailTitle" style="font-size:1.05rem"></div>
-            <div class="meta" id="detailMeta" style="margin-top:6px"></div>
-            <div class="labels" id="detailLabels"></div>
-            <div class="section-title">Description</div>
-            <div class="desc" id="detailDesc"></div>
-            <div class="section-title">Related / child <span class="meta" id="relatedCount"></span></div>
-            <div id="relatedList"><div class="empty">—</div></div>
-            <div class="section-title">Comments <span class="meta" id="notesCount"></span></div>
-            <div class="notes" id="notesList"><div class="empty">—</div></div>
-            <div class="dev-notes" id="techLeadBox">
-              <div class="dev-notes__head">
-                <h3 class="dev-notes__title"><span>Dev</span> Notes</h3>
-                <div class="dev-notes__meta" id="jobShellMeta"></div>
-              </div>
-              <div class="dev-notes__body">
-                <p class="dev-notes__hint">Ưu tiên cao cho agent · lưu trên job · re-run vẫn giữ</p>
-                <textarea id="devNotes" rows="5" placeholder="Chỉ dẫn kỹ thuật… vd. virtual scroll, index user_id, không map-reduce…"></textarea>
-                <div class="dev-notes__actions">
-                  <button type="button" class="secondary" id="btnSaveNotes">Save</button>
-                  <button type="button" class="btn-run" id="btnRunJob">Run</button>
+        <div class="tabs" id="midTabs" style="margin-bottom:10px">
+          <button type="button" class="active" data-mid="detail">Detail</button>
+          <button type="button" data-mid="diff">Diff</button>
+          <button type="button" data-mid="commits">Commits</button>
+          <button type="button" data-mid="progress">Progress</button>
+        </div>
+        <div class="mid-panes">
+          <div class="mid-pane active" id="midPaneDetail">
+            <div id="clarifyBanner" class="banner" style="display:none"></div>
+            <div id="midDetail" class="scroll-mid" style="flex:1">
+              <div class="empty" id="detailEmpty">Chọn task bên trái để xem mô tả, comments, related</div>
+              <div id="detailBody" style="display:none">
+                <div class="title" id="detailTitle" style="font-size:1.05rem"></div>
+                <div class="meta" id="detailMeta" style="margin-top:6px"></div>
+                <div class="labels" id="detailLabels"></div>
+                <div class="section-title">Description</div>
+                <div class="desc" id="detailDesc"></div>
+                <div class="section-title">Related / child <span class="meta" id="relatedCount"></span></div>
+                <div id="relatedList"><div class="empty">—</div></div>
+                <div class="section-title">Comments <span class="meta" id="notesCount"></span></div>
+                <div class="notes" id="notesList"><div class="empty">—</div></div>
+                <div class="dev-notes" id="techLeadBox">
+                  <div class="dev-notes__head">
+                    <h3 class="dev-notes__title"><span>Dev</span> Notes</h3>
+                    <div class="dev-notes__meta" id="jobShellMeta"></div>
+                  </div>
+                  <div class="dev-notes__body">
+                    <p class="dev-notes__hint">Ưu tiên cao cho agent · lưu trên job · re-run vẫn giữ</p>
+                    <textarea id="devNotes" rows="5" placeholder="Chỉ dẫn kỹ thuật… vd. virtual scroll, index user_id, không map-reduce…"></textarea>
+                    <label class="docs-gate-row">
+                      <input type="checkbox" id="requireDocsFirst" />
+                      <span><strong>Docs trước code</strong> — agent đọc/sửa docs feature AiHR (<code>docs/</code> · .md/.mdc), bạn duyệt trên UI rồi mới code (theo rules AiHR).</span>
+                    </label>
+                    <div class="dev-notes__actions">
+                      <button type="button" class="secondary" id="btnSaveNotes">Save</button>
+                      <button type="button" class="btn-run" id="btnRunJob">Run</button>
+                    </div>
+                  </div>
+                </div>
+                <div class="dev-notes" id="docsReviewBox" style="display:none;margin-top:10px">
+                  <div class="dev-notes__head">
+                    <h3 class="dev-notes__title"><span>Docs</span> review</h3>
+                    <div class="dev-notes__meta" id="docsReviewMeta"></div>
+                  </div>
+                  <div class="dev-notes__body">
+                    <p class="dev-notes__hint" id="docsReviewHint">Feature docs trong repo AiHR — duyệt rồi Approve để code</p>
+                    <div id="docsSummary" class="meta" style="margin-bottom:8px;white-space:pre-wrap"></div>
+                    <div class="docs-viewer" id="docsViewer"><div class="empty">…</div></div>
+                    <div class="dev-notes__actions">
+                      <button type="button" class="secondary" id="btnRerunDocs">Re-run docs</button>
+                      <button type="button" class="btn-run" id="btnApproveDocs">Approve → Code</button>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
           </div>
-        </div>
-        <div class="panel-block" style="flex:0.95;min-height:0">
-          <h2>Tiến trình Cursor <span class="meta" id="progressMeta" style="text-transform:none;letter-spacing:0;font-weight:500"></span></h2>
-          <div class="progress-log" id="progressLog"><div class="empty">Chọn job đang chạy để xem tiến trình</div></div>
+
+          <div class="mid-pane" id="midPaneDiff">
+            <div class="diff-review" id="workDiffReview">
+              <div class="diff-tools">
+                <button type="button" class="secondary" id="btnRefreshDiff">Refresh</button>
+                <span class="meta" id="workDiffMeta"></span>
+              </div>
+              <div class="diff-review__layout" id="workDiffLayout">
+                <aside class="diff-review__sidebar">
+                  <div class="diff-review__sidebar-head">Files</div>
+                  <div id="workDiffFiles"><div class="gl-empty">Chọn job</div></div>
+                </aside>
+                <div class="diff-review__main" id="workDiffBody"><div class="gl-empty">Chọn job để xem diff (kiểu GitLab)</div></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="mid-pane" id="midPaneCommits">
+            <div class="diff-tools">
+              <button type="button" class="secondary" id="btnRefreshCommits">Refresh</button>
+              <span class="meta" id="workCommitsMeta"></span>
+            </div>
+            <div class="commits-log" id="workCommitsBody"><div class="empty">Chọn job</div></div>
+          </div>
+
+          <div class="mid-pane" id="midPaneProgress">
+            <h2 style="margin:0 0 8px">Tiến trình Cursor <span class="meta" id="progressMeta" style="text-transform:none;letter-spacing:0;font-weight:500"></span></h2>
+            <div class="progress-log" id="progressLog"><div class="empty">Chọn job đang chạy để xem tiến trình</div></div>
+          </div>
         </div>
       </section>
 
@@ -760,12 +1446,44 @@
             <div class="title" id="handoffTitle" style="font-size:1.05rem"></div>
             <div class="meta" id="handoffMeta" style="margin:6px 0 10px"></div>
             <div class="desc" id="handoffSummary" style="margin-bottom:12px;max-height:140px;overflow:auto"></div>
+
+            <div class="dev-notes" id="handoffDiffBox" style="margin-bottom:12px">
+              <div class="dev-notes__head">
+                <h3 class="dev-notes__title"><span>Code</span> Diff</h3>
+                <div class="dev-notes__meta">
+                  <button type="button" class="secondary" id="btnHandoffRefreshDiff" style="min-height:30px;padding:4px 10px;font-size:0.75rem">Refresh</button>
+                </div>
+              </div>
+              <div class="dev-notes__body" style="padding-top:8px">
+                <div class="diff-review__layout" style="min-height:260px;max-height:380px">
+                  <aside class="diff-review__sidebar">
+                    <div class="diff-review__sidebar-head">Files</div>
+                    <div id="handoffDiffFiles"><div class="gl-empty">…</div></div>
+                  </aside>
+                  <div class="diff-review__main" id="handoffDiffBody"><div class="gl-empty">…</div></div>
+                </div>
+              </div>
+            </div>
+
             <label class="meta" style="display:block;margin-bottom:4px">Assign (1 người)</label>
             <div id="handoffAssigneeDd" class="dd"></div>
             <label class="meta" style="display:block;margin-bottom:4px">Thêm labels</label>
             <div id="handoffLabelsDd" class="dd"></div>
             <label class="meta" style="display:block;margin-bottom:4px">Comment (optional)</label>
             <textarea id="handoffComment" rows="2" placeholder="Comment khi handoff…"></textarea>
+            <div class="merge-actions">
+              <div class="meta" style="line-height:1.45">
+                Merge local · tạm checkout nhánh project rồi trả lại nhánh làm việc · Conflict → AI resolve
+              </div>
+              <div id="mergeFromTo" aria-live="polite">—</div>
+              <div class="merge-row">
+                <button type="button" class="secondary" id="btnMergeToBase" title="git merge source into target">
+                  <span class="merge-btn-label">Merge</span>
+                  <span class="merge-btn-path" id="btnMergePath">… → …</span>
+                </button>
+              </div>
+              <div class="meta" id="mergeHint"></div>
+            </div>
             <button type="button" id="btnHandoff" style="width:100%;margin-top:10px">Xác nhận handoff</button>
           </div>
         </section>
@@ -785,12 +1503,155 @@
     </div>
   </div>
 
+  <div class="modal-backdrop" id="loginGate" role="dialog" aria-modal="true">
+    <div class="modal login-card" onclick="event.stopPropagation()">
+      <div class="login-card__hero">
+        <div class="login-card__mark" aria-hidden="true">FA</div>
+        <h2 id="wizardTitle">Kết nối GitLab</h2>
+        <p id="wizardSub">Bước 1/3 · nhập PAT</p>
+        <div class="wizard-steps" id="wizardSteps" aria-hidden="true">
+          <span class="on" data-step="1"></span>
+          <span data-step="2"></span>
+          <span data-step="3"></span>
+        </div>
+      </div>
+      <div class="login-card__body">
+        <div class="wizard-pane" id="wizStep1">
+          <div class="login-field">
+            <label for="loginGitlabToken">GitLab PAT</label>
+            <input type="password" id="loginGitlabToken" placeholder="glpat-…" autocomplete="off" />
+            <div class="meta token-help" style="margin-top:6px">
+              Lấy PAT tại
+              <a id="gitlabPatLink" href="https://gitlab.com/-/user_settings/personal_access_tokens" target="_blank" rel="noopener noreferrer">Personal access tokens</a>
+              (scope <code>api</code>).
+            </div>
+          </div>
+          <div class="login-field">
+            <label for="loginUsername">Username</label>
+            <input type="text" id="loginUsername" placeholder="tự lấy từ PAT…" autocomplete="username" readonly />
+          </div>
+          <button type="button" id="btnLogin">Tiếp · lấy dự án</button>
+        </div>
+        <div class="wizard-pane" id="wizStep2" style="display:none">
+          <div class="login-field">
+            <label for="wizProject">Chọn dự án GitLab</label>
+            <select id="wizProject"></select>
+          </div>
+          <div class="login-field">
+            <label for="wizRepoPath">Local repo path (máy này)</label>
+            <input type="text" id="wizRepoPath" placeholder="/Users/…/repo" />
+          </div>
+          <div class="wizard-nav">
+            <button type="button" class="secondary" id="btnWizBack2">← Back</button>
+            <button type="button" id="btnWizNext2">Tiếp · cấu hình nhánh</button>
+          </div>
+        </div>
+        <div class="wizard-pane" id="wizStep3" style="display:none">
+          <div class="login-field">
+            <label for="wizBaseBranch">Nhánh project (base)</label>
+            <input type="text" id="wizBaseBranch" list="wizBranchList" placeholder="main / develop…" />
+            <div class="meta" style="margin-top:6px">Nhánh gốc của project — dùng làm điểm fork khi tự tạo nhánh feat/…</div>
+          </div>
+          <div class="login-field">
+            <label for="wizBranch">Nhánh làm việc <span style="font-weight:400;opacity:.7">(optional)</span></label>
+            <input type="text" id="wizBranch" list="wizBranchList" placeholder="để trống = auto feat/&lt;iid&gt;/slug" />
+            <datalist id="wizBranchList"></datalist>
+          </div>
+          <div class="meta" id="wizBranchHint" style="margin-top:-4px;line-height:1.45"></div>
+          <div class="wizard-nav">
+            <button type="button" class="secondary" id="btnWizBack3">← Back</button>
+            <button type="button" id="btnWizFinish">Vào workspace</button>
+          </div>
+        </div>
+        <div class="settings-hint" id="loginHint"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="cursorKeyModal" style="display:none" role="dialog" aria-modal="true">
+    <div class="modal cursor-card" onclick="event.stopPropagation()">
+      <div class="cursor-card__hero">
+        <div class="cursor-card__mark" aria-hidden="true">Cu</div>
+        <h2>Cursor</h2>
+        <p>Nhập API key để chạy agent</p>
+      </div>
+      <div class="cursor-card__body">
+        <div class="login-field">
+          <label for="cursorKeyInput">API key</label>
+          <input type="password" id="cursorKeyInput" placeholder="Dán key từ cursor.com…" autocomplete="off" />
+          <div class="meta token-help" style="margin-top:6px">
+            Lấy key tại
+            <a id="cursorKeyLink" href="https://cursor.com/dashboard?tab=integrations" target="_blank" rel="noopener noreferrer">Cursor Dashboard → Integrations</a>.
+          </div>
+        </div>
+        <div class="login-field">
+          <label for="cursorModalModel">Model</label>
+          <select id="cursorModalModel">
+            <option value="auto">Auto (server picks)</option>
+          </select>
+        </div>
+        <div class="cursor-nav">
+          <button type="button" class="secondary" id="btnCursorCancel">Hủy</button>
+          <button type="button" id="btnCursorSave">Lưu &amp; Run</button>
+        </div>
+        <div id="cursorHint"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="joinModal" style="display:none" role="dialog" aria-modal="true">
+    <div class="modal" onclick="event.stopPropagation()" style="max-width:480px">
+      <h2>Join project</h2>
+      <label class="meta" style="display:block;margin-bottom:4px">GitLab path</label>
+      <input type="text" id="joinGitlabPath" placeholder="group/project" />
+      <label class="meta" style="display:block;margin:10px 0 4px">Local repo path (máy này)</label>
+      <input type="text" id="joinRepoPath" placeholder="/Users/…/repo" />
+      <label class="meta" style="display:block;margin:10px 0 4px">Nhánh project (base)</label>
+      <input type="text" id="joinBaseBranch" placeholder="main / develop…" />
+      <div class="meta" style="margin:4px 0 0">Fork điểm khi auto tạo <code>feat/&lt;iid&gt;/slug</code>.</div>
+      <label class="meta" style="display:block;margin:10px 0 4px">Nhánh làm việc (optional)</label>
+      <input type="text" id="joinBranch" placeholder="để trống = auto feat/…" />
+      <div class="meta" style="margin:4px 0 0">Nếu điền: chỉ commit trên nhánh này. Để trống: mỗi task tự tạo nhánh.</div>
+      <div class="modal-actions">
+        <button type="button" class="secondary" id="btnJoinClose">Đóng</button>
+        <button type="button" id="btnJoinSave">Join</button>
+      </div>
+      <div class="settings-hint" id="joinHint"></div>
+    </div>
+  </div>
+
   <div class="modal-backdrop" id="settingsModal" role="dialog" aria-modal="true">
-    <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal" onclick="event.stopPropagation()" style="max-width:520px">
       <h2>Settings</h2>
-      <div class="meta" style="margin-bottom:12px">Không auto assign khi xong. Prefill form Handoff + labels khi Start.</div>
+
+      <div class="section-title" style="margin-top:0">Cursor API key</div>
+      <div class="cursor-manage" id="cursorManageBox">
+        <div class="cursor-manage__status">
+          <span class="cursor-pill" id="cursorStatusPill">—</span>
+          <span class="meta" id="cursorStatusText">Đăng nhập để quản lý</span>
+        </div>
+        <label class="meta" style="display:block;margin:10px 0 4px">Model agent</label>
+        <select id="settingsCursorModel" style="min-height:36px;width:100%">
+          <option value="auto">Auto (server picks)</option>
+        </select>
+        <div class="meta" style="margin-top:4px">Ưu tiên theo user · fallback <code>CURSOR_MODEL</code> trong .env</div>
+        <button type="button" class="secondary" id="btnSaveCursorModel" style="margin-top:8px;width:100%">Lưu model</button>
+        <label class="meta" style="display:block;margin:14px 0 4px">Key mới (để trống nếu không đổi)</label>
+        <input type="password" id="settingsCursorKey" placeholder="Dán key từ cursor.com…" autocomplete="off" />
+        <div class="meta token-help" style="margin-top:6px">
+          Lấy key tại
+          <a id="settingsCursorKeyLink" href="https://cursor.com/dashboard?tab=integrations" target="_blank" rel="noopener noreferrer">Cursor Dashboard → Integrations</a>.
+        </div>
+        <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+          <button type="button" id="btnSaveCursorKey" style="flex:1;min-width:120px">Lưu key</button>
+          <button type="button" class="secondary" id="btnClearCursorKey" style="flex:1;min-width:120px">Xóa key</button>
+        </div>
+        <div class="settings-hint" id="cursorManageHint"></div>
+      </div>
+
+      <div class="meta" style="margin:16px 0 12px">Handoff / labels — không auto assign khi xong.</div>
       <input type="hidden" id="onCompleteEnabled" value="1" />
-      <div class="section-title" style="margin-top:0">Trước khi làm task</div>
+      <div class="section-title">Trước khi làm task</div>
       <label class="meta" style="display:block;margin-bottom:4px">Thêm labels khi Start</label>
       <div id="onStartLabelsDd" class="dd"></div>
       <div class="section-title">Prefill khi handoff (không auto)</div>
@@ -804,9 +1665,28 @@
       <textarea id="onCompleteComment" rows="2" placeholder="Comment khi handoff…"></textarea>
       <div class="modal-actions">
         <button type="button" class="secondary" id="btnSettingsClose">Đóng</button>
-        <button type="button" id="btnSettingsSave">Lưu</button>
+        <button type="button" id="btnSettingsSave">Lưu labels</button>
       </div>
       <div class="settings-hint" id="settingsSavedHint"></div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="diffModal" role="dialog" aria-modal="true">
+    <div class="modal" onclick="event.stopPropagation()">
+      <h2 id="diffModalTitle">Code Diff</h2>
+      <div class="diff-review" style="margin-top:8px">
+        <div class="diff-review__layout">
+          <aside class="diff-review__sidebar">
+            <div class="diff-review__sidebar-head">Files</div>
+            <div id="diffModalFiles"><div class="gl-empty">…</div></div>
+          </aside>
+          <div class="diff-review__main" id="diffModalBody"><div class="gl-empty">…</div></div>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="secondary" id="btnDiffModalClose">Đóng</button>
+        <button type="button" id="btnDiffModalOpenJob">Mở job</button>
+      </div>
     </div>
   </div>
 
@@ -820,6 +1700,9 @@
     let selectedTaskIid = null;
     let currentJob = null;
     let taskDetail = null;
+    let milestoneFilter = "all";
+    /** Collapsed milestone group keys (title or "__none__") */
+    const collapsedMilestones = new Set();
     let progressAfterId = 0;
     let progressPollTimer = null;
     let memberOptions = [];
@@ -893,7 +1776,130 @@
       ddOnLabelsAdd?.setSelected(savedSettings.addLabels || []);
       ddOnLabelsRemove?.setSelected(savedSettings.removeLabels || []);
       $("settingsSavedHint").textContent = "";
+      $("settingsCursorKey").value = "";
+      $("cursorManageHint").textContent = "";
+      refreshCursorManageUI();
+      void loadCursorModelsInto(["settingsCursorModel", "cursorModalModel"]);
       $("settingsModal").classList.add("show");
+    }
+
+    function refreshCursorManageUI() {
+      const pill = $("cursorStatusPill");
+      const text = $("cursorStatusText");
+      const clearBtn = $("btnClearCursorKey");
+      if (!session.username) {
+        pill.className = "cursor-pill";
+        pill.textContent = "—";
+        text.textContent = "Đăng nhập để quản lý";
+        if (clearBtn) clearBtn.disabled = true;
+        return;
+      }
+      const has = Boolean(currentUserPublic?.hasCursorApiKey);
+      const model = currentUserPublic?.cursorModel || "auto";
+      pill.className = `cursor-pill ${has ? "ok" : "missing"}`;
+      pill.textContent = has ? "Đã lưu" : "Chưa có";
+      text.textContent = has
+        ? `Key đã mã hóa · model: ${model}`
+        : `Chưa có key · model: ${model}`;
+      if (clearBtn) clearBtn.disabled = !has;
+      const sel = $("settingsCursorModel");
+      if (sel && model) sel.value = model;
+    }
+
+    async function loadCursorModelsInto(selectIds) {
+      if (!session.username) return;
+      try {
+        const data = await api("/api/me/cursor-models");
+        const models = data.models || [{ id: "auto", displayName: "Auto (server picks)" }];
+        const selected =
+          data.selected || currentUserPublic?.cursorModel || "auto";
+        for (const id of selectIds) {
+          const sel = $(id);
+          if (!sel) continue;
+          sel.innerHTML = models
+            .map(
+              (m) =>
+                `<option value="${escapeHtml(m.id)}">${escapeHtml(m.displayName || m.id)}</option>`,
+            )
+            .join("");
+          if (![...sel.options].some((o) => o.value === selected)) {
+            const opt = document.createElement("option");
+            opt.value = selected;
+            opt.textContent = selected;
+            sel.appendChild(opt);
+          }
+          sel.value = selected;
+        }
+      } catch {
+        /* keep existing options */
+      }
+    }
+
+    async function saveCursorModelFromSettings() {
+      if (!session.username) return toast("Login trước");
+      const cursorModel = ($("settingsCursorModel").value || "auto").trim();
+      setButtonLoading($("btnSaveCursorModel"), true, "Lưu model");
+      $("cursorManageHint").textContent = "";
+      try {
+        const res = await api("/api/me/preferences", {
+          method: "PUT",
+          body: JSON.stringify({ cursorModel }),
+        });
+        currentUserPublic = res.user;
+        refreshCursorManageUI();
+        renderWorkspaceBar();
+        $("cursorManageHint").textContent = `Model: ${cursorModel}`;
+        toast(`Model: ${cursorModel}`);
+      } catch (e) {
+        $("cursorManageHint").textContent = e.message;
+        toast(e.message);
+      } finally {
+        setButtonLoading($("btnSaveCursorModel"), false, "Lưu model");
+      }
+    }
+
+    async function saveCursorKeyFromSettings() {
+      if (!session.username) return toast("Login trước");
+      const cursorApiKey = ($("settingsCursorKey").value || "").trim();
+      if (!cursorApiKey) return toast("Dán Cursor API key");
+      setButtonLoading($("btnSaveCursorKey"), true, "Lưu key");
+      $("cursorManageHint").textContent = "";
+      try {
+        const res = await api("/api/me/secrets", {
+          method: "PUT",
+          body: JSON.stringify({ cursorApiKey }),
+        });
+        currentUserPublic = res.user;
+        $("settingsCursorKey").value = "";
+        refreshCursorManageUI();
+        renderWorkspaceBar();
+        $("cursorManageHint").textContent = "Đã lưu Cursor key";
+        toast("Đã lưu Cursor key");
+      } catch (e) {
+        $("cursorManageHint").textContent = e.message;
+        toast(e.message);
+      } finally {
+        setButtonLoading($("btnSaveCursorKey"), false, "Lưu key");
+      }
+    }
+
+    async function clearCursorKeyFromSettings() {
+      if (!session.username) return toast("Login trước");
+      if (!confirm("Xóa Cursor API key đã lưu?")) return;
+      setButtonLoading($("btnClearCursorKey"), true, "Xóa key");
+      try {
+        const res = await api("/api/me/cursor-key", { method: "DELETE" });
+        currentUserPublic = res.user;
+        refreshCursorManageUI();
+        renderWorkspaceBar();
+        $("cursorManageHint").textContent = "Đã xóa Cursor key";
+        toast("Đã xóa Cursor key");
+      } catch (e) {
+        $("cursorManageHint").textContent = e.message;
+        toast(e.message);
+      } finally {
+        setButtonLoading($("btnClearCursorKey"), false, "Xóa key");
+      }
     }
 
     function closeSettingsModal() {
@@ -1144,12 +2150,526 @@
       const label = opts.label ? escapeHtml(opts.label) : "View";
       return `<span class="iid-row"><span>#${id}</span><a class="iid-view" href="${escapeHtml(url)}" target="_blank" rel="noopener" title="Open GitLab" onclick="event.stopPropagation()">${label}</a></span>`;
     }
-    async function api(path, opts) {
-      const res = await fetch(path, { headers: { "Content-Type": "application/json" }, ...opts });
+    const SESSION_KEY = "flow_auto_work_session";
+    let session = loadSession();
+    let memberships = [];
+    let wizardStep = 1;
+    let gitlabBaseUrl = "https://gitlab.com";
+    let gitlabPatUrl = "https://gitlab.com/-/user_settings/personal_access_tokens";
+    let cursorApiKeyUrl = "https://cursor.com/dashboard?tab=integrations";
+
+    const BRANCH_HINT_AUTO =
+      "Nhánh làm việc trống → khi Run, tự tạo feat/<iid>/<mô-tả-ngắn-tiếng-anh> từ nhánh project, rồi commit trên đó.";
+    const BRANCH_HINT_FIXED =
+      "Đã set nhánh làm việc → agent chỉ checkout & commit trên nhánh đó (không tạo feat/…).";
+
+    function applyTokenHelpLinks() {
+      const links = [
+        ["gitlabPatLink", gitlabPatUrl],
+        ["cursorKeyLink", cursorApiKeyUrl],
+        ["settingsCursorKeyLink", cursorApiKeyUrl],
+      ];
+      for (const [id, href] of links) {
+        const el = $(id);
+        if (el) el.href = href;
+      }
+    }
+
+    async function loadAuthBootstrap() {
+      try {
+        const data = await fetch("/api/auth/bootstrap").then((r) => r.json());
+        if (data.gitlabBaseUrl) gitlabBaseUrl = String(data.gitlabBaseUrl).replace(/\/$/, "");
+        if (data.gitlabPatUrl) gitlabPatUrl = data.gitlabPatUrl;
+        else gitlabPatUrl = `${gitlabBaseUrl}/-/user_settings/personal_access_tokens`;
+        if (data.cursorApiKeyUrl) cursorApiKeyUrl = data.cursorApiKeyUrl;
+        applyTokenHelpLinks();
+        if (data.suggestedUsername && !$("loginUsername").value) {
+          $("loginUsername").placeholder = data.suggestedUsername;
+        }
+      } catch {
+        applyTokenHelpLinks();
+      }
+    }
+
+    function branchModeHint(workBranch) {
+      return (workBranch || "").trim()
+        ? BRANCH_HINT_FIXED
+        : BRANCH_HINT_AUTO;
+    }
+
+    function updateWsBranchHint() {
+      const el = $("wsBranchHint");
+      if (!el) return;
+      const base = ($("wsBaseBranch")?.value || "").trim();
+      const work = ($("wsBranch")?.value || "").trim();
+      const baseBit = base
+        ? `Nhánh project: <code>${escapeHtml(base)}</code>.`
+        : "Nhánh project trống → dùng default branch của repo.";
+      el.innerHTML = `${baseBit} ${escapeHtml(branchModeHint(work))}`;
+    }
+    let gitlabProjectOptions = [];
+    let pendingRunAfterCursor = null;
+    let currentUserPublic = null;
+
+    function loadSession() {
+      try {
+        return JSON.parse(localStorage.getItem(SESSION_KEY) || "null") || {
+          username: null,
+          projectId: null,
+        };
+      } catch {
+        return { username: null, projectId: null };
+      }
+    }
+    function saveSession() {
+      localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+    }
+
+    async function api(path, opts = {}) {
+      const headers = {
+        "Content-Type": "application/json",
+        ...(opts.headers || {}),
+      };
+      if (session.username) headers["X-Flow-User"] = session.username;
+      if (session.projectId) headers["X-Flow-Project"] = session.projectId;
+      const res = await fetch(path, { ...opts, headers });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || res.statusText);
       return data;
     }
+
+    function showLogin(show) {
+      const el = $("loginGate");
+      if (!el) return;
+      if (show) {
+        el.classList.remove("hidden");
+        setWizardStep(1);
+      } else el.classList.add("hidden");
+    }
+
+    function setWizardStep(step) {
+      wizardStep = step;
+      for (const n of [1, 2, 3]) {
+        const pane = $(`wizStep${n}`);
+        if (pane) pane.style.display = n === step ? "flex" : "none";
+        if (pane) pane.style.flexDirection = "column";
+        if (pane) pane.style.gap = "12px";
+      }
+      document.querySelectorAll("#wizardSteps span").forEach((el) => {
+        el.classList.toggle("on", Number(el.dataset.step) <= step);
+      });
+      const titles = {
+        1: ["Kết nối GitLab", "Bước 1/3 · nhập PAT"],
+        2: ["Chọn dự án", "Bước 2/3 · project + local path"],
+        3: ["Cấu hình nhánh", "Bước 3/3 · nhánh project + nhánh làm việc (optional)"],
+      };
+      $("wizardTitle").textContent = titles[step][0];
+      $("wizardSub").textContent = titles[step][1];
+    }
+
+    function renderWorkspaceBar() {
+      $("wsUserLabel").textContent = session.username
+        ? `@${session.username}`
+        : "Chưa login";
+      const sel = $("wsProject");
+      const cur = session.projectId;
+      sel.innerHTML = memberships.length
+        ? memberships
+            .map(
+              (m) =>
+                `<option value="${escapeHtml(m.projectId)}">${escapeHtml(m.project.displayName || m.project.gitlabPath)}</option>`,
+            )
+            .join("")
+        : `<option value="">— Join project trước —</option>`;
+      if (cur && memberships.some((m) => m.projectId === cur)) sel.value = cur;
+      else if (memberships[0]) {
+        session.projectId = memberships[0].projectId;
+        saveSession();
+        sel.value = session.projectId;
+      }
+      const mem = memberships.find((m) => m.projectId === session.projectId);
+      $("wsBaseBranch").value = mem?.baseBranch || "";
+      $("wsBranch").value = mem?.workBranch || "";
+      updateWsBranchHint();
+      const cursorBtn = $("btnCursorManage");
+      if (cursorBtn) {
+        const model = currentUserPublic?.cursorModel || "auto";
+        cursorBtn.textContent = currentUserPublic?.hasCursorApiKey
+          ? `Cursor ✓ · ${model}`
+          : `Cursor · ${model}`;
+        cursorBtn.title = `Cursor key + model (${model})`;
+      }
+    }
+
+    async function refreshMemberships() {
+      if (!session.username) return;
+      const data = await api("/api/me");
+      memberships = data.memberships || [];
+      currentUserPublic = data.user || null;
+      renderWorkspaceBar();
+      return data;
+    }
+
+    async function detectUsernameFromPat(opts = {}) {
+      const gitlabToken = ($("loginGitlabToken")?.value || "").trim();
+      if (!gitlabToken) {
+        if (!opts.silent) toast("Nhập GitLab PAT trước");
+        return null;
+      }
+      const hint = $("loginHint");
+      if (hint) {
+        hint.classList.remove("ok");
+        hint.textContent = "Đang lấy username…";
+      }
+      try {
+        const res = await fetch("/api/auth/resolve-token", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ gitlabToken }),
+        }).then(async (r) => {
+          const d = await r.json().catch(() => ({}));
+          if (!r.ok) throw new Error(d.error || r.statusText);
+          return d;
+        });
+        if (res.username) {
+          $("loginUsername").value = res.username;
+          if (hint) {
+            hint.classList.add("ok");
+            hint.textContent = res.name
+              ? `→ @${res.username} (${res.name})`
+              : `→ @${res.username}`;
+          }
+          return res.username;
+        }
+        return null;
+      } catch (e) {
+        if (hint) {
+          hint.classList.remove("ok");
+          hint.textContent = e.message;
+        }
+        if (!opts.silent) toast(e.message);
+        return null;
+      }
+    }
+
+    /** Step 1: GitLab PAT → login → load projects */
+    async function doLoginStep1() {
+      const gitlabToken = ($("loginGitlabToken").value || "").trim();
+      if (!gitlabToken) return toast("Nhập GitLab PAT");
+      setButtonLoading($("btnLogin"), true, "Tiếp · lấy dự án");
+      const hint = $("loginHint");
+      if (hint) {
+        hint.classList.remove("ok");
+        hint.textContent = "";
+      }
+      try {
+        let gitlabUsername = ($("loginUsername").value || "").trim();
+        if (!gitlabUsername) {
+          gitlabUsername = (await detectUsernameFromPat({ silent: true })) || "";
+        }
+        const res = await fetch("/api/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ gitlabUsername, gitlabToken }),
+        }).then(async (r) => {
+          const d = await r.json().catch(() => ({}));
+          if (!r.ok) throw new Error(d.error || r.statusText);
+          return d;
+        });
+        session.username = res.user.gitlabUsername;
+        memberships = res.memberships || [];
+        currentUserPublic = res.user;
+        saveSession();
+        $("loginUsername").value = session.username;
+
+        const proj = await api("/api/gitlab/my-projects");
+        gitlabProjectOptions = proj.projects || [];
+        const sel = $("wizProject");
+        sel.innerHTML = gitlabProjectOptions.length
+          ? gitlabProjectOptions
+              .map(
+                (p) =>
+                  `<option value="${escapeHtml(p.pathWithNamespace)}">${escapeHtml(p.pathWithNamespace)}</option>`,
+              )
+              .join("")
+          : `<option value="">(không có project)</option>`;
+
+        const legacyPath = ($("wizRepoPath").value || "").trim();
+        if (!legacyPath) {
+          try {
+            const st = await fetch("/api/status").then((r) => r.json());
+            /* keep empty — user pastes local path */
+          } catch { /* */ }
+        }
+        // Prefill from existing membership matching selected project
+        const first = gitlabProjectOptions[0]?.pathWithNamespace;
+        if (first) {
+          const mem = memberships.find(
+            (m) => m.project?.gitlabPath === first,
+          );
+          if (mem?.project?.repoPath) $("wizRepoPath").value = mem.project.repoPath;
+        }
+        sel.onchange = () => {
+          const path = sel.value;
+          const mem = memberships.find((m) => m.project?.gitlabPath === path);
+          if (mem?.project?.repoPath) $("wizRepoPath").value = mem.project.repoPath;
+        };
+        setWizardStep(2);
+        if (hint) {
+          hint.classList.add("ok");
+          hint.textContent = `Xin chào @${session.username} · ${gitlabProjectOptions.length} projects`;
+        }
+      } catch (e) {
+        if (hint) hint.textContent = e.message;
+        toast(e.message);
+      } finally {
+        setButtonLoading($("btnLogin"), false, "Tiếp · lấy dự án");
+      }
+    }
+
+    async function doWizardStep2() {
+      const gitlabPath = ($("wizProject").value || "").trim();
+      const repoPath = ($("wizRepoPath").value || "").trim();
+      if (!gitlabPath) return toast("Chọn dự án");
+      if (!repoPath) return toast("Nhập local repo path");
+      setButtonLoading($("btnWizNext2"), true, "Tiếp · cấu hình nhánh");
+      const hint = $("loginHint");
+      try {
+        const res = await api("/api/projects/join", {
+          method: "POST",
+          body: JSON.stringify({ gitlabPath, repoPath }),
+        });
+        memberships = res.memberships || [];
+        session.projectId = res.project.id;
+        saveSession();
+
+        const br = await api(
+          `/api/gitlab/branches?gitlabPath=${encodeURIComponent(gitlabPath)}&repoPath=${encodeURIComponent(repoPath)}`,
+        );
+        const names = [
+          ...new Set([
+            ...(br.local || []),
+            ...(br.remote || []).map((b) => b.name),
+          ]),
+        ].sort((a, b) => a.localeCompare(b));
+        $("wizBranchList").innerHTML = names
+          .map((n) => `<option value="${escapeHtml(n)}"></option>`)
+          .join("");
+        const mem = memberships.find((m) => m.projectId === session.projectId);
+        $("wizBaseBranch").value =
+          mem?.baseBranch || br.defaultBranch || names[0] || "";
+        $("wizBranch").value = mem?.workBranch || "";
+        $("wizBranchHint").textContent = `${names.length} nhánh (local + remote). ${branchModeHint($("wizBranch").value)}`;
+        setWizardStep(3);
+        if (hint) {
+          hint.classList.add("ok");
+          hint.textContent = gitlabPath;
+        }
+      } catch (e) {
+        if (hint) {
+          hint.classList.remove("ok");
+          hint.textContent = e.message;
+        }
+        toast(e.message);
+      } finally {
+        setButtonLoading($("btnWizNext2"), false, "Tiếp · cấu hình nhánh");
+      }
+    }
+
+    async function doWizardFinish() {
+      if (!session.projectId) return toast("Chưa có project");
+      const baseBranch = ($("wizBaseBranch").value || "").trim();
+      const workBranch = ($("wizBranch").value || "").trim();
+      if (!baseBranch) return toast("Chọn nhánh project (base)");
+      setButtonLoading($("btnWizFinish"), true, "Vào workspace");
+      try {
+        const res = await api(
+          `/api/me/projects/${encodeURIComponent(session.projectId)}`,
+          {
+            method: "PUT",
+            body: JSON.stringify({ baseBranch, workBranch }),
+          },
+        );
+        memberships = res.memberships || [];
+        $("loginGitlabToken").value = "";
+        showLogin(false);
+        renderWorkspaceBar();
+        toast(
+          workBranch
+            ? `@${session.username} · work: ${workBranch}`
+            : `@${session.username} · auto feat/… từ ${baseBranch}`,
+        );
+        await bootstrapApp();
+      } catch (e) {
+        $("loginHint").textContent = e.message;
+        toast(e.message);
+      } finally {
+        setButtonLoading($("btnWizFinish"), false, "Vào workspace");
+      }
+    }
+
+    function showCursorModal(show) {
+      $("cursorKeyModal").style.display = show ? "flex" : "none";
+      if (show) {
+        $("cursorHint").textContent = "";
+        $("cursorKeyInput").value = "";
+        void loadCursorModelsInto(["cursorModalModel", "settingsCursorModel"]);
+        $("cursorKeyInput").focus();
+      }
+    }
+
+    async function ensureCursorKeyThen(runFn) {
+      if (currentUserPublic?.hasCursorApiKey) {
+        await runFn();
+        return;
+      }
+      // refresh user flags
+      try {
+        const me = await api("/api/me");
+        currentUserPublic = me.user;
+        if (me.user?.hasCursorApiKey) {
+          await runFn();
+          return;
+        }
+      } catch { /* */ }
+      pendingRunAfterCursor = runFn;
+      showCursorModal(true);
+    }
+
+    async function saveCursorKeyAndContinue() {
+      const cursorApiKey = ($("cursorKeyInput").value || "").trim();
+      if (!cursorApiKey) return toast("Nhập Cursor API key");
+      const cursorModel = ($("cursorModalModel")?.value || "auto").trim();
+      setButtonLoading($("btnCursorSave"), true, "Lưu & Run");
+      try {
+        const res = await api("/api/me/secrets", {
+          method: "PUT",
+          body: JSON.stringify({ cursorApiKey, cursorModel }),
+        });
+        currentUserPublic = res.user;
+        $("cursorKeyInput").value = "";
+        showCursorModal(false);
+        renderWorkspaceBar();
+        toast(`Đã lưu Cursor key · ${cursorModel}`);
+        const fn = pendingRunAfterCursor;
+        pendingRunAfterCursor = null;
+        if (fn) await fn();
+      } catch (e) {
+        $("cursorHint").textContent = e.message;
+        toast(e.message);
+      } finally {
+        setButtonLoading($("btnCursorSave"), false, "Lưu & Run");
+      }
+    }
+
+    async function doJoinProject() {
+      const gitlabPath = ($("joinGitlabPath").value || "").trim();
+      const repoPath = ($("joinRepoPath").value || "").trim();
+      const baseBranch = ($("joinBaseBranch").value || "").trim() || undefined;
+      const workBranch = ($("joinBranch").value || "").trim() || undefined;
+      setButtonLoading($("btnJoinSave"), true, "Join");
+      try {
+        const res = await api("/api/projects/join", {
+          method: "POST",
+          body: JSON.stringify({ gitlabPath, repoPath, baseBranch, workBranch }),
+        });
+        memberships = res.memberships || [];
+        session.projectId = res.project.id;
+        saveSession();
+        renderWorkspaceBar();
+        $("joinModal").style.display = "none";
+        toast(`Joined ${res.project.gitlabPath}`);
+        await bootstrapApp();
+      } catch (e) {
+        $("joinHint").textContent = e.message;
+        toast(e.message);
+      } finally {
+        setButtonLoading($("btnJoinSave"), false, "Join");
+      }
+    }
+
+    async function saveWorkBranch() {
+      if (!session.projectId) return toast("Chọn project");
+      const baseBranch = ($("wsBaseBranch").value || "").trim();
+      const workBranch = ($("wsBranch").value || "").trim();
+      setButtonLoading($("btnSaveBranch"), true, "Lưu nhánh");
+      try {
+        const res = await api(
+          `/api/me/projects/${encodeURIComponent(session.projectId)}`,
+          {
+            method: "PUT",
+            body: JSON.stringify({ baseBranch, workBranch }),
+          },
+        );
+        memberships = res.memberships || [];
+        // Prefer saved membership from response so UI reflects DB immediately
+        const saved = res.membership;
+        if (saved) {
+          const idx = memberships.findIndex(
+            (m) => m.projectId === saved.projectId,
+          );
+          if (idx >= 0) memberships[idx] = { ...memberships[idx], ...saved };
+        }
+        renderWorkspaceBar();
+        const mem = memberships.find((m) => m.projectId === session.projectId);
+        toast(
+          mem?.baseBranch
+            ? mem.workBranch
+              ? `Đã lưu · project: ${mem.baseBranch} · work: ${mem.workBranch}`
+              : `Đã lưu · project: ${mem.baseBranch} · auto feat/…`
+            : "Đã lưu nhánh (project branch trống → dùng default)",
+        );
+      } catch (e) {
+        toast(e.message);
+      } finally {
+        setButtonLoading($("btnSaveBranch"), false, "Lưu nhánh");
+      }
+    }
+
+    async function bootstrapApp() {
+      if (!session.username) {
+        showLogin(true);
+        return;
+      }
+      try {
+        await refreshMemberships();
+      } catch (e) {
+        showLogin(true);
+        $("loginHint").textContent = e.message;
+        return;
+      }
+      if (!session.projectId || !memberships.length) {
+        showLogin(true);
+        try {
+          const proj = await api("/api/gitlab/my-projects");
+          gitlabProjectOptions = proj.projects || [];
+          const sel = $("wizProject");
+          sel.innerHTML = gitlabProjectOptions.length
+            ? gitlabProjectOptions
+                .map(
+                  (p) =>
+                    `<option value="${escapeHtml(p.pathWithNamespace)}">${escapeHtml(p.pathWithNamespace)}</option>`,
+                )
+                .join("")
+            : `<option value="">(không có project)</option>`;
+          $("loginUsername").value = session.username;
+          setWizardStep(2);
+        } catch {
+          setWizardStep(1);
+        }
+        return;
+      }
+      showLogin(false);
+      showEmptyLoading($("taskList"), "Đang tải tasks…");
+      showEmptyLoading($("jobList"), "Đang tải jobs…");
+      await Promise.all([
+        loadStatus(),
+        loadTasks(),
+        loadJobs(),
+        loadCompletionDefaults(),
+      ]);
+    }
+
 
     function appendProgressLines(lines) {
       const box = $("progressLog");
@@ -1241,17 +2761,57 @@
       }
     }
 
-    function renderTasks() {
-      if (!tasks.length) {
-        $("taskList").innerHTML = `<div class="empty">Không có issue</div>`;
-        return;
+    function milestoneKey(t) {
+      return t?.milestone?.id != null
+        ? `id:${t.milestone.id}`
+        : t?.milestone?.title
+          ? `t:${t.milestone.title}`
+          : "__none__";
+    }
+
+    function milestoneLabel(t) {
+      return t?.milestone?.title?.trim() || "Không có milestone";
+    }
+
+    function syncMilestoneFilterOptions() {
+      const sel = $("milestoneFilter");
+      if (!sel) return;
+      const seen = new Map();
+      for (const t of tasks) {
+        const key = milestoneKey(t);
+        if (!seen.has(key)) {
+          seen.set(key, milestoneLabel(t));
+        }
       }
-      $("taskList").innerHTML = tasks.map((t) => {
-        const job = jobs.find((j) => j.issue?.issueIid === t.issueIid);
-        const jobBit = job
-          ? `<span class="st ${job.status}">${job.status}</span>${job.runCount ? ` · run#${job.runCount}` : ""}`
-          : `<span class="meta">chưa có job</span>`;
-        return `
+      const prev = milestoneFilter;
+      const options = [`<option value="all">Tất cả milestone (${tasks.length})</option>`];
+      const entries = [...seen.entries()].sort((a, b) => {
+        if (a[0] === "__none__") return 1;
+        if (b[0] === "__none__") return -1;
+        return a[1].localeCompare(b[1], "vi");
+      });
+      for (const [key, title] of entries) {
+        const count = tasks.filter((t) => milestoneKey(t) === key).length;
+        options.push(
+          `<option value="${escapeHtml(key)}">${escapeHtml(title)} (${count})</option>`,
+        );
+      }
+      sel.innerHTML = options.join("");
+      if (prev === "all" || seen.has(prev)) {
+        sel.value = prev;
+        milestoneFilter = prev;
+      } else {
+        sel.value = "all";
+        milestoneFilter = "all";
+      }
+    }
+
+    function taskCardHtml(t) {
+      const job = jobs.find((j) => j.issue?.issueIid === t.issueIid);
+      const jobBit = job
+        ? `<span class="st ${job.status}">${job.status}</span>${job.runCount ? ` · run#${job.runCount}` : ""}`
+        : `<span class="meta">chưa có job</span>`;
+      return `
         <div class="task ${t.skip ? "skip" : ""} ${t.issueIid === selectedTaskIid ? "active" : ""}" data-open-iid="${t.issueIid}">
           <input type="checkbox" data-iid="${t.issueIid}" ${t.skip ? "disabled" : ""} onclick="event.stopPropagation()" />
           <div>
@@ -1259,7 +2819,63 @@
             <div class="meta">${jobBit}</div>
           </div>
         </div>`;
-      }).join("");
+    }
+
+    function renderTasks() {
+      syncMilestoneFilterOptions();
+      if (!tasks.length) {
+        $("taskList").innerHTML = `<div class="empty">Không có issue</div>`;
+        return;
+      }
+      const filtered =
+        milestoneFilter === "all"
+          ? tasks
+          : tasks.filter((t) => milestoneKey(t) === milestoneFilter);
+
+      if (!filtered.length) {
+        $("taskList").innerHTML = `<div class="empty">Không có task trong milestone này</div>`;
+        return;
+      }
+
+      const groups = new Map();
+      for (const t of filtered) {
+        const key = milestoneKey(t);
+        if (!groups.has(key)) {
+          groups.set(key, { key, title: milestoneLabel(t), items: [] });
+        }
+        groups.get(key).items.push(t);
+      }
+      const ordered = [...groups.values()].sort((a, b) => {
+        if (a.key === "__none__") return 1;
+        if (b.key === "__none__") return -1;
+        return a.title.localeCompare(b.title, "vi");
+      });
+
+      $("taskList").innerHTML = ordered
+        .map((g) => {
+          const collapsed = collapsedMilestones.has(g.key);
+          return `
+          <div class="milestone-group ${collapsed ? "collapsed" : ""}" data-ms-key="${escapeHtml(g.key)}">
+            <div class="milestone-group__head" data-ms-toggle="${escapeHtml(g.key)}">
+              <div class="milestone-group__title ${g.key === "__none__" ? "none" : ""}">${escapeHtml(g.title)}</div>
+              <div class="milestone-group__count">${g.items.length}</div>
+            </div>
+            <div class="milestone-group__body">
+              ${g.items.map(taskCardHtml).join("")}
+            </div>
+          </div>`;
+        })
+        .join("");
+
+      $("taskList").querySelectorAll("[data-ms-toggle]").forEach((el) => {
+        el.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          const key = el.getAttribute("data-ms-toggle");
+          if (collapsedMilestones.has(key)) collapsedMilestones.delete(key);
+          else collapsedMilestones.add(key);
+          renderTasks();
+        });
+      });
       $("taskList").querySelectorAll("[data-open-iid]").forEach((el) => {
         el.addEventListener("click", () => selectTask(Number(el.getAttribute("data-open-iid"))));
       });
@@ -1273,16 +2889,67 @@
       currentJob = job || null;
       const el = $("devNotes");
       if (el) el.value = resolveJobNotes(job);
+      const gate = $("requireDocsFirst");
+      if (gate) gate.checked = Boolean(job?.requireDocsFirst);
       const meta = $("jobShellMeta");
       if (!meta) return;
       if (!job) {
         meta.textContent = "";
+        void renderDocsReview(null);
         return;
       }
       const sha = job.commitSha
         ? ` · <code title="${escapeHtml(job.commitSha)}">${escapeHtml(job.commitSha.slice(0, 8))}</code>`
         : "";
-      meta.innerHTML = `<span class="st ${job.status}">${job.status}</span>${job.runCount ? ` · #${job.runCount}` : ""}${sha}`;
+      const docsBit = job.requireDocsFirst ? " · docs-first" : "";
+      meta.innerHTML = `<span class="st ${job.status}">${job.status}</span>${job.runCount ? ` · #${job.runCount}` : ""}${docsBit}${sha}`;
+      void renderDocsReview(job);
+    }
+
+    async function renderDocsReview(job) {
+      const box = $("docsReviewBox");
+      if (!box) return;
+      const show =
+        job &&
+        (job.status === "awaiting_docs_approval" ||
+          (job.requireDocsFirst && (job.docsPaths?.length || job.docsPath)));
+      if (!show) {
+        box.style.display = "none";
+        return;
+      }
+      box.style.display = "block";
+      $("docsReviewMeta").innerHTML =
+        job.status === "awaiting_docs_approval"
+          ? `<span class="st awaiting_docs_approval">awaiting_docs_approval</span>`
+          : `<span class="meta">docs đã có</span>`;
+      $("docsReviewHint").textContent =
+        job.status === "awaiting_docs_approval"
+          ? "Đọc feature docs (.md/.mdc) → Approve để chạy phase code (AiHR rules)"
+          : "Docs gắn với job (đã duyệt hoặc từ lần chạy trước)";
+      $("docsSummary").textContent = job.docsSummary || "";
+      const approveBtn = $("btnApproveDocs");
+      if (approveBtn) {
+        approveBtn.disabled = job.status !== "awaiting_docs_approval";
+        approveBtn.style.opacity = job.status === "awaiting_docs_approval" ? "1" : "0.45";
+      }
+      try {
+        const res = await api(`/api/jobs/${job.id}/docs`);
+        const files = res.files || [];
+        if (!files.length) {
+          $("docsViewer").innerHTML = `<div class="empty">Chưa có path docs — agent chưa list DOCS: trong DOCS_READY</div>`;
+          return;
+        }
+        $("docsViewer").innerHTML = files
+          .map((f) => {
+            if (!f.exists) {
+              return `<div class="doc-file"><div class="doc-path">${escapeHtml(f.path)}</div><pre class="doc-body missing">(file không đọc được)</pre></div>`;
+            }
+            return `<div class="doc-file"><div class="doc-path">${escapeHtml(f.path)}</div><pre class="doc-body">${escapeHtml(f.content || "")}</pre></div>`;
+          })
+          .join("");
+      } catch (e) {
+        $("docsViewer").innerHTML = `<div class="empty">${escapeHtml(e.message)}</div>`;
+      }
     }
 
     function renderTaskDetail() {
@@ -1307,7 +2974,11 @@
       const tasksDone = d.taskCompletion
         ? ` · checklist ${d.taskCompletion.completedCount}/${d.taskCompletion.count}`
         : "";
-      $("detailMeta").innerHTML = `${escapeHtml(d.state)} · assignee ${escapeHtml(assignees)}${tasksDone}`;
+      $("detailMeta").innerHTML = `${escapeHtml(d.state)} · assignee ${escapeHtml(assignees)}${tasksDone}${
+        d.milestone?.title
+          ? ` · milestone <strong style="color:#7dd3fc">${escapeHtml(d.milestone.title)}</strong>`
+          : ""
+      }`;
       $("detailLabels").innerHTML = (d.labels || []).length
         ? d.labels.map((l) => `<span class="label-chip">${escapeHtml(l)}</span>`).join("")
         : `<span class="meta">no labels</span>`;
@@ -1355,9 +3026,10 @@
       $("jobList").innerHTML = jobs.map((j) => {
         const killable = ["queued", "running", "awaiting_clarification", "awaiting_diff_approval"].includes(j.status);
         const hasNotes = !!(j.devNotes || j.techLeadNotes);
+        const docsBit = j.requireDocsFirst ? " · docs-first" : "";
         return `
         <div class="job ${j.id === selectedJobId ? "active" : ""}" data-job="${j.id}">
-          <div><span class="st ${j.status}">${j.status}</span> · ${issueIdWithView(j.issue?.issueIid, j.issue?.url)}${j.runCount ? ` · run#${j.runCount}` : ""}${hasNotes ? " · notes" : ""}${j.commitSha ? ` · <code>${escapeHtml(j.commitSha.slice(0, 7))}</code>` : ""}</div>
+          <div><span class="st ${j.status}">${j.status}</span> · ${issueIdWithView(j.issue?.issueIid, j.issue?.url)}${j.runCount ? ` · run#${j.runCount}` : ""}${hasNotes ? " · notes" : ""}${docsBit}${j.commitSha ? ` · <code>${escapeHtml(j.commitSha.slice(0, 7))}</code>` : ""}</div>
           <div class="title">${escapeHtml(j.issue?.title || "")}</div>
           <div class="meta">${j.error ? escapeHtml(j.error).slice(0, 80) : escapeHtml(j.id)}</div>
           ${killable ? `<div class="job-actions"><button type="button" class="danger" data-kill="${j.id}">Force Stop</button></div>` : ""}
@@ -1431,6 +3103,261 @@
       }
     }
 
+    function setMidTab(name) {
+      document.querySelectorAll("#midTabs [data-mid]").forEach((btn) => {
+        btn.classList.toggle("active", btn.dataset.mid === name);
+      });
+      ["detail", "diff", "commits", "progress"].forEach((n) => {
+        const pane = $(`midPane${n[0].toUpperCase()}${n.slice(1)}`);
+        if (pane) pane.classList.toggle("active", n === name);
+      });
+      if (name === "diff" && selectedJobId) void loadJobDiff(selectedJobId, "work");
+      if (name === "commits" && selectedJobId) void loadJobDiff(selectedJobId, "work");
+      if (name === "progress" && selectedJobId) void pollProgress(true);
+    }
+
+    function parseHunkHeader(line) {
+      // @@ -a,b +c,d @@ optional
+      const m = line.match(/^@@\s+-(\d+)(?:,(\d+))?\s+\+(\d+)(?:,(\d+))?\s@@/);
+      if (!m) return null;
+      return { oldStart: Number(m[1]), newStart: Number(m[3]) };
+    }
+
+    /** Parse one file's unified diff into numbered rows (GitLab-style). */
+    function parseDiffRows(block) {
+      const lines = (block || "").split("\n");
+      const rows = [];
+      let oldNo = 0;
+      let newNo = 0;
+      for (const line of lines) {
+        if (line.startsWith("diff --git") || line.startsWith("index ") || line.startsWith("similarity ")) {
+          rows.push({ kind: "meta", oldNo: "", newNo: "", sign: "", text: line });
+          continue;
+        }
+        if (line.startsWith("--- ") || line.startsWith("+++ ")) {
+          rows.push({ kind: "meta", oldNo: "", newNo: "", sign: "", text: line });
+          continue;
+        }
+        if (line.startsWith("@@")) {
+          const h = parseHunkHeader(line);
+          if (h) {
+            oldNo = h.oldStart;
+            newNo = h.newStart;
+          }
+          rows.push({ kind: "hunk", oldNo: "", newNo: "", sign: "", text: line });
+          continue;
+        }
+        if (line.startsWith("+")) {
+          rows.push({
+            kind: "add",
+            oldNo: "",
+            newNo: String(newNo),
+            sign: "+",
+            text: line.slice(1),
+          });
+          newNo += 1;
+          continue;
+        }
+        if (line.startsWith("-")) {
+          rows.push({
+            kind: "del",
+            oldNo: String(oldNo),
+            newNo: "",
+            sign: "−",
+            text: line.slice(1),
+          });
+          oldNo += 1;
+          continue;
+        }
+        if (line.startsWith("\\")) {
+          rows.push({ kind: "meta", oldNo: "", newNo: "", sign: "", text: line });
+          continue;
+        }
+        // context (may start with space or be empty continuation)
+        const text = line.startsWith(" ") ? line.slice(1) : line;
+        rows.push({
+          kind: "ctx",
+          oldNo: String(oldNo),
+          newNo: String(newNo),
+          sign: "",
+          text,
+        });
+        oldNo += 1;
+        newNo += 1;
+      }
+      return rows;
+    }
+
+    function splitUnifiedDiff(diffText) {
+      if (!diffText?.trim()) return [];
+      const parts = diffText.split(/(?=^diff --git )/m).filter((p) => p.trim());
+      return parts.map((block) => {
+        const first = block.split("\n")[0] || "";
+        const m = first.match(/^diff --git a\/(.+?) b\/(.+)$/);
+        const path = m ? m[2] : first.replace(/^diff --git\s+/, "") || "file";
+        return { path, body: block };
+      });
+    }
+
+    function renderGitlabTable(rows) {
+      const trs = rows
+        .filter((r) => r.kind !== "meta")
+        .map((r) => {
+          const cls = r.kind;
+          return `<tr class="${cls}">
+            <td class="ln">${r.oldNo}</td>
+            <td class="ln">${r.newNo}</td>
+            <td class="sign">${r.sign}</td>
+            <td class="code">${escapeHtml(r.text)}</td>
+          </tr>`;
+        })
+        .join("");
+      return `<table class="gl-table" aria-label="diff"><tbody>${trs}</tbody></table>`;
+    }
+
+    function renderFileNav(files, filesEl, onPick) {
+      if (!filesEl) return;
+      if (!files?.length) {
+        filesEl.innerHTML = `<div class="gl-empty">Không có file</div>`;
+        return;
+      }
+      filesEl.innerHTML = `<ul class="diff-file-nav">${files
+        .map((f, i) => {
+          const delta =
+            (f.additions || f.deletions)
+              ? `<span class="diff-file-nav__delta">${f.additions ? `<span class="p">+${f.additions}</span>` : ""}${f.deletions ? ` <span class="m">−${f.deletions}</span>` : ""}</span>`
+              : "";
+          return `<li><button type="button" class="diff-file-nav__item" data-idx="${i}">
+            <span class="gl-badge ${escapeHtml(f.status || "M")}">${escapeHtml(f.status || "M")}</span>
+            <span class="diff-file-nav__path">${escapeHtml(f.path)}</span>
+            ${delta}
+          </button></li>`;
+        })
+        .join("")}</ul>`;
+      filesEl.querySelectorAll(".diff-file-nav__item").forEach((el) => {
+        el.addEventListener("click", () => {
+          filesEl.querySelectorAll(".diff-file-nav__item").forEach((c) => c.classList.remove("active"));
+          el.classList.add("active");
+          onPick?.(Number(el.dataset.idx));
+        });
+      });
+    }
+
+    function renderGitlabDiffBlocks(container, blocks, files) {
+      if (!container) return;
+      if (!blocks.length) {
+        container.innerHTML = `<div class="gl-empty">Không có thay đổi so với nhánh base</div>`;
+        return;
+      }
+      const statusByPath = new Map((files || []).map((f) => [f.path, f]));
+      container.innerHTML = blocks
+        .map((b, i) => {
+          const st = statusByPath.get(b.path);
+          const badge = st?.status || (b.path.startsWith("(") ? "·" : "M");
+          const plus = st?.additions != null ? `<span class="p">+${st.additions}</span>` : "";
+          const minus = st?.deletions != null ? `<span class="m">−${st.deletions}</span>` : "";
+          const rows = parseDiffRows(b.body);
+          return `<section class="gl-file" data-diff-idx="${i}" data-path="${escapeHtml(b.path)}" id="gl-file-${i}">
+            <div class="gl-file__head">
+              <div class="gl-file__title">
+                <span class="gl-badge ${escapeHtml(badge)}">${escapeHtml(badge)}</span>
+                <span>${escapeHtml(b.path)}</span>
+              </div>
+              <div class="gl-file__stats">${plus}${minus}</div>
+            </div>
+            <div class="gl-file__body">${renderGitlabTable(rows)}</div>
+          </section>`;
+        })
+        .join("");
+    }
+
+    function paintDiffReview(opts) {
+      const { filesEl, bodyEl, metaEl, commitsEl, commitsMetaEl, data } = opts;
+      const d = data.diff || {};
+      const files = data.files || d.files || [];
+      if (metaEl) {
+        const add = files.reduce((s, f) => s + (f.additions || 0), 0);
+        const del = files.reduce((s, f) => s + (f.deletions || 0), 0);
+        metaEl.innerHTML = `#${data.issueIid || "?"} · <span style="color:#3dd68c">+${add}</span> <span style="color:#f87171">−${del}</span>`;
+      }
+      const rangeBlocks = splitUnifiedDiff(d.rangeDiff || "");
+      const extra = [];
+      if (d.staged?.trim()) extra.push({ path: "(staged)", body: d.staged });
+      if (d.unstaged?.trim()) extra.push({ path: "(unstaged WIP)", body: d.unstaged });
+      const blocks = [...rangeBlocks, ...extra];
+      const navFiles =
+        files.length > 0
+          ? files
+          : blocks.map((b) => ({ path: b.path, status: "M", additions: 0, deletions: 0 }));
+      renderFileNav(navFiles, filesEl, (idx) => {
+        const path = navFiles[idx]?.path;
+        if (!path || !bodyEl) return;
+        const el = [...bodyEl.querySelectorAll(".gl-file")].find(
+          (node) => node.getAttribute("data-path") === path,
+        );
+        if (!el) return;
+        el.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+      renderGitlabDiffBlocks(bodyEl, blocks, files);
+      if (commitsEl) {
+        commitsEl.textContent = d.recentCommits?.trim() || "(no commits)";
+      }
+      if (commitsMetaEl) {
+        commitsMetaEl.textContent = "";
+      }
+    }
+
+    let diffModalJobId = null;
+
+    async function loadJobDiff(jobId, target) {
+      if (!jobId) return;
+      const bodyMap = {
+        work: {
+          filesEl: $("workDiffFiles"),
+          bodyEl: $("workDiffBody"),
+          metaEl: $("workDiffMeta"),
+          commitsEl: $("workCommitsBody"),
+          commitsMetaEl: $("workCommitsMeta"),
+        },
+        handoff: {
+          filesEl: $("handoffDiffFiles"),
+          bodyEl: $("handoffDiffBody"),
+        },
+        modal: {
+          filesEl: $("diffModalFiles"),
+          bodyEl: $("diffModalBody"),
+        },
+      };
+      const slots = bodyMap[target];
+      if (!slots) return;
+      if (slots.bodyEl) {
+        slots.bodyEl.innerHTML = `<div class="gl-empty loading"><span class="spinner"></span> Đang tải diff…</div>`;
+      }
+      try {
+        const data = await api(`/api/jobs/${jobId}/diff`);
+        paintDiffReview({ ...slots, data });
+        return data;
+      } catch (e) {
+        if (slots.bodyEl) {
+          slots.bodyEl.innerHTML = `<div class="gl-empty">${escapeHtml(e.message)}</div>`;
+        }
+        toast(e.message);
+        return null;
+      }
+    }
+
+    function openDiffModal(jobId, title) {
+      diffModalJobId = jobId;
+      $("diffModalTitle").textContent = title || "Code Diff";
+      $("diffModal").classList.add("show");
+      void loadJobDiff(jobId, "modal");
+    }
+
+    function closeDiffModal() {
+      $("diffModal").classList.remove("show");
+      diffModalJobId = null;
+    }
+
     async function selectJob(id) {
       selectedJobId = id;
       renderJobs();
@@ -1457,6 +3384,8 @@
         );
         await pollProgress(true);
         startProgressPolling();
+        // Prefetch diff in background for review tab
+        void loadJobDiff(id, "work");
       } catch (e) {
         $("chatView").className = "chat";
         $("chatView").innerHTML = `<div class="empty">${escapeHtml(e.message)}</div>`;
@@ -1704,9 +3633,9 @@
       }
       box.innerHTML = list.map((j) => `
         <div class="job ${j.id === selectedHandoffJobId ? "active" : ""}" data-handoff="${j.id}">
-          <div><span class="st awaiting_handoff">awaiting_handoff</span> · ${issueIdWithView(j.issue?.issueIid, j.issue?.url)}</div>
+          <div><span class="st awaiting_handoff">awaiting_handoff</span> · ${issueIdWithView(j.issue?.issueIid, j.issue?.url)}${j.mergedAt ? ` · <span class="st succeeded">merged</span>` : ""}</div>
           <div class="title">${escapeHtml(j.issue?.title || "")}</div>
-          <div class="meta">${j.completedAt ? new Date(j.completedAt).toLocaleString() : j.id.slice(0,8)}</div>
+          <div class="meta">${j.branch ? escapeHtml(j.branch) : "—"}${j.mergeTarget ? ` → ${escapeHtml(j.mergeTarget)}` : ""}${j.completedAt ? ` · ${new Date(j.completedAt).toLocaleString()}` : ""}</div>
         </div>
       `).join("");
       box.querySelectorAll("[data-handoff]").forEach((el) => {
@@ -1726,11 +3655,142 @@
       $("handoffEmpty").style.display = "none";
       $("handoffBody").style.display = "block";
       $("handoffTitle").innerHTML = `${issueIdWithView(j.issue.issueIid, j.issue.url)} — ${escapeHtml(j.issue.title)}`;
-      $("handoffMeta").innerHTML = `${j.branch ? `<code>${escapeHtml(j.branch)}</code> · ` : ""}${j.commitSha ? `<code title="${escapeHtml(j.commitSha)}">${escapeHtml(j.commitSha.slice(0, 10))}</code>` : ""}`;
+      const base =
+        j.baseBranch || ($("wsBaseBranch")?.value || "").trim() || "project";
+      $("handoffMeta").innerHTML = `${j.branch ? `<code>${escapeHtml(j.branch)}</code>` : "(no branch)"}${j.commitSha ? ` · <code title="${escapeHtml(j.commitSha)}">${escapeHtml(j.commitSha.slice(0, 10))}</code>` : ""} → <code>${escapeHtml(base)}</code>`;
       $("handoffSummary").textContent = j.summary || "(no summary)";
       ddHandoffAssignee?.setSelected(savedSettings.assignee ? [savedSettings.assignee] : []);
       ddHandoffLabels?.setSelected(savedSettings.addLabels || []);
       $("handoffComment").value = savedSettings.comment || "";
+      renderMergeHint(j);
+      void loadJobDiff(j.id, "handoff");
+    }
+
+    function ensureMergeButtonStructure() {
+      const btn = $("btnMergeToBase");
+      if (!btn) return;
+      if (!$("btnMergePath")) {
+        btn.innerHTML = `<span class="merge-btn-label">Merge</span><span class="merge-btn-path" id="btnMergePath">… → …</span>`;
+      }
+      btn.classList.remove("is-loading");
+    }
+
+    function resolveMergeEndpoints(j) {
+      const source = (j?.branch || j?.workBranch || "").trim() || null;
+      const target =
+        (j?.baseBranch || "").trim() ||
+        ($("wsBaseBranch")?.value || "").trim() ||
+        "default (project)";
+      return { source, target };
+    }
+
+    function renderMergeHint(j) {
+      ensureMergeButtonStructure();
+      const el = $("mergeHint");
+      const btn = $("btnMergeToBase");
+      const pathEl = $("btnMergePath");
+      const fromTo = $("mergeFromTo");
+      if (!el) return;
+      el.classList.remove("ok", "err");
+
+      const { source, target } = resolveMergeEndpoints(j);
+      const srcLabel = source || "(chưa có nhánh làm việc)";
+      const pathHtml = `<span class="from">${escapeHtml(srcLabel)}</span><span class="arrow">→</span><span class="to">${escapeHtml(target)}</span>`;
+
+      if (fromTo) {
+        fromTo.innerHTML = `Từ <strong>${escapeHtml(srcLabel)}</strong><span class="arrow">→</span>vào <strong>${escapeHtml(target)}</strong>`;
+      }
+      if (pathEl) pathEl.innerHTML = pathHtml;
+      if (btn) {
+        btn.title = source
+          ? `Merge ${source} → ${target} rồi push origin/${target}`
+          : "Job chưa có nhánh làm việc";
+        btn.disabled = !source;
+      }
+
+      if (j?.mergedAt) {
+        el.classList.add(j.mergePushError ? "err" : "ok");
+        const pushBit = j.mergePushError
+          ? ` · push lỗi: ${j.mergePushError}`
+          : j.mergePushedAt
+            ? " · đã push origin"
+            : "";
+        el.textContent = `Đã merge ${j.mergeSource || srcLabel} → ${j.mergeTarget || target} · ${(j.mergeSha || "").slice(0, 10)}${j.mergeAiResolved ? " · AI resolved" : ""}${pushBit}`;
+        if (pathEl) {
+          pathEl.innerHTML = `<span class="from">${escapeHtml(j.mergeSource || srcLabel)}</span><span class="arrow">→</span><span class="to">${escapeHtml(j.mergeTarget || target)}</span>`;
+        }
+        const label = $("btnMergeToBase")?.querySelector(".merge-btn-label");
+        if (label) label.textContent = j.mergePushError ? "Merge + push lại" : "Merge lại";
+      } else if (j?.mergeError) {
+        el.classList.add("err");
+        el.textContent = j.mergeError;
+        const label = $("btnMergeToBase")?.querySelector(".merge-btn-label");
+        if (label) label.textContent = "Thử merge lại";
+      } else {
+        el.textContent = source
+          ? "Merge vào nhánh project → push origin · xong checkout lại nhánh làm việc · conflict → AI"
+          : "Job không có branch — không merge được";
+        const label = $("btnMergeToBase")?.querySelector(".merge-btn-label");
+        if (label) label.textContent = "Merge";
+      }
+    }
+
+    async function mergeJobToBase() {
+      if (!selectedHandoffJobId) return toast("Chọn job");
+      const j = jobs.find((x) => x.id === selectedHandoffJobId);
+      const { source, target } = resolveMergeEndpoints(j);
+      if (!source) return toast("Job không có work branch");
+      const targetArg =
+        (j.baseBranch || "").trim() ||
+        ($("wsBaseBranch")?.value || "").trim() ||
+        undefined;
+      if (
+        !confirm(
+          `Merge + push\n\nTừ:  ${source}\nVào:  ${targetArg || target}\nPush: origin/${targetArg || target}\n\nConflict → AI resolve. Tiếp tục?`,
+        )
+      ) {
+        return;
+      }
+      const hint = $("mergeHint");
+      const btn = $("btnMergeToBase");
+      if (hint) {
+        hint.classList.remove("ok", "err");
+        hint.textContent = `Đang merge + push ${source} → ${targetArg || target}…`;
+      }
+      if (btn) {
+        btn.disabled = true;
+        btn.classList.add("is-loading");
+        btn.innerHTML = `<span class="spinner" aria-hidden="true"></span><span class="merge-btn-path">${escapeHtml(source)} → ${escapeHtml(targetArg || target)}…</span>`;
+      }
+      try {
+        const res = await api(`/api/jobs/${selectedHandoffJobId}/merge`, {
+          method: "POST",
+          body: JSON.stringify({ targetBranch: targetArg }),
+        });
+        const m = res.merge || {};
+        toast(
+          m.aiResolved
+            ? `Merged + pushed ${m.source} → ${m.target} (AI)`
+            : `Merged + pushed ${m.source} → ${m.target}`,
+        );
+        if (m.wipWarning) toast(m.wipWarning);
+        await loadJobs();
+        const updated = jobs.find((x) => x.id === selectedHandoffJobId);
+        if (updated) selectHandoffJob(updated.id);
+        else {
+          ensureMergeButtonStructure();
+          renderMergeHint(j);
+        }
+      } catch (e) {
+        if (hint) {
+          hint.classList.add("err");
+          hint.textContent = e.message;
+        }
+        toast(e.message);
+        await loadJobs().catch(() => undefined);
+        ensureMergeButtonStructure();
+        renderMergeHint(jobs.find((x) => x.id === selectedHandoffJobId) || j);
+      }
     }
 
     async function submitHandoff() {
@@ -1785,10 +3845,10 @@
 
       const renderDay = (d) => {
         const items = (d.items || []).map((it) => `
-          <div class="job" style="cursor:default">
+          <div class="job stats-job" data-stats-job="${escapeHtml(it.jobId)}">
             <div><span class="st ${escapeHtml(it.status)}">${escapeHtml(it.status)}</span> · ${issueIdWithView(it.issueIid, it.url)}</div>
             <div class="title">${escapeHtml(it.title)}</div>
-            <div class="meta">${new Date(it.at).toLocaleTimeString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" })}</div>
+            <div class="meta">${new Date(it.at).toLocaleTimeString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" })} · xem diff</div>
           </div>
         `).join("") || `<div class="empty">—</div>`;
         return `
@@ -1824,6 +3884,14 @@
           `).join("")}
         </details>
       `).join("");
+
+      $("statsDaily").querySelectorAll("[data-stats-job]").forEach((el) => {
+        el.addEventListener("click", () => {
+          const jobId = el.getAttribute("data-stats-job");
+          const title = el.querySelector(".title")?.textContent || "Code Diff";
+          openDiffModal(jobId, title);
+        });
+      });
     }
 
     function selectedIssueIids() {
@@ -1876,18 +3944,19 @@
         return false;
       }
       const devNotes = ($("devNotes")?.value || "").trim();
+      const requireDocsFirst = Boolean($("requireDocsFirst")?.checked);
       if (!opts.skipButton) setButtonLoading($("btnSaveNotes"), true, "Save");
       try {
         if (!currentJob?.id) {
           const ensured = await api("/api/jobs/ensure", {
             method: "POST",
-            body: JSON.stringify({ issueIid: selectedTaskIid, devNotes }),
+            body: JSON.stringify({ issueIid: selectedTaskIid, devNotes, requireDocsFirst }),
           });
           currentJob = ensured.job;
         } else {
           const res = await api(`/api/jobs/${currentJob.id}/dev-notes`, {
             method: "PUT",
-            body: JSON.stringify({ devNotes }),
+            body: JSON.stringify({ devNotes, requireDocsFirst }),
           });
           currentJob = res.job;
         }
@@ -1906,82 +3975,133 @@
 
     async function runCurrentJob() {
       if (!selectedTaskIid) return toast("Chọn 1 task trước");
-      setButtonLoading($("btnRunJob"), true, "Run");
-      try {
-        const metaOk = await applyMetaNow({ silent: true, skipButton: true, skipReload: true });
-        if (metaOk === false) return;
-        const saved = await saveDevNotes({ silent: true, skipButton: true });
-        if (!saved) return;
-        const res = await api("/api/jobs/start", {
-          method: "POST",
-          body: JSON.stringify({
-            mode: "manual",
-            issueIid: selectedTaskIid,
-            issueIids: [selectedTaskIid],
-            devNotes: ($("devNotes")?.value || "").trim() || undefined,
-            completion: readOnComplete(),
-          }),
-        });
-        toast(`Run #${selectedTaskIid} · enqueued ${res.enqueued}`);
-        if (res.jobIds?.[0]) await selectJob(res.jobIds[0]);
-        else await loadJobs();
-        await loadStatus();
-      } catch (e) {
-        toast(e.message);
-      } finally {
-        setButtonLoading($("btnRunJob"), false, "Run");
-      }
+      const doRun = async () => {
+        setButtonLoading($("btnRunJob"), true, "Run");
+        try {
+          const metaOk = await applyMetaNow({ silent: true, skipButton: true, skipReload: true });
+          if (metaOk === false) return;
+          const saved = await saveDevNotes({ silent: true, skipButton: true });
+          if (!saved) return;
+          const res = await api("/api/jobs/start", {
+            method: "POST",
+            body: JSON.stringify({
+              mode: "manual",
+              issueIid: selectedTaskIid,
+              issueIids: [selectedTaskIid],
+              devNotes: ($("devNotes")?.value || "").trim() || undefined,
+              requireDocsFirst: Boolean($("requireDocsFirst")?.checked),
+              completion: readOnComplete(),
+            }),
+          });
+          toast(`Run #${selectedTaskIid} · enqueued ${res.enqueued}`);
+          if (res.jobIds?.[0]) await selectJob(res.jobIds[0]);
+          else await loadJobs();
+          await loadStatus();
+        } catch (e) {
+          toast(e.message);
+        } finally {
+          setButtonLoading($("btnRunJob"), false, "Run");
+        }
+      };
+      await ensureCursorKeyThen(doRun);
     }
 
     async function runSelectedTasks() {
       const iids = selectedIssueIids();
       if (!iids.length) return toast("Tick ít nhất 1 task");
-      setButtonLoading($("btnRunSelected"), true, "Run chọn");
-      try {
-        const res = await api("/api/jobs/start", {
-          method: "POST",
-          body: JSON.stringify({
-            mode: "selected",
-            issueIids: iids,
-            completion: readOnComplete(),
-          }),
-        });
-        toast(`Enqueued ${res.enqueued}`);
-        if (res.jobIds?.[0]) await selectJob(res.jobIds[0]);
-        else await loadJobs();
-        await loadStatus();
-      } catch (e) {
-        toast(e.message);
-      } finally {
-        setButtonLoading($("btnRunSelected"), false, "Run chọn");
-      }
+      const doRun = async () => {
+        setButtonLoading($("btnRunSelected"), true, "Run chọn");
+        try {
+          const res = await api("/api/jobs/start", {
+            method: "POST",
+            body: JSON.stringify({
+              mode: "selected",
+              issueIids: iids,
+              completion: readOnComplete(),
+            }),
+          });
+          toast(`Enqueued ${res.enqueued}`);
+          if (res.jobIds?.[0]) await selectJob(res.jobIds[0]);
+          else await loadJobs();
+          await loadStatus();
+        } catch (e) {
+          toast(e.message);
+        } finally {
+          setButtonLoading($("btnRunSelected"), false, "Run chọn");
+        }
+      };
+      await ensureCursorKeyThen(doRun);
     }
 
     async function runAllDrafts() {
-      setButtonLoading($("btnRunDrafts"), true, "Run tất cả");
-      try {
-        const res = await api("/api/jobs/start", {
-          method: "POST",
-          body: JSON.stringify({
-            mode: "all",
-            runAll: true,
-            completion: readOnComplete(),
-          }),
-        });
-        const bits = [
-          `enqueued ${res.enqueued}/${res.found}`,
-          res.created ? `tạo mới ${res.created}` : null,
-          res.skippedBusy ? `bỏ busy ${res.skippedBusy}` : null,
-        ].filter(Boolean);
-        toast(`Run tất cả · ${bits.join(" · ")}`);
-        if (res.jobIds?.[0]) await selectJob(res.jobIds[0]);
-        else await loadJobs();
-        await loadStatus();
-      } catch (e) {
-        toast(e.message);
-      } finally {
-        setButtonLoading($("btnRunDrafts"), false, "Run tất cả");
-      }
+      const doRun = async () => {
+        setButtonLoading($("btnRunDrafts"), true, "Run tất cả");
+        try {
+          const res = await api("/api/jobs/start", {
+            method: "POST",
+            body: JSON.stringify({
+              mode: "all",
+              runAll: true,
+              completion: readOnComplete(),
+            }),
+          });
+          const bits = [
+            `enqueued ${res.enqueued}/${res.found}`,
+            res.created ? `tạo mới ${res.created}` : null,
+            res.skippedBusy ? `bỏ busy ${res.skippedBusy}` : null,
+          ].filter(Boolean);
+          toast(`Run tất cả · ${bits.join(" · ")}`);
+          if (res.jobIds?.[0]) await selectJob(res.jobIds[0]);
+          else await loadJobs();
+          await loadStatus();
+        } catch (e) {
+          toast(e.message);
+        } finally {
+          setButtonLoading($("btnRunDrafts"), false, "Run tất cả");
+        }
+      };
+      await ensureCursorKeyThen(doRun);
+    }
+
+    async function approveDocs() {
+      if (!currentJob?.id) return toast("Chọn job");
+      const doRun = async () => {
+        setButtonLoading($("btnApproveDocs"), true, "Approve → Code");
+        try {
+          const res = await api(`/api/jobs/${currentJob.id}/approve-docs`, { method: "POST" });
+          toast("Đã duyệt docs → enqueue code");
+          currentJob = res.job || currentJob;
+          fillDevNotesFromJob(currentJob);
+          await loadJobs();
+          await loadStatus();
+          if (res.jobId) await selectJob(res.jobId);
+        } catch (e) {
+          toast(e.message);
+        } finally {
+          setButtonLoading($("btnApproveDocs"), false, "Approve → Code");
+        }
+      };
+      await ensureCursorKeyThen(doRun);
+    }
+
+    async function rerunDocs() {
+      if (!currentJob?.id) return toast("Chọn job");
+      const doRun = async () => {
+        setButtonLoading($("btnRerunDocs"), true, "Re-run docs");
+        try {
+          await saveDevNotes({ silent: true, skipButton: true });
+          const res = await api(`/api/jobs/${currentJob.id}/rerun-docs`, { method: "POST" });
+          toast("Re-run docs phase");
+          if (res.jobId) await selectJob(res.jobId);
+          else await loadJobs();
+          await loadStatus();
+        } catch (e) {
+          toast(e.message);
+        } finally {
+          setButtonLoading($("btnRerunDocs"), false, "Re-run docs");
+        }
+      };
+      await ensureCursorKeyThen(doRun);
     }
 
     async function sendClarify() {
@@ -2022,28 +4142,115 @@
       finally { setButtonLoading($("btnAsk"), false, "Hỏi agent"); }
     }
 
+    $("btnLogin").onclick = () => doLoginStep1();
+    $("btnWizBack2").onclick = () => setWizardStep(1);
+    $("btnWizNext2").onclick = () => doWizardStep2();
+    $("btnWizBack3").onclick = () => setWizardStep(2);
+    $("btnWizFinish").onclick = () => doWizardFinish();
+    $("btnCursorSave").onclick = () => saveCursorKeyAndContinue();
+    $("btnCursorCancel").onclick = () => {
+      pendingRunAfterCursor = null;
+      showCursorModal(false);
+    };
+    $("loginGitlabToken").addEventListener("blur", () => {
+      const token = ($("loginGitlabToken").value || "").trim();
+      const user = ($("loginUsername").value || "").trim();
+      if (token && !user) void detectUsernameFromPat({ silent: true });
+    });
+    $("btnJoinProject").onclick = () => {
+      $("joinHint").textContent = "";
+      $("joinModal").style.display = "flex";
+    };
+    $("btnJoinClose").onclick = () => {
+      $("joinModal").style.display = "none";
+    };
+    $("btnJoinSave").onclick = () => doJoinProject();
+    $("btnSaveBranch").onclick = () => saveWorkBranch();
+    $("wsBaseBranch")?.addEventListener("input", updateWsBranchHint);
+    $("wsBranch")?.addEventListener("input", updateWsBranchHint);
+    $("wizBranch")?.addEventListener("input", () => {
+      const el = $("wizBranchHint");
+      if (!el) return;
+      const prev = el.textContent.replace(/\s*(Nhánh làm việc|Đã set).*$/, "").trim();
+      el.textContent = `${prev ? prev + " " : ""}${branchModeHint($("wizBranch").value)}`;
+    });
+    $("btnLogout").onclick = () => {
+      session = { username: null, projectId: null };
+      memberships = [];
+      saveSession();
+      showLogin(true);
+      toast("Logged out");
+    };
+    $("wsProject").onchange = async () => {
+      session.projectId = $("wsProject").value || null;
+      saveSession();
+      renderWorkspaceBar();
+      try {
+        await bootstrapApp();
+      } catch (e) {
+        toast(e.message);
+      }
+    };
+
     $("btnRefresh").onclick = () => refreshTasks().catch((e) => toast(e.message));
     $("btnApplyMeta").onclick = () => applyMetaNow();
     $("btnSaveNotes").onclick = () => saveDevNotes();
     $("btnRunJob").onclick = () => runCurrentJob();
+    $("btnApproveDocs").onclick = () => approveDocs();
+    $("btnRerunDocs").onclick = () => rerunDocs();
     $("btnRunSelected").onclick = () => runSelectedTasks();
     $("btnRunDrafts").onclick = () => runAllDrafts();
     $("btnClarify").onclick = sendClarify;
     $("btnAsk").onclick = askQuestion;
+    $("milestoneFilter").onchange = () => {
+      milestoneFilter = $("milestoneFilter").value || "all";
+      renderTasks();
+    };
     $("btnSettings").onclick = () => openSettingsModal();
+    $("btnCursorManage").onclick = () => openSettingsModal();
+    $("btnSaveCursorKey").onclick = () => saveCursorKeyFromSettings();
+    $("btnSaveCursorModel").onclick = () => saveCursorModelFromSettings();
+    $("btnClearCursorKey").onclick = () => clearCursorKeyFromSettings();
     $("btnSettingsClose").onclick = () => closeSettingsModal();
     $("btnSettingsSave").onclick = () => saveSettingsFromModal();
     $("settingsModal").onclick = () => closeSettingsModal();
     $("btnHandoff").onclick = () => submitHandoff();
+    $("btnMergeToBase").onclick = () => mergeJobToBase();
+    $("btnHandoffRefreshDiff")?.addEventListener("click", () => {
+      if (selectedHandoffJobId) void loadJobDiff(selectedHandoffJobId, "handoff");
+    });
+    $("btnRefreshDiff")?.addEventListener("click", () => {
+      if (selectedJobId) void loadJobDiff(selectedJobId, "work");
+    });
+    $("btnRefreshCommits")?.addEventListener("click", () => {
+      if (selectedJobId) void loadJobDiff(selectedJobId, "work");
+    });
+    document.querySelectorAll("#midTabs [data-mid]").forEach((btn) => {
+      btn.addEventListener("click", () => setMidTab(btn.dataset.mid));
+    });
+    $("btnDiffModalClose")?.addEventListener("click", () => closeDiffModal());
+    $("diffModal")?.addEventListener("click", () => closeDiffModal());
+    $("btnDiffModalOpenJob")?.addEventListener("click", async () => {
+      const id = diffModalJobId;
+      closeDiffModal();
+      if (!id) return;
+      setView("work");
+      setMidTab("diff");
+      await selectJob(id);
+    });
     $("btnStatsRefresh").onclick = () => refreshStats().catch((e) => toast(e.message));
     document.querySelectorAll("#navViews [data-view]").forEach((btn) => {
       btn.addEventListener("click", () => setView(btn.dataset.view));
     });
 
-    showEmptyLoading($("taskList"), "Đang tải tasks…");
-    showEmptyLoading($("jobList"), "Đang tải jobs…");
-    Promise.all([loadStatus(), loadTasks(), loadJobs(), loadCompletionDefaults()]).catch((e) => toast(e.message));
-    setInterval(() => { loadStatus(); loadJobs(); }, 5000);
+    void loadAuthBootstrap();
+    bootstrapApp().catch((e) => toast(e.message));
+    setInterval(() => {
+      if (session.username && session.projectId) {
+        loadStatus();
+        loadJobs();
+      }
+    }, 5000);
     startProgressPolling();
   </script>
 </body>

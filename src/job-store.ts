@@ -56,6 +56,7 @@ export async function ensureJob(
     source?: string;
     completion?: CompletionActions;
     devNotes?: string;
+    requireDocsFirst?: boolean;
   },
 ): Promise<JobRecord> {
   const existing = await loadJobByIssue(issue.projectId, issue.issueIid);
@@ -66,6 +67,9 @@ export async function ensureJob(
     if (opts?.completion) existing.completion = opts.completion;
     if (opts?.devNotes !== undefined) {
       existing.devNotes = opts.devNotes.trim() || undefined;
+    }
+    if (opts?.requireDocsFirst !== undefined) {
+      existing.requireDocsFirst = opts.requireDocsFirst;
     }
     await saveJob(existing, { source: opts?.source });
     return existing;
@@ -79,6 +83,7 @@ export async function ensureJob(
     runCount: 0,
     completion: opts?.completion,
     devNotes: opts?.devNotes?.trim() || undefined,
+    requireDocsFirst: opts?.requireDocsFirst,
     createdAt: now,
     updatedAt: now,
   };

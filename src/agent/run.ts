@@ -1,10 +1,11 @@
 import { Agent, CursorAgentError } from "@cursor/sdk";
 import { setMaxListeners } from "node:events";
-import { getConfig } from "../config.js";
 import { collectLinkedIssueContext } from "../gitlab/linked-context.js";
 import { logger } from "../logger.js";
 import type { IssueJob } from "../types.js";
+import { resolveCursorApiKey, resolveCursorModel, resolveRepoPath } from "../workspace/creds.js";
 import {
+  buildDocsPhasePrompt,
   buildResumePrompt,
   buildWorkPrompt,
   parseAgentOutcome,
@@ -133,7 +134,7 @@ function untrackRun(jobId: string | undefined): void {
 
 export type AgentRunResult = {
   agentId: string;
-  kind: "done" | "need_clarification" | "unknown";
+  kind: "done" | "docs_ready" | "need_clarification" | "unknown";
   text: string;
   question?: string;
   summary?: string;
@@ -142,9 +143,15 @@ export type AgentRunResult = {
 export async function runNewAgent(
   issue: IssueJob,
   extraContext?: string,
-  opts?: { jobId?: string; techLeadNotes?: string; devNotes?: string },
+  opts?: {
+    jobId?: string;
+    techLeadNotes?: string;
+    devNotes?: string;
+    /** docs = Phase A (feature docs only); code = Phase B (default) */
+    phase?: "docs" | "code";
+    approvedDocsPaths?: string[];
+  },
 ): Promise<AgentRunResult> {
-  const config = getConfig();
   let linkedBlock = "";
   try {
     const linked = await collectLinkedIssueContext(issue);
@@ -153,20 +160,25 @@ export async function runNewAgent(
     logger.warn("Linked context load failed", { err: String(err) });
   }
 
+  const modelId = resolveCursorModel();
   await using agent = await Agent.create({
-    apiKey: config.CURSOR_API_KEY,
-    model: { id: config.CURSOR_MODEL },
-    local: { cwd: config.AIHR_REPO_PATH },
+    apiKey: resolveCursorApiKey(),
+    model: { id: modelId },
+    local: { cwd: resolveRepoPath() },
   });
 
-  logger.info("Created local agent", { agentId: agent.agentId });
+  logger.info("Created local agent", {
+    agentId: agent.agentId,
+    model: modelId,
+    phase: opts?.phase ?? "code",
+  });
   const notes = opts?.devNotes?.trim() || opts?.techLeadNotes?.trim() || undefined;
-  const prompt = buildWorkPrompt(
-    issue,
-    extraContext,
-    linkedBlock,
-    notes,
-  );
+  const prompt =
+    opts?.phase === "docs"
+      ? buildDocsPhasePrompt(issue, linkedBlock, notes)
+      : buildWorkPrompt(issue, extraContext, linkedBlock, notes, {
+          approvedDocsPaths: opts?.approvedDocsPaths,
+        });
   const run = await agent.send(prompt);
   logger.info("Agent run started", { runId: run.id, agentId: agent.agentId });
   trackRun(opts?.jobId, run);
@@ -191,14 +203,14 @@ export async function resumeAgent(
   issue: IssueJob,
   opts?: { jobId?: string },
 ): Promise<AgentRunResult> {
-  const config = getConfig();
+  const modelId = resolveCursorModel();
   await using agent = await Agent.resume(agentId, {
-    apiKey: config.CURSOR_API_KEY,
-    model: { id: config.CURSOR_MODEL },
-    local: { cwd: config.AIHR_REPO_PATH },
+    apiKey: resolveCursorApiKey(),
+    model: { id: modelId },
+    local: { cwd: resolveRepoPath() },
   });
 
-  logger.info("Resumed agent", { agentId: agent.agentId });
+  logger.info("Resumed agent", { agentId: agent.agentId, model: modelId });
   const run = await agent.send(buildResumePrompt(answer, issue));
   logger.info("Resume run started", { runId: run.id, agentId: agent.agentId });
   trackRun(opts?.jobId, run);

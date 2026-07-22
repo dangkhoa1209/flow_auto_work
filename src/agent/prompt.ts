@@ -6,17 +6,19 @@ export function commitMessageForIssue(issue: IssueJob): string {
   return `feat #${issue.issueIid} ${title}`;
 }
 
-export function buildWorkPrompt(
-  issue: IssueJob,
-  extra?: string,
-  linkedContext?: string,
-  techLeadNotes?: string,
-): string {
-  const commitMsg = commitMessageForIssue(issue);
+export function docsCommitMessageForIssue(issue: IssueJob): string {
+  const title = issue.title.replace(/\s+/g, " ").trim();
+  return `docs #${issue.issueIid} ${title}`;
+}
+
+function sharedPreamble(issue: IssueJob, techLeadNotes?: string): {
+  notesBlock: string;
+  description: string;
+  notes: string;
+} {
   const notes = techLeadNotes?.trim() || "";
   const description =
     stripMediaAndAttachments(issue.description || "") || "(empty)";
-
   const notesBlock = notes
     ? `# DEV NOTES (HIGHEST PRIORITY)
 You MUST strictly follow these technical directions before referring to the business requirements:
@@ -24,6 +26,87 @@ You MUST strictly follow these technical directions before referring to the busi
 
 `
     : "";
+  return { notesBlock, description, notes };
+}
+
+/**
+ * Phase A: read/update AiHR feature docs under docs/modules/... (NOT per-issue files).
+ */
+export function buildDocsPhasePrompt(
+  issue: IssueJob,
+  linkedContext?: string,
+  techLeadNotes?: string,
+): string {
+  const { notesBlock, description } = sharedPreamble(issue, techLeadNotes);
+  const linkedBlock = linkedContext?.trim()
+    ? `\n## Linked / related context\n${linkedContext.trim()}\n`
+    : "";
+  const commitMsg = docsCommitMessageForIssue(issue);
+
+  return `# MISSION — DOCS PHASE ONLY (NO APP CODE)
+You are preparing documentation for GitLab issue #${issue.issueIid} on AiHR v3 BEFORE any implementation.
+
+Follow AGENTS.md, .cursor/skills/aihr/SKILL.md, and relevant \`.cursor/rules/**/*.mdc\` (docs-loading, project, domain rules).
+Ignore image/file attachments — text only.
+
+AiHR knowledge is:
+- **Feature docs**: \`docs/\` — module → feature (NOT by GitLab issue/task). Files may be \`.md\` or \`.mdc\`.
+- **Rules**: \`.cursor/rules/**/*.mdc\` — system conventions (read; do not invent conflicting guidance).
+- Hub: \`docs/README.md\`
+- Modules: \`docs/modules/<module>/\`
+- Features: \`docs/modules/<module>/<feature>/\` (README + overview / topic docs)
+- Templates: \`docs/_templates/\`
+- Shared: \`docs/shared/\`
+
+${notesBlock}# BUSINESS REQUIREMENTS (GITLAB ISSUE #${issue.issueIid})
+Title: ${issue.title}
+URL: ${issue.url}
+Labels: ${issue.labels.join(", ") || "(none)"}
+
+## Description
+${description}
+${linkedBlock}
+
+# HARD RULES (DOCS PHASE)
+1. DO NOT modify application code (no PHP/JS/Vue/TS/CSS outside docs, no migrations, no app config).
+2. You MAY create/update docs under \`docs/\` (\`.md\` or \`.mdc\` only). Do NOT edit \`.cursor/rules/\` in this phase unless explicitly required by DEV NOTES.
+3. Find the matching **feature** docs (read \`docs/README.md\` then module hub, then feature README). Also skim relevant AiHR rules (\`.cursor/rules/\`, esp. docs-loading). Max ~5 feature docs + needed rules.
+4. Update existing feature docs when they already cover this area. Create a new feature folder only if none fits — follow \`docs/_templates/\` and link from the module README.
+5. Do NOT create per-issue files like \`docs/flow-auto-work/issues/...\` or \`*-issue-123.md\`. Docs belong to the product feature, not the ticket.
+6. Docs should cover (as appropriate for the feature):
+   - Mục tiêu / hành vi
+   - Phạm vi
+   - Code map / API / DB / FE
+   - Rủi ro & giả định liên quan task này (có thể ghi ngắn trong doc feature)
+   - Plan implement ngắn nếu cần — chưa code
+7. Commit with message:
+
+   ${commitMsg}
+
+8. Do NOT push / MR / switch branches. Stay on current branch.
+9. When docs are ready, end with EXACTLY this block (paths = feature docs you created/updated; may include \`.md\` / \`.mdc\`):
+
+<<<DOCS_READY>>>
+SUMMARY: Tóm tắt ngắn tiếng Việt (1–3 câu): đã đọc/sửa docs feature nào, điểm chính.
+DOCS:
+- docs/modules/<module>/<feature>/README.md
+- docs/modules/<module>/<feature>/overview.md
+<<<END_DOCS_READY>>>
+
+List every \`docs/**/*.{md,mdc}\` file you created or substantially updated under DOCS.
+10. If blocked, use NEED_CLARIFICATION for the Flow Auto Work UI.
+`;
+}
+
+export function buildWorkPrompt(
+  issue: IssueJob,
+  extra?: string,
+  linkedContext?: string,
+  techLeadNotes?: string,
+  opts?: { approvedDocsPaths?: string[] },
+): string {
+  const commitMsg = commitMessageForIssue(issue);
+  const { notesBlock, description } = sharedPreamble(issue, techLeadNotes);
 
   const linkedBlock = linkedContext?.trim()
     ? `\n## Linked / related context\n${linkedContext.trim()}\n`
@@ -33,11 +116,30 @@ You MUST strictly follow these technical directions before referring to the busi
     ? `\n## Additional context from human (UI)\n${extra.trim()}\n`
     : "";
 
+  const paths = (opts?.approvedDocsPaths ?? [])
+    .map((p) => p.trim())
+    .filter(Boolean);
+  const docsGateBlock =
+    paths.length > 0
+      ? `
+# APPROVED FEATURE DOCS (MUST FOLLOW)
+PM approved these AiHR docs (\`.md\` / \`.mdc\`). Read them fully and implement accordingly — still obey \`.cursor/rules/**/*.mdc\`:
+${paths.map((p) => `- \`${p}\``).join("\n")}
+Do not contradict these docs unless DEV NOTES override a specific point.
+`
+      : "";
+
   return `# MISSION
 You are an expert developer implementing a feature based on a GitLab issue for AiHR v3.
 
-Follow AGENTS.md and .cursor/skills/aihr/SKILL.md in this repo.
-Load docs for the relevant module/feature (max ~3 doc files) before changing code.
+# AIHR RULES (MANDATORY WHEN CODING)
+You MUST follow AiHR conventions — do not invent patterns that contradict them:
+1. \`AGENTS.md\`
+2. \`.cursor/skills/aihr/SKILL.md\` (workflow)
+3. \`.cursor/rules/\` — especially \`00-project.mdc\`, \`docs-loading.mdc\`, plus domain rules that apply (core/, backend/, frontend/, database/, …). Prefer loading only the relevant \`.mdc\` files.
+4. Feature docs under \`docs/\` (\`.md\` or \`.mdc\`) for the module/feature you touch.
+
+Load the relevant module/feature docs (max ~3) and applicable rules before changing code.
 Do not touch .env, credentials, or secrets.
 Do not force-push, do not amend commits already on remote, do not create or merge MRs.
 Do NOT switch git branches. Stay on the branch that is already checked out.
@@ -45,7 +147,7 @@ Do NOT stage or commit these local WIP files (leave them unstaged; do not add to
 - resources/js/composables/permission.js
 - resources/js/directives/index.js
 
-${notesBlock}# BUSINESS REQUIREMENTS (GITLAB ISSUE #${issue.issueIid})
+${notesBlock}${docsGateBlock}# BUSINESS REQUIREMENTS (GITLAB ISSUE #${issue.issueIid})
 Title: ${issue.title}
 URL: ${issue.url}
 Labels: ${issue.labels.join(", ") || "(none)"}
@@ -59,7 +161,7 @@ Ignore image/file attachments — only use text. Do not try to download or open 
 
 # EXECUTION PLAN
 1. Analyze the requirements but execute them EXACTLY as demanded in the DEV NOTES when present (those override conflicting business wording).
-2. Investigate via docs, then write a short plan.
+2. Investigate via docs (and the approved feature docs if listed above), then write a short plan.
 3. Implement on the CURRENT git branch only (do not checkout/create other branches). Keep the change scoped to this issue.
 4. Commit exactly with this message format (one commit preferred):
 
@@ -102,7 +204,7 @@ Then use the DONE block. The DONE summary MUST be in Vietnamese (tiếng Việt)
 }
 
 export function parseAgentOutcome(text: string): {
-  kind: "done" | "need_clarification" | "unknown";
+  kind: "done" | "docs_ready" | "need_clarification" | "unknown";
   question?: string;
   summary?: string;
 } {
@@ -111,6 +213,13 @@ export function parseAgentOutcome(text: string): {
   );
   if (clarify) {
     return { kind: "need_clarification", question: clarify[1].trim() };
+  }
+
+  const docsReady = text.match(
+    /<<<DOCS_READY>>>\s*([\s\S]*?)\s*<<<END_DOCS_READY>>>/,
+  );
+  if (docsReady) {
+    return { kind: "docs_ready", summary: docsReady[1].trim() };
   }
 
   const done = text.match(/<<<DONE>>>\s*([\s\S]*?)\s*<<<END_DONE>>>/);
