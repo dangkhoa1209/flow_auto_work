@@ -1,4 +1,5 @@
 import type { SDKMessage } from "@cursor/sdk";
+import { publishRealtime } from "../realtime/hub.js";
 
 /** Fixed estimate for context % UI (SDK has no remaining-% API). */
 const CONTEXT_WINDOW_TOKENS = 200_000;
@@ -44,16 +45,29 @@ export function appendJobProgress(
     last.text = `${last.text}${line}`.slice(0, 4000);
     last.at = new Date().toISOString();
     buffers.set(jobId, list);
+    publishRealtime({
+      type: "progress",
+      jobId,
+      line: { ...last },
+      live: true,
+    });
     return;
   }
-  list.push({
+  const entry: ProgressLine = {
     id: ++seq,
     at: new Date().toISOString(),
     kind,
     text: line.slice(0, 2000),
-  });
+  };
+  list.push(entry);
   while (list.length > MAX_LINES) list.shift();
   buffers.set(jobId, list);
+  publishRealtime({
+    type: "progress",
+    jobId,
+    line: { ...entry },
+    live: true,
+  });
 }
 
 function summarizeToolArgs(name: string, args: unknown): string {

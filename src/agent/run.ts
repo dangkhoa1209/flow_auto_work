@@ -2,6 +2,7 @@ import { Agent, CursorAgentError } from "@cursor/sdk";
 import { setMaxListeners } from "node:events";
 import { collectLinkedIssueContext } from "../gitlab/linked-context.js";
 import { logger } from "../logger.js";
+import { publishRealtime } from "../realtime/hub.js";
 import type { IssueJob } from "../types.js";
 import {
   resolveCursorApiKey,
@@ -102,7 +103,29 @@ type SdkRun = Awaited<
 /** Active Cursor runs keyed by jobId — used by Force Stop. */
 const activeRunsByJob = new Map<string, CancellableRun>();
 
+/** Kill requested even before a Run is attached (create/send phase). */
+const killRequestedByJob = new Set<string>();
+
+export function markJobKillRequested(jobId: string): void {
+  killRequestedByJob.add(jobId);
+}
+
+export function clearJobKillRequested(jobId: string): void {
+  killRequestedByJob.delete(jobId);
+}
+
+export function isJobKillRequested(jobId: string): boolean {
+  return killRequestedByJob.has(jobId);
+}
+
+function throwIfKillRequested(jobId: string | undefined): void {
+  if (jobId && killRequestedByJob.has(jobId)) {
+    throw new Error("Force-stopped from UI");
+  }
+}
+
 export async function cancelActiveAgentRun(jobId: string): Promise<boolean> {
+  markJobKillRequested(jobId);
   const entry = activeRunsByJob.get(jobId);
   if (!entry) return false;
   try {
@@ -115,6 +138,38 @@ export async function cancelActiveAgentRun(jobId: string): Promise<boolean> {
     });
     return false;
   }
+}
+
+/** Track job as cancellable from create/send (Force Stop mid-chat / mid-Run). */
+export function beginCancellableJob(jobId: string | undefined): {
+  check: () => void;
+  attach: (run: SdkRun) => void;
+  end: () => void;
+} {
+  if (!jobId) {
+    return { check: () => undefined, attach: () => undefined, end: () => undefined };
+  }
+  let attached: SdkRun | null = null;
+  activeRunsByJob.set(jobId, {
+    cancel: async () => {
+      markJobKillRequested(jobId);
+      if (!attached || typeof attached.cancel !== "function") return;
+      const supports =
+        typeof (attached as { supports?: (f: string) => boolean }).supports ===
+        "function"
+          ? (attached as { supports: (f: string) => boolean }).supports("cancel")
+          : true;
+      if (supports) await attached.cancel();
+    },
+  });
+  return {
+    check: () => throwIfKillRequested(jobId),
+    attach: (run) => {
+      attached = run;
+      trackRun(jobId, run);
+    },
+    end: () => untrackRun(jobId),
+  };
 }
 
 async function collectAssistantText(
@@ -310,7 +365,19 @@ function trackRun(jobId: string | undefined, run: SdkRun): void {
 }
 
 function untrackRun(jobId: string | undefined): void {
-  if (jobId) activeRunsByJob.delete(jobId);
+  if (!jobId) return;
+  activeRunsByJob.delete(jobId);
+  publishRealtime({
+    type: "progress",
+    jobId,
+    line: {
+      id: 0,
+      at: new Date().toISOString(),
+      kind: "status",
+      text: "Cursor agent idle",
+    },
+    live: false,
+  });
 }
 
 /** Used by Q&A / merge-resolve so Force Stop can cancel. */
@@ -345,6 +412,8 @@ type RunOpts = {
   chatContext?: string;
   /** Resume this agent window (1 task = 1 agent). */
   existingAgentId?: string;
+  /** Injected CONTEXT QUALITY block (good / searchable). */
+  contextQualityBlock?: string;
 };
 
 async function buildMissionPrompt(
@@ -365,10 +434,12 @@ async function buildMissionPrompt(
     opts.phase === "docs"
       ? buildDocsPhasePrompt(issue, linkedBlock, notes, {
           chatContext: opts.chatContext,
+          contextQualityBlock: opts.contextQualityBlock,
         })
       : buildWorkPrompt(issue, extraContext, linkedBlock, notes, {
           approvedDocsPaths: opts.approvedDocsPaths,
           chatContext: opts.chatContext,
+          contextQualityBlock: opts.contextQualityBlock,
         });
   if (!resumed) return body;
   return `You are CONTINUING the **same agent window** for GitLab issue #${issue.issueIid}.
@@ -390,72 +461,78 @@ export async function runNewAgent(
   const existing = opts?.existingAgentId?.trim();
   let resumed = false;
   let agent: Awaited<ReturnType<typeof Agent.create>>;
+  const session = beginCancellableJob(opts?.jobId);
 
-  if (existing) {
-    try {
-      agent = await Agent.resume(existing, {
-        apiKey: resolveCursorApiKey(),
-        model: { id: modelId },
-        local: { cwd: resolveRepoPath() },
-      });
-      resumed = true;
-      logger.info("Resumed agent window for job", {
-        agentId: agent.agentId,
-        model: modelId,
-        phase: opts?.phase ?? "code",
-      });
-    } catch (err) {
-      logger.warn("Resume failed — creating new agent window", {
-        existing,
-        err: String(err),
-      });
+  try {
+    session.check();
+    if (existing) {
+      try {
+        agent = await Agent.resume(existing, {
+          apiKey: resolveCursorApiKey(),
+          model: { id: modelId },
+          local: { cwd: resolveRepoPath() },
+        });
+        resumed = true;
+        logger.info("Resumed agent window for job", {
+          agentId: agent.agentId,
+          model: modelId,
+          phase: opts?.phase ?? "code",
+        });
+      } catch (err) {
+        logger.warn("Resume failed — creating new agent window", {
+          existing,
+          err: String(err),
+        });
+        session.check();
+        agent = await Agent.create({
+          apiKey: resolveCursorApiKey(),
+          model: { id: modelId },
+          local: { cwd: resolveRepoPath() },
+        });
+      }
+    } else {
       agent = await Agent.create({
         apiKey: resolveCursorApiKey(),
         model: { id: modelId },
         local: { cwd: resolveRepoPath() },
       });
+      logger.info("Created local agent window", {
+        agentId: agent.agentId,
+        model: modelId,
+        phase: opts?.phase ?? "code",
+        hasChatContext: Boolean(opts?.chatContext?.trim()),
+      });
     }
-  } else {
-    agent = await Agent.create({
-      apiKey: resolveCursorApiKey(),
-      model: { id: modelId },
-      local: { cwd: resolveRepoPath() },
-    });
-    logger.info("Created local agent window", {
-      agentId: agent.agentId,
-      model: modelId,
-      phase: opts?.phase ?? "code",
-      hasChatContext: Boolean(opts?.chatContext?.trim()),
-    });
-  }
 
-  await using disposed = agent;
-  const prompt = await buildMissionPrompt(
-    issue,
-    extraContext,
-    opts ?? {},
-    resumed,
-  );
-  const run = await disposed.send(prompt);
-  logger.info("Agent run started", {
-    runId: run.id,
-    agentId: disposed.agentId,
-    resumed,
-  });
-  if (opts?.jobId) {
-    appendJobProgress(
-      opts.jobId,
-      "status",
-      resumed
-        ? `Resumed agent window ${disposed.agentId}`
-        : `New agent window ${disposed.agentId}`,
+    session.check();
+    await using disposed = agent;
+    const prompt = await buildMissionPrompt(
+      issue,
+      extraContext,
+      opts ?? {},
+      resumed,
     );
-  }
-  trackRun(opts?.jobId, run);
-  try {
+    session.check();
+    const run = await disposed.send(prompt);
+    logger.info("Agent run started", {
+      runId: run.id,
+      agentId: disposed.agentId,
+      resumed,
+    });
+    if (opts?.jobId) {
+      appendJobProgress(
+        opts.jobId,
+        "status",
+        resumed
+          ? `Resumed agent window ${disposed.agentId}`
+          : `New agent window ${disposed.agentId}`,
+      );
+    }
+    session.attach(run);
     const { text, usage } = await collectAssistantText(run, opts?.jobId, {
       promptChars: prompt.length,
     });
+    session.check();
     const parsed = parseAgentOutcome(text);
     return {
       agentId: disposed.agentId,
@@ -467,7 +544,7 @@ export async function runNewAgent(
       resumed,
     };
   } finally {
-    untrackRun(opts?.jobId);
+    session.end();
   }
 }
 
@@ -520,16 +597,22 @@ export async function resumeAgent(
 export async function continueAgentWindow(
   issue: IssueJob,
   message: string,
-  opts?: { jobId?: string; chatHistory?: string },
+  opts?: {
+    jobId?: string;
+    chatHistory?: string;
+    contextQualityBlock?: string;
+  },
 ): Promise<AgentRunResult> {
   const modelId = resolveCursorModel();
   const isAdhoc = issue.issueIid <= 0 || issue.action === "adhoc";
   const prompt = isAdhoc
     ? buildAdhocFollowUpPrompt(message, issue.title, {
         chatHistory: opts?.chatHistory,
+        contextQualityBlock: opts?.contextQualityBlock,
       })
     : buildFollowUpPrompt(message, issue, {
         chatHistory: opts?.chatHistory,
+        contextQualityBlock: opts?.contextQualityBlock,
       });
 
   if (opts?.jobId) {
@@ -537,54 +620,61 @@ export async function continueAgentWindow(
     appendJobProgress(opts.jobId, "status", "Mở cửa sổ agent mới…");
   }
 
-  const agent = await Agent.create({
-    apiKey: resolveCursorApiKey(),
-    model: { id: modelId },
-    local: { cwd: resolveRepoPath() },
-  }).catch((err) => {
-    throw new Error(
-      formatCursorAgentFailure(
+  const session = beginCancellableJob(opts?.jobId);
+  try {
+    session.check();
+    const agent = await Agent.create({
+      apiKey: resolveCursorApiKey(),
+      model: { id: modelId },
+      local: { cwd: resolveRepoPath() },
+    }).catch((err) => {
+      throw new Error(
+        formatCursorAgentFailure(
+          err,
+          err instanceof Error ? err.message : String(err),
+        ),
+      );
+    });
+    session.check();
+    logger.info("Follow-up new agent window", {
+      agentId: agent.agentId,
+      model: modelId,
+    });
+
+    await using disposed = agent;
+    if (opts?.jobId) {
+      appendJobProgress(
+        opts.jobId,
+        "status",
+        `Cửa sổ ${disposed.agentId.slice(0, 18)}…`,
+      );
+      appendJobProgress(opts.jobId, "status", "Đang gửi prompt…");
+    }
+
+    session.check();
+    let run: SdkRun;
+    try {
+      run = await withTimeout(disposed.send(prompt), 60_000, "agent.send");
+    } catch (err) {
+      session.check();
+      const msg = formatCursorAgentFailure(
         err,
         err instanceof Error ? err.message : String(err),
-      ),
-    );
-  });
-  logger.info("Follow-up new agent window", {
-    agentId: agent.agentId,
-    model: modelId,
-  });
-
-  await using disposed = agent;
-  if (opts?.jobId) {
-    appendJobProgress(
-      opts.jobId,
-      "status",
-      `Cửa sổ ${disposed.agentId.slice(0, 18)}…`,
-    );
-    appendJobProgress(opts.jobId, "status", "Đang gửi prompt…");
-  }
-
-  let run: SdkRun;
-  try {
-    run = await withTimeout(disposed.send(prompt), 60_000, "agent.send");
-  } catch (err) {
-    const msg = formatCursorAgentFailure(
-      err,
-      err instanceof Error ? err.message : String(err),
-    );
-    if (opts?.jobId) {
-      appendJobProgress(opts.jobId, "status", `Gửi prompt lỗi: ${msg}`);
+      );
+      if (opts?.jobId) {
+        appendJobProgress(opts.jobId, "status", `Gửi prompt lỗi: ${msg}`);
+      }
+      throw new Error(msg);
     }
-    throw new Error(msg);
-  }
 
-  trackRun(opts?.jobId, run);
-  try {
+    session.check();
+    session.attach(run);
     const { text, usage } = await collectAssistantText(run, opts?.jobId, {
       promptChars: prompt.length,
       // Fail faster on Cursor network hangs so UI can Force Stop / retry
       firstEventTimeoutMs: 45_000,
     });
+    session.check();
     const parsed = parseAgentOutcome(text);
     return {
       agentId: disposed.agentId,
@@ -596,7 +686,7 @@ export async function continueAgentWindow(
       resumed: false,
     };
   } finally {
-    untrackRun(opts?.jobId);
+    session.end();
   }
 }
 

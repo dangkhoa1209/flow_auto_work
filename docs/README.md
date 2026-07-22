@@ -2,7 +2,7 @@
 
 | File | Nội dung |
 |------|----------|
-| [NOTES.md](./NOTES.md) | Ghi chú đầy đủ: kiến trúc, UI, API, flow, lịch sử |
-| [ROADMAP.md](./ROADMAP.md) | Đã ship + ưu tiên sprint tiếp (plan approval, CI, notify) |
+| [NOTES.md](./NOTES.md) | Kiến trúc, agent context, **SSE realtime**, Force Stop / Reset window, API |
+| [ROADMAP.md](./ROADMAP.md) | Đã ship + ưu tiên sprint tiếp |
 
-Xem thêm root [README.md](../README.md) cho setup nhanh.
+Setup + **thử nhanh / deploy proxy SSE**: root [README.md](../README.md).

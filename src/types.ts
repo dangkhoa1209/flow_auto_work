@@ -150,6 +150,17 @@ export type JobRecord = {
   devNotes?: string;
   /** @deprecated use devNotes */
   techLeadNotes?: string;
+  /**
+   * Sticky context-quality mark for coding Runs / follow-ups.
+   * level === "good" → skip re-assessment on later agent calls.
+   */
+  contextQuality?: {
+    level: "good" | "searchable" | "bad";
+    assessedAt: string;
+    reason?: string;
+    anchors?: string[];
+    fileHints?: string[];
+  };
   /** Hard gate: read/update AiHR feature docs before any app code */
   requireDocsFirst?: boolean;
   /** Feature doc paths from docs phase (.md / .mdc under docs/), for PM review */

@@ -1,11 +1,17 @@
 <script setup lang="ts">
 import { computed, ref, watch, nextTick } from "vue";
-import { message } from "ant-design-vue";
+import { message, Modal } from "ant-design-vue";
 import { storeToRefs } from "pinia";
 import { useRouter } from "vue-router";
 import { useSessionStore } from "@/stores/session";
 import { useWorkStore, isAdhocJob } from "@/stores/work";
-import { statusLabel, MANUAL_JOB_STATUSES } from "@/utils/status";
+import {
+  statusLabel,
+  MANUAL_JOB_STATUSES,
+  contextQualityLabel,
+  contextQualityColor,
+  CONTEXT_QUALITY_STANDARDS,
+} from "@/utils/status";
 import { PlusOutlined, ReloadOutlined } from "@ant-design/icons-vue";
 import RelatedTaskPreviewModal from "@/components/RelatedTaskPreviewModal.vue";
 import type { TaskDetail } from "@/stores/work";
@@ -33,10 +39,23 @@ const selectedIids = ref<number[]>([]);
 const chatInput = ref("");
 const clarifyInput = ref("");
 const busy = ref(false);
+const stopBusy = ref(false);
 const notesSaving = ref(false);
 const notesDraft = ref("");
 const requireDocsFirst = ref(false);
 const milestoneFilter = ref<string>("all");
+const openIidDraft = ref("");
+
+async function openTaskByIid() {
+  const raw = openIidDraft.value.trim().replace(/^#/, "");
+  const iid = Number(raw);
+  if (!Number.isFinite(iid) || iid <= 0) {
+    message.warning("Nhập #iid hợp lệ");
+    return;
+  }
+  openIidDraft.value = "";
+  await onSelectTask(iid);
+}
 
 const adhocOpen = ref(false);
 const adhocTitle = ref("");
@@ -73,6 +92,12 @@ const humanComments = computed(() =>
 );
 
 const relatedIssues = computed(() => taskDetail.value?.related || []);
+
+const contextQuality = computed(
+  () => currentJob.value?.contextQuality || null,
+);
+
+const standardsOpen = ref(false);
 
 const relatedPreviewOpen = ref(false);
 const relatedPreviewLoading = ref(false);
@@ -124,6 +149,27 @@ const detailMeta = computed(() => {
   if (d.milestone?.title) parts.push(`milestone ${d.milestone.title}`);
   return parts.join(" · ");
 });
+
+/** Force Stop khi đang chạy / chờ / stream live */
+const canForceStop = computed(() => {
+  if (!currentJob.value) return false;
+  if (progressLive.value) return true;
+  return [
+    "queued",
+    "running",
+    "awaiting_clarification",
+    "awaiting_docs_approval",
+    "awaiting_diff_approval",
+  ].includes(currentJob.value.status);
+});
+
+const agentWindowShort = computed(() => {
+  const id = currentJob.value?.agentId?.trim();
+  if (!id) return null;
+  return id.length > 18 ? `${id.slice(0, 16)}…` : id;
+});
+
+const canResetWindow = computed(() => Boolean(currentJob.value));
 
 const pendingClarify = computed(() => {
   const j = currentJob.value;
@@ -295,15 +341,23 @@ async function sendChat(mode: "continue" | "ask") {
   }
   if (!(await ensureCursorKey())) return;
   busy.value = true;
+  midTab.value = "progress";
+  work.watchProgress();
   try {
     if (mode === "continue") await work.sendContinue(msg);
     else await work.sendAsk(msg);
     chatInput.value = "";
-    midTab.value = "progress";
   } catch (e) {
-    message.error(e instanceof Error ? e.message : String(e));
+    const msgText = e instanceof Error ? e.message : String(e);
+    if (/Force-stopped/i.test(msgText)) {
+      message.info("Đã dừng chat");
+    } else {
+      message.error(msgText);
+    }
   } finally {
     busy.value = false;
+    await work.refreshJobChat(selectedJobId.value).catch(() => undefined);
+    await work.loadJobs().catch(() => undefined);
   }
 }
 
@@ -315,7 +369,7 @@ async function sendClarify() {
     await work.sendClarify(a);
     clarifyInput.value = "";
     message.success("Đã gửi clarify");
-    await work.selectJob(selectedJobId.value);
+    await work.refreshJobChat(selectedJobId.value);
   } catch (e) {
     message.error(e instanceof Error ? e.message : String(e));
   } finally {
@@ -325,17 +379,44 @@ async function sendClarify() {
 
 async function forceStop() {
   if (!selectedJobId.value) return;
-  busy.value = true;
+  stopBusy.value = true;
   try {
     await work.killJob(selectedJobId.value);
     message.success("Đã Force Stop");
-    await work.selectJob(selectedJobId.value);
+    await work.refreshJobChat(selectedJobId.value);
     await work.loadJobs();
   } catch (e) {
     message.error(e instanceof Error ? e.message : String(e));
   } finally {
-    busy.value = false;
+    stopBusy.value = false;
   }
+}
+
+function resetAgentWindow() {
+  if (!selectedJobId.value) return;
+  Modal.confirm({
+    title: "Reset agent window?",
+    content:
+      "Dừng run nếu đang chạy, xóa liên kết cửa sổ Cursor cũ. Run / Gửi / Q&A sau sẽ mở window mới. Chat lịch sử trên UI vẫn giữ.",
+    okText: "Reset window",
+    okType: "danger",
+    cancelText: "Hủy",
+    onOk: async () => {
+      busy.value = true;
+      try {
+        const res = await work.resetAgentWindow(selectedJobId.value!);
+        message.success(
+          res.killed
+            ? "Đã dừng + reset window"
+            : "Đã reset window — sẵn sàng cửa sổ mới",
+        );
+      } catch (e) {
+        message.error(e instanceof Error ? e.message : String(e));
+      } finally {
+        busy.value = false;
+      }
+    },
+  });
 }
 
 async function refreshTasks() {
@@ -492,6 +573,17 @@ async function submitCreateIssue() {
             }))
           "
         />
+        <label class="flex items-center gap-1.5 text-[11px] text-ink-faint">
+          <span class="shrink-0">#iid</span>
+          <a-input
+            v-model:value="openIidDraft"
+            size="small"
+            class="flex-1 !text-xs"
+            placeholder="Enter…"
+            allow-clear
+            @pressEnter="openTaskByIid"
+          />
+        </label>
       </div>
       <div class="flex-1 min-h-0 overflow-y-auto p-2 space-y-1">
         <a-spin :spinning="loading">
@@ -598,6 +690,20 @@ async function submitCreateIssue() {
                 </template>
               </a-dropdown>
             </div>
+            <a-tag
+              v-if="j.contextQuality?.level"
+              :color="contextQualityColor(j.contextQuality.level)"
+              class="m-0 !text-[10px] !leading-4 !px-1 !py-0 shrink-0"
+              :title="j.contextQuality.reason || ''"
+            >
+              {{
+                j.contextQuality.level === "good"
+                  ? "Good"
+                  : j.contextQuality.level === "searchable"
+                    ? "Search"
+                    : "Bad"
+              }}
+            </a-tag>
             <span class="text-accent text-xs font-semibold shrink-0">{{
               jobDisplayIid(j)
             }}</span>
@@ -655,7 +761,7 @@ async function submitCreateIssue() {
                 show-icon
                 class="mt-2"
                 message="Session Hotfix — chưa có GitLab issue"
-                description="Làm việc với agent trước. Khi xong, bấm «Tạo issue GitLab» để tạo task và gắn session này."
+                description=""
               >
                 <template #action>
                   <a-button
@@ -709,6 +815,47 @@ async function submitCreateIssue() {
                 <p v-else-if="detailMeta" class="text-xs text-ink-faint m-0 mb-2">
                   {{ detailMeta }}
                 </p>
+
+                <div
+                  class="mb-3 flex items-center gap-2 flex-wrap text-xs"
+                >
+                  <template v-if="contextQuality?.level">
+                    <span class="text-[11px] uppercase tracking-wide text-ink-faint"
+                      >Context</span
+                    >
+                    <a-tag
+                      :color="contextQualityColor(contextQuality.level)"
+                      class="m-0"
+                      :title="contextQuality.reason || ''"
+                      >{{ contextQualityLabel(contextQuality.level) }}</a-tag
+                    >
+                    <span
+                      v-if="contextQuality.level === 'good'"
+                      class="text-[11px] text-ink-faint"
+                      >sticky</span
+                    >
+                  </template>
+                  <a-button
+                    size="small"
+                    type="link"
+                    class="!px-0 !h-auto"
+                    @click="standardsOpen = true"
+                    >Xem tiêu chuẩn</a-button
+                  >
+                </div>
+
+                <a-alert
+                  v-if="contextQuality?.level === 'bad'"
+                  type="warning"
+                  show-icon
+                  class="mb-3"
+                  message="Bad Context — Run/chat code bị chặn"
+                  :description="
+                    currentJob?.lastQuestion ||
+                    'Bổ sung Dev Notes hoặc mô tả kỹ thuật rồi Run lại.'
+                  "
+                />
+
                 <div
                   v-if="!isCurrentAdhoc && taskDetail?.labels?.length"
                   class="flex flex-wrap gap-1 mb-3"
@@ -810,10 +957,19 @@ async function submitCreateIssue() {
 
               <div class="rounded-xl border border-line bg-accent-soft/30 p-3">
                 <div class="flex items-center justify-between gap-2 mb-2">
-                  <div
-                    class="text-xs font-semibold uppercase tracking-wide text-accent"
-                  >
-                    Dev Notes
+                  <div class="flex items-center gap-2 min-w-0">
+                    <div
+                      class="text-xs font-semibold uppercase tracking-wide text-accent"
+                    >
+                      Dev Notes
+                    </div>
+                    <a-button
+                      size="small"
+                      type="link"
+                      class="!px-0 !h-auto !text-[11px]"
+                      @click="standardsOpen = true"
+                      >tiêu chuẩn</a-button
+                    >
                   </div>
                   <a-button
                     size="small"
@@ -826,7 +982,7 @@ async function submitCreateIssue() {
                 <a-textarea
                   v-model:value="notesDraft"
                   :rows="4"
-                  placeholder="Chỉ dẫn kỹ thuật… vd. virtual scroll, index user_id…"
+                  placeholder="Chỉ dẫn kỹ thuật rõ ràng (≥ ~25 từ + file/route/field…) → Good Context"
                 />
                 <a-checkbox v-model:checked="requireDocsFirst" class="mt-2">
                   Docs-first (agent đọc docs trước khi code)
@@ -880,26 +1036,48 @@ async function submitCreateIssue() {
         <a-spin size="large" tip="Đang tải chat…" />
       </div>
       <div
-        class="shrink-0 px-3 py-2.5 border-b border-line flex items-center justify-between bg-gradient-to-r from-accent-soft/60 to-transparent"
+        class="shrink-0 px-3 py-2.5 border-b border-line flex items-center justify-between gap-2 bg-gradient-to-r from-accent-soft/60 to-transparent"
       >
-        <span class="font-semibold text-sm text-ink">Chat agent</span>
-        <div class="flex items-center gap-2">
+        <div class="min-w-0">
+          <div class="font-semibold text-sm text-ink">Chat agent</div>
+          <div
+            v-if="agentWindowShort"
+            class="text-[10px] font-mono text-ink-faint truncate"
+            :title="currentJob?.agentId || ''"
+          >
+            window {{ agentWindowShort }}
+          </div>
+          <div v-else class="text-[10px] text-ink-faint">
+            chưa gắn window
+          </div>
+        </div>
+        <div class="flex items-center gap-1.5 flex-wrap justify-end shrink-0">
           <a-button
-            v-if="
-              currentJob &&
-              ['running', 'queued', 'awaiting_clarification'].includes(
-                currentJob.status,
-              )
-            "
+            v-if="canForceStop"
             size="small"
             danger
-            :loading="busy"
+            :loading="stopBusy"
+            :disabled="stopBusy"
             @click="forceStop"
             >Force Stop</a-button
+          >
+          <a-button
+            v-if="canResetWindow"
+            size="small"
+            :loading="busy"
+            :disabled="!currentJob"
+            @click="resetAgentWindow"
+            >Reset window</a-button
           >
           <a-tag v-if="currentJob" :color="statusColor(currentJob.status)">{{
             statusLabel(currentJob.status)
           }}</a-tag>
+          <a-tag
+            v-if="contextQuality?.level"
+            :color="contextQualityColor(contextQuality.level)"
+            :title="contextQuality.reason || ''"
+            >{{ contextQualityLabel(contextQuality.level) }}</a-tag
+          >
         </div>
       </div>
 
@@ -1018,6 +1196,34 @@ async function submitCreateIssue() {
           </a-form-item>
         </a-form>
       </a-spin>
+    </a-modal>
+
+    <a-modal
+      v-model:open="standardsOpen"
+      title="Tiêu chuẩn Context Quality"
+      :footer="null"
+      :width="520"
+      destroy-on-close
+    >
+      <p class="text-xs text-ink-muted m-0 mb-3 leading-relaxed">
+        Gate khi Run / chat follow-up. Dev Notes rõ ràng (đủ dài + tín hiệu kỹ
+        thuật) được coi là <strong>Good</strong>.
+      </p>
+      <div
+        v-for="(std, key) in CONTEXT_QUALITY_STANDARDS"
+        :key="key"
+        class="mb-3 last:mb-0 rounded-xl border border-line px-3 py-2.5"
+      >
+        <div class="flex items-center gap-2 mb-1.5">
+          <a-tag :color="contextQualityColor(key)" class="m-0">{{
+            contextQualityLabel(key)
+          }}</a-tag>
+          <span class="text-xs text-ink-soft">{{ std.title }}</span>
+        </div>
+        <ul class="m-0 pl-4 text-sm text-ink-soft leading-relaxed">
+          <li v-for="(item, i) in std.items" :key="i">{{ item }}</li>
+        </ul>
+      </div>
     </a-modal>
 
     <RelatedTaskPreviewModal

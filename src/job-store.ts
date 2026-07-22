@@ -27,6 +27,13 @@ export async function saveJob(
   // Keep legacy field in sync for old readers
   if (job.devNotes != null) job.techLeadNotes = job.devNotes;
   await upsertJobDoc(job, extra);
+  const { publishRealtime } = await import("./realtime/hub.js");
+  // Patch single job status on UI — avoid spamming full jobs list refresh
+  publishRealtime({
+    type: "job",
+    jobId: job.id,
+    status: job.status,
+  });
 }
 
 function normalizeJob(doc: JobRecord & { _id?: string; source?: string }): JobRecord {

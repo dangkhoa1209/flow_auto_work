@@ -70,6 +70,7 @@ export function createApiRoutes() {
   api.get("/status", async (c) => {
     const config = getConfig();
     const mongoOk = await mongoPing();
+    const queue = jobQueue.snapshot();
     return c.json({
       ok: true,
       mongo: mongoOk,
@@ -77,8 +78,61 @@ export function createApiRoutes() {
       assignee: config.GITLAB_ASSIGNEE_USERNAME ?? null,
       multiUser: true,
       secretsEncrypted: true,
-      queue: jobQueue.snapshot(),
+      queue,
+      // Flat fields for UI header (also pushed via SSE)
+      currentJobId: queue.currentJobId,
+      queueLength: queue.queued,
       pendingClarifications: listPendingClarifications(),
+    });
+  });
+
+  /**
+   * Realtime channel (SSE). UI listens instead of polling /status + /jobs.
+   * EventSource cannot set custom headers → optional ?u=&p= for future filter.
+   */
+  api.get("/events", async (c) => {
+    const { streamSSE } = await import("hono/streaming");
+    const { subscribeRealtime } = await import("../realtime/hub.js");
+    return streamSSE(c, async (stream) => {
+      let closed = false;
+      const send = async (event: string, data: unknown) => {
+        if (closed) return;
+        try {
+          await stream.writeSSE({
+            event,
+            data: JSON.stringify(data),
+          });
+        } catch {
+          closed = true;
+        }
+      };
+
+      // Hello + current queue snapshot
+      const snap = jobQueue.snapshot();
+      await send("status", {
+        type: "status",
+        currentJobId: snap.currentJobId,
+        queueLength: snap.queued,
+        running: snap.running,
+      });
+      await send("hello", { ok: true, at: new Date().toISOString() });
+
+      const unsub = subscribeRealtime((ev) => {
+        void send(ev.type, ev);
+      });
+
+      const heartbeat = setInterval(() => {
+        void send("ping", { at: new Date().toISOString() });
+      }, 20_000);
+
+      await new Promise<void>((resolve) => {
+        stream.onAbort(() => {
+          closed = true;
+          clearInterval(heartbeat);
+          unsub();
+          resolve();
+        });
+      });
     });
   });
 
@@ -87,6 +141,7 @@ export function createApiRoutes() {
     const path = c.req.path;
     if (
       path === "/status" ||
+      path === "/events" ||
       path.startsWith("/auth/") ||
       path === "/me" ||
       path.startsWith("/me/") ||
@@ -1421,6 +1476,24 @@ export function createApiRoutes() {
     return c.json(result);
   });
 
+  /** Drop Cursor agent window; next Run/chat creates a fresh one. */
+  api.post("/jobs/:id/reset-window", async (c) => {
+    const jobId = c.req.param("id");
+    try {
+      const result = await jobQueue.resetAgentWindow(jobId);
+      return c.json({
+        ok: result.ok,
+        killed: result.killed,
+        previousAgentId: result.previousAgentId ?? null,
+        job: result.job,
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const code = /not found/i.test(msg) ? 404 : 500;
+      return c.json({ error: msg }, code);
+    }
+  });
+
   /** Manual status override (draft / handoff / done / failed). Busy jobs must be killed first. */
   const MANUAL_STATUSES = new Set<JobStatus>([
     "draft",
@@ -1492,6 +1565,8 @@ export function createApiRoutes() {
     const side = await deleteJobSideDocs(jobId);
     const deleted = await deleteJobDoc(jobId);
     if (!deleted) return c.json({ error: "not found" }, 404);
+    const { publishRealtime } = await import("../realtime/hub.js");
+    publishRealtime({ type: "jobs", reason: "delete", jobId });
     logger.info("job deleted from UI", { jobId, side });
     return c.json({ ok: true, jobId, ...side });
   });

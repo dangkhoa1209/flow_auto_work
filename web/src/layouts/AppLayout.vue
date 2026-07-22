@@ -9,6 +9,7 @@ import {
 } from "@ant-design/icons-vue";
 import { useSessionStore } from "@/stores/session";
 import { useWorkStore } from "@/stores/work";
+import { connectRealtime } from "@/realtime/client";
 
 const route = useRoute();
 const router = useRouter();
@@ -26,7 +27,7 @@ const projectLabel = computed(() => {
   return m?.project.displayName || m?.project.gitlabPath || "—";
 });
 
-let pollTimer: ReturnType<typeof setInterval> | undefined;
+let disconnectRealtime: (() => void) | undefined;
 
 onMounted(async () => {
   try {
@@ -34,17 +35,22 @@ onMounted(async () => {
   } catch (e) {
     message.error(e instanceof Error ? e.message : String(e));
   }
-  pollTimer = setInterval(() => {
-    void work.loadJobs().catch(() => undefined);
-    void work.loadStatus().catch(() => undefined);
-    if (work.shouldPollProgress()) {
-      void work.pollProgress(false).catch(() => undefined);
-    }
-  }, 1500);
+  // Listen channel — no more /api/status + /api/jobs every 1.5s
+  disconnectRealtime = connectRealtime({
+    onStatus: (ev) => {
+      work.applyStatusSnapshot({
+        currentJobId: ev.currentJobId,
+        queueLength: ev.queueLength,
+      });
+    },
+    onProgress: (ev) => work.applyRealtimeProgress(ev),
+    onJobs: () => work.scheduleLoadJobs(),
+    onJob: (ev) => work.applyRealtimeJob(ev),
+  });
 });
 
 onUnmounted(() => {
-  if (pollTimer) clearInterval(pollTimer);
+  disconnectRealtime?.();
 });
 
 function logout() {

@@ -19,18 +19,25 @@ import {
   resumeAgent,
   runNewAgent,
 } from "./agent/run.js";
-import { getJobTokenUsage } from "./agent/progress.js";
+import { appendJobProgress, getJobTokenUsage } from "./agent/progress.js";
 import {
   cancelUiClarification,
   waitForUiClarification,
 } from "./clarify/ui-wait.js";
 import { cancelDiffApproval } from "./review/diff-wait.js";
 import { addChatMessage, listChatMessages } from "./db/mongo.js";
+import { publishRealtime } from "./realtime/hub.js";
 import {
   commitMessageForIssue,
   docsCommitMessageForIssue,
   formatChatContextForRun,
 } from "./agent/prompt.js";
+import {
+  formatBadContextChatMessage,
+  formatContextQualityForPrompt,
+  resolveContextQualityForCoding,
+  toContextQualityMark,
+} from "./agent/context-quality.js";
 import {
   docsReadySummaryText,
   parseDocsReadyPaths,
@@ -64,6 +71,20 @@ export class JobQueue {
       currentJobId: this.currentJobId,
       activeIssues: [...this.activeIssueKeys],
     };
+  }
+
+  /** Push queue status to SSE subscribers. */
+  publishStatus(reason?: string) {
+    const snap = this.snapshot();
+    publishRealtime({
+      type: "status",
+      currentJobId: snap.currentJobId,
+      queueLength: snap.queued,
+      running: snap.running,
+    });
+    if (reason) {
+      publishRealtime({ type: "jobs", reason });
+    }
   }
 
   /**
@@ -139,6 +160,7 @@ export class JobQueue {
       forceCodePhase: opts?.forceCodePhase,
     });
     await saveJob(job, { source: opts?.source });
+    this.publishStatus("enqueue");
     logger.info("Enqueued job", {
       jobId: job.id,
       key,
@@ -238,7 +260,10 @@ export class JobQueue {
         job.error ||
         "Previous agent run was stuck / interrupted — reclaimed for retry";
       await saveJob(job);
-      if (this.currentJobId === jobId) this.currentJobId = null;
+      if (this.currentJobId === jobId) {
+        this.currentJobId = null;
+        this.publishStatus();
+      }
     }
 
     if (hasActiveAgentRun(jobId) || isJobBusy(job.status)) {
@@ -251,11 +276,72 @@ export class JobQueue {
     const wasDone =
       prevStatus === "awaiting_handoff" || prevStatus === "succeeded";
     const key = `${job.issue.projectId}:${job.issue.issueIid}`;
+
+    // Context gate for coding follow-up (skip assess if already marked good)
+    const notes = resolveDevNotes(job);
+    let priorChat: Awaited<ReturnType<typeof listChatMessages>> = [];
+    try {
+      priorChat = await listChatMessages({ jobId: job.id, limit: 40 });
+    } catch {
+      /* ignore */
+    }
+    const quality = resolveContextQualityForCoding(job, {
+      devNotes: notes || undefined,
+      chatHuman: priorChat
+        .filter((m) => m.role === "user" && m.body?.trim())
+        .map((m) => m.body),
+      extraHuman: msg,
+    });
+    if (!quality.cached) {
+      job.contextQuality = toContextQualityMark(quality);
+      await saveJob(job);
+    }
+    logger.info("Context quality for follow-up", {
+      jobId,
+      level: quality.level,
+      cached: Boolean(quality.cached),
+    });
+    if (quality.level === "bad") {
+      const body = formatBadContextChatMessage(quality, job.issue.issueIid);
+      await addChatMessage({
+        jobId: job.id,
+        issueIid: job.issue.issueIid,
+        role: "user",
+        kind: "qa",
+        body: msg,
+      });
+      await addChatMessage({
+        jobId: job.id,
+        issueIid: job.issue.issueIid,
+        role: "agent",
+        kind: "clarify",
+        body: body,
+      });
+      job.lastQuestion = body;
+      job.error = "Bad Context — cần bổ sung thông tin trước khi agent code";
+      job.contextQuality = toContextQualityMark(quality);
+      await saveJob(job);
+      appendJobProgress(
+        job.id,
+        "status",
+        "Bad Context — không gọi Cursor Agent (follow-up)",
+      );
+      return {
+        ok: false,
+        job,
+        kind: "bad_context",
+        question: body,
+      };
+    }
+
     this.activeIssueKeys.add(key);
     this.currentJobId = job.id;
+    this.publishStatus();
     job.status = "running";
     job.error = undefined;
     await saveJob(job);
+
+    const contextQualityBlock = formatContextQualityForPrompt(quality);
 
     const runFollowUp = async (): Promise<{
       ok: boolean;
@@ -286,7 +372,6 @@ export class JobQueue {
       if (fixedWork) job.workBranch = fixedWork;
       await saveJob(job);
 
-      const priorChat = await listChatMessages({ jobId: job.id, limit: 40 });
       const chatHistory = priorChat
         .map((m) => {
           const who =
@@ -310,6 +395,7 @@ export class JobQueue {
       let result = await continueAgentWindow(job.issue, msg, {
         jobId: job.id,
         chatHistory: chatHistory || undefined,
+        contextQualityBlock,
       });
       job.agentId = result.agentId;
       applyTokenUsageToJob(job, result.usage);
@@ -396,6 +482,21 @@ export class JobQueue {
         : err instanceof Error
           ? err.message
           : String(err);
+
+      // Force Stop during chat — keep killJob status, don't flip to failed wrongly
+      if (/Force-stopped|force stop|cancelled \(force/i.test(message)) {
+        const fresh = await loadJob(job.id);
+        if (fresh && !isJobBusy(fresh.status)) {
+          job = fresh;
+        } else {
+          job.status = wasDone ? prevStatus : "draft";
+          job.agentId = undefined;
+          job.error = "Force-stopped from UI";
+          await saveJob(job);
+        }
+        throw new Error("Force-stopped from UI");
+      }
+
       // Done tasks: never demote to failed on follow-up errors
       if (wasDone) {
         job.status = prevStatus;
@@ -416,8 +517,13 @@ export class JobQueue {
       throw err instanceof Error ? err : new Error(message);
     } finally {
       this.activeIssueKeys.delete(key);
-      if (this.currentJobId === job.id) this.currentJobId = null;
+      if (this.currentJobId === job.id) {
+        this.currentJobId = null;
+        this.publishStatus();
+      }
       this.killedJobs.delete(job.id);
+      const { clearJobKillRequested } = await import("./agent/run.js");
+      clearJobKillRequested(job.id);
     }
   }
 
@@ -433,6 +539,10 @@ export class JobQueue {
     agentCancelled?: boolean;
   }> {
     this.killedJobs.add(jobId);
+    const { markJobKillRequested, clearJobKillRequested } = await import(
+      "./agent/run.js"
+    );
+    markJobKillRequested(jobId);
 
     const queuedIdx = this.queue.findIndex((q) => q.job.id === jobId);
     if (queuedIdx >= 0) {
@@ -440,9 +550,12 @@ export class JobQueue {
       const key = `${item.job.issue.projectId}:${item.job.issue.issueIid}`;
       item.job.status = "failed";
       item.job.error = reason;
+      item.job.agentId = undefined;
       await saveJob(item.job);
       this.activeIssueKeys.delete(key);
       this.killedJobs.delete(jobId);
+      clearJobKillRequested(jobId);
+      this.publishStatus("kill-queued");
       logger.warn("Killed queued job", { jobId, reason });
       return { ok: true, phase: "queued" };
     }
@@ -471,6 +584,8 @@ export class JobQueue {
           job.status = "failed";
         }
         job.error = reason;
+        // Detach Cursor window — resume after Force Stop often fails
+        job.agentId = undefined;
         await saveJob(job);
         this.activeIssueKeys.delete(
           `${job.issue.projectId}:${job.issue.issueIid}`,
@@ -484,6 +599,7 @@ export class JobQueue {
         agentCancelled,
         reason,
       });
+      this.publishStatus("kill-running");
       return { ok: true, phase: "running", agentCancelled };
     }
 
@@ -496,7 +612,84 @@ export class JobQueue {
     }
 
     this.killedJobs.delete(jobId);
+    clearJobKillRequested(jobId);
     return { ok: false, phase: "not_found_or_terminal" };
+  }
+
+  /**
+   * Drop Cursor agent window for this job.
+   * Stops any active run first, clears `agentId` so next Run / chat / Q&A
+   * opens a fresh window (prior Mongo chat still injected into prompt).
+   */
+  async resetAgentWindow(jobId: string): Promise<{
+    ok: boolean;
+    killed: boolean;
+    previousAgentId?: string;
+    job: JobRecord;
+  }> {
+    const loaded = await loadJob(jobId);
+    if (!loaded) throw new Error("Job not found");
+
+    const previousAgentId = loaded.agentId;
+    let killed = false;
+
+    if (
+      hasActiveAgentRun(jobId) ||
+      isJobBusy(loaded.status) ||
+      loaded.status === "awaiting_diff_approval" ||
+      loaded.status === "awaiting_docs_approval" ||
+      this.queue.some((q) => q.job.id === jobId)
+    ) {
+      const kill = await this.killJob(
+        jobId,
+        "Reset agent window — stopped before opening a new window",
+      );
+      killed = kill.ok;
+    }
+
+    const job = (await loadJob(jobId)) || loaded;
+    const hadWindow = Boolean(job.agentId || previousAgentId);
+    job.agentId = undefined;
+    // Idle after kill left "failed" — soft reset to draft so user can Run again
+    if (job.status === "failed" && !job.completedAt && !job.handedOffAt) {
+      job.status = "draft";
+      job.error = undefined;
+    }
+    await saveJob(job);
+
+    await addChatMessage({
+      jobId: job.id,
+      issueIid: job.issue.issueIid,
+      role: "system",
+      kind: "note",
+      body: hadWindow
+        ? `🔄 Đã reset agent window${
+            previousAgentId ? ` (cũ: ${previousAgentId.slice(0, 20)}…)` : ""
+          }. Run / Gửi / Q&A tiếp theo sẽ mở cửa sổ mới. Chat lịch sử vẫn giữ để inject prompt.`
+        : "🔄 Đã reset agent window (chưa có window gắn job). Run / Gửi tiếp theo mở cửa sổ mới.",
+    });
+
+    appendJobProgress(
+      job.id,
+      "status",
+      previousAgentId
+        ? `Reset window — bỏ ${previousAgentId.slice(0, 18)}…`
+        : "Reset window — sẵn sàng cửa sổ mới",
+    );
+
+    logger.info("Agent window reset", {
+      jobId,
+      previousAgentId,
+      killed,
+      status: job.status,
+    });
+
+    return {
+      ok: true,
+      killed,
+      previousAgentId,
+      job,
+    };
   }
 
   private assertNotKilled(job: JobRecord) {
@@ -643,9 +836,7 @@ export class JobQueue {
     const config = getConfig();
     const key = `${job.issue.projectId}:${job.issue.issueIid}`;
     this.currentJobId = job.id;
-    job.status = "running";
-    job.runCount = (job.runCount ?? 0) + 1;
-    await saveJob(job);
+    this.publishStatus();
 
     const rt = getRuntimeContext();
     const repoPath = rt?.repoPath ?? config.AIHR_REPO_PATH;
@@ -655,11 +846,87 @@ export class JobQueue {
       await saveJob(job);
       this.activeIssueKeys.delete(key);
       this.currentJobId = null;
+      this.publishStatus();
       return;
     }
     const notes = resolveDevNotes(job);
     const runDocsPhase =
       Boolean(job.requireDocsFirst) && !opts?.forceCodePhase;
+
+    // Context-quality gate BEFORE Cursor / git / processing label
+    let chatRows: Awaited<ReturnType<typeof listChatMessages>> = [];
+    let chatContext = "";
+    try {
+      chatRows = await listChatMessages({ jobId: job.id, limit: 60 });
+      chatContext = formatChatContextForRun(chatRows);
+    } catch (err) {
+      logger.warn("Could not load chat for Run", { err: String(err) });
+    }
+
+    const quality = resolveContextQualityForCoding(job, {
+      devNotes: notes || undefined,
+      chatHuman: chatRows
+        .filter((m) => m.role === "user" && m.body?.trim())
+        .map((m) => m.body),
+    });
+
+    if (!quality.cached) {
+      job.contextQuality = toContextQualityMark(quality);
+      await saveJob(job);
+    }
+
+    logger.info("Context quality assessed", {
+      jobId: job.id,
+      level: quality.level,
+      cached: Boolean(quality.cached),
+      wordCount: quality.signals.wordCount,
+      good: quality.signals.good.length,
+      searchable: quality.signals.searchable.length,
+    });
+
+    if (quality.level === "bad") {
+      const msg = formatBadContextChatMessage(quality, job.issue.issueIid);
+      // draft (not awaiting_clarification) so job không bị isJobBusy — user bổ sung rồi Run lại
+      job.status = "draft";
+      job.lastQuestion = msg;
+      job.error = "Bad Context — cần bổ sung thông tin trước khi Run";
+      job.runCount = (job.runCount ?? 0) + 1;
+      job.contextQuality = toContextQualityMark(quality);
+      await saveJob(job);
+      await addChatMessage({
+        jobId: job.id,
+        issueIid: job.issue.issueIid,
+        role: "agent",
+        kind: "clarify",
+        body: msg,
+      });
+      appendJobProgress(
+        job.id,
+        "status",
+        "Bad Context — đã dừng, không gọi Cursor Agent",
+      );
+      try {
+        const { applyIssueActions } = await import("./gitlab/client.js");
+        await applyIssueActions({
+          projectId: job.issue.projectId,
+          issueIid: job.issue.issueIid,
+          labels: ["needs_clarification"],
+          labelMode: "add",
+        });
+      } catch (err) {
+        logger.warn("Could not add needs_clarification label", {
+          err: String(err),
+        });
+      }
+      this.activeIssueKeys.delete(key);
+      this.currentJobId = null;
+      this.publishStatus();
+      return;
+    }
+
+    job.status = "running";
+    job.runCount = (job.runCount ?? 0) + 1;
+    await saveJob(job);
 
     try {
       const startLabels = (job.completion?.onStartLabels ?? [])
@@ -694,25 +961,21 @@ export class JobQueue {
 
       const headBefore = await getHeadSha(repoPath);
 
-      let chatContext = "";
-      try {
-        const chat = await listChatMessages({ jobId: job.id, limit: 60 });
-        chatContext = formatChatContextForRun(chat);
-        if (chatContext) {
-          logger.info("Injecting UI chat into Run prompt", {
-            jobId: job.id,
-            messages: chat.length,
-          });
-        }
-      } catch (err) {
-        logger.warn("Could not load chat for Run", { err: String(err) });
+      if (chatContext) {
+        logger.info("Injecting UI chat into Run prompt", {
+          jobId: job.id,
+          messages: chatRows.length,
+        });
       }
+
+      const contextQualityBlock = formatContextQualityForPrompt(quality);
 
       let result = await runNewAgent(job.issue, undefined, {
         jobId: job.id,
         techLeadNotes: notes || undefined,
         devNotes: notes || undefined,
         chatContext: chatContext || undefined,
+        contextQualityBlock,
         existingAgentId: job.agentId,
         phase: runDocsPhase ? "docs" : "code",
         approvedDocsPaths:
@@ -865,8 +1128,13 @@ export class JobQueue {
       logger.error("Job failed", { jobId: job.id, message });
     } finally {
       this.activeIssueKeys.delete(key);
-      if (this.currentJobId === job.id) this.currentJobId = null;
+      if (this.currentJobId === job.id) {
+        this.currentJobId = null;
+        this.publishStatus();
+      }
       this.killedJobs.delete(job.id);
+      const { clearJobKillRequested } = await import("./agent/run.js");
+      clearJobKillRequested(job.id);
     }
   }
 }

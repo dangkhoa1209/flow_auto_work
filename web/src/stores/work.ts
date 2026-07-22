@@ -33,6 +33,13 @@ export type Job = {
   lastQuestion?: string;
   devNotes?: string;
   techLeadNotes?: string;
+  contextQuality?: {
+    level: "good" | "searchable" | "bad" | string;
+    assessedAt?: string;
+    reason?: string;
+    anchors?: string[];
+    fileHints?: string[];
+  };
 };
 
 export function isAdhocJob(job: Job | null | undefined): boolean {
@@ -108,15 +115,21 @@ export const useWorkStore = defineStore("work", () => {
   }
 
   async function loadJobs() {
+    const prevStatus = currentJob.value?.status;
     const data = await api<{ jobs: Job[] }>("/api/jobs?limit=40");
     jobs.value = data.jobs || [];
     // Keep currentJob.status in sync so Progress polling knows job is live
     if (selectedJobId.value) {
       const j = jobs.value.find((x) => x.id === selectedJobId.value);
       if (j) {
+        const wasBusy = isJobStatusBusy(prevStatus);
         currentJob.value = currentJob.value
           ? { ...currentJob.value, ...j }
           : j;
+        // Job vừa xong → chỉ refresh chat (không đụng issue / không spinner)
+        if (wasBusy && !isJobStatusBusy(j.status)) {
+          void refreshJobChat(selectedJobId.value).catch(() => undefined);
+        }
       }
     }
   }
@@ -138,7 +151,21 @@ export const useWorkStore = defineStore("work", () => {
     const s = await api<{
       queueLength?: number;
       currentJobId?: string | null;
+      queue?: {
+        queued?: number;
+        currentJobId?: string | null;
+      };
     }>("/api/status");
+    applyStatusSnapshot({
+      currentJobId: s.currentJobId ?? s.queue?.currentJobId ?? null,
+      queueLength: s.queueLength ?? s.queue?.queued ?? 0,
+    });
+  }
+
+  function applyStatusSnapshot(s: {
+    currentJobId: string | null;
+    queueLength: number;
+  }) {
     statusText.value = s.currentJobId
       ? `Running ${s.currentJobId}`
       : s.queueLength
@@ -146,12 +173,99 @@ export const useWorkStore = defineStore("work", () => {
         : "Idle";
   }
 
+  /** Debounced jobs list refresh (SSE can fire often during a run). */
+  let jobsRefreshTimer: ReturnType<typeof setTimeout> | undefined;
+  function scheduleLoadJobs() {
+    if (jobsRefreshTimer) clearTimeout(jobsRefreshTimer);
+    jobsRefreshTimer = setTimeout(() => {
+      void loadJobs().catch(() => undefined);
+    }, 400);
+  }
+
+  function applyRealtimeProgress(ev: {
+    jobId: string;
+    line: { id: number; at: string; kind: string; text: string };
+    live: boolean;
+  }) {
+    if (selectedJobId.value !== ev.jobId) return;
+    progressLive.value = ev.live;
+    if (!ev.line?.id) {
+      if (!ev.live) progressLive.value = false;
+      return;
+    }
+    const idx = progressLines.value.findIndex((l) => l.id === ev.line.id);
+    if (idx >= 0) {
+      const next = [...progressLines.value];
+      next[idx] = ev.line;
+      progressLines.value = next;
+    } else {
+      progressLines.value = [...progressLines.value, ev.line];
+    }
+    progressAfterId.value = Math.max(progressAfterId.value, ev.line.id);
+  }
+
+  function applyRealtimeJob(ev: { jobId: string; status?: string }) {
+    if (!ev.status) return;
+    const j = jobs.value.find((x) => x.id === ev.jobId);
+    if (j) {
+      const wasBusy = isJobStatusBusy(j.status);
+      j.status = ev.status;
+      if (currentJob.value?.id === ev.jobId) {
+        const prev = currentJob.value.status;
+        currentJob.value = { ...currentJob.value, status: ev.status };
+        if (isJobStatusBusy(prev) && !isJobStatusBusy(ev.status)) {
+          void refreshJobChat(ev.jobId).catch(() => undefined);
+        }
+      } else if (
+        wasBusy &&
+        !isJobStatusBusy(ev.status) &&
+        selectedJobId.value === ev.jobId
+      ) {
+        void refreshJobChat(ev.jobId).catch(() => undefined);
+      }
+    } else {
+      scheduleLoadJobs();
+    }
+  }
+
+  /** Soft refresh: job + chat only — không clear UI, không gọi lại GitLab issue. */
+  async function refreshJobChat(id?: string | null) {
+    const jobId = id || selectedJobId.value;
+    if (!jobId) return;
+    const detail = await api<{
+      job: Job;
+      chat: typeof chat.value;
+    }>(`/api/jobs/${jobId}`);
+    if (selectedJobId.value !== jobId) return;
+    currentJob.value = detail.job;
+    chat.value = detail.chat || [];
+  }
+
+  async function loadIssueForJob(job: Job) {
+    const iid = job?.issue?.issueIid;
+    if (iid && iid > 0 && !isAdhocJob(job)) {
+      selectedTaskIid.value = iid;
+      // Giữ issue đang xem nếu cùng iid — tránh GitLab fetch thừa
+      if (taskDetail.value?.issueIid === iid) return;
+      const res = await api<{ detail: TaskDetail }>(`/api/tasks/${iid}`);
+      if (selectedTaskIid.value !== iid) return;
+      taskDetail.value = res.detail;
+    } else {
+      selectedTaskIid.value = null;
+      taskDetail.value = null;
+    }
+  }
+
   async function selectJob(id: string) {
+    const switching = selectedJobId.value !== id;
     selectedJobId.value = id;
-    progressAfterId.value = 0;
-    progressLines.value = [];
-    chat.value = [];
-    jobLoading.value = true;
+    if (switching) {
+      progressAfterId.value = 0;
+      progressLines.value = [];
+      chat.value = [];
+    }
+    // Spinner chỉ khi đổi job — re-select / sau Run không flash issue+chat
+    jobLoading.value = switching;
     try {
       const detail = await api<{
         job: Job;
@@ -162,17 +276,9 @@ export const useWorkStore = defineStore("work", () => {
       if (selectedJobId.value !== id) return;
       currentJob.value = detail.job;
       chat.value = detail.chat || [];
-      const iid = detail.job?.issue?.issueIid;
-      if (iid && iid > 0 && !isAdhocJob(detail.job)) {
-        selectedTaskIid.value = iid;
-        const res = await api<{ detail: TaskDetail }>(`/api/tasks/${iid}`);
-        if (selectedJobId.value !== id) return;
-        taskDetail.value = res.detail;
-      } else {
-        selectedTaskIid.value = null;
-        taskDetail.value = null;
-      }
-      await pollProgress(true);
+      await loadIssueForJob(detail.job);
+      if (selectedJobId.value !== id) return;
+      await pollProgress(switching || progressLines.value.length === 0);
     } finally {
       if (selectedJobId.value === id) jobLoading.value = false;
     }
@@ -273,7 +379,11 @@ export const useWorkStore = defineStore("work", () => {
     progressAfterId.value = data.latestId || progressAfterId.value;
     progressLive.value = Boolean(data.live);
     if (data.status && currentJob.value?.id === selectedJobId.value) {
+      const wasBusy = isJobStatusBusy(currentJob.value.status);
       currentJob.value = { ...currentJob.value, status: data.status };
+      if (wasBusy && !isJobStatusBusy(data.status)) {
+        void refreshJobChat(selectedJobId.value).catch(() => undefined);
+      }
     }
   }
 
@@ -318,7 +428,16 @@ export const useWorkStore = defineStore("work", () => {
       },
     );
     await loadJobs();
-    if (res.jobId) await selectJob(res.jobId);
+    if (res.jobId) {
+      if (selectedJobId.value === res.jobId) {
+        progressAfterId.value = 0;
+        progressLines.value = [];
+        await refreshJobChat(res.jobId);
+        await pollProgress(true);
+      } else {
+        await selectJob(res.jobId);
+      }
+    }
     return res;
   }
 
@@ -329,7 +448,7 @@ export const useWorkStore = defineStore("work", () => {
       method: "POST",
       body: JSON.stringify({ message }),
     });
-    await selectJob(selectedJobId.value);
+    await refreshJobChat(selectedJobId.value);
   }
 
   async function sendAsk(question: string) {
@@ -339,7 +458,7 @@ export const useWorkStore = defineStore("work", () => {
       method: "POST",
       body: JSON.stringify({ question }),
     });
-    await selectJob(selectedJobId.value);
+    await refreshJobChat(selectedJobId.value);
   }
 
   async function sendClarify(answer: string) {
@@ -356,6 +475,25 @@ export const useWorkStore = defineStore("work", () => {
       body: JSON.stringify({}),
     });
     await loadJobs();
+  }
+
+  /** Stop if busy + clear agentId → next Run/chat opens a fresh Cursor window. */
+  async function resetAgentWindow(jobId: string) {
+    const res = await api<{
+      ok: boolean;
+      killed: boolean;
+      previousAgentId?: string | null;
+      job: Job;
+    }>(`/api/jobs/${jobId}/reset-window`, {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+    if (selectedJobId.value === jobId && res.job) {
+      currentJob.value = { ...currentJob.value, ...res.job, agentId: undefined };
+    }
+    await loadJobs();
+    await refreshJobChat(jobId);
+    return res;
   }
 
   async function setJobStatus(
@@ -457,8 +595,13 @@ export const useWorkStore = defineStore("work", () => {
     loadJobs,
     loadMeta,
     loadStatus,
+    applyStatusSnapshot,
+    scheduleLoadJobs,
+    applyRealtimeProgress,
+    applyRealtimeJob,
     selectJob,
     selectTask,
+    refreshJobChat,
     fetchTaskDetail,
     saveDevNotes,
     pollProgress,
@@ -469,6 +612,7 @@ export const useWorkStore = defineStore("work", () => {
     sendAsk,
     sendClarify,
     killJob,
+    resetAgentWindow,
     setJobStatus,
     deleteJob,
     createAdhocSession,

@@ -1,37 +1,66 @@
 # Flow Auto Work
 
-Orchestrator **local**: GitLab issues → UI Start → Cursor SDK trên `aihr_v3` → commit local → **`awaiting_handoff`** → user assign/labels → `succeeded`.
+Orchestrator **local**: GitLab issues → UI Run → Cursor SDK trên repo máy bạn → commit local → **`awaiting_handoff`** → user assign/labels → `succeeded`.
 
-> Chi tiết: [`docs/NOTES.md`](docs/NOTES.md) · Roadmap: [`docs/ROADMAP.md`](docs/ROADMAP.md).
+> Chi tiết: [`docs/NOTES.md`](docs/NOTES.md) · Roadmap: [`docs/ROADMAP.md`](docs/ROADMAP.md) · Mục lục docs: [`docs/README.md`](docs/README.md).
 
 ## Tính năng chính
 
 | Phần | Chi tiết |
 |------|----------|
-| UI | Dark theme · Work / Done chờ / Thống kê · loading trên fetch |
-| Jobs | Queue serial; Force Stop; tiến trình Cursor live |
-| Done | 1 task = 1 job; Dev Notes trên job; Run / Run tất cả; re-run cùng job |
-| Handoff | Assign + **add** labels (không xóa label cũ) → `succeeded` |
-| Comment | Chỉ khi xong: `AI-Generated` + summary tiếng Việt |
-| Git | Giữ branch hiện tại; `feat #<iid> <title>` |
-| Dev | `npm run dev` + `npm run dev:web` |
-| Mongo | `jobs` + `notes` + `chat` |
-| Boot | UI Vue (web/) · fallback public/ nếu chưa build |
-| FE | Vue 3 + Ant Design Vue + Tailwind · Settings tách route |
+| UI | Vue 3 + Ant Design Vue + Tailwind (light) · Work / Handoff / Thống kê / Settings |
+| Jobs | Queue serial; Force Stop / Reset window; đổi status / xóa; progress Cursor live |
+| Tasks | Assign cho bạn · filter Milestone · mở theo `#iid` · Related/child preview (không mở job) |
+| Done | 1 issue = 1 job; Dev Notes; Run / Run all; Hotfix (adhoc) |
+| Handoff | Assign + **add** labels → `succeeded` (có thể merge → base branch) |
+| Comment | Khi xong có code change: `AI-Generated` + summary tiếng Việt |
+| Git | Work branch workspace (hoặc `feat/…`); commit local, không auto push/MR |
+| Stack | Hono API · Mongo · Cursor SDK local · **SSE realtime** (`/api/events`) |
 
-## Luồng
+## Flow dự án (end-to-end)
 
 ```
-UI Start → JobQueue → Cursor agent (+ clarify UI)
-                ↓ DONE
-         commit local (nếu cần)
-                ↓
-         awaiting_handoff + comment GitLab
-                ↓
-         UI Done chờ (assign / add labels)
-                ↓
-            succeeded
+Login (GitLab PAT + Cursor API key, mã hóa)
+  → Chọn project + local repo path + base / work branch
+  → Work: chọn Task / Hotfix / #iid → (optional) Dev Notes, Docs-first
+  → Run → JobQueue (serial)
+       → on-start labels (optional)
+       → [optional] Docs phase → awaiting_docs_approval → Approve
+       → Cursor agent (+ clarify trên UI)
+       → commit local (nếu dirty)
+       → awaiting_handoff + comment GitLab (nếu có đổi code)
+  → Handoff: assign / labels (± merge → base)
+  → succeeded
 ```
+
+Follow-up chat trên job Done: sửa thêm; **không đổi code** → giữ status Done/handoff.
+
+Chi tiết trạng thái và UI: [`docs/NOTES.md`](docs/NOTES.md).
+
+## Flow context → Agent (khi bấm Run)
+
+Khi **Run**, orchestrator đánh giá **context quality** rồi mới (có thể) dựng MISSION prompt. Cursor Agent chạy với `cwd` = local repo.
+
+```
+Run / Chat follow-up (code)
+  → nếu job.contextQuality.level === "good" → dùng mark (không đánh giá lại)
+  → ngược lại assessContextQuality(title + desc + Dev Notes + chat Human [+ tin nhắn mới])
+       ├─ bad        → chat báo thiếu gì · STOP (không Cursor) · ghi mark bad
+       ├─ searchable → ghi mark · prompt ép grep · gọi agent
+       └─ good       → ghi mark sticky · prompt skip search · gọi agent
+```
+
+| Cấp | Ý | Orchestrator |
+|-----|---|--------------|
+| **Good** | Route/file/model + I/O, bug có repro + expected + log, **hoặc Dev Notes rõ ràng** | Code thẳng; **lần sau bỏ qua assess** |
+| **Searchable** | Có mỏ neo (UI text, field, API) | Search 1–2 nhịp; lần sau **vẫn assess** (có thể lên good) |
+| **Bad** | Ngắn / cảm tính / thiếu kỹ thuật | **Chặn** + chat; lần sau **assess lại** |
+
+UI: tag Context + link **Xem tiêu chuẩn** (modal). Chi tiết: [`docs/NOTES.md`](docs/NOTES.md) § Agent context.
+
+**Không gửi vào prompt:** media, toàn bộ codebase, secrets. Linked = issue links + `#mention` + excerpt comments.
+
+Code: `src/agent/context-quality.ts` · `src/queue.ts` · `src/agent/run.ts` · `src/agent/prompt.ts` · `src/gitlab/linked-context.ts`.
 
 ## Chạy
 
@@ -41,7 +70,7 @@ npm install
 npm install --prefix web
 npm run build:web      # build Vue → web/dist
 npm run dev            # API :8787 (serve web/dist)
-# Dev UI hot-reload:
+# Hot-reload UI:
 #   npm run dev:web    → http://127.0.0.1:5173/ (proxy /api)
 ```
 
@@ -53,12 +82,33 @@ npm run dev            # API :8787 (serve web/dist)
 | `npm start` | Chạy một lần (không watch) |
 | `npm run typecheck` | `tsc --noEmit` |
 
+> Sửa `web/src` rồi chạy qua `:8787` → cần `npm run build:web` (hoặc dùng `dev:web`).
+
+### Thử nhanh sau khi pull
+
+```bash
+npm install && npm install --prefix web
+npm run build:web
+npm run dev
+# mở http://127.0.0.1:8787 → login → chọn project
+# DevTools → Network: 1 connection EventStream `/api/events` (không spam /api/status)
+```
+
+| Thử | Cách |
+|-----|------|
+| Context quality | Chọn task → **Xem tiêu chuẩn** · Dev Notes rõ → Good · Run khi Bad → chat chặn |
+| Force Stop / Reset window | Header Chat agent khi đang Run hoặc Gửi |
+| Realtime | Run job → Progress/status cập nhật qua SSE, không poll |
+
+Deploy sau reverse proxy (nginx/Caddy): **tắt buffer** cho `/api/events` (SSE), giữ connection dài (vd. `proxy_buffering off;` / `flush_interval -1`).
+
 ## Job status
 
-`queued` → `running` → (`awaiting_clarification`) → `awaiting_handoff` → `succeeded`  
+`draft` → `queued` → `running` → (`awaiting_clarification` | `awaiting_docs_approval`) → `awaiting_handoff` → `succeeded`  
 (hoặc `failed`)
 
 ## Bảo mật
 
 - `.env` trong `.gitignore` — không commit token/key  
-- Chỉ commit `.env.example` (placeholder)
+- Chỉ commit `.env.example` (placeholder)  
+- PAT / Cursor key user: mã hóa khi lưu Mongo

@@ -67,11 +67,14 @@ export function buildDocsPhasePrompt(
   issue: IssueJob,
   linkedContext?: string,
   techLeadNotes?: string,
-  opts?: { chatContext?: string },
+  opts?: { chatContext?: string; contextQualityBlock?: string },
 ): string {
   const { notesBlock, description } = sharedPreamble(issue, techLeadNotes);
   const chatBlock = opts?.chatContext?.trim()
     ? `${opts.chatContext.trim()}\n\n`
+    : "";
+  const qualityBlock = opts?.contextQualityBlock?.trim()
+    ? `${opts.contextQualityBlock.trim()}\n\n`
     : "";
   const linkedBlock = linkedContext?.trim()
     ? `\n## Linked / related context\n${linkedContext.trim()}\n`
@@ -93,7 +96,7 @@ AiHR knowledge is:
 - Templates: \`docs/_templates/\`
 - Shared: \`docs/shared/\`
 
-${chatBlock}${notesBlock}# BUSINESS REQUIREMENTS (GITLAB ISSUE #${issue.issueIid})
+${qualityBlock}${chatBlock}${notesBlock}# BUSINESS REQUIREMENTS (GITLAB ISSUE #${issue.issueIid})
 Title: ${issue.title}
 URL: ${issue.url}
 Labels: ${issue.labels.join(", ") || "(none)"}
@@ -138,13 +141,20 @@ export function buildWorkPrompt(
   extra?: string,
   linkedContext?: string,
   techLeadNotes?: string,
-  opts?: { approvedDocsPaths?: string[]; chatContext?: string },
+  opts?: {
+    approvedDocsPaths?: string[];
+    chatContext?: string;
+    contextQualityBlock?: string;
+  },
 ): string {
   const commitMsg = commitMessageForIssue(issue);
   const { notesBlock, description } = sharedPreamble(issue, techLeadNotes);
 
   const chatBlock = opts?.chatContext?.trim()
     ? `${opts.chatContext.trim()}\n\n`
+    : "";
+  const qualityBlock = opts?.contextQualityBlock?.trim()
+    ? `${opts.contextQualityBlock.trim()}\n\n`
     : "";
 
   const linkedBlock = linkedContext?.trim()
@@ -183,7 +193,7 @@ Do not touch .env, credentials, or secrets.
 Do not force-push, do not amend commits already on remote, do not create or merge MRs.
 Do NOT switch git branches. Stay on the branch that is already checked out.
 
-${chatBlock}${notesBlock}${docsGateBlock}# BUSINESS REQUIREMENTS (GITLAB ISSUE #${issue.issueIid})
+${qualityBlock}${chatBlock}${notesBlock}${docsGateBlock}# BUSINESS REQUIREMENTS (GITLAB ISSUE #${issue.issueIid})
 Title: ${issue.title}
 URL: ${issue.url}
 Labels: ${issue.labels.join(", ") || "(none)"}
@@ -246,7 +256,7 @@ Then use the DONE block. The DONE summary MUST be in Vietnamese (tiếng Việt)
 export function buildFollowUpPrompt(
   message: string,
   issue: IssueJob,
-  opts?: { chatHistory?: string },
+  opts?: { chatHistory?: string; contextQualityBlock?: string },
 ): string {
   const commitMsg = commitMessageForIssue(issue);
   const history = opts?.chatHistory?.trim();
@@ -257,10 +267,13 @@ ${history}
 
 `
     : "";
+  const qualityBlock = opts?.contextQualityBlock?.trim()
+    ? `${opts.contextQualityBlock.trim()}\n\n`
+    : "";
 
   return `You are working on GitLab issue #${issue.issueIid} ("${issue.title}") in a Cursor agent window.
 This may be a **new** window — use prior chat + the repo (inspect if needed). Do not assume old tool state is still loaded.
-${historyBlock}## Human follow-up (this turn)
+${qualityBlock}${historyBlock}## Human follow-up (this turn)
 ${message.trim()}
 
 ## How to behave (IDE-like)
@@ -281,7 +294,7 @@ ${message.trim()}
 export function buildAdhocFollowUpPrompt(
   message: string,
   sessionTitle: string,
-  opts?: { chatHistory?: string },
+  opts?: { chatHistory?: string; contextQualityBlock?: string },
 ): string {
   const title = sessionTitle.replace(/\s+/g, " ").trim() || "Ad-hoc session";
   const commitMsg = `hotfix: ${title}`;
@@ -293,11 +306,14 @@ ${history}
 
 `
     : "";
+  const qualityBlock = opts?.contextQualityBlock?.trim()
+    ? `${opts.contextQualityBlock.trim()}\n\n`
+    : "";
 
   return `You are in a **free Cursor agent session** (hotfix / ad-hoc) titled "${title}".
 There is **no GitLab issue yet** — a human may create one later from your summary.
 This may be a **new** window — use prior chat + the repo (inspect if needed).
-${historyBlock}## Human request (this turn)
+${qualityBlock}${historyBlock}## Human request (this turn)
 ${message.trim()}
 
 ## How to behave (IDE-like)

@@ -17,9 +17,8 @@ import {
   type JobTokenSnapshot,
 } from "./progress.js";
 import {
+  beginCancellableJob,
   cancelActiveAgentRun,
-  trackExternalRun,
-  untrackExternalRun,
 } from "./run.js";
 
 setMaxListeners(50);
@@ -148,123 +147,135 @@ ${opts.question}`;
   const work = async (): Promise<QaResult> => {
     let resumed = false;
     let agent: Awaited<ReturnType<typeof Agent.create>>;
-    const existing = opts.existingAgentId?.trim();
-    if (existing) {
-      try {
-        agent = await Agent.resume(existing, {
-          apiKey: resolveCursorApiKey(),
-          model: { id: modelId },
-          local: { cwd: resolveRepoPath() },
-        });
-        resumed = true;
-      } catch (err) {
-        logger.warn("Q&A resume failed — new window", { err: String(err) });
+    const session = beginCancellableJob(jobId);
+    try {
+      session.check();
+      const existing = opts.existingAgentId?.trim();
+      if (existing) {
+        try {
+          agent = await Agent.resume(existing, {
+            apiKey: resolveCursorApiKey(),
+            model: { id: modelId },
+            local: { cwd: resolveRepoPath() },
+          });
+          resumed = true;
+        } catch (err) {
+          logger.warn("Q&A resume failed — new window", { err: String(err) });
+          session.check();
+          agent = await Agent.create({
+            apiKey: resolveCursorApiKey(),
+            model: { id: modelId },
+            local: { cwd: resolveRepoPath() },
+          });
+        }
+      } else {
         agent = await Agent.create({
           apiKey: resolveCursorApiKey(),
           model: { id: modelId },
           local: { cwd: resolveRepoPath() },
         });
       }
-    } else {
-      agent = await Agent.create({
-        apiKey: resolveCursorApiKey(),
-        model: { id: modelId },
-        local: { cwd: resolveRepoPath() },
-      });
-    }
 
-    await using disposed = agent;
-    if (jobId) {
-      appendJobProgress(
-        jobId,
-        "status",
-        resumed
-          ? `Q&A on agent window ${disposed.agentId}`
-          : `Q&A new agent window ${disposed.agentId}`,
-      );
-    }
-
-    const run = await disposed.send(prompt);
-    logger.info("Q&A run started", {
-      runId: run.id,
-      agentId: disposed.agentId,
-      resumed,
-    });
-    if (jobId) trackExternalRun(jobId, run);
-
-    try {
-      let streamed = "";
-      let lastTurnInput = 0;
-      try {
-        if (
-          typeof run.stream === "function" &&
-          run.supports?.("stream") !== false
-        ) {
-          for await (const message of run.stream()) {
-            appendSdkMessage(jobId, message);
-            if (message.type === "assistant") {
-              for (const block of message.message.content) {
-                if (block.type === "text") streamed += block.text;
-              }
-            }
-            const raw = message as {
-              type?: string;
-              usage?: { inputTokens?: number };
-            };
-            if (raw.type === "usage" && raw.usage?.inputTokens) {
-              lastTurnInput = raw.usage.inputTokens;
-            }
-          }
-        }
-      } catch (err) {
-        appendJobProgress(jobId, "status", `Q&A stream error: ${String(err)}`);
-        logger.warn("Q&A stream failed; wait()", { err: String(err) });
-      }
-
-      const result = await run.wait();
-      if (result.status === "cancelled") {
-        throw new Error("Q&A cancelled (force stop)");
-      }
-      if (result.status === "error") {
-        const detail = result as {
-          id: string;
-          result?: string;
-          errorCode?: string;
-        };
-        throw new Error(
-          `Q&A failed (${detail.id})${detail.errorCode ? ` · ${detail.errorCode}` : ""}${detail.result ? `: ${detail.result.slice(0, 300)}` : ""}`,
+      session.check();
+      await using disposed = agent;
+      if (jobId) {
+        appendJobProgress(
+          jobId,
+          "status",
+          resumed
+            ? `Q&A on agent window ${disposed.agentId}`
+            : `Q&A new agent window ${disposed.agentId}`,
         );
       }
-      const text = (result.result ?? streamed).trim() || "(no answer)";
-      const sdkU = (result as { usage?: Parameters<typeof recordTokenUsage>[1] })
-        .usage;
-      const hasSdk =
-        Boolean(sdkU) &&
-        (Number(sdkU?.inputTokens) > 0 || Number(sdkU?.totalTokens) > 0);
-      const inEst = Math.max(1, Math.ceil(prompt.length / 4));
-      const outEst = Math.max(0, Math.ceil(text.length / 4));
-      const usage = jobId
-        ? recordTokenUsage(
-            jobId,
-            hasSdk
-              ? sdkU
-              : {
-                  inputTokens: inEst,
-                  outputTokens: outEst,
-                  totalTokens: inEst + outEst,
-                },
-            { lastTurnInput: lastTurnInput || (hasSdk ? undefined : inEst) },
-          )
-        : null;
-      appendJobProgress(jobId, "status", "Q&A finished");
-      return {
-        answer: text,
+
+      session.check();
+      const run = await disposed.send(prompt);
+      logger.info("Q&A run started", {
+        runId: run.id,
         agentId: disposed.agentId,
-        usage,
         resumed,
-      };
+      });
+      session.attach(run);
+
+      try {
+        let streamed = "";
+        let lastTurnInput = 0;
+        try {
+          if (
+            typeof run.stream === "function" &&
+            run.supports?.("stream") !== false
+          ) {
+            for await (const message of run.stream()) {
+              session.check();
+              appendSdkMessage(jobId, message);
+              if (message.type === "assistant") {
+                for (const block of message.message.content) {
+                  if (block.type === "text") streamed += block.text;
+                }
+              }
+              const raw = message as {
+                type?: string;
+                usage?: { inputTokens?: number };
+              };
+              if (raw.type === "usage" && raw.usage?.inputTokens) {
+                lastTurnInput = raw.usage.inputTokens;
+              }
+            }
+          }
+        } catch (err) {
+          session.check();
+          appendJobProgress(jobId, "status", `Q&A stream error: ${String(err)}`);
+          logger.warn("Q&A stream failed; wait()", { err: String(err) });
+        }
+
+        const result = await run.wait();
+        session.check();
+        if (result.status === "cancelled") {
+          throw new Error("Q&A cancelled (force stop)");
+        }
+        if (result.status === "error") {
+          const detail = result as {
+            id: string;
+            result?: string;
+            errorCode?: string;
+          };
+          throw new Error(
+            `Q&A failed (${detail.id})${detail.errorCode ? ` · ${detail.errorCode}` : ""}${detail.result ? `: ${detail.result.slice(0, 300)}` : ""}`,
+          );
+        }
+        const text = (result.result ?? streamed).trim() || "(no answer)";
+        const sdkU = (result as { usage?: Parameters<typeof recordTokenUsage>[1] })
+          .usage;
+        const hasSdk =
+          Boolean(sdkU) &&
+          (Number(sdkU?.inputTokens) > 0 || Number(sdkU?.totalTokens) > 0);
+        const inEst = Math.max(1, Math.ceil(prompt.length / 4));
+        const outEst = Math.max(0, Math.ceil(text.length / 4));
+        const usage = jobId
+          ? recordTokenUsage(
+              jobId,
+              hasSdk
+                ? sdkU
+                : {
+                    inputTokens: inEst,
+                    outputTokens: outEst,
+                    totalTokens: inEst + outEst,
+                  },
+              { lastTurnInput: lastTurnInput || (hasSdk ? undefined : inEst) },
+            )
+          : null;
+        appendJobProgress(jobId, "status", "Q&A finished");
+        return {
+          answer: text,
+          agentId: disposed.agentId,
+          usage,
+          resumed,
+        };
+      } finally {
+        /* session.end in outer finally */
+      }
     } finally {
-      if (jobId) untrackExternalRun(jobId);
+      session.end();
     }
   };
 
@@ -274,7 +285,6 @@ ${opts.question}`;
     if (jobId) {
       appendJobProgress(jobId, "status", `Q&A error: ${String(err)}`);
       await cancelActiveAgentRun(jobId).catch(() => undefined);
-      untrackExternalRun(jobId);
     }
     if (err instanceof CursorAgentError) {
       throw new Error(`Q&A Cursor error: ${err.message}`);
