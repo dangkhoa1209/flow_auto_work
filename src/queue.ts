@@ -24,10 +24,11 @@ import {
   waitForUiClarification,
 } from "./clarify/ui-wait.js";
 import { cancelDiffApproval } from "./review/diff-wait.js";
-import { addChatMessage } from "./db/mongo.js";
+import { addChatMessage, listChatMessages } from "./db/mongo.js";
 import {
   commitMessageForIssue,
   docsCommitMessageForIssue,
+  formatChatContextForRun,
 } from "./agent/prompt.js";
 import {
   docsReadySummaryText,
@@ -454,10 +455,25 @@ export class JobQueue {
 
       const headBefore = await getHeadSha(repoPath);
 
+      let chatContext = "";
+      try {
+        const chat = await listChatMessages({ jobId: job.id, limit: 60 });
+        chatContext = formatChatContextForRun(chat);
+        if (chatContext) {
+          logger.info("Injecting UI chat into Run prompt", {
+            jobId: job.id,
+            messages: chat.length,
+          });
+        }
+      } catch (err) {
+        logger.warn("Could not load chat for Run", { err: String(err) });
+      }
+
       let result = await runNewAgent(job.issue, undefined, {
         jobId: job.id,
         techLeadNotes: notes || undefined,
         devNotes: notes || undefined,
+        chatContext: chatContext || undefined,
         phase: runDocsPhase ? "docs" : "code",
         approvedDocsPaths:
           !runDocsPhase && job.docsApprovedAt

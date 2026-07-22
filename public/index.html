@@ -1421,10 +1421,11 @@
               <div class="compose-panel__meta">Q&amp;A · không sửa code trừ khi bạn yêu cầu</div>
             </div>
             <div class="compose-panel__body">
-              <p class="compose-panel__hint">Hỏi agent về task / diff / ảnh hưởng — chọn job trước</p>
-              <textarea id="askInput" rows="3" placeholder="Vd: thay đổi ảnh hưởng API nào?"></textarea>
+              <p class="compose-panel__hint">Q&amp;A chỉ trả lời. Muốn agent <strong>tự chạy end-to-end</strong> (DB / queue / test) → bấm <strong>Bật Run</strong>.</p>
+              <textarea id="askInput" rows="3" placeholder="Vd: Connect YKKSUB, tạo NV 2670348, chạy queue, verify…"></textarea>
               <div class="compose-panel__actions">
-                <button type="button" id="btnAsk">Hỏi agent</button>
+                <button type="button" class="secondary" id="btnAsk">Hỏi agent</button>
+                <button type="button" class="btn-run" id="btnEnableRun" title="Chạy agent end-to-end trên job/task đang chọn">Bật Run</button>
               </div>
             </div>
           </div>
@@ -4037,8 +4038,52 @@
     async function runCurrentJob() {
       if (!selectedTaskIid) return toast("Chọn 1 task trước");
       const doRun = async () => {
-        setButtonLoading($("btnRunJob"), true, "Run");
+        const runBtn = $("btnRunJob");
+        const enableBtn = $("btnEnableRun");
+        setButtonLoading(runBtn, true, "Run");
+        setButtonLoading(enableBtn, true, "Bật Run");
         try {
+          const askText = ($("askInput")?.value || "").trim();
+          const notesEl = $("devNotes");
+
+          // Ô Q&A đang gõ → lưu vào chat trước để Run nhận được
+          if (askText && selectedJobId) {
+            try {
+              await api(`/api/jobs/${selectedJobId}/chat`, {
+                method: "POST",
+                body: JSON.stringify({ body: askText, kind: "qa" }),
+              });
+            } catch {
+              // fallback: vẫn nhét vào Dev Notes
+            }
+            if (notesEl) {
+              const prev = (notesEl.value || "").trim();
+              const stamp = `[Chat → Run ${new Date().toLocaleString()}]`;
+              notesEl.value = prev
+                ? `${prev}\n\n${stamp}\n${askText}`
+                : `${stamp}\n${askText}`;
+            }
+            $("askInput").value = "";
+          } else if (selectedJobId && notesEl) {
+            // Gom yêu cầu Human gần nhất từ chat vào Dev Notes (hiển thị)
+            try {
+              const detail = await api(`/api/jobs/${selectedJobId}`);
+              const userAsks = (detail.chat || [])
+                .filter((m) => m.role === "user" && (m.kind === "qa" || m.kind === "clarify"))
+                .slice(-8)
+                .map((m) => `- ${m.body}`)
+                .join("\n");
+              if (userAsks) {
+                const stamp = `[Từ chat Q&A ${new Date().toLocaleString()}]`;
+                const block = `${stamp}\n${userAsks}`;
+                const prev = (notesEl.value || "").trim();
+                if (!prev.includes(userAsks.slice(0, 80))) {
+                  notesEl.value = prev ? `${prev}\n\n${block}` : block;
+                }
+              }
+            } catch { /* */ }
+          }
+
           const metaOk = await applyMetaNow({ silent: true, skipButton: true, skipReload: true });
           if (metaOk === false) return;
           const saved = await saveDevNotes({ silent: true, skipButton: true });
@@ -4054,14 +4099,17 @@
               completion: readOnComplete(),
             }),
           });
-          toast(`Run #${selectedTaskIid} · enqueued ${res.enqueued}`);
+          toast(`Bật Run #${selectedTaskIid} · kèm chat Q&A — xem Progress`);
+          setMidTab("progress");
           if (res.jobIds?.[0]) await selectJob(res.jobIds[0]);
           else await loadJobs();
           await loadStatus();
+          void pollProgress(true);
         } catch (e) {
           toast(e.message);
         } finally {
-          setButtonLoading($("btnRunJob"), false, "Run");
+          setButtonLoading(runBtn, false, "Run");
+          setButtonLoading(enableBtn, false, "Bật Run");
         }
       };
       await ensureCursorKeyThen(doRun);
@@ -4284,6 +4332,7 @@
     $("btnApplyMeta").onclick = () => applyMetaNow();
     $("btnSaveNotes").onclick = () => saveDevNotes();
     $("btnRunJob").onclick = () => runCurrentJob();
+    $("btnEnableRun").onclick = () => runCurrentJob();
     $("btnApproveDocs").onclick = () => approveDocs();
     $("btnRerunDocs").onclick = () => rerunDocs();
     $("btnRunSelected").onclick = () => runSelectedTasks();

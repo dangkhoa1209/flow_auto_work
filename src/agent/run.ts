@@ -166,6 +166,8 @@ export async function runNewAgent(
     /** docs = Phase A (feature docs only); code = Phase B (default) */
     phase?: "docs" | "code";
     approvedDocsPaths?: string[];
+    /** Clarify / Q&A chat from UI — highest priority for this run */
+    chatContext?: string;
   },
 ): Promise<AgentRunResult> {
   let linkedBlock = "";
@@ -187,13 +189,17 @@ export async function runNewAgent(
     agentId: agent.agentId,
     model: modelId,
     phase: opts?.phase ?? "code",
+    hasChatContext: Boolean(opts?.chatContext?.trim()),
   });
   const notes = opts?.devNotes?.trim() || opts?.techLeadNotes?.trim() || undefined;
   const prompt =
     opts?.phase === "docs"
-      ? buildDocsPhasePrompt(issue, linkedBlock, notes)
+      ? buildDocsPhasePrompt(issue, linkedBlock, notes, {
+          chatContext: opts?.chatContext,
+        })
       : buildWorkPrompt(issue, extraContext, linkedBlock, notes, {
           approvedDocsPaths: opts?.approvedDocsPaths,
+          chatContext: opts?.chatContext,
         });
   const run = await agent.send(prompt);
   logger.info("Agent run started", { runId: run.id, agentId: agent.agentId });

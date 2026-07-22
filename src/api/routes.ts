@@ -1386,6 +1386,29 @@ export function createApiRoutes() {
     return c.json({ chat });
   });
 
+  /** Append a user chat line without calling the Q&A agent (e.g. before Bật Run). */
+  api.post("/jobs/:id/chat", async (c) => {
+    const job = await getJobDoc(c.req.param("id"));
+    if (!job) return c.json({ error: "not found" }, 404);
+    const body = (await c.req.json().catch(() => ({}))) as {
+      body?: string;
+      kind?: "qa" | "clarify" | "note";
+    };
+    if (!body.body?.trim()) {
+      return c.json({ error: "body required" }, 400);
+    }
+    const kind =
+      body.kind === "clarify" || body.kind === "note" ? body.kind : "qa";
+    const msg = await addChatMessage({
+      jobId: job.id,
+      issueIid: job.issue.issueIid,
+      role: "user",
+      kind,
+      body: body.body,
+    });
+    return c.json({ ok: true, message: msg });
+  });
+
   api.post("/jobs/:id/notes", async (c) => {
     const job = await getJobDoc(c.req.param("id"));
     if (!job) return c.json({ error: "not found" }, 404);

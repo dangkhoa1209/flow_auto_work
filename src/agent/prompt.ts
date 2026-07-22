@@ -29,6 +29,34 @@ You MUST strictly follow these technical directions before referring to the busi
   return { notesBlock, description, notes };
 }
 
+/** Format UI Clarify/Q&A chat into a prompt block for Run. */
+export function formatChatContextForRun(
+  messages: Array<{ role: string; kind?: string; body: string; createdAt?: string }>,
+  opts?: { limit?: number },
+): string {
+  const limit = opts?.limit ?? 40;
+  const rows = (messages || [])
+    .filter((m) => m.body?.trim())
+    .filter((m) => !m.kind || m.kind === "qa" || m.kind === "clarify" || m.kind === "note")
+    .slice(-limit);
+  if (!rows.length) return "";
+
+  const lines = rows.map((m) => {
+    const who =
+      m.role === "user" ? "Human" : m.role === "agent" ? "Assistant" : "System";
+    const kind = m.kind ? `/${m.kind}` : "";
+    return `### ${who}${kind}\n${m.body.trim()}`;
+  });
+
+  return `# UI CHAT REQUESTS (HIGHEST PRIORITY FOR THIS RUN)
+The human already asked / clarified in the Flow Auto Work Clarify·Q&A chat.
+Treat the **latest Human messages** as the active instructions for this run (e.g. connect DB, seed NV, run queue, verify).
+Do the work end-to-end when they asked you to execute — this is a full Run, not Q&A mode.
+
+${lines.join("\n\n")}
+`;
+}
+
 /**
  * Phase A: read/update AiHR feature docs under docs/modules/... (NOT per-issue files).
  */
@@ -36,8 +64,12 @@ export function buildDocsPhasePrompt(
   issue: IssueJob,
   linkedContext?: string,
   techLeadNotes?: string,
+  opts?: { chatContext?: string },
 ): string {
   const { notesBlock, description } = sharedPreamble(issue, techLeadNotes);
+  const chatBlock = opts?.chatContext?.trim()
+    ? `${opts.chatContext.trim()}\n\n`
+    : "";
   const linkedBlock = linkedContext?.trim()
     ? `\n## Linked / related context\n${linkedContext.trim()}\n`
     : "";
@@ -58,7 +90,7 @@ AiHR knowledge is:
 - Templates: \`docs/_templates/\`
 - Shared: \`docs/shared/\`
 
-${notesBlock}# BUSINESS REQUIREMENTS (GITLAB ISSUE #${issue.issueIid})
+${chatBlock}${notesBlock}# BUSINESS REQUIREMENTS (GITLAB ISSUE #${issue.issueIid})
 Title: ${issue.title}
 URL: ${issue.url}
 Labels: ${issue.labels.join(", ") || "(none)"}
@@ -103,10 +135,14 @@ export function buildWorkPrompt(
   extra?: string,
   linkedContext?: string,
   techLeadNotes?: string,
-  opts?: { approvedDocsPaths?: string[] },
+  opts?: { approvedDocsPaths?: string[]; chatContext?: string },
 ): string {
   const commitMsg = commitMessageForIssue(issue);
   const { notesBlock, description } = sharedPreamble(issue, techLeadNotes);
+
+  const chatBlock = opts?.chatContext?.trim()
+    ? `${opts.chatContext.trim()}\n\n`
+    : "";
 
   const linkedBlock = linkedContext?.trim()
     ? `\n## Linked / related context\n${linkedContext.trim()}\n`
@@ -125,7 +161,7 @@ export function buildWorkPrompt(
 # APPROVED FEATURE DOCS (MUST FOLLOW)
 PM approved these AiHR docs (\`.md\` / \`.mdc\`). Read them fully and implement accordingly — still obey \`.cursor/rules/**/*.mdc\`:
 ${paths.map((p) => `- \`${p}\``).join("\n")}
-Do not contradict these docs unless DEV NOTES override a specific point.
+Do not contradict these docs unless DEV NOTES or UI CHAT REQUESTS override a specific point.
 `
       : "";
 
@@ -147,7 +183,7 @@ Do NOT stage or commit these local WIP files (leave them unstaged; do not add to
 - resources/js/composables/permission.js
 - resources/js/directives/index.js
 
-${notesBlock}${docsGateBlock}# BUSINESS REQUIREMENTS (GITLAB ISSUE #${issue.issueIid})
+${chatBlock}${notesBlock}${docsGateBlock}# BUSINESS REQUIREMENTS (GITLAB ISSUE #${issue.issueIid})
 Title: ${issue.title}
 URL: ${issue.url}
 Labels: ${issue.labels.join(", ") || "(none)"}
@@ -160,7 +196,7 @@ Use linked/mentioned issues and comments above as additional requirements/contex
 Ignore image/file attachments — only use text. Do not try to download or open media.
 
 # EXECUTION PLAN
-1. Analyze the requirements but execute them EXACTLY as demanded in the DEV NOTES when present (those override conflicting business wording).
+1. Analyze the requirements but execute them EXACTLY as demanded in UI CHAT REQUESTS and DEV NOTES when present (those override conflicting business wording). Latest Human chat messages win for this run.
 2. Investigate via docs (and the approved feature docs if listed above), then write a short plan.
 3. Implement on the CURRENT git branch only (do not checkout/create other branches). Keep the change scoped to this issue.
 4. Commit exactly with this message format (one commit preferred):

@@ -91,7 +91,7 @@ export async function answerTaskQuestion(opts: {
 2. Prefer a clear Vietnamese answer with concrete file/paths/commands they can run.
 3. Do **NOT** execute long-running work: no DB mutations that take minutes, no queue workers left running, no seed scripts that hang.
 4. You may briefly grep/read files to find how YKKSUB / queue / employee APIs work — then **stop and answer**.
-5. If they ask you to *do* the work (connect DB, insert NV, run queue), explain the exact steps from this repo and tell them to use **Run** (or run those commands themselves). Do not try to finish the whole operation in this Q&A turn.
+5. If they ask you to *do* the work (connect DB, insert NV, run queue), explain the exact steps briefly and tell them to click the green **"Bật Run"** button in the Clarify / Q&A panel (same as Dev Notes → Run). Do not try to finish the whole operation in this Q&A turn.
 6. Keep the final answer concise (roughly under ~40 lines).
 
 ## Issue #${opts.issue.issueIid}
