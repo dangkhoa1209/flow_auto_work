@@ -14,9 +14,10 @@ Orchestrator **local**: GitLab issues → UI Start → Cursor SDK trên `aihr_v3
 | Handoff | Assign + **add** labels (không xóa label cũ) → `succeeded` |
 | Comment | Chỉ khi xong: `Task work 100% by AI` + summary tiếng Việt |
 | Git | Giữ branch hiện tại; `feat #<iid> <title>` |
-| Dev | `npm run dev` = **nodemon** (watch `src` + `public`) |
+| Dev | `npm run dev` + `npm run dev:web` |
 | Mongo | `jobs` + `notes` + `chat` |
-| Boot | UI-only; không startup scan |
+| Boot | UI Vue (web/) · fallback public/ nếu chưa build |
+| FE | Vue 3 + Ant Design Vue + Tailwind · Settings tách route |
 
 ## Luồng
 
@@ -37,17 +38,19 @@ UI Start → JobQueue → Cursor agent (+ clarify UI)
 ```bash
 cp .env.example .env   # điền secrets
 npm install
-# mongod local
-npm run dev
-# → http://127.0.0.1:8787/
+npm install --prefix web
+npm run build:web      # build Vue → web/dist
+npm run dev            # API :8787 (serve web/dist)
+# Dev UI hot-reload:
+#   npm run dev:web    → http://127.0.0.1:5173/ (proxy /api)
 ```
 
 | Command | Mô tả |
 |---------|--------|
 | `npm run dev` | Nodemon + server |
+| `npm run dev:web` | Vite UI (proxy API) |
+| `npm run build:web` | Build Vue → `web/dist` |
 | `npm start` | Chạy một lần (không watch) |
-| `npm run list-tasks` | List issue assigned |
-| `npm run scan` | List + enqueue thủ công |
 | `npm run typecheck` | `tsc --noEmit` |
 
 ## Job status

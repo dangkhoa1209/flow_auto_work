@@ -449,6 +449,26 @@ export function createWorkspaceRoutes() {
     return c.json({ membership, memberships });
   });
 
+  /**
+   * Browse local directories on this machine (same host as repos).
+   * Used by UI folder picker — browsers cannot expose absolute paths.
+   */
+  ws.get("/fs/browse", async (c) => {
+    const username = headerUser(c);
+    if (!username) return c.json({ error: "X-Flow-User required" }, 401);
+    const raw = (c.req.query("path") || "").trim();
+    try {
+      const { browseDirectory } = await import("../fs/browse.js");
+      const result = await browseDirectory(raw || undefined);
+      return c.json(result);
+    } catch (err) {
+      return c.json(
+        { error: err instanceof Error ? err.message : String(err) },
+        400,
+      );
+    }
+  });
+
   ws.get("/context", async (c) => {
     const username = headerUser(c);
     const projectId = headerProject(c);

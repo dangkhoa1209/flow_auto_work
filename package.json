@@ -6,8 +6,12 @@
   "description": "GitLab issues → Cursor SDK local auto-work via UI",
   "scripts": {
     "dev": "nodemon",
+    "dev:web": "npm run dev --prefix web",
+    "dev:all": "npm run dev & npm run dev:web",
+    "build:web": "npm run build --prefix web",
     "start": "tsx src/index.ts",
     "typecheck": "tsc --noEmit",
+    "typecheck:web": "npm run build --prefix web --if-present",
     "selfcheck": "tsx scripts/selfcheck.ts",
     "list-tasks": "tsx scripts/list-tasks.ts list",
     "scan": "tsx scripts/list-tasks.ts scan",

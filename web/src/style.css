@@ -1,0 +1,107 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+  --app-bg: #eef3f9;
+  --app-ink: #0f172a;
+  --app-muted: #475569;
+  --app-accent: #0f766e;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  max-height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+body {
+  font-family: Sora, Outfit, system-ui, sans-serif;
+  color: var(--app-ink);
+  background-color: var(--app-bg);
+  background-image:
+    radial-gradient(ellipse 80% 60% at 12% -10%, rgba(94, 234, 212, 0.35), transparent 55%),
+    radial-gradient(ellipse 70% 50% at 95% 0%, rgba(56, 189, 248, 0.22), transparent 50%),
+    radial-gradient(ellipse 50% 40% at 50% 110%, rgba(45, 212, 191, 0.18), transparent 55%),
+    linear-gradient(180deg, #f8fbfd 0%, #eef3f9 45%, #e8eef6 100%);
+  background-attachment: fixed;
+}
+
+/* Readable defaults on light UI */
+a {
+  color: var(--app-accent);
+}
+
+code {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 0.9em;
+  color: #0f766e;
+  background: #ccfbf1;
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+}
+
+/* Progress / chat monospace blocks */
+.mono-log {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: #1e293b;
+}
+
+/* Fill height helpers for Ant tabs inside workbench */
+.work-tabs.ant-tabs {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+.work-tabs .ant-tabs-nav {
+  flex-shrink: 0;
+  margin-bottom: 8px !important;
+}
+.work-tabs .ant-tabs-content-holder {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.work-tabs .ant-tabs-content {
+  height: 100%;
+}
+.work-tabs .ant-tabs-tabpane {
+  height: 100%;
+  overflow: hidden;
+}
+
+/* Soft glass panels */
+.panel-glass {
+  background: rgba(255, 255, 255, 0.78);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(215, 224, 236, 0.9);
+}
+
+/* Subtle shimmer for AI feel on header brand */
+@keyframes brand-shine {
+  0%,
+  100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+}
+.brand-mark {
+  background: linear-gradient(105deg, #0f766e 0%, #0891b2 45%, #0d9488 100%);
+  background-size: 200% 200%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: brand-shine 8s ease-in-out infinite;
+}

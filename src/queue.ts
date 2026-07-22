@@ -191,7 +191,10 @@ export class JobQueue {
 
   /**
    * Cursor-IDE-style follow-up on the same agent window (ask / fix / do more).
-   * Keeps context; commits if code changed; stays awaiting_handoff when done.
+   * Keeps context; commits if code changed.
+   * If the job was already done (awaiting_handoff / succeeded) and this
+   * follow-up has no code change — or errors — restore the previous status
+   * (do not flip to failed / re-open handoff).
    */
   async followUpChat(
     jobId: string,
@@ -222,6 +225,8 @@ export class JobQueue {
     }
 
     const prevStatus = job.status;
+    const wasDone =
+      prevStatus === "awaiting_handoff" || prevStatus === "succeeded";
     const key = `${job.issue.projectId}:${job.issue.issueIid}`;
     this.activeIssueKeys.add(key);
     this.currentJobId = job.id;
@@ -307,8 +312,13 @@ export class JobQueue {
 
       if (result.summary) job.summary = result.summary;
 
-      job.status = "awaiting_handoff";
-      job.completedAt = new Date().toISOString();
+      // Already-done job + no new code → keep prior status (Q&A / chat only)
+      if (wasDone && !hasChange) {
+        job.status = prevStatus;
+      } else {
+        job.status = "awaiting_handoff";
+        job.completedAt = new Date().toISOString();
+      }
       job.error = undefined;
       await saveJob(job);
 
@@ -319,6 +329,7 @@ export class JobQueue {
         resumed: result.resumed,
         agentId: job.agentId,
         prevStatus,
+        status: job.status,
       });
 
       return {
@@ -342,21 +353,25 @@ export class JobQueue {
       }
       return await runFollowUp();
     } catch (err) {
-      const { isTransientCursorTransportError } = await import("./agent/run.js");
       const message = isStartupError(err)
         ? `Cursor SDK startup error: ${err.message}`
         : err instanceof Error
           ? err.message
           : String(err);
-      // Transient Cursor HTTP/2 — restore previous status so UI can retry
-      if (
-        isTransientCursorTransportError(err) &&
-        (prevStatus === "awaiting_handoff" || prevStatus === "succeeded")
-      ) {
+      // Done tasks: never demote to failed on follow-up errors
+      if (wasDone) {
         job.status = prevStatus;
         job.agentId = undefined;
       } else {
-        job.status = "failed";
+        const { isTransientCursorTransportError } = await import(
+          "./agent/run.js"
+        );
+        if (isTransientCursorTransportError(err)) {
+          job.status = prevStatus;
+          job.agentId = undefined;
+        } else {
+          job.status = "failed";
+        }
       }
       job.error = message;
       await saveJob(job);
