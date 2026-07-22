@@ -572,6 +572,38 @@ export async function listAssignedOpenIssues(): Promise<
   }));
 }
 
+/**
+ * Fetch any project issue by iid (not limited to assignee / open state).
+ * Used when opening Related/child tasks assigned to someone else.
+ */
+export async function fetchIssueAsJob(
+  issueIid: number,
+  projectIdOrPath?: number | string,
+): Promise<import("../types.js").IssueJob | null> {
+  const projectPath = resolveGitlabProjectPath();
+  const project = encodeURIComponent(
+    String(projectIdOrPath ?? projectPath),
+  );
+  const res = await gitlabFetch(
+    "GET",
+    `/projects/${project}/issues/${issueIid}`,
+  );
+  if (!res.ok) return null;
+  const raw = (await res.json()) as GitlabIssueApi;
+  return {
+    projectId: raw.project_id,
+    projectPath,
+    issueIid: raw.iid,
+    issueId: raw.id,
+    title: raw.title,
+    description: raw.description ?? "",
+    labels: raw.labels ?? [],
+    url: raw.web_url,
+    action: "ui_related",
+    milestone: mapMilestone(raw.milestone),
+  };
+}
+
 export type IssueNoteUi = {
   id: number;
   body: string;
@@ -607,6 +639,102 @@ export type IssueDetailUi = {
   notes: IssueNoteUi[];
   related: RelatedIssueUi[];
 };
+
+function extractTaskListIids(description: string, selfIid: number): Set<number> {
+  const taskListIids = new Set<number>();
+  const taskListRe = /^\s*[-*]\s*\[[ xX]\]\s*.*?#(\d+)\b/gm;
+  let tm: RegExpExecArray | null;
+  while ((tm = taskListRe.exec(description)) !== null) {
+    const iid = Number(tm[1]);
+    if (iid > 0 && iid !== selfIid) taskListIids.add(iid);
+  }
+  return taskListIids;
+}
+
+/**
+ * Related / child issues for one ticket (links + task-list + optional mentions).
+ */
+export async function collectRelatedIssuesUi(
+  projectId: number,
+  issueIid: number,
+  opts?: {
+    description?: string;
+    /** Extra text to scan for #iid mentions (notes, title…) */
+    mentionText?: string;
+    /** Cap on fetched missing issues (default 20) */
+    fetchLimit?: number;
+  },
+): Promise<RelatedIssueUi[]> {
+  const fetchLimit = opts?.fetchLimit ?? 20;
+  const [links, issueRow] = await Promise.all([
+    listIssueLinksUi(projectId, issueIid),
+    opts?.description != null
+      ? Promise.resolve(null)
+      : gitlabFetch("GET", `/projects/${projectId}/issues/${issueIid}`).then(
+          async (res) => {
+            if (!res.ok) return null;
+            return (await res.json()) as {
+              title?: string;
+              description?: string | null;
+            };
+          },
+        ),
+  ]);
+
+  const description =
+    opts?.description ?? issueRow?.description ?? "";
+  const taskListIids = extractTaskListIids(description, issueIid);
+
+  const byIid = new Map<number, RelatedIssueUi>();
+  for (const link of links) byIid.set(link.iid, link);
+
+  let mentioned: number[] = [];
+  if (opts?.mentionText != null) {
+    const { extractIssueIids } = await import("./linked-context.js");
+    mentioned = extractIssueIids(opts.mentionText, issueIid);
+  }
+
+  const missing = [
+    ...new Set([...mentioned, ...taskListIids]),
+  ].filter((iid) => !byIid.has(iid));
+
+  const fetched = await Promise.all(
+    missing.slice(0, fetchLimit).map(async (iid) => {
+      const res = await gitlabFetch(
+        "GET",
+        `/projects/${projectId}/issues/${iid}`,
+      );
+      if (!res.ok) return null;
+      const row = (await res.json()) as {
+        iid: number;
+        title: string;
+        state: string;
+        web_url: string;
+        labels?: string[];
+      };
+      const source: RelatedIssueUi["source"] = taskListIids.has(iid)
+        ? "task_list"
+        : "mention";
+      return {
+        iid: row.iid,
+        title: row.title,
+        state: row.state,
+        url: row.web_url,
+        labels: row.labels ?? [],
+        source,
+      } satisfies RelatedIssueUi;
+    }),
+  );
+  for (const item of fetched) {
+    if (item) byIid.set(item.iid, item);
+  }
+
+  return [...byIid.values()].sort((a, b) => {
+    const rank = (s: RelatedIssueUi["source"]) =>
+      s === "task_list" ? 0 : s === "issue_links" ? 1 : 2;
+    return rank(a.source) - rank(b.source) || a.iid - b.iid;
+  });
+}
 
 /**
  * Full issue payload for UI: description, comments, related/child issues.
@@ -653,73 +781,18 @@ export async function getIssueUiDetail(
 
   const projectId = issue.project_id;
 
-  const [notes, links] = await Promise.all([
-    listIssueNotesUi(projectId, issueIid),
-    listIssueLinksUi(projectId, issueIid),
-  ]);
+  const notes = await listIssueNotesUi(projectId, issueIid);
 
-  const { extractIssueIids } = await import("./linked-context.js");
   const mentionText = [
     issue.title,
     issue.description ?? "",
     ...notes.map((n) => n.body),
   ].join("\n");
-  const mentioned = extractIssueIids(mentionText, issueIid);
 
-  // Task-list style children: "- [ ] #123" / "* [x] #123"
-  const taskListIids = new Set<number>();
-  const taskListRe =
-    /^\s*[-*]\s*\[[ xX]\]\s*.*?#(\d+)\b/gm;
-  let tm: RegExpExecArray | null;
-  const desc = issue.description ?? "";
-  while ((tm = taskListRe.exec(desc)) !== null) {
-    const iid = Number(tm[1]);
-    if (iid > 0 && iid !== issueIid) taskListIids.add(iid);
-  }
-
-  const byIid = new Map<number, RelatedIssueUi>();
-  for (const link of links) byIid.set(link.iid, link);
-
-  const missing = [
-    ...new Set([...mentioned, ...taskListIids]),
-  ].filter((iid) => !byIid.has(iid));
-
-  const fetched = await Promise.all(
-    missing.slice(0, 20).map(async (iid) => {
-      const res = await gitlabFetch(
-        "GET",
-        `/projects/${projectId}/issues/${iid}`,
-      );
-      if (!res.ok) return null;
-      const row = (await res.json()) as {
-        iid: number;
-        title: string;
-        state: string;
-        web_url: string;
-        labels?: string[];
-      };
-      const source: RelatedIssueUi["source"] = taskListIids.has(iid)
-        ? "task_list"
-        : "mention";
-      return {
-        iid: row.iid,
-        title: row.title,
-        state: row.state,
-        url: row.web_url,
-        labels: row.labels ?? [],
-        source,
-      } satisfies RelatedIssueUi;
-    }),
-  );
-  for (const item of fetched) {
-    if (item) byIid.set(item.iid, item);
-  }
-
-  // Prefer task_list / is_child-like ordering
-  const related = [...byIid.values()].sort((a, b) => {
-    const rank = (s: RelatedIssueUi["source"]) =>
-      s === "task_list" ? 0 : s === "issue_links" ? 1 : 2;
-    return rank(a.source) - rank(b.source) || a.iid - b.iid;
+  const related = await collectRelatedIssuesUi(projectId, issueIid, {
+    description: issue.description ?? "",
+    mentionText,
+    fetchLimit: 20,
   });
 
   return {

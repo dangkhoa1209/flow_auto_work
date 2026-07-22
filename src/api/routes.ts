@@ -57,6 +57,7 @@ import {
   commentOnIssue,
   createIssue,
   listAssignedOpenIssues,
+  fetchIssueAsJob,
 } from "../gitlab/client.js";
 import { scanExistingAssignedIssues } from "../gitlab/startup-scan.js";
 
@@ -359,10 +360,14 @@ export function createApiRoutes() {
     if (!Number.isFinite(iid) || iid <= 0) {
       return c.json({ error: "issueIid required" }, 400);
     }
+    // Prefer assignee list (fresh), else fetch any issue by iid (Related/child),
+    // else reuse existing job snapshot.
     const all = await listAssignedOpenIssues();
-    const issue = all.find((i) => i.issueIid === iid);
+    let issue = all.find((i) => i.issueIid === iid) ?? null;
     if (!issue) {
-      // Fall back: load existing job issue snapshot
+      issue = await fetchIssueAsJob(iid);
+    }
+    if (!issue) {
       const existing = (await listJobs()).find((j) => j.issue.issueIid === iid);
       if (!existing) return c.json({ error: `Issue #${iid} not found` }, 404);
       if (body.devNotes !== undefined) {

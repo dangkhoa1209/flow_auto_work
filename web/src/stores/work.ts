@@ -59,6 +59,7 @@ export type RelatedIssue = {
   labels: string[];
   linkType?: string;
   source: "issue_links" | "mention" | "task_list" | string;
+  assignees?: string[];
 };
 
 export type TaskDetail = {
@@ -175,6 +176,12 @@ export const useWorkStore = defineStore("work", () => {
     } finally {
       if (selectedJobId.value === id) jobLoading.value = false;
     }
+  }
+
+  /** Load GitLab issue detail only (no job ensure). */
+  async function fetchTaskDetail(iid: number) {
+    const res = await api<{ detail: TaskDetail }>(`/api/tasks/${iid}`);
+    return res.detail;
   }
 
   /** Load GitLab issue detail + ensure job (like old UI selectTask) */
@@ -452,6 +459,7 @@ export const useWorkStore = defineStore("work", () => {
     loadStatus,
     selectJob,
     selectTask,
+    fetchTaskDetail,
     saveDevNotes,
     pollProgress,
     watchProgress,

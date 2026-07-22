@@ -7,6 +7,8 @@ import { useSessionStore } from "@/stores/session";
 import { useWorkStore, isAdhocJob } from "@/stores/work";
 import { statusLabel, MANUAL_JOB_STATUSES } from "@/utils/status";
 import { PlusOutlined, ReloadOutlined } from "@ant-design/icons-vue";
+import RelatedTaskPreviewModal from "@/components/RelatedTaskPreviewModal.vue";
+import type { TaskDetail } from "@/stores/work";
 
 const router = useRouter();
 const session = useSessionStore();
@@ -71,6 +73,35 @@ const humanComments = computed(() =>
 );
 
 const relatedIssues = computed(() => taskDetail.value?.related || []);
+
+const relatedPreviewOpen = ref(false);
+const relatedPreviewLoading = ref(false);
+const relatedPreview = ref<TaskDetail | null>(null);
+const relatedPreviewError = ref<string | null>(null);
+const relatedPreviewFallback = ref<{
+  iid: number;
+  title?: string;
+  url?: string;
+} | null>(null);
+
+async function openRelatedPreview(opts: {
+  iid: number;
+  title?: string;
+  url?: string;
+}) {
+  relatedPreviewFallback.value = opts;
+  relatedPreviewOpen.value = true;
+  relatedPreviewLoading.value = true;
+  relatedPreviewError.value = null;
+  relatedPreview.value = null;
+  try {
+    relatedPreview.value = await work.fetchTaskDetail(opts.iid);
+  } catch (e) {
+    relatedPreviewError.value = e instanceof Error ? e.message : String(e);
+  } finally {
+    relatedPreviewLoading.value = false;
+  }
+}
 
 const detailTitle = computed(
   () =>
@@ -724,7 +755,13 @@ async function submitCreateIssue() {
                     :key="r.iid"
                     type="button"
                     class="w-full text-left rounded-xl border border-line bg-surface-raised/70 px-3 py-2 hover:border-accent/40 hover:bg-accent-soft/40 transition"
-                    @click="onSelectTask(r.iid)"
+                    @click="
+                      openRelatedPreview({
+                        iid: r.iid,
+                        title: r.title,
+                        url: r.url,
+                      })
+                    "
                   >
                     <div class="text-sm text-ink-soft">
                       <span class="text-accent font-semibold">#{{ r.iid }}</span>
@@ -982,5 +1019,13 @@ async function submitCreateIssue() {
         </a-form>
       </a-spin>
     </a-modal>
+
+    <RelatedTaskPreviewModal
+      v-model:open="relatedPreviewOpen"
+      :loading="relatedPreviewLoading"
+      :detail="relatedPreview"
+      :error="relatedPreviewError"
+      :fallback="relatedPreviewFallback"
+    />
   </div>
 </template>
