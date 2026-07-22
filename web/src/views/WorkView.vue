@@ -5,8 +5,8 @@ import { storeToRefs } from "pinia";
 import { useRouter } from "vue-router";
 import { useSessionStore } from "@/stores/session";
 import { useWorkStore, isAdhocJob } from "@/stores/work";
-import { statusLabel } from "@/utils/status";
-import { PlusOutlined } from "@ant-design/icons-vue";
+import { statusLabel, MANUAL_JOB_STATUSES } from "@/utils/status";
+import { PlusOutlined, ReloadOutlined } from "@ant-design/icons-vue";
 
 const router = useRouter();
 const session = useSessionStore();
@@ -155,6 +155,42 @@ async function onSelectJob(id: string) {
   }
 }
 
+const jobStatusBusy = ref<string | null>(null);
+
+async function onJobStatusChange(jobId: string, status: string) {
+  if (!status) return;
+  jobStatusBusy.value = jobId;
+  try {
+    const job = jobs.value.find((j) => j.id === jobId);
+    const busy = ["queued", "running", "awaiting_clarification"].includes(
+      job?.status || "",
+    );
+    await work.setJobStatus(jobId, status, { force: busy });
+    message.success(`Đã đổi status → ${statusLabel(status)}`);
+  } catch (e) {
+    message.error(e instanceof Error ? e.message : String(e));
+    await work.loadJobs();
+  } finally {
+    jobStatusBusy.value = null;
+  }
+}
+
+async function onDeleteJob(jobId: string) {
+  jobStatusBusy.value = jobId;
+  try {
+    const job = jobs.value.find((j) => j.id === jobId);
+    const busy = ["queued", "running", "awaiting_clarification"].includes(
+      job?.status || "",
+    );
+    await work.deleteJob(jobId, { force: busy });
+    message.success("Đã xóa job");
+  } catch (e) {
+    message.error(e instanceof Error ? e.message : String(e));
+  } finally {
+    jobStatusBusy.value = null;
+  }
+}
+
 async function saveNotes() {
   notesSaving.value = true;
   try {
@@ -271,6 +307,18 @@ async function forceStop() {
   }
 }
 
+async function refreshTasks() {
+  busy.value = true;
+  try {
+    await Promise.all([work.loadTasks(), work.loadJobs()]);
+    message.success("Đã refresh tasks");
+  } catch (e) {
+    message.error(e instanceof Error ? e.message : String(e));
+  } finally {
+    busy.value = false;
+  }
+}
+
 function statusColor(st: string) {
   if (st === "succeeded") return "success";
   if (st === "failed") return "error";
@@ -372,7 +420,18 @@ async function submitCreateIssue() {
     >
       <div class="shrink-0 p-3 border-b border-line space-y-2">
         <div class="flex items-center justify-between gap-2">
-          <span class="text-sm font-semibold text-ink">Tasks</span>
+          <div class="flex items-center gap-1 min-w-0">
+            <span class="text-sm font-semibold text-ink">Tasks</span>
+            <a-button
+              type="text"
+              size="small"
+              :loading="busy || loading"
+              title="Refresh tasks"
+              @click="refreshTasks"
+            >
+              <template #icon><ReloadOutlined /></template>
+            </a-button>
+          </div>
           <div class="flex gap-1 flex-wrap justify-end">
             <a-button size="small" @click="openAdhocModal">
               <template #icon><PlusOutlined /></template>
@@ -459,7 +518,7 @@ async function submitCreateIssue() {
         <div
           v-for="j in jobs"
           :key="j.id"
-          class="rounded-lg px-2 py-1.5 mb-1 cursor-pointer hover:bg-surface-raised text-sm border border-transparent relative"
+          class="rounded-lg px-2 py-1.5 mb-1 cursor-pointer hover:bg-surface-raised text-sm border border-transparent relative group/job"
           :class="
             selectedJobId === j.id
               ? '!bg-surface-raised !border-line shadow-sm'
@@ -467,11 +526,48 @@ async function submitCreateIssue() {
           "
           @click="onSelectJob(j.id)"
         >
-          <div class="flex items-center gap-2">
-            <a-tag :color="statusColor(j.status)" class="m-0 text-[10px]">{{
-              statusLabel(j.status)
-            }}</a-tag>
-            <span class="text-accent text-xs font-semibold">{{
+          <div class="flex items-center gap-1.5 min-w-0">
+            <div @click.stop>
+              <a-dropdown
+                :trigger="['click']"
+                :disabled="jobStatusBusy === j.id"
+              >
+                <a-tag
+                  :color="statusColor(j.status)"
+                  class="m-0 !text-[10px] !leading-4 !px-1.5 !py-0 cursor-pointer max-w-[7.5rem] truncate"
+                >
+                  {{ statusLabel(j.status) }}
+                  <span class="opacity-60 ml-0.5">▾</span>
+                </a-tag>
+                <template #overlay>
+                  <a-menu
+                    :selected-keys="[j.status]"
+                    @click="
+                      ({ key }: { key: string }) => onJobStatusChange(j.id, key)
+                    "
+                  >
+                    <a-menu-item
+                      v-if="
+                        !(MANUAL_JOB_STATUSES as readonly string[]).includes(
+                          j.status,
+                        )
+                      "
+                      :key="j.status"
+                      disabled
+                    >
+                      {{ statusLabel(j.status) }}
+                    </a-menu-item>
+                    <a-menu-item
+                      v-for="s in MANUAL_JOB_STATUSES"
+                      :key="s"
+                    >
+                      {{ statusLabel(s) }}
+                    </a-menu-item>
+                  </a-menu>
+                </template>
+              </a-dropdown>
+            </div>
+            <span class="text-accent text-xs font-semibold shrink-0">{{
               jobDisplayIid(j)
             }}</span>
             <a-spin
@@ -479,6 +575,24 @@ async function submitCreateIssue() {
               size="small"
               class="ml-auto"
             />
+            <a-popconfirm
+              v-else
+              title="Xóa job này?"
+              ok-text="Xóa"
+              cancel-text="Huỷ"
+              ok-type="danger"
+              @confirm.stop="onDeleteJob(j.id)"
+            >
+              <button
+                type="button"
+                class="ml-auto shrink-0 text-[11px] leading-none text-ink-faint hover:text-red-500 opacity-0 group-hover/job:opacity-100 transition-opacity px-0.5"
+                :disabled="jobStatusBusy === j.id"
+                @click.stop
+                title="Xóa job"
+              >
+                ×
+              </button>
+            </a-popconfirm>
           </div>
           <div class="truncate text-ink-muted text-xs mt-0.5">
             {{ j.issue?.title }}

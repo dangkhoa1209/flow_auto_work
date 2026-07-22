@@ -135,6 +135,21 @@ export async function deleteJobDoc(id: string): Promise<boolean> {
   return res.deletedCount > 0;
 }
 
+/** Remove chat + notes for a job (before deleting the job doc). */
+export async function deleteJobSideDocs(
+  jobId: string,
+): Promise<{ chat: number; notes: number }> {
+  await connectMongo();
+  const [chatRes, notesRes] = await Promise.all([
+    chat().deleteMany({ jobId }),
+    notes().deleteMany({ jobId }),
+  ]);
+  return {
+    chat: chatRes.deletedCount,
+    notes: notesRes.deletedCount,
+  };
+}
+
 /** Remap chat + notes from oldJobId → newJobId and update issueIid. */
 export async function rekeyJobSideDocs(opts: {
   fromJobId: string;

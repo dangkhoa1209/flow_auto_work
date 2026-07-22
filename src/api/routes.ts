@@ -16,17 +16,27 @@ import {
   writeRepoFile,
 } from "../git/files.js";
 import { getConfig } from "../config.js";
+import { getReviewDiff } from "../git/diff.js";
 import {
   addChatMessage,
   addNote,
+  deleteJobDoc,
+  deleteJobSideDocs,
   getJobDoc,
   listChatMessages,
   listJobDocs,
   listNotes,
   mongoPing,
 } from "../db/mongo.js";
-import { getReviewDiff } from "../git/diff.js";
-import { ensureJob, loadJob, loadJobByIssue, listJobs, saveJob, createAdhocJob, migrateAdhocJobToIssue } from "../job-store.js";
+import {
+  ensureJob,
+  loadJob,
+  loadJobByIssue,
+  listJobs,
+  saveJob,
+  createAdhocJob,
+  migrateAdhocJobToIssue,
+} from "../job-store.js";
 import { logger } from "../logger.js";
 import { jobQueue } from "../queue.js";
 import {
@@ -35,6 +45,7 @@ import {
   resolveDevNotes,
   type CompletionActions,
   type IssueJob,
+  type JobStatus,
 } from "../types.js";
 import {
   createWorkspaceRoutes,
@@ -1403,6 +1414,81 @@ export function createApiRoutes() {
       return c.json({ error: "Job not killable", ...result }, 409);
     }
     return c.json(result);
+  });
+
+  /** Manual status override (draft / handoff / done / failed). Busy jobs must be killed first. */
+  const MANUAL_STATUSES = new Set<JobStatus>([
+    "draft",
+    "awaiting_handoff",
+    "succeeded",
+    "failed",
+  ]);
+
+  api.patch("/jobs/:id/status", async (c) => {
+    const jobId = c.req.param("id");
+    const job = await loadJob(jobId);
+    if (!job) return c.json({ error: "not found" }, 404);
+    const body = (await c.req.json().catch(() => ({}))) as {
+      status?: string;
+      force?: boolean;
+    };
+    const next = body.status as JobStatus | undefined;
+    if (!next || !MANUAL_STATUSES.has(next)) {
+      return c.json(
+        {
+          error: "Invalid status",
+          allowed: [...MANUAL_STATUSES],
+        },
+        400,
+      );
+    }
+    if (isJobBusy(job.status)) {
+      if (!body.force) {
+        return c.json(
+          {
+            error: "Job is busy — stop it first or pass force: true",
+            status: job.status,
+          },
+          409,
+        );
+      }
+      await jobQueue.killJob(jobId, "Stopped before manual status change");
+    }
+    job.status = next;
+    if (next === "succeeded" || next === "awaiting_handoff") {
+      job.error = undefined;
+    }
+    if (next === "failed" && !job.error) {
+      job.error = "Marked failed from UI";
+    }
+    await saveJob(job, { source: "manual-status" });
+    return c.json({ job });
+  });
+
+  api.delete("/jobs/:id", async (c) => {
+    const jobId = c.req.param("id");
+    const job = await loadJob(jobId);
+    if (!job) return c.json({ error: "not found" }, 404);
+    const force =
+      c.req.query("force") === "1" ||
+      c.req.query("force") === "true";
+    if (isJobBusy(job.status)) {
+      if (!force) {
+        return c.json(
+          {
+            error: "Job is busy — stop it first or delete with force=1",
+            status: job.status,
+          },
+          409,
+        );
+      }
+      await jobQueue.killJob(jobId, "Stopped before delete");
+    }
+    const side = await deleteJobSideDocs(jobId);
+    const deleted = await deleteJobDoc(jobId);
+    if (!deleted) return c.json({ error: "not found" }, 404);
+    logger.info("job deleted from UI", { jobId, side });
+    return c.json({ ok: true, jobId, ...side });
   });
 
   api.post("/jobs/:id/approve-diff", async (c) => {

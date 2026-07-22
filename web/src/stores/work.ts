@@ -351,6 +351,35 @@ export const useWorkStore = defineStore("work", () => {
     await loadJobs();
   }
 
+  async function setJobStatus(
+    jobId: string,
+    status: string,
+    opts?: { force?: boolean },
+  ) {
+    const res = await api<{ job: Job }>(`/api/jobs/${jobId}/status`, {
+      method: "PATCH",
+      body: JSON.stringify({ status, force: opts?.force === true }),
+    });
+    await loadJobs();
+    if (selectedJobId.value === jobId && res.job) {
+      currentJob.value = res.job;
+    }
+    return res.job;
+  }
+
+  async function deleteJob(jobId: string, opts?: { force?: boolean }) {
+    const q = opts?.force ? "?force=1" : "";
+    await api(`/api/jobs/${jobId}${q}`, { method: "DELETE" });
+    if (selectedJobId.value === jobId) {
+      selectedJobId.value = null;
+      currentJob.value = null;
+      chat.value = [];
+      progressLines.value = [];
+      taskDetail.value = null;
+    }
+    await loadJobs();
+  }
+
   async function createAdhocSession(opts: {
     title: string;
     message?: string;
@@ -432,6 +461,8 @@ export const useWorkStore = defineStore("work", () => {
     sendAsk,
     sendClarify,
     killJob,
+    setJobStatus,
+    deleteJob,
     createAdhocSession,
     fetchIssueDraft,
     createGitlabIssue,

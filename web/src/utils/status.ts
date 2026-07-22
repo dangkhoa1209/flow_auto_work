@@ -11,6 +11,16 @@ const STATUS_LABELS: Record<string, string> = {
   failed: "Failed",
 };
 
+/** Statuses that can be set manually from the Jobs list */
+export const MANUAL_JOB_STATUSES = [
+  "draft",
+  "awaiting_handoff",
+  "succeeded",
+  "failed",
+] as const;
+
+export type ManualJobStatus = (typeof MANUAL_JOB_STATUSES)[number];
+
 /** succeeded → Done; others Title case / spaced */
 export function statusLabel(status: string | null | undefined): string {
   if (!status) return "—";
