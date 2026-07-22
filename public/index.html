@@ -704,6 +704,11 @@
     .progress-log .pline.thinking .k { color: #c4b5fd; }
     .progress-log .pline.assistant .k { color: #93c5fd; }
     .progress-log .pline.usage .k { color: #f9a8d4; }
+    .token-badge {
+      color: #67e8f9;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+    }
     .progress-log.live { box-shadow: inset 0 0 0 1px var(--teal); }
 
     .modal-backdrop {
@@ -1401,7 +1406,7 @@
         </div>
 
         <div class="panel-block">
-          <h2>Clarify / Q&amp;A</h2>
+          <h2>Chat agent</h2>
           <div class="chat" id="chatView"><div class="empty">Chọn job</div></div>
           <div class="compose-panel" id="clarifyBox" style="display:none">
             <div class="compose-panel__head">
@@ -1637,7 +1642,7 @@
         <select id="settingsCursorModel" style="min-height:36px;width:100%">
           <option value="auto">Auto (server picks)</option>
         </select>
-        <div class="meta" style="margin-top:4px">Ưu tiên theo user · fallback <code>CURSOR_MODEL</code> trong .env</div>
+        <div class="meta" style="margin-top:4px">Lưu theo user (Settings)</div>
         <button type="button" class="secondary" id="btnSaveCursorModel" style="margin-top:8px;width:100%">Lưu model</button>
         <label class="meta" style="display:block;margin:14px 0 4px">Key mới (để trống nếu không đổi)</label>
         <input type="password" id="settingsCursorKey" placeholder="Dán key từ cursor.com…" autocomplete="off" />
@@ -1655,14 +1660,17 @@
       <div class="meta" style="margin:16px 0 12px">Handoff / labels — không auto assign khi xong.</div>
       <input type="hidden" id="onCompleteEnabled" value="1" />
       <div class="section-title">Trước khi làm task</div>
-      <label class="meta" style="display:block;margin-bottom:4px">Thêm labels khi Start (+ luôn thêm <code>on-processing</code>)</label>
+      <label class="meta" style="display:block;margin-bottom:4px">Label đang xử lý (thêm khi Start, bỏ khi handoff)</label>
+      <input type="text" id="settingsProcessingLabel" placeholder="On-processing" autocomplete="off" />
+      <div class="meta" style="margin:4px 0 10px">Mặc định <code>On-processing</code> · exact name trên GitLab</div>
+      <label class="meta" style="display:block;margin-bottom:4px">Thêm labels khi Start</label>
       <div id="onStartLabelsDd" class="dd"></div>
       <div class="section-title">Prefill khi handoff QC (không auto)</div>
       <label class="meta" style="display:block;margin-bottom:4px">Assign (1 người)</label>
       <div id="onCompleteAssigneeDd" class="dd"></div>
       <label class="meta" style="display:block;margin-bottom:4px">Thêm labels</label>
       <div id="onCompleteLabelsAddDd" class="dd"></div>
-      <label class="meta" style="display:block;margin-bottom:4px">Bỏ labels (+ luôn bỏ <code>on-processing</code>)</label>
+      <label class="meta" style="display:block;margin-bottom:4px">Bỏ labels (+ luôn bỏ label đang xử lý ở trên)</label>
       <div id="onCompleteLabelsRemoveDd" class="dd"></div>
       <label class="meta" style="display:block;margin-bottom:4px;margin-top:8px">Comment (optional)</label>
       <textarea id="onCompleteComment" rows="2" placeholder="Comment khi handoff…"></textarea>
@@ -1735,6 +1743,7 @@
           return {
             enabled: true,
             assignee: null,
+            processingLabel: "On-processing",
             onStartLabels: [],
             addLabels: [],
             removeLabels: [],
@@ -1745,6 +1754,10 @@
         return {
           enabled: parsed.enabled !== false,
           assignee: parsed.assignee || null,
+          processingLabel:
+            typeof parsed.processingLabel === "string" && parsed.processingLabel.trim()
+              ? parsed.processingLabel.trim()
+              : "On-processing",
           onStartLabels: Array.isArray(parsed.onStartLabels) ? parsed.onStartLabels : [],
           addLabels: Array.isArray(parsed.addLabels) ? parsed.addLabels : [],
           removeLabels: Array.isArray(parsed.removeLabels) ? parsed.removeLabels : [],
@@ -1754,6 +1767,7 @@
         return {
           enabled: true,
           assignee: null,
+          processingLabel: "On-processing",
           onStartLabels: [],
           addLabels: [],
           removeLabels: [],
@@ -1778,6 +1792,8 @@
 
     function openSettingsModal() {
       $("onCompleteComment").value = savedSettings.comment || "";
+      $("settingsProcessingLabel").value =
+        savedSettings.processingLabel || "On-processing";
       ddOnAssignee?.setSelected(savedSettings.assignee ? [savedSettings.assignee] : []);
       ddOnStartLabels?.setSelected(savedSettings.onStartLabels || []);
       ddOnLabelsAdd?.setSelected(savedSettings.addLabels || []);
@@ -1924,6 +1940,8 @@
         savedSettings = {
           enabled: true,
           assignee: ddOnAssignee?.getSelectedOne() || null,
+          processingLabel:
+            ($("settingsProcessingLabel").value || "").trim() || "On-processing",
           onStartLabels: ddOnStartLabels?.getSelected() || [],
           addLabels,
           removeLabels,
@@ -2698,11 +2716,18 @@
       if (stick) box.scrollTop = box.scrollHeight;
     }
 
+    function paintContextMeta(status, live, _tu) {
+      const bits = [];
+      if (live) bits.push("live");
+      if (status) bits.push(status);
+      $("progressMeta").textContent = bits.length ? `· ${bits.join(" · ")}` : "";
+    }
+
     function resetProgressView(msg) {
       progressAfterId = 0;
       $("progressLog").innerHTML = `<div class="empty">${escapeHtml(msg || "…")}</div>`;
       $("progressLog").classList.remove("live");
-      $("progressMeta").textContent = "";
+      paintContextMeta("", false, null);
     }
 
     async function pollProgress(reset) {
@@ -2720,22 +2745,8 @@
         appendProgressLines(data.lines || []);
         progressAfterId = data.latestId || progressAfterId;
         const tu = data.tokenUsage;
-        const pct =
-          tu && typeof tu.contextPct === "number"
-            ? ` · window ~${tu.contextPct}%`
-            : "";
-        const agentBit = data.agentId
-          ? ` · agent ${String(data.agentId).slice(0, 10)}…`
-          : "";
-        $("progressMeta").textContent = data.live
-          ? `· live · ${data.status}${pct}${agentBit}`
-          : data.status
-            ? `· ${data.status}${pct}${agentBit}`
-            : pct || agentBit
-              ? `${pct}${agentBit}`.replace(/^ · /, "· ")
-              : "";
+        paintContextMeta(data.status || "", Boolean(data.live), tu);
         $("progressLog").classList.toggle("live", Boolean(data.live));
-        // Keep job tokenUsage fresh for list badges
         if (tu && selectedJobId) {
           const j = jobs.find((x) => x.id === selectedJobId);
           if (j) j.tokenUsage = tu;
@@ -3073,16 +3084,11 @@
       }
       $("jobList").innerHTML = jobs.map((j) => {
         const killable = ["queued", "running", "awaiting_clarification", "awaiting_diff_approval"].includes(j.status);
-        const hasNotes = !!(j.devNotes || j.techLeadNotes);
         const docsBit = j.requireDocsFirst ? " · docs-first" : "";
-        const tok =
-          j.tokenUsage && typeof j.tokenUsage.contextPct === "number"
-            ? ` · ~${j.tokenUsage.contextPct}% ctx`
-            : "";
         const agentBit = j.agentId ? ` · win` : "";
         return `
         <div class="job ${j.id === selectedJobId ? "active" : ""}" data-job="${j.id}">
-          <div><span class="st ${j.status}">${j.status}</span> · ${issueIdWithView(j.issue?.issueIid, j.issue?.url)}${j.runCount ? ` · run#${j.runCount}` : ""}${hasNotes ? " · notes" : ""}${docsBit}${tok}${agentBit}${j.commitSha ? ` · <code>${escapeHtml(j.commitSha.slice(0, 7))}</code>` : ""}</div>
+          <div><span class="st ${j.status}">${j.status}</span> · ${issueIdWithView(j.issue?.issueIid, j.issue?.url)}${j.runCount ? ` · run#${j.runCount}` : ""}${docsBit}${agentBit}${j.commitSha ? ` · <code>${escapeHtml(j.commitSha.slice(0, 7))}</code>` : ""}</div>
           <div class="title">${escapeHtml(j.issue?.title || "")}</div>
           <div class="meta">${j.error ? escapeHtml(j.error).slice(0, 80) : escapeHtml(j.id)}</div>
           ${killable ? `<div class="job-actions"><button type="button" class="danger" data-kill="${j.id}">Force Stop</button></div>` : ""}
@@ -3426,6 +3432,11 @@
       try {
         const detail = await api(`/api/jobs/${id}`);
         currentJob = detail.job || null;
+        paintContextMeta(
+          currentJob?.status || "",
+          ["queued", "running", "awaiting_clarification"].includes(currentJob?.status),
+          currentJob?.tokenUsage || null,
+        );
         if (detail.job?.issue?.issueIid) {
           selectedTaskIid = detail.job.issue.issueIid;
           renderTasks();
@@ -3658,9 +3669,10 @@
           savedSettings = {
             enabled: true,
             assignee: envAssignee,
+            processingLabel: "On-processing",
             onStartLabels: [],
             addLabels: envLabels,
-            removeLabels: ["on-processing"],
+            removeLabels: [],
             comment: defaults.comment || "",
           };
         }
@@ -3676,6 +3688,7 @@
         labels: [],
         removeLabels: [],
         onStartLabels: savedSettings.onStartLabels || [],
+        processingLabel: savedSettings.processingLabel || "On-processing",
         labelMode: "add",
         comment: "",
       };

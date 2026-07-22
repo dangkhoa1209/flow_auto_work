@@ -70,7 +70,7 @@ export function legacyRuntimeFromEnv(): RuntimeContext | null {
     gitlabUsername: c.GITLAB_ASSIGNEE_USERNAME,
     gitlabToken: c.GITLAB_TOKEN,
     cursorApiKey: c.CURSOR_API_KEY,
-    cursorModel: c.CURSOR_MODEL || "auto",
+    cursorModel: "auto",
     projectId: "legacy",
     gitlabPath: c.ALLOWED_PROJECT_PATH,
     repoPath: c.AIHR_REPO_PATH,

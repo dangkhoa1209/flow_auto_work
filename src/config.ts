@@ -4,20 +4,16 @@ import { z } from "zod";
 loadDotenv();
 
 const envSchema = z.object({
-  INGEST_MODE: z.enum(["webhook"]).default("webhook"),
   PORT: z.coerce.number().default(8787),
   HOST: z.string().default("127.0.0.1"),
   /** Server master key to encrypt user GitLab/Cursor tokens at rest */
   FLOW_SECRETS_KEY: z.string().min(16),
   /** Optional legacy defaults — prefer per-user tokens in Mongo (encrypted) */
   CURSOR_API_KEY: z.string().optional(),
-  /** `auto` = server picks; or a concrete id e.g. composer-2.5 */
-  CURSOR_MODEL: z.string().default("auto"),
   AIHR_REPO_PATH: z.string().optional(),
   ALLOWED_PROJECT_PATH: z.string().optional(),
   GITLAB_BASE_URL: z.string().url().default("https://gitlab.com"),
   GITLAB_TOKEN: z.string().optional(),
-  GITLAB_WEBHOOK_SECRET: z.string().min(1),
   GITLAB_ASSIGNEE_USERNAME: z.string().optional(),
   GITLAB_ASSIGNEE_ID: z.string().optional(),
   MR_TARGET_BRANCH: z.string().optional(),
@@ -39,21 +35,11 @@ const envSchema = z.object({
     .string()
     .optional()
     .transform((v) => v === "true" || v === "1"),
-  WEBHOOK_AUTO_ENQUEUE: z
-    .string()
-    .optional()
-    .transform((v) => v === "true" || v === "1"),
-  COMMIT_EXCLUDE_PATHS: z
-    .string()
-    .default(
-      "resources/js/composables/permission.js,resources/js/directives/index.js",
-    ),
-  MONGODB_URI: z.string().default("mongodb://127.0.0.1:27017"),
-  MONGODB_DB: z.string().default("flow_auto_work"),
-  /** GitLab label added when a job starts; removed on QC handoff */
-  PROCESSING_LABEL: z.string().default("on-processing"),
-  /** Estimated model context window for % display (SDK has no remaining-% API) */
-  CURSOR_CONTEXT_WINDOW: z.coerce.number().default(200_000),
+  DB_HOST: z.string().default("127.0.0.1"),
+  DB_PORT: z.coerce.number().default(27017),
+  DB_DATABASE: z.string().default("flow_auto_work"),
+  DB_USERNAME: z.string().optional(),
+  DB_PASSWORD: z.string().optional(),
   ON_COMPLETE_ASSIGN_USERNAMES: z.string().optional(),
   ON_COMPLETE_LABELS: z.string().optional(),
   ON_COMPLETE_COMMENT: z.string().optional(),
@@ -62,13 +48,11 @@ const envSchema = z.object({
 export type AppConfig = z.infer<typeof envSchema> & {
   skipLabels: string[];
   mrReviewerUsernames: string[];
-  commitExcludePaths: string[];
   onCompleteAssignUsernames: string[];
   onCompleteLabels: string[];
   teamsEnabled: boolean;
   STARTUP_SCAN: boolean;
   STARTUP_SCAN_INCLUDE_SUCCEEDED: boolean;
-  WEBHOOK_AUTO_ENQUEUE: boolean;
 };
 
 let cached: AppConfig | null = null;
@@ -101,9 +85,6 @@ export function getConfig(): AppConfig {
       .split(",")
       .map((s) => s.trim())
       .filter(Boolean),
-    commitExcludePaths: env.COMMIT_EXCLUDE_PATHS.split(",")
-      .map((s) => s.trim())
-      .filter(Boolean),
     onCompleteAssignUsernames: (env.ON_COMPLETE_ASSIGN_USERNAMES ?? "")
       .split(",")
       .map((s) => s.trim())
@@ -124,7 +105,6 @@ export function getConfig(): AppConfig {
       ["your-gitlab-username"],
     ],
     ["CURSOR_API_KEY", cached.CURSOR_API_KEY, ["cursor_..."]],
-    ["GITLAB_WEBHOOK_SECRET", cached.GITLAB_WEBHOOK_SECRET, ["change-me"]],
     ["FLOW_SECRETS_KEY", cached.FLOW_SECRETS_KEY, ["change-me", "replace-me"]],
   ];
   for (const [name, value, bads] of placeholders) {
@@ -146,4 +126,18 @@ export function getConfig(): AppConfig {
   }
 
   return cached;
+}
+
+/** Build mongodb:// URI from DB_* env parts (auth optional). */
+export function buildMongoUri(cfg = getConfig()): string {
+  const host = cfg.DB_HOST.trim();
+  const port = cfg.DB_PORT;
+  const user = cfg.DB_USERNAME?.trim();
+  const pass = cfg.DB_PASSWORD;
+  if (user) {
+    const u = encodeURIComponent(user);
+    const p = encodeURIComponent(pass ?? "");
+    return `mongodb://${u}:${p}@${host}:${port}`;
+  }
+  return `mongodb://${host}:${port}`;
 }

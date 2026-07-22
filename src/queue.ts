@@ -4,7 +4,6 @@ import {
   getHeadSha,
   hasUncommittedChanges,
   prepareRepoForIssue,
-  scrubExcludedPathsFromLastCommit,
 } from "./git/prep.js";
 import {
   commentOnIssue,
@@ -20,6 +19,7 @@ import {
   resumeAgent,
   runNewAgent,
 } from "./agent/run.js";
+import { getJobTokenUsage } from "./agent/progress.js";
 import {
   cancelUiClarification,
   waitForUiClarification,
@@ -243,6 +243,18 @@ export class JobQueue {
       const repoPath = rt?.repoPath ?? config.AIHR_REPO_PATH;
       if (!repoPath) throw new Error("No repo path in workspace context");
 
+      const priorChat = await listChatMessages({ jobId: job.id, limit: 40 });
+      const chatHistory = priorChat
+        .map((m) => {
+          const who =
+            m.role === "user" ? "Human" : m.role === "agent" ? "Agent" : "System";
+          const body = String(m.body || "").trim().slice(0, 2500);
+          return body ? `${who}:\n${body}` : "";
+        })
+        .filter(Boolean)
+        .join("\n\n")
+        .slice(0, 24_000);
+
       await addChatMessage({
         jobId: job.id,
         issueIid: job.issue.issueIid,
@@ -254,20 +266,10 @@ export class JobQueue {
       const headBefore = await getHeadSha(repoPath);
       let result = await continueAgentWindow(job.issue, msg, {
         jobId: job.id,
-        existingAgentId: job.agentId,
+        chatHistory: chatHistory || undefined,
       });
       job.agentId = result.agentId;
-      if (result.usage) {
-        job.tokenUsage = {
-          inputTokens: result.usage.inputTokens,
-          outputTokens: result.usage.outputTokens,
-          totalTokens: result.usage.totalTokens,
-          lastInputTokens: result.usage.lastInputTokens,
-          contextWindow: result.usage.contextWindow,
-          contextPct: result.usage.contextPct,
-          updatedAt: result.usage.updatedAt,
-        };
-      }
+      applyTokenUsageToJob(job, result.usage);
       await saveJob(job);
 
       result = await this.runClarifyLoop(job, result);
@@ -340,12 +342,22 @@ export class JobQueue {
       }
       return await runFollowUp();
     } catch (err) {
+      const { isTransientCursorTransportError } = await import("./agent/run.js");
       const message = isStartupError(err)
         ? `Cursor SDK startup error: ${err.message}`
         : err instanceof Error
           ? err.message
           : String(err);
-      job.status = "failed";
+      // Transient Cursor HTTP/2 — restore previous status so UI can retry
+      if (
+        isTransientCursorTransportError(err) &&
+        (prevStatus === "awaiting_handoff" || prevStatus === "succeeded")
+      ) {
+        job.status = prevStatus;
+        job.agentId = undefined;
+      } else {
+        job.status = "failed";
+      }
       job.error = message;
       await saveJob(job);
       throw err instanceof Error ? err : new Error(message);
@@ -491,17 +503,7 @@ export class JobQueue {
         jobId: job.id,
       });
       job.agentId = result.agentId;
-      if (result.usage) {
-        job.tokenUsage = {
-          inputTokens: result.usage.inputTokens,
-          outputTokens: result.usage.outputTokens,
-          totalTokens: result.usage.totalTokens,
-          lastInputTokens: result.usage.lastInputTokens,
-          contextWindow: result.usage.contextWindow,
-          contextPct: result.usage.contextPct,
-          updatedAt: result.usage.updatedAt,
-        };
-      }
+      applyTokenUsageToJob(job, result.usage);
       await saveJob(job);
     }
     return result;
@@ -521,23 +523,22 @@ export class JobQueue {
         madeCommit = true;
       } else {
         logger.info(
-          "No non-WIP changes to commit — treating agent output as already committed",
+          "Nothing to commit — treating agent output as already committed",
           { jobId: job.id },
         );
       }
     } else {
-      logger.info("Working tree clean (excl. WIP) — already committed", {
+      logger.info("Working tree clean — already committed", {
         jobId: job.id,
       });
     }
-    await scrubExcludedPathsFromLastCommit(repoPath);
     commitSha = (await getHeadSha(repoPath)) ?? commitSha;
     this.assertNotKilled(job);
 
     const dirty = await hasUncommittedChanges(repoPath);
     if (dirty) {
       logger.warn(
-        "Non-WIP uncommitted changes remain after agent finish; continuing",
+        "Uncommitted changes remain after agent finish; continuing",
         { jobId: job.id },
       );
     }
@@ -610,6 +611,7 @@ export class JobQueue {
       await markIssueProcessing({
         projectId: job.issue.projectId,
         issueIid: job.issue.issueIid,
+        processingLabel: job.completion?.processingLabel,
         extraStartLabels: startLabels,
       });
 
@@ -661,20 +663,12 @@ export class JobQueue {
             : undefined,
       });
       job.agentId = result.agentId;
-      if (result.usage) {
-        job.tokenUsage = {
-          inputTokens: result.usage.inputTokens,
-          outputTokens: result.usage.outputTokens,
-          totalTokens: result.usage.totalTokens,
-          lastInputTokens: result.usage.lastInputTokens,
-          contextWindow: result.usage.contextWindow,
-          contextPct: result.usage.contextPct,
-          updatedAt: result.usage.updatedAt,
-        };
-      }
+      applyTokenUsageToJob(job, result.usage);
       await saveJob(job);
 
       result = await this.runClarifyLoop(job, result);
+      applyTokenUsageToJob(job, result.usage);
+      await saveJob(job);
 
       if (runDocsPhase) {
         if (result.kind !== "docs_ready" && result.kind !== "unknown") {
@@ -804,6 +798,7 @@ export class JobQueue {
       await clearIssueProcessing({
         projectId: job.issue.projectId,
         issueIid: job.issue.issueIid,
+        processingLabel: job.completion?.processingLabel,
       });
       logger.error("Job failed", { jobId: job.id, message });
     } finally {
@@ -812,6 +807,29 @@ export class JobQueue {
       this.killedJobs.delete(job.id);
     }
   }
+}
+
+
+function applyTokenUsageToJob(job: JobRecord, usage: {
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  lastInputTokens: number;
+  contextWindow: number;
+  contextPct: number;
+  updatedAt: string;
+} | null | undefined) {
+  const snap = usage ?? getJobTokenUsage(job.id);
+  if (!snap) return;
+  job.tokenUsage = {
+    inputTokens: snap.inputTokens,
+    outputTokens: snap.outputTokens,
+    totalTokens: snap.totalTokens,
+    lastInputTokens: snap.lastInputTokens,
+    contextWindow: snap.contextWindow,
+    contextPct: snap.contextPct,
+    updatedAt: snap.updatedAt,
+  };
 }
 
 export const jobQueue = new JobQueue();

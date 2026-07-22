@@ -168,6 +168,8 @@ export function createApiRoutes() {
           onStartLabels: body.completion.onStartLabels
             ?.map((s) => String(s).trim())
             .filter(Boolean),
+          processingLabel:
+            body.completion.processingLabel?.trim() || undefined,
           labelMode:
             body.completion.labelMode === "set"
               ? ("set" as const)
@@ -519,8 +521,10 @@ export function createApiRoutes() {
     }
 
     const { applyIssueActions } = await import("../gitlab/client.js");
-    const { processingLabel } = await import("../gitlab/processing-label.js");
-    const proc = processingLabel();
+    const { resolveProcessingLabel } = await import(
+      "../gitlab/processing-label.js"
+    );
+    const proc = resolveProcessingLabel(job.completion?.processingLabel);
     const removeWithProcessing = [
       ...new Set(
         [...removeLabels, proc].map((s) => s.trim()).filter(Boolean),

@@ -1,18 +1,26 @@
-import { getConfig } from "../config.js";
 import { applyIssueActions } from "../gitlab/client.js";
 import { logger } from "../logger.js";
 
-export function processingLabel(): string {
-  return (getConfig().PROCESSING_LABEL || "on-processing").trim();
+const DEFAULT_PROCESSING_LABEL = "On-processing";
+
+export function resolveProcessingLabel(override?: string | null): string {
+  const v = (override ?? DEFAULT_PROCESSING_LABEL).trim();
+  return v || DEFAULT_PROCESSING_LABEL;
+}
+
+/** @deprecated use resolveProcessingLabel with job.completion.processingLabel */
+export function processingLabel(override?: string | null): string {
+  return resolveProcessingLabel(override);
 }
 
 /** Add processing label when a job starts working. */
 export async function markIssueProcessing(opts: {
   projectId: number;
   issueIid: number;
+  processingLabel?: string | null;
   extraStartLabels?: string[];
 }): Promise<void> {
-  const proc = processingLabel();
+  const proc = resolveProcessingLabel(opts.processingLabel);
   const labels = [
     ...new Set(
       [...(opts.extraStartLabels ?? []), proc]
@@ -41,8 +49,9 @@ export async function markIssueProcessing(opts: {
 export async function clearIssueProcessing(opts: {
   projectId: number;
   issueIid: number;
+  processingLabel?: string | null;
 }): Promise<void> {
-  const proc = processingLabel();
+  const proc = resolveProcessingLabel(opts.processingLabel);
   if (!proc) return;
   try {
     await applyIssueActions({

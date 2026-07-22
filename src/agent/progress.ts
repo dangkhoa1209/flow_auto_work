@@ -1,5 +1,7 @@
 import type { SDKMessage } from "@cursor/sdk";
-import { getConfig } from "../config.js";
+
+/** Fixed estimate for context % UI (SDK has no remaining-% API). */
+const CONTEXT_WINDOW_TOKENS = 200_000;
 
 export type ProgressLine = {
   id: number;
@@ -75,14 +77,14 @@ type UsageLike = {
   cacheWriteTokens?: number;
 };
 
-/** Best-effort context fill % from last-turn inputTokens / configured window. */
+/** Best-effort context fill % from last-turn inputTokens / fixed window. */
 export function recordTokenUsage(
   jobId: string | undefined,
   usage: UsageLike | undefined | null,
   opts?: { lastTurnInput?: number },
 ): JobTokenSnapshot | null {
   if (!jobId || !usage) return null;
-  const window = Math.max(1, getConfig().CURSOR_CONTEXT_WINDOW || 200_000);
+  const window = CONTEXT_WINDOW_TOKENS;
   const inputTokens = Number(usage.inputTokens) || 0;
   const outputTokens = Number(usage.outputTokens) || 0;
   const totalTokens =
@@ -109,10 +111,16 @@ export function recordTokenUsage(
     updatedAt: new Date().toISOString(),
   };
   tokenByJob.set(jobId, snap);
+  const short = (n: number) =>
+    n >= 1_000_000
+      ? `${(n / 1_000_000).toFixed(n % 1_000_000 === 0 ? 0 : 1)}M`
+      : n >= 1000
+        ? `${Math.round(n / 1000)}k`
+        : String(n);
   appendJobProgress(
     jobId,
     "usage",
-    `tokens · window ~${contextPct}% (${lastInput.toLocaleString()}/${window.toLocaleString()} in) · total ${totalTokens.toLocaleString()}`,
+    `%${contextPct} - ${short(lastInput)}/${short(window)}`,
   );
   return snap;
 }

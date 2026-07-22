@@ -7,6 +7,8 @@ export type CompletionActions = {
   removeLabels?: string[];
   /** Labels to add when job starts (before agent work) */
   onStartLabels?: string[];
+  /** GitLab label while job runs (UI Settings; default On-processing) */
+  processingLabel?: string;
   /** @deprecated prefer labels + removeLabels */
   labelMode?: "add" | "set";
   /** Extra comment body (in addition to default success comment) */

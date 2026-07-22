@@ -11,7 +11,7 @@ import { getGitlabScanConfig } from "../src/gitlab/scan-config.js";
 import { listAssignedOpenIssues } from "../src/gitlab/client.js";
 import { scanExistingAssignedIssues } from "../src/gitlab/startup-scan.js";
 
-/** Allow listAssignedOpenIssues (uses getConfig) without full Cursor/Teams setup. */
+/** Allow listAssignedOpenIssues (uses getConfig) without full Cursor setup. */
 function ensureFullConfigForGitlabApi() {
   if (
     !process.env.CURSOR_API_KEY ||
@@ -20,10 +20,10 @@ function ensureFullConfigForGitlabApi() {
     process.env.CURSOR_API_KEY = "list-tasks-placeholder-ok";
   }
   if (
-    !process.env.GITLAB_WEBHOOK_SECRET ||
-    process.env.GITLAB_WEBHOOK_SECRET === "change-me"
+    !process.env.FLOW_SECRETS_KEY ||
+    process.env.FLOW_SECRETS_KEY.length < 16
   ) {
-    process.env.GITLAB_WEBHOOK_SECRET = "list-tasks-placeholder-ok";
+    process.env.FLOW_SECRETS_KEY = "list-tasks-placeholder-ok-secret";
   }
   process.env.AIHR_REPO_PATH ??=
     "/Users/dangkhoa/Developer/Work/Jobtest/aihr_v3";

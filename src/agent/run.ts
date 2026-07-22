@@ -25,7 +25,45 @@ import {
 } from "./progress.js";
 
 // Cursor SDK attaches many AbortSignal listeners during a run.
-setMaxListeners(50);
+setMaxListeners(100);
+
+/** Cursor HTTP/2 rate-limit / stream kill / hang — must not crash the Node process. */
+export function isTransientCursorTransportError(err: unknown): boolean {
+  const msg =
+    err instanceof Error
+      ? `${err.message} ${String((err as Error & { cause?: unknown }).cause ?? "")}`
+      : String(err);
+  return (
+    /ENHANCE_YOUR_CALM/i.test(msg) ||
+    /ERR_HTTP2_STREAM_ERROR/i.test(msg) ||
+    (/ConnectError/i.test(msg) && /Stream closed/i.test(msg)) ||
+    /timed out after/i.test(msg) ||
+    /waiting for first (event|message)/i.test(msg) ||
+    /already has active run/i.test(msg)
+  );
+}
+
+async function withTimeout<T>(
+  promise: Promise<T>,
+  ms: number,
+  label: string,
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(
+          () =>
+            reject(new Error(`${label} timed out after ${Math.round(ms / 1000)}s`)),
+          ms,
+        );
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
 
 type CancellableRun = {
   cancel: () => Promise<void>;
@@ -56,27 +94,65 @@ export async function cancelActiveAgentRun(jobId: string): Promise<boolean> {
 async function collectAssistantText(
   run: SdkRun,
   jobId?: string,
+  opts?: { promptChars?: number; firstEventTimeoutMs?: number },
 ): Promise<{ text: string; usage: JobTokenSnapshot | null }> {
   if (jobId) {
     clearJobProgress(jobId);
-    appendJobProgress(jobId, "status", "Cursor agent started");
+    appendJobProgress(jobId, "status", "Cursor agent started — chờ phản hồi…");
   }
 
+  const firstEventMs = opts?.firstEventTimeoutMs ?? 75_000;
   let streamed = "";
   let lastTurnInput = 0;
   try {
     if (typeof run.stream === "function" && run.supports?.("stream") !== false) {
-      for await (const message of run.stream()) {
+      const it = run.stream()[Symbol.asyncIterator]();
+      let firstTimer: ReturnType<typeof setTimeout> | undefined;
+      const first = await Promise.race([
+        it.next(),
+        new Promise<IteratorResult<unknown>>((_, reject) => {
+          firstTimer = setTimeout(() => {
+            void run.cancel?.().catch(() => undefined);
+            reject(
+              new Error(
+                `Cursor timed out after ${Math.round(firstEventMs / 1000)}s waiting for first event`,
+              ),
+            );
+          }, firstEventMs);
+        }),
+      ]);
+      if (firstTimer) clearTimeout(firstTimer);
+      if (jobId) {
+        appendJobProgress(jobId, "status", "Cursor đang stream…");
+      }
+
+      let step = first as IteratorResult<{
+        type?: string;
+        message?: { content?: Array<{ type?: string; text?: string }> };
+        usage?: { inputTokens?: number };
+      }>;
+      while (!step.done) {
+        const message = step.value as Parameters<typeof appendSdkMessage>[1];
         appendSdkMessage(jobId, message);
-        if (message.type === "assistant") {
-          for (const block of message.message.content) {
-            if (block.type === "text") streamed += block.text;
+        if (message && message.type === "assistant") {
+          const content =
+            (
+              message as {
+                message?: { content?: Array<{ type?: string; text?: string }> };
+              }
+            ).message?.content ?? [];
+          for (const block of content) {
+            if (block.type === "text" && block.text) streamed += block.text;
           }
         }
-        const raw = message as { type?: string; usage?: { inputTokens?: number } };
-        if (raw.type === "usage" && raw.usage?.inputTokens) {
+        const raw = message as {
+          type?: string;
+          usage?: { inputTokens?: number };
+        };
+        if (raw?.type === "usage" && raw.usage?.inputTokens) {
           lastTurnInput = raw.usage.inputTokens;
         }
+        step = (await it.next()) as typeof step;
       }
     }
   } catch (err) {
@@ -84,9 +160,29 @@ async function collectAssistantText(
     logger.warn("Agent stream failed; falling back to wait()", {
       err: String(err),
     });
+    if (isTransientCursorTransportError(err)) {
+      throw err instanceof Error
+        ? err
+        : new Error(
+            "Cursor stream closed (NGHTTP2_ENHANCE_YOUR_CALM) — rate limit / connection. Thử Gửi lại.",
+          );
+    }
   }
 
-  const result = await run.wait();
+  let result: Awaited<ReturnType<SdkRun["wait"]>>;
+  try {
+    result = await run.wait();
+  } catch (err) {
+    appendJobProgress(jobId, "status", `wait error: ${String(err)}`);
+    if (isTransientCursorTransportError(err)) {
+      throw err instanceof Error
+        ? err
+        : new Error(
+            "Cursor stream closed (NGHTTP2_ENHANCE_YOUR_CALM) — rate limit / connection. Thử Gửi lại.",
+          );
+    }
+    throw err instanceof Error ? err : new Error(String(err));
+  }
   if (result.status === "cancelled") {
     appendJobProgress(jobId, "status", "cancelled");
     throw new Error("Agent run cancelled (force stop)");
@@ -128,12 +224,36 @@ async function collectAssistantText(
   ).usage;
   const liveUsage = (run as { usage?: Parameters<typeof recordTokenUsage>[1] })
     .usage;
+  const sdkUsage = usageFromResult ?? liveUsage;
+  const hasSdk =
+    Boolean(sdkUsage) &&
+    (Number(sdkUsage?.inputTokens) > 0 ||
+      Number(sdkUsage?.totalTokens) > 0 ||
+      Number(sdkUsage?.outputTokens) > 0);
+  // Fallback: ~chars/4 — SDK local often omits usage; still show % in UI
+  const inEst = Math.max(1, Math.ceil((opts?.promptChars ?? 0) / 4));
+  const outEst = Math.max(0, Math.ceil((streamed || text).length / 4));
+  const fallback = {
+    inputTokens: inEst,
+    outputTokens: outEst,
+    totalTokens: inEst + outEst,
+  };
   const usage =
     (jobId &&
-      recordTokenUsage(jobId, usageFromResult ?? liveUsage, {
-        lastTurnInput: lastTurnInput || undefined,
+      recordTokenUsage(jobId, hasSdk ? sdkUsage : fallback, {
+        lastTurnInput: lastTurnInput || (hasSdk ? undefined : inEst),
       })) ||
     (jobId ? getJobTokenUsage(jobId) : null);
+
+  if (jobId && usage) {
+    logger.info("Token usage recorded", {
+      jobId,
+      contextPct: usage.contextPct,
+      lastInputTokens: usage.lastInputTokens,
+      contextWindow: usage.contextWindow,
+      fromSdk: hasSdk,
+    });
+  }
 
   appendJobProgress(jobId, "status", "Cursor agent finished");
   return { text, usage };
@@ -299,7 +419,9 @@ export async function runNewAgent(
   }
   trackRun(opts?.jobId, run);
   try {
-    const { text, usage } = await collectAssistantText(run, opts?.jobId);
+    const { text, usage } = await collectAssistantText(run, opts?.jobId, {
+      promptChars: prompt.length,
+    });
     const parsed = parseAgentOutcome(text);
     return {
       agentId: disposed.agentId,
@@ -332,11 +454,14 @@ export async function resumeAgent(
     agentId: agent.agentId,
     model: modelId,
   });
-  const run = await agent.send(buildResumePrompt(answer, issue));
+  const prompt = buildResumePrompt(answer, issue);
+  const run = await agent.send(prompt);
   logger.info("Resume run started", { runId: run.id, agentId: agent.agentId });
   trackRun(opts?.jobId, run);
   try {
-    const { text, usage } = await collectAssistantText(run, opts?.jobId);
+    const { text, usage } = await collectAssistantText(run, opts?.jobId, {
+      promptChars: prompt.length,
+    });
     const parsed = parseAgentOutcome(text);
     return {
       agentId: agent.agentId,
@@ -353,69 +478,63 @@ export async function resumeAgent(
 }
 
 /**
- * Cursor-IDE-style follow-up on the same job agent window.
- * Creates a window if none exists yet.
+ * IDE-style follow-up chat for a job.
+ * Always opens a **fresh** agent window — resume often fails with
+ * "already has active run" after crash/hang/force-stop. Prior chat is
+ * injected into the prompt instead.
  */
 export async function continueAgentWindow(
   issue: IssueJob,
   message: string,
-  opts?: { jobId?: string; existingAgentId?: string },
+  opts?: { jobId?: string; chatHistory?: string },
 ): Promise<AgentRunResult> {
   const modelId = resolveCursorModel();
-  const existing = opts?.existingAgentId?.trim();
-  let resumed = false;
-  let agent: Awaited<ReturnType<typeof Agent.create>>;
+  const prompt = buildFollowUpPrompt(message, issue, {
+    chatHistory: opts?.chatHistory,
+  });
 
-  if (existing) {
-    try {
-      agent = await Agent.resume(existing, {
-        apiKey: resolveCursorApiKey(),
-        model: { id: modelId },
-        local: { cwd: resolveRepoPath() },
-      });
-      resumed = true;
-      logger.info("Follow-up on existing agent window", {
-        agentId: agent.agentId,
-        model: modelId,
-      });
-    } catch (err) {
-      logger.warn("Follow-up resume failed — new window", {
-        existing,
-        err: String(err),
-      });
-      agent = await Agent.create({
-        apiKey: resolveCursorApiKey(),
-        model: { id: modelId },
-        local: { cwd: resolveRepoPath() },
-      });
-    }
-  } else {
-    agent = await Agent.create({
-      apiKey: resolveCursorApiKey(),
-      model: { id: modelId },
-      local: { cwd: resolveRepoPath() },
-    });
-    logger.info("Follow-up created new agent window", {
-      agentId: agent.agentId,
-      model: modelId,
-    });
+  if (opts?.jobId) {
+    clearJobProgress(opts.jobId);
+    appendJobProgress(opts.jobId, "status", "Mở cửa sổ agent mới…");
   }
 
+  const agent = await Agent.create({
+    apiKey: resolveCursorApiKey(),
+    model: { id: modelId },
+    local: { cwd: resolveRepoPath() },
+  });
+  logger.info("Follow-up new agent window", {
+    agentId: agent.agentId,
+    model: modelId,
+  });
+
   await using disposed = agent;
-  const prompt = buildFollowUpPrompt(message, issue);
   if (opts?.jobId) {
     appendJobProgress(
       opts.jobId,
       "status",
-      resumed
-        ? `IDE follow-up · window ${disposed.agentId}`
-        : `IDE chat · new window ${disposed.agentId}`,
+      `Cửa sổ ${disposed.agentId.slice(0, 18)}…`,
     );
+    appendJobProgress(opts.jobId, "status", "Đang gửi prompt…");
   }
-  const run = await disposed.send(prompt);
+
+  let run: SdkRun;
+  try {
+    run = await withTimeout(disposed.send(prompt), 60_000, "agent.send");
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (opts?.jobId) {
+      appendJobProgress(opts.jobId, "status", `Gửi prompt lỗi: ${msg}`);
+    }
+    throw err instanceof Error ? err : new Error(msg);
+  }
+
   trackRun(opts?.jobId, run);
   try {
-    const { text, usage } = await collectAssistantText(run, opts?.jobId);
+    const { text, usage } = await collectAssistantText(run, opts?.jobId, {
+      promptChars: prompt.length,
+      firstEventTimeoutMs: 90_000,
+    });
     const parsed = parseAgentOutcome(text);
     return {
       agentId: disposed.agentId,
@@ -424,7 +543,7 @@ export async function continueAgentWindow(
       question: parsed.question,
       summary: parsed.summary,
       usage,
-      resumed,
+      resumed: false,
     };
   } finally {
     untrackRun(opts?.jobId);

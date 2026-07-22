@@ -236,11 +236,24 @@ ${opts.question}`;
         );
       }
       const text = (result.result ?? streamed).trim() || "(no answer)";
+      const sdkU = (result as { usage?: Parameters<typeof recordTokenUsage>[1] })
+        .usage;
+      const hasSdk =
+        Boolean(sdkU) &&
+        (Number(sdkU?.inputTokens) > 0 || Number(sdkU?.totalTokens) > 0);
+      const inEst = Math.max(1, Math.ceil(prompt.length / 4));
+      const outEst = Math.max(0, Math.ceil(text.length / 4));
       const usage = jobId
         ? recordTokenUsage(
             jobId,
-            (result as { usage?: Parameters<typeof recordTokenUsage>[1] }).usage,
-            { lastTurnInput: lastTurnInput || undefined },
+            hasSdk
+              ? sdkU
+              : {
+                  inputTokens: inEst,
+                  outputTokens: outEst,
+                  totalTokens: inEst + outEst,
+                },
+            { lastTurnInput: lastTurnInput || (hasSdk ? undefined : inEst) },
           )
         : null;
       appendJobProgress(jobId, "status", "Q&A finished");

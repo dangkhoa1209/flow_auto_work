@@ -20,12 +20,12 @@ export function resolveCursorApiKey(): string {
   );
 }
 
-/** Per-user model from UI, else CURSOR_MODEL from .env (default auto). */
+/** Per-user model from UI, else auto. */
 export function resolveCursorModel(): string {
   const rt = getRuntimeContext();
   const fromUser = rt?.cursorModel?.trim();
   if (fromUser) return fromUser;
-  return getConfig().CURSOR_MODEL?.trim() || "auto";
+  return "auto";
 }
 
 export function resolveRepoPath(): string {

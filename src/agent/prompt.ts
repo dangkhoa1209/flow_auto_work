@@ -179,9 +179,6 @@ Load the relevant module/feature docs (max ~3) and applicable rules before chang
 Do not touch .env, credentials, or secrets.
 Do not force-push, do not amend commits already on remote, do not create or merge MRs.
 Do NOT switch git branches. Stay on the branch that is already checked out.
-Do NOT stage or commit these local WIP files (leave them unstaged; do not add to .gitignore):
-- resources/js/composables/permission.js
-- resources/js/directives/index.js
 
 ${chatBlock}${notesBlock}${docsGateBlock}# BUSINESS REQUIREMENTS (GITLAB ISSUE #${issue.issueIid})
 Title: ${issue.title}
@@ -240,15 +237,27 @@ Then use the DONE block. The DONE summary MUST be in Vietnamese (tiếng Việt)
 }
 
 /**
- * Cursor-IDE-style follow-up on the same agent window (after DONE or mid-task).
- * Keeps conversation/tool context; human can ask, fix, or request more work.
+ * Follow-up prompt for a (usually fresh) agent window.
+ * Prior chat is injected as text — do not rely on SDK resume (often "already has active run").
  */
-export function buildFollowUpPrompt(message: string, issue: IssueJob): string {
+export function buildFollowUpPrompt(
+  message: string,
+  issue: IssueJob,
+  opts?: { chatHistory?: string },
+): string {
   const commitMsg = commitMessageForIssue(issue);
-  return `You are continuing the **same Cursor agent window** for GitLab issue #${issue.issueIid} ("${issue.title}").
-Prior turns, tool results, and code edits in this window are still your context — like Cursor IDE Agent chat.
+  const history = opts?.chatHistory?.trim();
+  const historyBlock = history
+    ? `
+## Prior chat on this job (context only)
+${history}
 
-## Human follow-up (this turn)
+`
+    : "";
+
+  return `You are working on GitLab issue #${issue.issueIid} ("${issue.title}") in a Cursor agent window.
+This may be a **new** window — use prior chat + the repo (inspect if needed). Do not assume old tool state is still loaded.
+${historyBlock}## Human follow-up (this turn)
 ${message.trim()}
 
 ## How to behave (IDE-like)
@@ -256,12 +265,11 @@ ${message.trim()}
 2. If they ask to fix / add / change / re-test / seed data / run something → **do it** on the CURRENT branch (do not switch branches).
 3. Prefer small, correct changes. Stay scoped to this issue unless they explicitly expand scope.
 4. Do NOT push, force-push, amend remote commits, or open/merge MRs.
-5. Do NOT stage WIP exclude files: resources/js/composables/permission.js, resources/js/directives/index.js.
-6. If you changed code and are done with this request, commit with:
+5. If you changed code and are done with this request, commit with:
 
    ${commitMsg}
 
-7. If you need more info, end with NEED_CLARIFICATION. If finished this follow-up, end with DONE (summary in Vietnamese).
+6. If you need more info, end with NEED_CLARIFICATION. If finished this follow-up, end with DONE (summary in Vietnamese).
 
 <<<NEED_CLARIFICATION>>> / <<<DONE>>> blocks same as usual when applicable.`;
 }

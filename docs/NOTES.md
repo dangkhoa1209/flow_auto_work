@@ -6,7 +6,8 @@ Tài liệu ghi lại những gì đã xây trong project (local orchestrator Gi
 
 - Orchestrator GitLab + Cursor SDK + UI — **multi-user / multi-project**.
 - Mỗi dev login bằng **GitLab username**; nhập **GitLab PAT + Cursor API key** (mã hóa AES-256-GCM trước khi lưu Mongo).
-- **Cursor model** chọn trên UI (Settings / modal Run); lưu theo user (`auto` hoặc model cụ thể). Fallback `.env` `CURSOR_MODEL`.
+- **Cursor model** chọn trên UI (Settings / modal Run); lưu theo user (`auto` hoặc model cụ thể).
+- **Processing label** chọn trên UI Settings (mặc định `On-processing`); thêm khi Start, bỏ khi handoff.
 - Một user join nhiều project; mỗi membership có **nhánh project (base)** + **nhánh làm việc (optional)**.
 - **Nhánh làm việc trống** → khi Run tự tạo `feat/<iid>/<short-english-slug>` từ nhánh project rồi commit.
 - **Nhánh làm việc có giá trị** → chỉ checkout & commit trên nhánh đó.
@@ -33,7 +34,7 @@ JobQueue (serial)
   → on-start labels (optional)
   → [optional] Docs phase (feature docs .md/.mdc) → awaiting_docs_approval → Approve
   → Cursor agent code (AiHR rules + approved docs) → clarify loop
-  → commit local (nếu dirty, excl. WIP) → awaiting_handoff
+  → commit local (nếu dirty) → awaiting_handoff
   → comment "Task work 100% by AI" + summary VI
   → user handoff (add_labels + assignee) → succeeded
   (không push / không MR)
@@ -43,7 +44,7 @@ JobQueue (serial)
 
 **Onboarding**: GitLab PAT (link lấy token trên UI) → chọn project (+ local path) → **nhánh project** + **nhánh làm việc optional**. Cursor key chỉ hỏi khi **Run** nếu chưa có (link Dashboard Integrations trên UI).
 
-**Boot**: server + UI. Không startup scan. Webhook mặc định không enqueue (`WEBHOOK_AUTO_ENQUEUE=false`).
+**Boot**: server + UI. Jobs chỉ start từ UI. Không startup scan.
 
 ---
 
@@ -124,7 +125,7 @@ Docs gate API: `GET /api/jobs/:id/docs`, `POST /api/jobs/:id/approve-docs`, `POS
 | Path | Vai trò |
 |------|---------|
 | `src/index.ts` | Boot + migrate legacy diff-approval |
-| `src/server.ts` | Hono: health, API, webhook, static UI |
+| `src/server.ts` | Hono: health, API, static UI |
 | `src/api/routes.ts` | REST API |
 | `src/queue.ts` | serial jobs → awaiting_handoff |
 | `src/agent/run.ts` | Cursor SDK + stream progress |
@@ -159,8 +160,8 @@ Không comment nếu không có diff; không comment Start / Clarify / Fail.
 
 - Branch đang checkout.
 - Message: `feat #<iid> <title>`.
-- Exclude WIP: `permission.js`, `directives/index.js` (`COMMIT_EXCLUDE_PATHS`).
-- Không push / MR.
+- Commit toàn bộ thay đổi local (không exclude path).
+- Không push / MR (trừ merge work→project khi handoff).
 
 ---
 
@@ -168,8 +169,6 @@ Không comment nếu không có diff; không comment Start / Clarify / Fail.
 
 ```env
 STARTUP_SCAN=false
-WEBHOOK_AUTO_ENQUEUE=false
-COMMIT_EXCLUDE_PATHS=resources/js/composables/permission.js,resources/js/directives/index.js
 # ON_COMPLETE_* chỉ còn seed prefill UI (không auto)
 ```
 

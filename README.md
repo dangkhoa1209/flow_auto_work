@@ -13,10 +13,10 @@ Orchestrator **local**: GitLab issues → UI Start → Cursor SDK trên `aihr_v3
 | Done | 1 task = 1 job; Dev Notes trên job; Run / Run tất cả; re-run cùng job |
 | Handoff | Assign + **add** labels (không xóa label cũ) → `succeeded` |
 | Comment | Chỉ khi xong: `Task work 100% by AI` + summary tiếng Việt |
-| Git | Giữ branch hiện tại; `feat #<iid> <title>`; exclude WIP paths |
+| Git | Giữ branch hiện tại; `feat #<iid> <title>` |
 | Dev | `npm run dev` = **nodemon** (watch `src` + `public`) |
 | Mongo | `jobs` + `notes` + `chat` |
-| Boot | Không startup scan; webhook enqueue mặc định OFF |
+| Boot | UI-only; không startup scan |
 
 ## Luồng
 

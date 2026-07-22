@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "GitLab webhook → Cursor SDK local auto-work → MR + Teams clarify",
+  "description": "GitLab issues → Cursor SDK local auto-work via UI",
   "scripts": {
     "dev": "nodemon",
     "start": "tsx src/index.ts",

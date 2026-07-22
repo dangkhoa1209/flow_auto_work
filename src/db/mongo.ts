@@ -1,5 +1,5 @@
 import { MongoClient, type Collection, type Db } from "mongodb";
-import { getConfig } from "../config.js";
+import { buildMongoUri, getConfig } from "../config.js";
 import { logger } from "../logger.js";
 import { jobIdForIssue, type JobRecord, type JobStatus } from "../types.js";
 
@@ -32,10 +32,11 @@ let db: Db | null = null;
 
 export async function connectMongo(): Promise<Db> {
   if (db) return db;
-  const uri = getConfig().MONGODB_URI;
+  const cfg = getConfig();
+  const uri = buildMongoUri(cfg);
   client = new MongoClient(uri);
   await client.connect();
-  db = client.db(getConfig().MONGODB_DB);
+  db = client.db(cfg.DB_DATABASE);
   await db.collection("jobs").createIndex({ "issue.issueIid": 1, updatedAt: -1 });
   try {
     await db.collection("jobs").createIndex(
@@ -53,10 +54,6 @@ export async function connectMongo(): Promise<Db> {
   await db.collection("notes").createIndex({ jobId: 1, createdAt: -1 });
   await db.collection("chat").createIndex({ jobId: 1, createdAt: 1 });
   await db.collection("chat").createIndex({ issueIid: 1, createdAt: 1 });
-  logger.info("MongoDB connected", {
-    uri: uri.replace(/\/\/.*@/, "//***@"),
-    db: getConfig().MONGODB_DB,
-  });
   return db;
 }
 

@@ -50,7 +50,7 @@ export function createWorkspaceRoutes() {
       gitlabBaseUrl,
       gitlabPatUrl: `${gitlabBaseUrl}/-/user_settings/personal_access_tokens`,
       cursorApiKeyUrl: "https://cursor.com/dashboard?tab=integrations",
-      defaultCursorModel: config.CURSOR_MODEL || "auto",
+      defaultCursorModel: "auto",
     });
   });
 

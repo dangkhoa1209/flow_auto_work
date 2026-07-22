@@ -1,14 +1,6 @@
 import assert from "node:assert/strict";
-import { filterIssueHook } from "../src/gitlab/filter.js";
 import { extractIssueIids, stripMediaAndAttachments } from "../src/gitlab/linked-context.js";
 import { buildWorkPrompt, parseAgentOutcome } from "../src/agent/prompt.js";
-import type { AppConfig } from "../src/config.js";
-
-const config = {
-  ALLOWED_PROJECT_PATH: "kiemnv/aihr_v3",
-  GITLAB_ASSIGNEE_USERNAME: "dangkhoa",
-  skipLabels: ["auto-work:skip", "wip-human"],
-} as AppConfig;
 
 {
   const iids = extractIssueIids(
@@ -36,28 +28,6 @@ https://cdn.example.com/a.webp
   assert.doesNotMatch(stripped, /\.png|\.pdf|\.webp|\.jpg/i);
   assert.match(stripped, /Fix the filter/);
   assert.match(stripped, /#99/);
-}
-
-{
-  const r = filterIssueHook(
-    "Issue Hook",
-    {
-      object_kind: "issue",
-      project: { id: 1, path_with_namespace: "kiemnv/aihr_v3" },
-      object_attributes: {
-        id: 10,
-        iid: 42,
-        title: "Fix leave calc",
-        description: "Details",
-        action: "open",
-        url: "https://gitlab.com/kiemnv/aihr_v3/-/issues/42",
-      },
-      assignees: [{ id: 7, username: "dangkhoa" }],
-      labels: [],
-    },
-    config,
-  );
-  assert.equal(r.accept, true);
 }
 
 {
