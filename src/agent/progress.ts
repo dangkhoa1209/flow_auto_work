@@ -36,7 +36,10 @@ export function appendJobProgress(
   text: string,
 ): void {
   if (!jobId) return;
-  const line = text.replace(/\s+/g, " ").trim();
+  const preserveBreaks = kind === "prompt";
+  const line = preserveBreaks
+    ? text.replace(/\r\n/g, "\n").replace(/[^\S\n]+/g, " ").trim()
+    : text.replace(/\s+/g, " ").trim();
   if (!line) return;
   const list = buffers.get(jobId) ?? [];
   const last = list[list.length - 1];
@@ -53,11 +56,12 @@ export function appendJobProgress(
     });
     return;
   }
+  const maxLen = preserveBreaks ? 16_000 : 2000;
   const entry: ProgressLine = {
     id: ++seq,
     at: new Date().toISOString(),
     kind,
-    text: line.slice(0, 2000),
+    text: line.slice(0, maxLen),
   };
   list.push(entry);
   while (list.length > MAX_LINES) list.shift();
@@ -68,6 +72,27 @@ export function appendJobProgress(
     line: { ...entry },
     live: true,
   });
+}
+
+/** Log full prompt being sent to Cursor (Progress tab). */
+export function appendPromptSending(
+  jobId: string | undefined,
+  prompt: string,
+): void {
+  const body = String(prompt || "").trim();
+  if (!body) {
+    appendJobProgress(jobId, "status", "Đang gửi prompt… (trống)");
+    return;
+  }
+  const truncated =
+    body.length > 15_500
+      ? `${body.slice(0, 15_500)}\n\n… (còn ${body.length - 15_500} ký tự)`
+      : body;
+  appendJobProgress(
+    jobId,
+    "prompt",
+    `Đang gửi prompt (${body.length} ký tự):\n\n${truncated}`,
+  );
 }
 
 function summarizeToolArgs(name: string, args: unknown): string {

@@ -2,11 +2,7 @@
 import { computed, onMounted, onUnmounted } from "vue";
 import { useRoute, useRouter, RouterLink, RouterView } from "vue-router";
 import { message } from "ant-design-vue";
-import {
-  SettingOutlined,
-  LogoutOutlined,
-  ThunderboltOutlined,
-} from "@ant-design/icons-vue";
+import { SettingOutlined, ThunderboltOutlined } from "@ant-design/icons-vue";
 import { useSessionStore } from "@/stores/session";
 import { useWorkStore } from "@/stores/work";
 import { connectRealtime } from "@/realtime/client";
@@ -52,11 +48,6 @@ onMounted(async () => {
 onUnmounted(() => {
   disconnectRealtime?.();
 });
-
-function logout() {
-  session.logout();
-  router.push({ name: "login" });
-}
 </script>
 
 <template>
@@ -108,9 +99,6 @@ function logout() {
         <a-button type="text" @click="router.push('/settings')">
           <template #icon><SettingOutlined /></template>
           Settings
-        </a-button>
-        <a-button type="text" danger @click="logout">
-          <template #icon><LogoutOutlined /></template>
         </a-button>
       </div>
     </header>

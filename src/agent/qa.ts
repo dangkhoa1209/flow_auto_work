@@ -11,6 +11,7 @@ import {
 } from "../workspace/creds.js";
 import {
   appendJobProgress,
+  appendPromptSending,
   appendSdkMessage,
   clearJobProgress,
   recordTokenUsage,
@@ -100,7 +101,8 @@ export async function answerTaskQuestion(opts: {
 3. Do **NOT** execute long-running work: no DB mutations that take minutes, no queue workers left running, no seed scripts that hang.
 4. You may briefly grep/read files — then **stop and answer**.
 5. If they ask you to *do* the work, tell them to click **"Bật Run"** in the Clarify / Q&A panel.
-6. Keep the final answer concise (roughly under ~40 lines).
+6. Keep the final answer concise (roughly under ~25 lines).
+7. Chat UI is narrow: lead with 1–2 sentences + short bullets. No giant Markdown tables; no pasting full QC matrices. Skip machine tags like <<<DONE>>> in the human-readable body.
 
 ## Issue #${opts.issue.issueIid}
 Title: ${opts.issue.title}
@@ -186,6 +188,7 @@ ${opts.question}`;
             ? `Q&A on agent window ${disposed.agentId}`
             : `Q&A new agent window ${disposed.agentId}`,
         );
+        appendPromptSending(jobId, prompt);
       }
 
       session.check();

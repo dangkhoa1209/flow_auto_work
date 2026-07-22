@@ -175,6 +175,9 @@ Light theme (Vue + Ant Design Vue + Tailwind).
 |--------|------|-------|
 | GET | `/api/status` | health, queue (one-shot; UI dùng SSE) |
 | GET | `/api/events` | **SSE realtime** — `status` · `jobs` · `job` · `progress` · `ping` |
+| POST | `/api/auth/login` | Login → `accessToken` (10p) + `refreshToken` (30 ngày) |
+| POST | `/api/auth/refresh` | Đổi refresh → access mới (rotate refresh) |
+| POST | `/api/auth/logout` | Revoke refresh |
 | GET | `/api/tasks` | open issues assigned |
 | GET | `/api/tasks/:iid` | detail + notes + related |
 | POST | `/api/jobs/start` | enqueue Run |

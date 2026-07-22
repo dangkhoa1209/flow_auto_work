@@ -136,6 +136,95 @@ export function createApiRoutes() {
     });
   });
 
+  /**
+   * Proxy GitLab /uploads/… images (browser <img> cannot send PAT).
+   * Query: u=<absolute upload url>&user=&project= (user/project for <img> without headers).
+   */
+  api.get("/gitlab/file", async (c) => {
+    const raw = (c.req.query("u") || "").trim();
+    if (!raw) return c.text("u required", 400);
+
+    let target: URL;
+    try {
+      target = new URL(raw);
+    } catch {
+      return c.text("invalid u", 400);
+    }
+
+    const config = getConfig();
+    const gitlabRoot = config.GITLAB_BASE_URL.replace(/\/$/, "");
+    let gitlabHost: string;
+    try {
+      gitlabHost = new URL(gitlabRoot).host;
+    } catch {
+      return c.text("bad GITLAB_BASE_URL", 500);
+    }
+    if (target.host !== gitlabHost) {
+      return c.text("host not allowed", 403);
+    }
+    if (!/\/uploads\//i.test(target.pathname)) {
+      return c.text("only /uploads/ paths allowed", 403);
+    }
+
+    const username =
+      headerUser(c) ||
+      (c.req.query("user") || "").trim().replace(/^@/, "");
+    const projectId =
+      headerProject(c) || (c.req.query("project") || "").trim();
+    if (!username || !projectId) {
+      return c.text("user + project required", 401);
+    }
+
+    // Prefer access_token on query (img cannot send Authorization)
+    const accessQ = (c.req.query("access_token") || "").trim();
+    if (accessQ) {
+      try {
+        const { verifyAccessToken } = await import("../auth/tokens.js");
+        const sub = verifyAccessToken(accessQ).sub;
+        if (sub !== username.trim().replace(/^@/, "").toLowerCase()) {
+          return c.text("token user mismatch", 403);
+        }
+      } catch {
+        return c.text("access token expired", 401);
+      }
+    }
+
+    try {
+      return await withWorkspaceContext(username, projectId, async () => {
+        const { resolveGitlabToken } = await import("../workspace/creds.js");
+        const token = resolveGitlabToken();
+        const upstream = await fetch(target.toString(), {
+          headers: {
+            "PRIVATE-TOKEN": token,
+            Accept: "*/*",
+          },
+        });
+        if (!upstream.ok) {
+          const detail = await upstream.text().catch(() => "");
+          logger.warn("GitLab upload proxy failed", {
+            status: upstream.status,
+            path: target.pathname,
+            detail: detail.slice(0, 200),
+          });
+          return c.text(`gitlab ${upstream.status}`, upstream.status as 404);
+        }
+        const contentType =
+          upstream.headers.get("content-type") || "application/octet-stream";
+        const buf = await upstream.arrayBuffer();
+        return new Response(buf, {
+          status: 200,
+          headers: {
+            "Content-Type": contentType,
+            "Cache-Control": "private, max-age=300",
+          },
+        });
+      });
+    } catch (err) {
+      logger.warn("GitLab upload proxy error", { err: String(err) });
+      return c.text(err instanceof Error ? err.message : String(err), 401);
+    }
+  });
+
   /** Require login + project; decrypt tokens into AsyncLocalStorage */
   api.use("*", async (c, next) => {
     const path = c.req.path;
@@ -151,13 +240,34 @@ export function createApiRoutes() {
     ) {
       return next();
     }
-    const username = headerUser(c);
+    const { verifyAccessToken } = await import("../auth/tokens.js");
+    const bearer = (c.req.header("Authorization") || "").trim();
+    let username = "";
+    if (bearer.toLowerCase().startsWith("bearer ")) {
+      try {
+        username = verifyAccessToken(bearer.slice(7).trim()).sub;
+      } catch (err) {
+        return c.json(
+          {
+            error:
+              err instanceof Error ? err.message : "Invalid or expired access token",
+            code: "access_expired",
+          },
+          401,
+        );
+      }
+    }
+    if (!username) {
+      // Legacy header only when no Bearer (onboarding mid-login before tokens rare)
+      username = headerUser(c);
+    }
     const projectId = headerProject(c);
     if (!username || !projectId) {
       return c.json(
         {
           error:
-            "X-Flow-User + X-Flow-Project required — login and select a project",
+            "Bearer access token + X-Flow-Project required — login and select a project",
+          code: "unauthorized",
         },
         401,
       );

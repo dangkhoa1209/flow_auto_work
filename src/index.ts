@@ -11,6 +11,7 @@ import { logger } from "./logger.js";
 import { createApp } from "./server.js";
 import { ensureWorkspaceIndexes } from "./workspace/store.js";
 import { applyGitlabAssigneeFromEnvToken } from "./gitlab/identity.js";
+import { ensureAuthIndexes } from "./auth/sessions.js";
 
 setMaxListeners(100);
 
@@ -45,6 +46,7 @@ async function main() {
   logger.info("Database OK");
 
   await ensureWorkspaceIndexes();
+  await ensureAuthIndexes();
   logger.info("Workspace indexes OK");
 
   await failInterruptedJobs();

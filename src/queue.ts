@@ -292,6 +292,16 @@ export class JobQueue {
         .map((m) => m.body),
       extraHuman: msg,
     });
+
+    // Lưu tin user ngay — trước quality/status SSE (tránh UI refresh mất tin)
+    await addChatMessage({
+      jobId: job.id,
+      issueIid: job.issue.issueIid,
+      role: "user",
+      kind: "qa",
+      body: msg,
+    });
+
     if (!quality.cached) {
       job.contextQuality = toContextQualityMark(quality);
       await saveJob(job);
@@ -303,13 +313,6 @@ export class JobQueue {
     });
     if (quality.level === "bad") {
       const body = formatBadContextChatMessage(quality, job.issue.issueIid);
-      await addChatMessage({
-        jobId: job.id,
-        issueIid: job.issue.issueIid,
-        role: "user",
-        kind: "qa",
-        body: msg,
-      });
       await addChatMessage({
         jobId: job.id,
         issueIid: job.issue.issueIid,
@@ -382,14 +385,6 @@ export class JobQueue {
         .filter(Boolean)
         .join("\n\n")
         .slice(0, 24_000);
-
-      await addChatMessage({
-        jobId: job.id,
-        issueIid: job.issue.issueIid,
-        role: "user",
-        kind: "qa",
-        body: msg,
-      });
 
       const headBefore = await getHeadSha(repoPath);
       let result = await continueAgentWindow(job.issue, msg, {

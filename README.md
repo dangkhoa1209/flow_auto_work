@@ -102,6 +102,13 @@ npm run dev
 
 Deploy sau reverse proxy (nginx/Caddy): **tắt buffer** cho `/api/events` (SSE), giữ connection dài (vd. `proxy_buffering off;` / `flush_interval -1`).
 
+### Auth session
+
+- **Access token** ~10 phút (`Authorization: Bearer …`)
+- **Refresh token** ~30 ngày (Mongo `auth_refresh_sessions`, rotate mỗi lần refresh)
+- F5 / restart server: UI tự refresh access; hết 30 ngày mới login lại
+- Cần `FLOW_SECRETS_KEY` (ký JWT + mã hóa PAT)
+
 ## Job status
 
 `draft` → `queued` → `running` → (`awaiting_clarification` | `awaiting_docs_approval`) → `awaiting_handoff` → `succeeded`  

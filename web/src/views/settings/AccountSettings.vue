@@ -6,10 +6,10 @@ import { useRouter } from "vue-router";
 const session = useSessionStore();
 const router = useRouter();
 
-function logout() {
-  session.logout();
+async function logout() {
+  await session.logout();
   message.success("Đã đăng xuất");
-  router.push({ name: "login" });
+  await router.replace({ name: "login" });
 }
 </script>
 

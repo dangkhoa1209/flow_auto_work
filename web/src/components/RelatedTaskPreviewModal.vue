@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import type { TaskDetail } from "@/stores/work";
+import ChatMessageBody from "@/components/ChatMessageBody.vue";
 
 const props = defineProps<{
   open: boolean;
@@ -92,9 +93,15 @@ const meta = computed(() => {
         </div>
 
         <div
-          class="text-sm text-ink-soft whitespace-pre-wrap rounded-xl bg-surface-soft border border-line p-3 max-h-[40vh] overflow-y-auto"
+          class="text-sm text-ink-soft rounded-xl bg-surface-soft border border-line p-3 max-h-[40vh] overflow-y-auto"
         >
-          {{ detail?.description?.trim() || "(không có description)" }}
+          <ChatMessageBody
+            role="agent"
+            :markdown="true"
+            :issue-url="url || null"
+            :body="detail?.description || ''"
+            empty="(không có description)"
+          />
         </div>
 
         <div class="mt-4">
@@ -121,9 +128,12 @@ const meta = computed(() => {
                   · {{ new Date(n.createdAt).toLocaleString() }}</span
                 >
               </div>
-              <div class="text-sm text-ink-soft whitespace-pre-wrap">
-                {{ n.body }}
-              </div>
+              <ChatMessageBody
+                role="agent"
+                :markdown="true"
+                :issue-url="url || null"
+                :body="n.body"
+              />
             </div>
           </div>
           <div v-else class="text-xs text-ink-faint">Chưa có comment</div>

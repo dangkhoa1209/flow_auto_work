@@ -44,6 +44,7 @@ export function connectRealtime(handlers: Handlers): () => void {
   const qs = new URLSearchParams();
   if (session.username) qs.set("u", session.username);
   if (session.projectId) qs.set("p", session.projectId);
+  if (session.accessToken) qs.set("access_token", session.accessToken);
   const url = `/api/events${qs.toString() ? `?${qs}` : ""}`;
 
   const es = new EventSource(url);

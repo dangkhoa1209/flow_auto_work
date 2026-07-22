@@ -105,3 +105,124 @@ code {
   color: transparent;
   animation: brand-shine 8s ease-in-out infinite;
 }
+
+/* Chat agent typing indicator */
+.chat-typing {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 14px;
+}
+.chat-typing span {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: #0f766e;
+  opacity: 0.35;
+  animation: chat-typing-bounce 1.2s ease-in-out infinite;
+}
+.chat-typing span:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.chat-typing span:nth-child(3) {
+  animation-delay: 0.3s;
+}
+@keyframes chat-typing-bounce {
+  0%,
+  80%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.3;
+  }
+  40% {
+    transform: translateY(-3px);
+    opacity: 1;
+  }
+}
+
+/* Agent chat markdown (narrow panel) */
+.chat-md-rich {
+  white-space: normal;
+  line-height: 1.45;
+}
+.chat-md-rich :where(p, ul, ol) {
+  margin: 0.35em 0;
+}
+.chat-md-rich :where(ul, ol) {
+  padding-left: 1.15rem;
+}
+.chat-md-rich :where(h1, h2, h3, h4) {
+  font-size: 0.9rem;
+  font-weight: 650;
+  margin: 0.55em 0 0.25em;
+  color: #0f172a;
+}
+.chat-md-rich :where(code) {
+  font-size: 0.78rem;
+  padding: 0.05rem 0.3rem;
+  border-radius: 0.3rem;
+  background: rgba(15, 23, 42, 0.06);
+}
+.chat-md-rich :where(pre) {
+  margin: 0.4em 0;
+  padding: 0.55rem 0.65rem;
+  border-radius: 0.55rem;
+  overflow-x: auto;
+  font-size: 0.75rem;
+  background: rgba(15, 23, 42, 0.05);
+  border: 1px solid rgba(215, 224, 236, 0.95);
+}
+.chat-md-rich :where(pre code) {
+  padding: 0;
+  background: transparent;
+}
+.chat-md-rich :where(table) {
+  display: block;
+  width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  font-size: 0.75rem;
+  margin: 0.45em 0;
+}
+.chat-md-rich :where(th, td) {
+  border: 1px solid rgba(215, 224, 236, 0.95);
+  padding: 0.25rem 0.4rem;
+  text-align: left;
+  vertical-align: top;
+}
+.chat-md-rich :where(th) {
+  background: rgba(15, 118, 110, 0.08);
+  font-weight: 600;
+}
+.chat-md-rich :where(blockquote) {
+  margin: 0.4em 0;
+  padding-left: 0.65rem;
+  border-left: 3px solid rgba(15, 118, 110, 0.35);
+  color: #475569;
+}
+.chat-md-rich :where(img) {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0.5em 0;
+  border-radius: 0.55rem;
+  border: 1px solid rgba(215, 224, 236, 0.95);
+}
+.chat-md-rich :where(a) {
+  color: #0f766e;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  word-break: break-all;
+}
+.chat-md-rich :where(hr) {
+  border: none;
+  border-top: 1px solid rgba(215, 224, 236, 0.95);
+  margin: 0.65em 0;
+}
+.chat-md-rich :where(strong) {
+  color: #0f172a;
+  font-weight: 650;
+}
+.chat-md-user {
+  white-space: pre-wrap;
+}

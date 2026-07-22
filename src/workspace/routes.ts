@@ -27,15 +27,78 @@ import { resolveRuntimeContext } from "./resolve.js";
 import { runWithRuntimeContext } from "./runtime.js";
 import { getConfig } from "../config.js";
 import { Cursor } from "@cursor/sdk";
+import { verifyAccessToken } from "../auth/tokens.js";
+import {
+  consumeRefreshSession,
+  revokeAllRefreshSessions,
+  revokeRefreshSession,
+  saveRefreshSession,
+} from "../auth/sessions.js";
+import {
+  newTokenPair,
+  verifyRefreshToken,
+  REFRESH_TTL_SEC,
+} from "../auth/tokens.js";
 
-function headerUser(c: { req: { header: (n: string) => string | undefined } }) {
+type Req = {
+  req: {
+    header: (n: string) => string | undefined;
+    query: (n: string) => string | undefined;
+  };
+};
+
+/** Resolve username from Bearer access token, else X-Flow-User (legacy). */
+function headerUser(c: Req): string {
+  const bearer = (c.req.header("Authorization") || "").trim();
+  if (bearer.toLowerCase().startsWith("bearer ")) {
+    const token = bearer.slice(7).trim();
+    if (token) {
+      try {
+        return verifyAccessToken(token).sub;
+      } catch {
+        /* fall through */
+      }
+    }
+  }
+  const qAccess = (c.req.query("access_token") || "").trim();
+  if (qAccess) {
+    try {
+      return verifyAccessToken(qAccess).sub;
+    } catch {
+      /* fall through */
+    }
+  }
   return (c.req.header("X-Flow-User") || "").trim().replace(/^@/, "");
 }
 
 function headerProject(c: {
-  req: { header: (n: string) => string | undefined };
+  req: {
+    header: (n: string) => string | undefined;
+    query?: (n: string) => string | undefined;
+  };
 }) {
-  return (c.req.header("X-Flow-Project") || "").trim();
+  return (
+    (c.req.header("X-Flow-Project") || "").trim() ||
+    (c.req.query?.("project") || "").trim()
+  );
+}
+
+async function issueAuthTokens(username: string) {
+  const pair = newTokenPair(username);
+  await saveRefreshSession({
+    jti: pair.refresh.jti,
+    username,
+    rawToken: pair.refresh.token,
+    expiresAt: pair.refresh.expiresAt,
+  });
+  return {
+    accessToken: pair.access.token,
+    refreshToken: pair.refresh.token,
+    expiresIn: pair.access.expiresIn,
+    accessExpiresAt: pair.access.expiresAt,
+    refreshExpiresIn: REFRESH_TTL_SEC,
+    tokenType: "Bearer" as const,
+  };
 }
 
 export function createWorkspaceRoutes() {
@@ -130,10 +193,69 @@ export function createWorkspaceRoutes() {
       cursorApiKey,
     });
     const memberships = await listMembershipsForUser(username);
+    const tokens = await issueAuthTokens(username);
     return c.json({
       user,
       memberships,
+      ...tokens,
     });
+  });
+
+  /** Exchange refresh token → new access (+ rotated refresh). */
+  ws.post("/auth/refresh", async (c) => {
+    const body = (await c.req.json().catch(() => ({}))) as {
+      refreshToken?: string;
+    };
+    const raw = body.refreshToken?.trim();
+    if (!raw) return c.json({ error: "refreshToken required" }, 400);
+    try {
+      const claims = verifyRefreshToken(raw);
+      const ok = await consumeRefreshSession({
+        jti: claims.jti,
+        username: claims.sub,
+        rawToken: raw,
+      });
+      if (!ok) {
+        return c.json({ error: "Refresh token revoked or unknown" }, 401);
+      }
+      // Rotate: revoke old, issue new pair
+      await revokeRefreshSession(claims.jti);
+      const user = await getUserByUsername(claims.sub);
+      if (!user) return c.json({ error: "User not found" }, 401);
+      const tokens = await issueAuthTokens(claims.sub);
+      return c.json({
+        user: toPublicUser(user),
+        ...tokens,
+      });
+    } catch (err) {
+      return c.json(
+        { error: err instanceof Error ? err.message : "Invalid refresh token" },
+        401,
+      );
+    }
+  });
+
+  /** Revoke refresh session(s). */
+  ws.post("/auth/logout", async (c) => {
+    const body = (await c.req.json().catch(() => ({}))) as {
+      refreshToken?: string;
+      all?: boolean;
+    };
+    const username = headerUser(c);
+    if (body.all && username) {
+      await revokeAllRefreshSessions(username);
+      return c.json({ ok: true, revoked: "all" });
+    }
+    const raw = body.refreshToken?.trim();
+    if (raw) {
+      try {
+        const claims = verifyRefreshToken(raw);
+        await revokeRefreshSession(claims.jti);
+      } catch {
+        /* already invalid */
+      }
+    }
+    return c.json({ ok: true });
   });
 
   ws.get("/me", async (c) => {

@@ -92,8 +92,16 @@ export const useWorkStore = defineStore("work", () => {
   const currentJob = ref<Job | null>(null);
   const taskDetail = ref<TaskDetail | null>(null);
   const chat = ref<
-    Array<{ role: string; body: string; kind?: string; createdAt?: string }>
+    Array<{
+      role: string;
+      body: string;
+      kind?: string;
+      createdAt?: string;
+      pending?: boolean;
+    }>
   >([]);
+  /** Agent đang suy nghĩ — UI typing indicator */
+  const agentTyping = ref(false);
   const progressLines = ref<
     Array<{ id: number; at: string; kind: string; text: string }>
   >([]);
@@ -127,7 +135,7 @@ export const useWorkStore = defineStore("work", () => {
           ? { ...currentJob.value, ...j }
           : j;
         // Job vừa xong → chỉ refresh chat (không đụng issue / không spinner)
-        if (wasBusy && !isJobStatusBusy(j.status)) {
+        if (wasBusy && !isJobStatusBusy(j.status) && !agentTyping.value) {
           void refreshJobChat(selectedJobId.value).catch(() => undefined);
         }
       }
@@ -213,13 +221,18 @@ export const useWorkStore = defineStore("work", () => {
       if (currentJob.value?.id === ev.jobId) {
         const prev = currentJob.value.status;
         currentJob.value = { ...currentJob.value, status: ev.status };
-        if (isJobStatusBusy(prev) && !isJobStatusBusy(ev.status)) {
+        if (
+          isJobStatusBusy(prev) &&
+          !isJobStatusBusy(ev.status) &&
+          !agentTyping.value
+        ) {
           void refreshJobChat(ev.jobId).catch(() => undefined);
         }
       } else if (
         wasBusy &&
         !isJobStatusBusy(ev.status) &&
-        selectedJobId.value === ev.jobId
+        selectedJobId.value === ev.jobId &&
+        !agentTyping.value
       ) {
         void refreshJobChat(ev.jobId).catch(() => undefined);
       }
@@ -238,7 +251,27 @@ export const useWorkStore = defineStore("work", () => {
     }>(`/api/jobs/${jobId}`);
     if (selectedJobId.value !== jobId) return;
     currentJob.value = detail.job;
-    chat.value = detail.chat || [];
+    const server = detail.chat || [];
+    if (agentTyping.value) {
+      // Giữ tin user vừa gửi (optimistic) nếu server chưa kịp / bị race SSE
+      chat.value = mergePendingChat(server, chat.value);
+    } else {
+      chat.value = server;
+    }
+  }
+
+  function mergePendingChat(
+    server: typeof chat.value,
+    local: typeof chat.value,
+  ): typeof chat.value {
+    const keys = new Set(
+      server.map((m) => `${m.role}\0${String(m.body || "").trim()}`),
+    );
+    const pending = local.filter((m) => {
+      if (!m.pending) return false;
+      return !keys.has(`${m.role}\0${String(m.body || "").trim()}`);
+    });
+    return pending.length ? [...server, ...pending] : server;
   }
 
   async function loadIssueForJob(job: Job) {
@@ -263,6 +296,7 @@ export const useWorkStore = defineStore("work", () => {
       progressAfterId.value = 0;
       progressLines.value = [];
       chat.value = [];
+      agentTyping.value = false;
     }
     // Spinner chỉ khi đổi job — re-select / sau Run không flash issue+chat
     jobLoading.value = switching;
@@ -381,7 +415,7 @@ export const useWorkStore = defineStore("work", () => {
     if (data.status && currentJob.value?.id === selectedJobId.value) {
       const wasBusy = isJobStatusBusy(currentJob.value.status);
       currentJob.value = { ...currentJob.value, status: data.status };
-      if (wasBusy && !isJobStatusBusy(data.status)) {
+      if (wasBusy && !isJobStatusBusy(data.status) && !agentTyping.value) {
         void refreshJobChat(selectedJobId.value).catch(() => undefined);
       }
     }
@@ -390,9 +424,7 @@ export const useWorkStore = defineStore("work", () => {
   /** Call when starting Run / Gửi so Progress polls immediately */
   function watchProgress() {
     progressLive.value = true;
-    if (currentJob.value) {
-      currentJob.value = { ...currentJob.value, status: "running" };
-    }
+    // Không fake status=running — SSE status cũ sẽ bị hiểu nhầm busy→idle và xóa chat
   }
 
   function isJobStatusBusy(st?: string) {
@@ -441,24 +473,53 @@ export const useWorkStore = defineStore("work", () => {
     return res;
   }
 
+  function appendLocalChat(msg: {
+    role: string;
+    body: string;
+    kind?: string;
+  }) {
+    chat.value = [
+      ...chat.value,
+      {
+        role: msg.role,
+        body: msg.body,
+        kind: msg.kind,
+        createdAt: new Date().toISOString(),
+        pending: true,
+      },
+    ];
+  }
+
   async function sendContinue(message: string) {
     if (!selectedJobId.value) throw new Error("Chưa chọn job");
+    appendLocalChat({ role: "user", body: message, kind: "qa" });
+    agentTyping.value = true;
     watchProgress();
-    await api(`/api/jobs/${selectedJobId.value}/continue`, {
-      method: "POST",
-      body: JSON.stringify({ message }),
-    });
-    await refreshJobChat(selectedJobId.value);
+    try {
+      await api(`/api/jobs/${selectedJobId.value}/continue`, {
+        method: "POST",
+        body: JSON.stringify({ message }),
+      });
+      await refreshJobChat(selectedJobId.value);
+    } finally {
+      agentTyping.value = false;
+    }
   }
 
   async function sendAsk(question: string) {
     if (!selectedJobId.value) throw new Error("Chưa chọn job");
+    appendLocalChat({ role: "user", body: question, kind: "qa" });
+    agentTyping.value = true;
     watchProgress();
-    await api(`/api/jobs/${selectedJobId.value}/ask`, {
-      method: "POST",
-      body: JSON.stringify({ question }),
-    });
-    await refreshJobChat(selectedJobId.value);
+    try {
+      await api(`/api/jobs/${selectedJobId.value}/ask`, {
+        method: "POST",
+        body: JSON.stringify({ question }),
+      });
+      await refreshJobChat(selectedJobId.value);
+    } finally {
+      agentTyping.value = false;
+    }
   }
 
   async function sendClarify(answer: string) {
@@ -474,6 +535,7 @@ export const useWorkStore = defineStore("work", () => {
       method: "POST",
       body: JSON.stringify({}),
     });
+    agentTyping.value = false;
     await loadJobs();
   }
 
@@ -584,6 +646,7 @@ export const useWorkStore = defineStore("work", () => {
     selectedJob,
     taskDetail,
     chat,
+    agentTyping,
     progressLines,
     progressLive,
     members,

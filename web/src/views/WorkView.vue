@@ -14,6 +14,7 @@ import {
 } from "@/utils/status";
 import { PlusOutlined, ReloadOutlined } from "@ant-design/icons-vue";
 import RelatedTaskPreviewModal from "@/components/RelatedTaskPreviewModal.vue";
+import ChatMessageBody from "@/components/ChatMessageBody.vue";
 import type { TaskDetail } from "@/stores/work";
 
 const router = useRouter();
@@ -32,6 +33,7 @@ const {
   loading,
   jobLoading,
   labels,
+  agentTyping,
 } = storeToRefs(work);
 
 const midTab = ref("detail");
@@ -200,12 +202,27 @@ watch(selectedJobId, (id) => {
 });
 
 const progressBox = ref<HTMLElement | null>(null);
+const chatBox = ref<HTMLElement | null>(null);
+
+function scrollChatToBottom() {
+  const el = chatBox.value;
+  if (el) el.scrollTop = el.scrollHeight;
+}
+
 watch(
   () => progressLines.value.length,
   async () => {
     await nextTick();
     const el = progressBox.value;
     if (el) el.scrollTop = el.scrollHeight;
+  },
+);
+
+watch(
+  () => [chat.value.length, agentTyping.value] as const,
+  async () => {
+    await nextTick();
+    scrollChatToBottom();
   },
 );
 
@@ -340,13 +357,15 @@ async function sendChat(mode: "continue" | "ask") {
     return;
   }
   if (!(await ensureCursorKey())) return;
+  // Gửi ngay trên UI — clear input + hiện tin user + typing
+  chatInput.value = "";
   busy.value = true;
-  midTab.value = "progress";
   work.watchProgress();
+  await nextTick();
+  scrollChatToBottom();
   try {
     if (mode === "continue") await work.sendContinue(msg);
     else await work.sendAsk(msg);
-    chatInput.value = "";
   } catch (e) {
     const msgText = e instanceof Error ? e.message : String(e);
     if (/Force-stopped/i.test(msgText)) {
@@ -356,8 +375,9 @@ async function sendChat(mode: "continue" | "ask") {
     }
   } finally {
     busy.value = false;
-    await work.refreshJobChat(selectedJobId.value).catch(() => undefined);
     await work.loadJobs().catch(() => undefined);
+    await nextTick();
+    scrollChatToBottom();
   }
 }
 
@@ -869,20 +889,28 @@ async function submitCreateIssue() {
                 </div>
                 <div
                   v-if="isCurrentAdhoc"
-                  class="text-sm text-ink-soft whitespace-pre-wrap rounded-xl bg-surface-soft border border-line p-3"
+                  class="text-sm text-ink-soft rounded-xl bg-surface-soft border border-line p-3"
                 >
-                  {{
-                    currentJob?.summary?.trim() ||
-                    "Chưa có summary — chat với agent hoặc mô tả việc cần làm."
-                  }}
+                  <ChatMessageBody
+                    role="agent"
+                    :markdown="true"
+                    :body="
+                      currentJob?.summary?.trim() ||
+                      'Chưa có summary — chat với agent hoặc mô tả việc cần làm.'
+                    "
+                  />
                 </div>
                 <div
                   v-else
-                  class="text-sm text-ink-soft whitespace-pre-wrap rounded-xl bg-surface-soft border border-line p-3"
+                  class="text-sm text-ink-soft rounded-xl bg-surface-soft border border-line p-3"
                 >
-                  {{
-                    taskDetail?.description?.trim() || "(không có description)"
-                  }}
+                  <ChatMessageBody
+                    role="agent"
+                    :markdown="true"
+                    :issue-url="taskDetail?.url || currentJob?.issue?.url"
+                    :body="taskDetail?.description || ''"
+                    empty="(không có description)"
+                  />
                 </div>
               </div>
 
@@ -946,9 +974,13 @@ async function submitCreateIssue() {
                         · {{ new Date(n.createdAt).toLocaleString() }}</span
                       >
                     </div>
-                    <div class="text-sm text-ink-soft whitespace-pre-wrap">
-                      {{ n.body }}
-                    </div>
+                    <ChatMessageBody
+                      class="text-sm text-ink-soft"
+                      role="agent"
+                      :markdown="true"
+                      :issue-url="taskDetail?.url || currentJob?.issue?.url"
+                      :body="n.body"
+                    />
                   </div>
                 </div>
                 <div v-else class="text-xs text-ink-faint">Chưa có comment</div>
@@ -1007,7 +1039,16 @@ async function submitCreateIssue() {
               <span class="text-ink-faint ml-2">{{
                 new Date(l.at).toLocaleTimeString()
               }}</span>
-              <div class="text-ink-soft">{{ l.text }}</div>
+              <div
+                class="text-ink-soft"
+                :class="
+                  l.kind === 'prompt'
+                    ? 'whitespace-pre-wrap break-words mt-1 max-h-80 overflow-y-auto rounded-lg bg-surface-raised/80 p-2 text-[11px] leading-relaxed border border-line'
+                    : ''
+                "
+              >
+                {{ l.text }}
+              </div>
             </div>
             <div
               v-if="!progressLines.length"
@@ -1081,7 +1122,7 @@ async function submitCreateIssue() {
         </div>
       </div>
 
-      <div class="flex-1 min-h-0 overflow-y-auto p-3 space-y-2">
+      <div ref="chatBox" class="flex-1 min-h-0 overflow-y-auto p-3 space-y-2">
         <div
           v-for="(m, i) in chat"
           :key="i"
@@ -1099,9 +1140,27 @@ async function submitCreateIssue() {
           >
             {{ m.role }}
           </div>
-          <div class="whitespace-pre-wrap">{{ m.body }}</div>
+          <ChatMessageBody :role="m.role" :body="m.body" />
         </div>
-        <a-empty v-if="!chat.length" description="Chat trống — Run hoặc Gửi" />
+
+        <div
+          v-if="agentTyping"
+          class="rounded-xl px-3 py-2.5 text-sm border border-line bg-surface-raised mr-2 inline-flex items-center gap-2"
+        >
+          <span
+            class="text-[10px] uppercase tracking-wide text-ink-faint font-semibold"
+            >agent</span
+          >
+          <span class="chat-typing" aria-label="Đang suy nghĩ">
+            <span /><span /><span />
+          </span>
+          <span class="text-xs text-ink-faint">đang suy nghĩ…</span>
+        </div>
+
+        <a-empty
+          v-if="!chat.length && !agentTyping"
+          description="Chat trống — Run hoặc Gửi"
+        />
       </div>
 
       <div v-if="pendingClarify" class="shrink-0 px-3 pb-2">
@@ -1126,6 +1185,7 @@ async function submitCreateIssue() {
         <a-textarea
           v-model:value="chatInput"
           :rows="3"
+          :disabled="busy || agentTyping"
           placeholder="Hỏi / sửa / làm thêm (IDE follow-up)…"
           @keydown.meta.enter="sendChat('continue')"
         />
@@ -1133,11 +1193,17 @@ async function submitCreateIssue() {
           <a-button
             type="primary"
             class="flex-1"
-            :loading="busy"
+            :loading="busy || agentTyping"
+            :disabled="busy || agentTyping"
             @click="sendChat('continue')"
             >Gửi</a-button
           >
-          <a-button :loading="busy" @click="sendChat('ask')">Chỉ hỏi</a-button>
+          <a-button
+            :loading="busy || agentTyping"
+            :disabled="busy || agentTyping"
+            @click="sendChat('ask')"
+            >Chỉ hỏi</a-button
+          >
         </div>
       </div>
     </aside>

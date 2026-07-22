@@ -19,6 +19,7 @@ import {
 } from "./prompt.js";
 import {
   appendJobProgress,
+  appendPromptSending,
   appendSdkMessage,
   clearJobProgress,
   getJobTokenUsage,
@@ -513,12 +514,6 @@ export async function runNewAgent(
       resumed,
     );
     session.check();
-    const run = await disposed.send(prompt);
-    logger.info("Agent run started", {
-      runId: run.id,
-      agentId: disposed.agentId,
-      resumed,
-    });
     if (opts?.jobId) {
       appendJobProgress(
         opts.jobId,
@@ -527,7 +522,14 @@ export async function runNewAgent(
           ? `Resumed agent window ${disposed.agentId}`
           : `New agent window ${disposed.agentId}`,
       );
+      appendPromptSending(opts.jobId, prompt);
     }
+    const run = await disposed.send(prompt);
+    logger.info("Agent run started", {
+      runId: run.id,
+      agentId: disposed.agentId,
+      resumed,
+    });
     session.attach(run);
     const { text, usage } = await collectAssistantText(run, opts?.jobId, {
       promptChars: prompt.length,
@@ -566,6 +568,9 @@ export async function resumeAgent(
     model: modelId,
   });
   const prompt = buildResumePrompt(answer, issue);
+  if (opts?.jobId) {
+    appendPromptSending(opts.jobId, prompt);
+  }
   const run = await agent.send(prompt);
   logger.info("Resume run started", { runId: run.id, agentId: agent.agentId });
   trackRun(opts?.jobId, run);
@@ -648,7 +653,7 @@ export async function continueAgentWindow(
         "status",
         `Cửa sổ ${disposed.agentId.slice(0, 18)}…`,
       );
-      appendJobProgress(opts.jobId, "status", "Đang gửi prompt…");
+      appendPromptSending(opts.jobId, prompt);
     }
 
     session.check();

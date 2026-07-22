@@ -11,12 +11,14 @@
   "dependencies": {
     "@ant-design/icons-vue": "^7.0.1",
     "ant-design-vue": "^4.2.6",
+    "marked": "^18.0.7",
     "pinia": "^4.0.2",
     "vue": "^3.5.39",
     "vue-router": "^4.6.4"
   },
   "devDependencies": {
     "@tailwindcss/forms": "^0.5.11",
+    "@types/marked": "^5.0.2",
     "@types/node": "^24.13.3",
     "@vitejs/plugin-vue": "^6.0.7",
     "@vue/tsconfig": "^0.9.1",

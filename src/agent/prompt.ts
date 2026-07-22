@@ -287,6 +287,13 @@ ${message.trim()}
 
 6. If you need more info, end with NEED_CLARIFICATION. If finished this follow-up, end with DONE (summary in Vietnamese).
 
+## Chat reply style (UI is a narrow chat panel — keep it readable)
+- Vietnamese, short: **1–2 câu mở đầu** + bullet ngắn (≤ 8 dòng ý chính). Không dump bảng Markdown khổng lồ.
+- Không nhét toàn bộ checklist QC / env / API table vào chat — chỉ kết luận + 1–3 bước cần làm.
+- Không hiện thẻ máy kiểu \`<<<DONE>>>\` trong phần người đọc; DONE chỉ ở cuối block riêng nếu cần.
+- Tránh lặp lại "Muốn sửa code thêm → Bật Run" trừ khi họ hỏi tiếp.
+- Nếu cần chi tiết dài (bảng config, chuỗi issue): nói ngắn "chi tiết nằm ở issue / Progress" thay vì paste cả khối.
+
 <<<NEED_CLARIFICATION>>> / <<<DONE>>> blocks same as usual when applicable.`;
 }
 
@@ -326,6 +333,12 @@ ${message.trim()}
    ${commitMsg}
 
 6. If you need more info, end with NEED_CLARIFICATION. If finished this follow-up, end with DONE (summary in Vietnamese — useful as issue description later).
+
+## Chat reply style (UI is a narrow chat panel — keep it readable)
+- Vietnamese, short: **1–2 câu mở đầu** + bullet ngắn (≤ 8 dòng ý chính). Không dump bảng Markdown khổng lồ.
+- Không nhét toàn bộ checklist QC / env / API table vào chat — chỉ kết luận + 1–3 bước cần làm.
+- Không hiện thẻ máy kiểu \`<<<DONE>>>\` trong phần người đọc; DONE chỉ ở cuối block riêng nếu cần.
+- Tránh lặp lại "Muốn sửa code thêm → Bật Run" trừ khi họ hỏi tiếp.
 
 <<<NEED_CLARIFICATION>>> / <<<DONE>>> blocks same as usual when applicable.`;
 }

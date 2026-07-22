@@ -1,11 +1,19 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from "vue";
+import { onMounted, reactive, ref, computed } from "vue";
 import { useRouter } from "vue-router";
 import { message } from "ant-design-vue";
 import { FolderOpenOutlined } from "@ant-design/icons-vue";
 import { api } from "@/api/client";
-import { useSessionStore } from "@/stores/session";
+import { useSessionStore, type Membership } from "@/stores/session";
 import FolderPicker from "@/components/FolderPicker.vue";
+
+const LAST_LOGIN_KEY = "flow_auto_work_last_login";
+
+type LastLogin = {
+  username: string;
+  projectId: string | null;
+  gitlabPath?: string | null;
+};
 
 const router = useRouter();
 const session = useSessionStore();
@@ -14,6 +22,8 @@ const step = ref(1);
 const loading = ref(false);
 const gitlabBaseUrl = ref("https://gitlab.com");
 const gitlabPatUrl = ref("");
+const returningUser = ref(false);
+const savedMemberships = ref<Membership[]>([]);
 
 const form = reactive({
   gitlabToken: "",
@@ -24,11 +34,36 @@ const form = reactive({
   workBranch: "",
 });
 
-const projects = ref<Array<{ path_with_namespace: string; name?: string }>>(
-  [],
-);
+const projects = ref<
+  Array<{ path_with_namespace: string; name?: string; id?: number }>
+>([]);
 const branches = ref<string[]>([]);
 const folderOpen = ref(false);
+
+function loadLastLogin(): LastLogin | null {
+  try {
+    const raw = localStorage.getItem(LAST_LOGIN_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as LastLogin;
+  } catch {
+    return null;
+  }
+}
+
+function saveLastLogin(opts: LastLogin) {
+  localStorage.setItem(
+    LAST_LOGIN_KEY,
+    JSON.stringify({
+      username: opts.username,
+      projectId: opts.projectId,
+      gitlabPath: opts.gitlabPath || null,
+    }),
+  );
+}
+
+const canSkipPat = computed(
+  () => returningUser.value && Boolean(form.username.trim()),
+);
 
 onMounted(async () => {
   try {
@@ -38,6 +73,11 @@ onMounted(async () => {
     if (boot.suggestedUsername) form.username = boot.suggestedUsername;
   } catch {
     /* ignore */
+  }
+  const last = loadLastLogin();
+  if (last?.username) {
+    form.username = last.username;
+    returningUser.value = true;
   }
 });
 
@@ -66,28 +106,93 @@ async function resolveToken() {
   }
 }
 
+async function enterWorkspace(memberships: Membership[], preferProjectId?: string | null) {
+  const last = loadLastLogin();
+  const prefer =
+    preferProjectId ||
+    last?.projectId ||
+    session.session.projectId ||
+    null;
+  const picked =
+    (prefer &&
+      memberships.find(
+        (m) => m.projectId === prefer || m.project?.id === prefer,
+      )) ||
+    memberships[0];
+  if (!picked?.projectId) return false;
+
+  const username = (form.username || session.session.username || "")
+    .trim()
+    .replace(/^@/, "");
+  session.setSession({
+    username,
+    projectId: picked.projectId,
+  });
+  session.setMemberships(memberships);
+  saveLastLogin({
+    username,
+    projectId: picked.projectId,
+    gitlabPath: picked.project?.gitlabPath,
+  });
+  message.success(
+    `Chào @${username} · ${picked.project?.displayName || picked.project?.gitlabPath || picked.projectId}`,
+  );
+  await router.replace({ name: "work" });
+  void session.refreshMe().catch(() => undefined);
+  return true;
+}
+
 async function goStep2() {
-  if (!form.gitlabToken.trim()) {
-    message.warning("Nhập PAT");
+  if (!form.gitlabToken.trim() && !canSkipPat.value) {
+    message.warning("Nhập PAT (hoặc dùng tài khoản đã lưu)");
+    return;
+  }
+  if (!form.gitlabToken.trim() && !form.username.trim()) {
+    message.warning("Nhập username hoặc PAT");
     return;
   }
   loading.value = true;
   try {
-    if (!form.username) await resolveToken();
+    if (form.gitlabToken.trim() && !form.username) await resolveToken();
+    const body: Record<string, string> = {
+      gitlabUsername: form.username.trim().replace(/^@/, ""),
+    };
+    if (form.gitlabToken.trim()) {
+      body.gitlabToken = form.gitlabToken.trim();
+    }
     const loginRes = await api<{
-      user: { gitlabUsername: string };
-      memberships?: unknown[];
+      user: { gitlabUsername: string; hasGitlabToken?: boolean };
+      memberships?: Membership[];
+      accessToken: string;
+      refreshToken: string;
+      expiresIn?: number;
+      accessExpiresAt?: number;
     }>("/api/auth/login", {
       method: "POST",
-      body: JSON.stringify({
-        gitlabUsername: form.username,
-        gitlabToken: form.gitlabToken.trim(),
-      }),
+      body: JSON.stringify(body),
     });
     const uname =
       loginRes.user?.gitlabUsername || form.username || "";
     form.username = uname;
-    session.setSession({ username: uname, projectId: null });
+    session.setAuthTokens({
+      username: uname,
+      accessToken: loginRes.accessToken,
+      refreshToken: loginRes.refreshToken,
+      expiresIn: loginRes.expiresIn,
+      accessExpiresAt: loginRes.accessExpiresAt,
+    });
+    session.setSession({ username: uname });
+
+    const memberships = (loginRes.memberships || []) as Membership[];
+    savedMemberships.value = memberships;
+
+    // Đã có project + path + branch trên server → vào thẳng Work
+    if (memberships.length > 0) {
+      const ok = await enterWorkspace(memberships);
+      if (ok) return;
+    }
+
+    // Lần đầu / chưa join project → wizard chọn project
     const proj = await api<{
       projects: Array<{
         pathWithNamespace: string;
@@ -100,8 +205,12 @@ async function goStep2() {
       name: p.name,
       id: p.id,
     }));
+    const last = loadLastLogin();
+    if (last?.gitlabPath) form.gitlabPath = last.gitlabPath;
     if (!projects.value.length) {
-      message.warning("Token không thấy project nào (cần membership trên GitLab)");
+      message.warning(
+        "Token không thấy project nào (cần membership trên GitLab)",
+      );
     }
     step.value = 2;
   } catch (e) {
@@ -161,7 +270,10 @@ async function goStep3() {
 async function finish() {
   loading.value = true;
   try {
-    const res = await api<{ project: { id: string } }>("/api/projects/join", {
+    const res = await api<{
+      project: { id: string; gitlabPath?: string };
+      memberships?: Membership[];
+    }>("/api/projects/join", {
       method: "POST",
       body: JSON.stringify({
         gitlabPath: form.gitlabPath,
@@ -170,18 +282,39 @@ async function finish() {
         workBranch: form.workBranch || undefined,
       }),
     });
-    session.setSession({
-      username: form.username,
-      projectId: res.project.id,
+    const projectId =
+      res.project?.id ||
+      res.memberships?.[0]?.projectId ||
+      res.memberships?.[0]?.project?.id;
+    const username = (form.username || session.session.username || "")
+      .trim()
+      .replace(/^@/, "");
+    if (!projectId || !username) {
+      throw new Error("Join OK nhưng thiếu projectId/username");
+    }
+    if (!session.session.accessToken && !session.session.refreshToken) {
+      throw new Error("Mất token phiên — đăng nhập lại");
+    }
+
+    session.setSession({ username, projectId });
+    if (res.memberships?.length) session.setMemberships(res.memberships);
+    saveLastLogin({
+      username,
+      projectId,
+      gitlabPath: form.gitlabPath,
     });
-    await session.refreshMe();
     message.success("Đã vào workspace");
-    router.push({ name: "work" });
+    await router.replace({ name: "work" });
+    void session.refreshMe().catch(() => undefined);
   } catch (e) {
     message.error(e instanceof Error ? e.message : String(e));
   } finally {
     loading.value = false;
   }
+}
+
+function setupNewProject() {
+  step.value = 2;
 }
 </script>
 
@@ -197,41 +330,72 @@ async function finish() {
         <h1 class="text-2xl font-semibold text-ink m-0">
           {{
             step === 1
-              ? "Kết nối GitLab"
+              ? returningUser
+                ? "Kết nối GitLab"
+                : "Kết nối GitLab"
               : step === 2
                 ? "Chọn dự án"
                 : "Cấu hình nhánh"
           }}
         </h1>
-        <p class="text-ink-muted text-sm mt-1 mb-0">Bước {{ step }}/3</p>
+        <p class="text-ink-muted text-sm mt-1 mb-0">
+          <template v-if="step === 1 && returningUser">
+          </template>
+          <template v-else>Bước {{ step }}/3</template>
+        </p>
       </div>
 
       <div v-show="step === 1" class="space-y-3">
         <a-form layout="vertical">
-          <a-form-item label="GitLab PAT">
+          <a-form-item
+            :label="canSkipPat ? 'GitLab PAT (optional — đổi token)' : 'GitLab PAT'"
+          >
             <a-input-password
               v-model:value="form.gitlabToken"
               placeholder="glpat-…"
               autocomplete="off"
             />
             <div class="text-xs text-ink-faint mt-1">
-              <a
-                :href="gitlabPatUrl || `${gitlabBaseUrl}/-/user_settings/personal_access_tokens`"
-                target="_blank"
-                rel="noopener"
-                class="text-accent font-medium"
-                >Tạo PAT</a
-              >
-              · scope <code>api</code>
+              <template v-if="canSkipPat">
+                PAT đã lưu trên server — để trống để dùng lại.
+              </template>
+              <template v-else>
+                <a
+                  :href="
+                    gitlabPatUrl ||
+                    `${gitlabBaseUrl}/-/user_settings/personal_access_tokens`
+                  "
+                  target="_blank"
+                  rel="noopener"
+                  class="text-accent font-medium"
+                  >Tạo PAT</a
+                >
+                · scope <code>api</code>
+              </template>
             </div>
           </a-form-item>
         </a-form>
-        <a-button type="primary" block :loading="loading" @click="goStep2"
-          >Tiếp tục</a-button
+        <a-button type="primary" block :loading="loading" @click="goStep2">
+          {{ canSkipPat ? "Vào workspace" : "Tiếp tục" }}
+        </a-button>
+        <a-button
+          v-if="returningUser && savedMemberships.length"
+          block
+          type="link"
+          @click="setupNewProject"
+          >Thêm / đổi project…</a-button
         >
       </div>
 
       <div v-show="step === 2" class="space-y-3">
+        <a-alert
+          v-if="savedMemberships.length"
+          type="info"
+          show-icon
+          class="mb-1"
+          message="Đã có workspace lưu sẵn"
+          description="Chỉ cần setup khi join project mới. Có thể Back rồi Vào workspace."
+        />
         <a-form layout="vertical">
           <a-form-item :label="`Project (${projects.length})`">
             <a-select
@@ -270,10 +434,7 @@ async function finish() {
             </div>
           </a-form-item>
         </a-form>
-        <FolderPicker
-          v-model:open="folderOpen"
-          v-model="form.repoPath"
-        />
+        <FolderPicker v-model:open="folderOpen" v-model="form.repoPath" />
         <div class="flex gap-2">
           <a-button @click="step = 1">Back</a-button>
           <a-button

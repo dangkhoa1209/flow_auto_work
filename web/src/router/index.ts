@@ -65,11 +65,14 @@ const router = createRouter({
 router.beforeEach(async (to) => {
   const session = useSessionStore();
   if (!session.bootstrapped) await session.bootstrap();
+
   if (to.meta.public) {
     if (session.isLoggedIn && to.name === "login") return { name: "work" };
     return true;
   }
-  if (!session.isLoggedIn) return { name: "login" };
+  if (!session.isLoggedIn) {
+    return { name: "login", query: { redirect: to.fullPath } };
+  }
   return true;
 });
 
