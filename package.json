@@ -10,6 +10,7 @@
     "dev:all": "npm run dev & npm run dev:web",
     "build:web": "npm run build --prefix web",
     "start": "tsx src/index.ts",
+    "seed": "tsx scripts/seed.ts",
     "typecheck": "tsc --noEmit",
     "typecheck:web": "npm run build --prefix web --if-present",
     "selfcheck": "tsx scripts/selfcheck.ts",

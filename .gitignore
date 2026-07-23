@@ -6,3 +6,5 @@ data/
 .DS_Store
 scripts/.tunnel-url
 scripts/.pids
+/project/*
+!/project/.gitkeep

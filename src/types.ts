@@ -107,10 +107,18 @@ export type JobRecord = {
   /** issue = linked GitLab task; adhoc = free session until create-issue */
   kind?: "issue" | "adhoc";
   issue: IssueJob;
-  /** GitLab username who owns/runs this job */
+  /**
+   * Flow login username (workspace user) who owns/runs this job.
+   * Used with withWorkspaceContext — not necessarily GitLab assignee.
+   */
   ownerUsername?: string;
-  /** Workspace project id (multi-project) */
+  /** Flow workspace project id (e.g. khoadev__ykk) */
   workspaceProjectId?: string;
+  /**
+   * Stable Flow task id for this job (= job.id once assigned).
+   * Kept explicit so UI/API can rely on it without guessing.
+   */
+  flowTaskId?: string;
   /** Project / base branch used when auto-creating feat branches */
   baseBranch?: string;
   /** Fixed work branch; empty → auto feat/<iid>/slug */

@@ -1,30 +1,30 @@
-/** Workspace multi-user / multi-project types */
+import path from "node:path";
+import { getConfig } from "../config.js";
+
+export type CloneStatus = "pending" | "cloning" | "ready" | "failed";
 
 export type WorkspaceUser = {
-  /** GitLab username (lowercase id) */
+  /** Lowercase username id */
   id: string;
+  /** Display / login username (same as id normally) */
   gitlabUsername: string;
+  passwordHash?: string;
   displayName?: string;
-  /** AES-GCM ciphertext — never expose to UI */
+  /** Legacy — prefer project-level token */
   gitlabTokenEnc?: string;
   cursorApiKeyEnc?: string;
-  /**
-   * Cursor model id for agent runs (`auto` or e.g. composer-2.5).
-   * Not a secret — returned in public user payload.
-   */
   cursorModel?: string;
   createdAt: string;
   updatedAt: string;
 };
 
-/** Safe user for API responses (no secrets) */
 export type WorkspaceUserPublic = {
   id: string;
   gitlabUsername: string;
   displayName?: string;
   hasGitlabToken: boolean;
   hasCursorApiKey: boolean;
-  /** Preferred Cursor model; default auto */
+  hasPassword: boolean;
   cursorModel: string;
   createdAt: string;
   updatedAt: string;
@@ -32,30 +32,36 @@ export type WorkspaceUserPublic = {
 
 export type WorkspaceProject = {
   id: string;
-  /** e.g. kiemnv/aihr_v3 */
-  gitlabPath: string;
-  gitlabProjectId?: number;
+  /** Owner user id */
+  userId: string;
+  projectName: string;
   displayName: string;
-  /** Absolute local clone path on this machine */
+  gitlabHost: string;
+  /** e.g. group/repo */
+  gitlabPath: string;
+  /** PAT encrypted — attached to project */
+  gitlabTokenEnc?: string;
+  gitlabProjectId?: number;
+  /** Absolute clone path */
+  localPath: string;
+  /** Alias of localPath (legacy consumers) */
   repoPath: string;
+  mainBranch?: string;
+  workingBranch?: string;
+  isActive: boolean;
+  cloneStatus: CloneStatus;
+  cloneError?: string;
   createdAt: string;
   updatedAt: string;
   createdByUsername: string;
 };
 
+/** Synthetic membership for UI / older callers — branches come from project. */
 export type WorkspaceMembership = {
   id: string;
   userId: string;
   projectId: string;
-  /**
-   * Project / base branch — fork point when auto-creating feat/<iid>/slug.
-   * Usually main / develop / default remote branch.
-   */
   baseBranch?: string;
-  /**
-   * Fixed work branch — if set, agent only commits here.
-   * If empty, each Run creates/uses feat/<iid>/<short-english-slug>.
-   */
   workBranch?: string;
   role: "dev" | "pm" | "admin";
   joinedAt: string;
@@ -73,7 +79,8 @@ export function toPublicUser(u: WorkspaceUser): WorkspaceUserPublic {
     displayName: u.displayName,
     hasGitlabToken: Boolean(u.gitlabTokenEnc),
     hasCursorApiKey: Boolean(u.cursorApiKeyEnc),
-    cursorModel: (u.cursorModel?.trim() || "auto"),
+    hasPassword: Boolean(u.passwordHash),
+    cursorModel: u.cursorModel?.trim() || "auto",
     createdAt: u.createdAt,
     updatedAt: u.updatedAt,
   };
@@ -87,6 +94,67 @@ export function projectIdFromPath(gitlabPath: string): string {
     .replace(/\/+/g, "__");
 }
 
+export function projectIdForUser(userId: string, projectName: string): string {
+  const slug = projectName
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+  return `${normUserId(userId)}__${slug || "project"}`;
+}
+
 export function membershipId(userId: string, projectId: string): string {
-  return `${userId}::${projectId}`;
+  return `${normUserId(userId)}::${projectId}`;
+}
+
+export function normUserId(username: string): string {
+  return username.trim().replace(/^@/, "").toLowerCase();
+}
+
+/** Root folder for cloned repos (default `<cwd>/project`). */
+export function resolveProjectRoot(): string {
+  const cfg = getConfig();
+  const root = cfg.PROJECT_ROOT?.trim();
+  if (root) return path.resolve(root);
+  return path.resolve(process.cwd(), "project");
+}
+
+/**
+ * Default clone path: `<PROJECT_ROOT>/{username}/{projectName}/source`
+ * e.g. `project/khoadev/ykk/source`
+ */
+export function defaultLocalPath(username: string, projectName: string): string {
+  const name =
+    projectName.trim().replace(/[/\\]+/g, "-").replace(/^\.+|\.+$/g, "") ||
+    "project";
+  return path.join(
+    resolveProjectRoot(),
+    normUserId(username),
+    name,
+    "source",
+  );
+}
+
+export function normalizeGitlabHost(host?: string): string {
+  const h = (host || "").trim() || "https://gitlab.com";
+  return h.replace(/\/$/, "");
+}
+
+export function projectToMembership(
+  username: string,
+  project: WorkspaceProject,
+): MembershipWithProject {
+  const userId = normUserId(username);
+  return {
+    id: membershipId(userId, project.id),
+    userId,
+    projectId: project.id,
+    baseBranch: project.mainBranch,
+    workBranch: project.workingBranch,
+    role: "dev",
+    joinedAt: project.createdAt,
+    updatedAt: project.updatedAt,
+    project,
+  };
 }

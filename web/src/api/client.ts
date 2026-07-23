@@ -62,6 +62,28 @@ type AuthTokens = {
 
 let refreshInFlight: Promise<boolean> | null = null;
 
+/** Clear dead tokens so UI stops retrying a revoked refresh. */
+function invalidateLocalSession(): void {
+  const prev = loadSession();
+  clearSession();
+  if (prev.username) {
+    try {
+      localStorage.setItem(
+        "flow_auto_work_last_login",
+        JSON.stringify({
+          username: prev.username,
+          projectId: prev.projectId,
+        }),
+      );
+    } catch {
+      /* ignore */
+    }
+  }
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("flow:session-expired"));
+  }
+}
+
 async function refreshAccessToken(): Promise<boolean> {
   if (refreshInFlight) return refreshInFlight;
   refreshInFlight = (async () => {
@@ -75,13 +97,16 @@ async function refreshAccessToken(): Promise<boolean> {
       });
       const data = (await res.json().catch(() => ({}))) as AuthTokens & {
         error?: string;
+        code?: string;
         user?: { gitlabUsername?: string };
       };
-      if (!res.ok) return false;
+      if (!res.ok) {
+        invalidateLocalSession();
+        return false;
+      }
       const next: Session = {
         ...session,
-        username:
-          data.user?.gitlabUsername || session.username,
+        username: data.user?.gitlabUsername || session.username,
         accessToken: data.accessToken,
         refreshToken: data.refreshToken || session.refreshToken,
         accessExpiresAt:
@@ -91,6 +116,7 @@ async function refreshAccessToken(): Promise<boolean> {
       saveSession(next);
       return true;
     } catch {
+      invalidateLocalSession();
       return false;
     } finally {
       refreshInFlight = null;
@@ -110,7 +136,6 @@ function buildHeaders(
   if (session.accessToken) {
     headers.Authorization = `Bearer ${session.accessToken}`;
   }
-  // Still send for img/SSE helpers & legacy
   if (session.username) headers["X-Flow-User"] = session.username;
   if (session.projectId) headers["X-Flow-Project"] = session.projectId;
   return headers;
@@ -123,14 +148,20 @@ export async function api<T = unknown>(
   const session = opts.session ?? loadSession();
   const { session: _s, skipRefresh, ...fetchOpts } = opts;
 
-  // Proactive refresh if access expires within 30s
   if (
     !skipRefresh &&
     session.refreshToken &&
     session.accessExpiresAt &&
     session.accessExpiresAt < Date.now() + 30_000
   ) {
-    await refreshAccessToken();
+    const ok = await refreshAccessToken();
+    if (!ok) {
+      throw new ApiError(
+        "Phiên đăng nhập hết hạn — vui lòng đăng nhập lại",
+        401,
+        "SESSION_EXPIRED",
+      );
+    }
   }
 
   const run = async () => {
@@ -142,7 +173,15 @@ export async function api<T = unknown>(
   let res = await run();
   if (res.status === 401 && !skipRefresh && loadSession().refreshToken) {
     const ok = await refreshAccessToken();
-    if (ok) res = await run();
+    if (ok) {
+      res = await run();
+    } else {
+      throw new ApiError(
+        "Phiên đăng nhập hết hạn — vui lòng đăng nhập lại",
+        401,
+        "SESSION_EXPIRED",
+      );
+    }
   }
 
   const data = (await res.json().catch(() => ({}))) as {
@@ -150,16 +189,28 @@ export async function api<T = unknown>(
     code?: string;
   } & T;
   if (!res.ok) {
-    throw new ApiError(
-      (data as { error?: string }).error || res.statusText,
-      res.status,
-      (data as { code?: string }).code,
-    );
+    const code = (data as { code?: string }).code;
+    const errMsg = (data as { error?: string }).error || res.statusText;
+    if (
+      res.status === 401 &&
+      (code === "SESSION_EXPIRED" ||
+        /refresh token|hết hạn|đăng nhập lại/i.test(errMsg))
+    ) {
+      invalidateLocalSession();
+      throw new ApiError(
+        "Phiên đăng nhập hết hạn — vui lòng đăng nhập lại",
+        401,
+        "SESSION_EXPIRED",
+      );
+    }
+    throw new ApiError(errMsg, res.status, code);
   }
   return data as T;
 }
 
-export async function applyAuthTokens(tokens: AuthTokens & { username?: string }) {
+export async function applyAuthTokens(
+  tokens: AuthTokens & { username?: string },
+) {
   const session = loadSession();
   saveSession({
     ...session,

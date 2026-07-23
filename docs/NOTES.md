@@ -236,6 +236,12 @@ Browser EventSource → GET /api/events
 
 ---
 
+## Auth / project workspace
+
+- Login: **username + password** (seed `khoadev` / `Khoa.12090`). Optional `AUTH_BYPASS_PASSWORD` trong `.env`.
+- Project thuộc user: PAT GitLab + `localPath` + branches + `isActive`; clone vào `project/{user}/{name}/source` (gitignored).
+- Run cần clone `ready` (có `.git`); thiếu → block (LEVEL 3).
+
 ## Git / commit
 
 - Work branch workspace hoặc `feat/…`.  

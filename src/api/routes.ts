@@ -1469,9 +1469,13 @@ export function createApiRoutes() {
       | "failed"
       | undefined;
     const limit = Number(c.req.query("limit") ?? "50");
+    const { getRuntimeContext } = await import("../workspace/runtime.js");
+    const rt = getRuntimeContext();
     const jobs = await listJobDocs({
       status,
       limit: Number.isFinite(limit) ? limit : 50,
+      workspaceProjectId: rt?.projectId,
+      ownerUsername: rt?.gitlabUsername,
     });
     return c.json({
       jobs,

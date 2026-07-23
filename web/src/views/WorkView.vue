@@ -89,6 +89,22 @@ const filteredTasks = computed(() => {
   });
 });
 
+/** Newest job first — prefer createdAt so ownership migrate can't reverse the list. */
+const sortedJobs = computed(() => {
+  return [...jobs.value].sort((a, b) => {
+    const cb = Date.parse(b.createdAt || "") || 0;
+    const ca = Date.parse(a.createdAt || "") || 0;
+    if (cb !== ca) return cb - ca;
+    const ub = Date.parse(b.updatedAt || "") || 0;
+    const ua = Date.parse(a.updatedAt || "") || 0;
+    if (ub !== ua) return ub - ua;
+    return (b.issue?.issueIid || 0) - (a.issue?.issueIid || 0);
+  });
+});
+
+/** Mobile workbench pane: one column at a time */
+const mobilePane = ref<"tasks" | "detail" | "chat">("tasks");
+
 const humanComments = computed(() =>
   (taskDetail.value?.notes || []).filter((n) => !n.system && n.body?.trim()),
 );
@@ -228,6 +244,7 @@ watch(
 
 async function onSelectTask(iid: number) {
   midTab.value = "detail";
+  mobilePane.value = "detail";
   try {
     await work.selectTask(iid);
   } catch (e) {
@@ -244,6 +261,7 @@ async function onSelectJob(id: string) {
     } else {
       midTab.value = "detail";
     }
+    mobilePane.value = "detail";
   } catch (e) {
     message.error(e instanceof Error ? e.message : String(e));
   }
@@ -544,13 +562,40 @@ async function submitCreateIssue() {
 
 <template>
   <div
-    class="h-full max-h-full grid grid-cols-12 gap-3 p-3 min-h-0 overflow-hidden"
+    class="h-full max-h-full flex flex-col lg:grid lg:grid-cols-12 gap-2 sm:gap-3 p-2 sm:p-3 min-h-0 overflow-hidden"
   >
+    <!-- Mobile pane switcher -->
+    <div
+      class="lg:hidden shrink-0 flex gap-1 p-1 rounded-xl bg-surface-muted/90 border border-line"
+    >
+      <button
+        v-for="p in [
+          { id: 'tasks' as const, label: 'Tasks' },
+          { id: 'detail' as const, label: 'Issue' },
+          { id: 'chat' as const, label: 'Chat' },
+        ]"
+        :key="p.id"
+        type="button"
+        class="flex-1 py-2 rounded-lg text-sm font-medium transition"
+        :class="
+          mobilePane === p.id
+            ? 'bg-surface-raised text-accent shadow-sm'
+            : 'text-ink-muted'
+        "
+        @click="mobilePane = p.id"
+      >
+        {{ p.label }}
+      </button>
+    </div>
+
     <!-- Left: tasks + jobs -->
     <aside
-      class="col-span-3 flex flex-col min-h-0 overflow-hidden rounded-2xl panel-glass shadow-panel"
+      class="flex flex-col min-h-0 overflow-hidden rounded-2xl panel-glass shadow-panel lg:col-span-3"
+      :class="
+        mobilePane === 'tasks' ? 'flex flex-1 min-h-0' : 'hidden lg:flex'
+      "
     >
-      <div class="shrink-0 p-3 border-b border-line space-y-2">
+      <div class="shrink-0 p-2.5 sm:p-3 border-b border-line space-y-2">
         <div class="flex items-center justify-between gap-2">
           <div class="flex items-center gap-1 min-w-0">
             <span class="text-sm font-semibold text-ink">Tasks</span>
@@ -567,7 +612,7 @@ async function submitCreateIssue() {
           <div class="flex gap-1 flex-wrap justify-end">
             <a-button size="small" @click="openAdhocModal">
               <template #icon><PlusOutlined /></template>
-              Hotfix
+              <span class="hidden sm:inline">Hotfix</span>
             </a-button>
             <a-button size="small" type="primary" :loading="busy" @click="runSelected"
               >Run</a-button
@@ -610,7 +655,7 @@ async function submitCreateIssue() {
           <div
             v-for="t in filteredTasks"
             :key="t.issueIid"
-            class="rounded-xl px-2.5 py-2 cursor-pointer hover:bg-surface-muted border border-transparent transition"
+            class="rounded-xl px-2.5 py-2 cursor-pointer hover:bg-surface-muted border border-transparent transition active:bg-surface-muted"
             :class="
               selectedTaskIid === t.issueIid
                 ? '!border-accent/40 !bg-accent-soft'
@@ -650,109 +695,122 @@ async function submitCreateIssue() {
         </a-spin>
       </div>
 
+      <!-- Jobs: header fixed, list scrolls — no sticky overlap -->
       <div
-        class="shrink-0 border-t border-line p-2 h-[32%] min-h-[140px] max-h-[40%] overflow-y-auto bg-surface-soft/80"
+        class="shrink-0 border-t border-line flex flex-col h-[34%] min-h-[132px] max-h-[42%] bg-surface-soft/80 overflow-hidden"
       >
         <div
-          class="text-xs font-semibold uppercase tracking-wide text-ink-faint px-1 mb-1 sticky top-0 bg-surface-soft/95 py-1"
+          class="shrink-0 text-xs font-semibold uppercase tracking-wide text-ink-faint px-3 py-1.5 border-b border-line/60 bg-surface-soft"
         >
           Jobs
+          <span class="normal-case font-normal text-ink-faint/80 ml-1"
+            >({{ sortedJobs.length }})</span
+          >
         </div>
-        <div
-          v-for="j in jobs"
-          :key="j.id"
-          class="rounded-lg px-2 py-1.5 mb-1 cursor-pointer hover:bg-surface-raised text-sm border border-transparent relative group/job"
-          :class="
-            selectedJobId === j.id
-              ? '!bg-surface-raised !border-line shadow-sm'
-              : ''
-          "
-          @click="onSelectJob(j.id)"
-        >
-          <div class="flex items-center gap-1.5 min-w-0">
-            <div @click.stop>
-              <a-dropdown
-                :trigger="['click']"
-                :disabled="jobStatusBusy === j.id"
-              >
-                <a-tag
-                  :color="statusColor(j.status)"
-                  class="m-0 !text-[10px] !leading-4 !px-1.5 !py-0 cursor-pointer max-w-[7.5rem] truncate"
+        <div class="flex-1 min-h-0 overflow-y-auto overscroll-contain p-2 space-y-1">
+          <div
+            v-for="j in sortedJobs"
+            :key="j.id"
+            class="rounded-lg px-2 py-1.5 cursor-pointer hover:bg-surface-raised text-sm border border-transparent relative group/job active:bg-surface-raised"
+            :class="
+              selectedJobId === j.id
+                ? '!bg-surface-raised !border-line shadow-sm'
+                : ''
+            "
+            @click="onSelectJob(j.id)"
+          >
+            <div class="flex items-center gap-1.5 min-w-0">
+              <div @click.stop>
+                <a-dropdown
+                  :trigger="['click']"
+                  :disabled="jobStatusBusy === j.id"
                 >
-                  {{ statusLabel(j.status) }}
-                  <span class="opacity-60 ml-0.5">▾</span>
-                </a-tag>
-                <template #overlay>
-                  <a-menu
-                    :selected-keys="[j.status]"
-                    @click="
-                      ({ key }: { key: string }) => onJobStatusChange(j.id, key)
-                    "
+                  <a-tag
+                    :color="statusColor(j.status)"
+                    class="m-0 !text-[10px] !leading-4 !px-1.5 !py-0 cursor-pointer max-w-[7.5rem] truncate"
                   >
-                    <a-menu-item
-                      v-if="
-                        !(MANUAL_JOB_STATUSES as readonly string[]).includes(
-                          j.status,
-                        )
+                    {{ statusLabel(j.status) }}
+                    <span class="opacity-60 ml-0.5">▾</span>
+                  </a-tag>
+                  <template #overlay>
+                    <a-menu
+                      :selected-keys="[j.status]"
+                      @click="
+                        ({ key }: { key: string }) =>
+                          onJobStatusChange(j.id, key)
                       "
-                      :key="j.status"
-                      disabled
                     >
-                      {{ statusLabel(j.status) }}
-                    </a-menu-item>
-                    <a-menu-item
-                      v-for="s in MANUAL_JOB_STATUSES"
-                      :key="s"
-                    >
-                      {{ statusLabel(s) }}
-                    </a-menu-item>
-                  </a-menu>
-                </template>
-              </a-dropdown>
-            </div>
-            <a-tag
-              v-if="j.contextQuality?.level"
-              :color="contextQualityColor(j.contextQuality.level)"
-              class="m-0 !text-[10px] !leading-4 !px-1 !py-0 shrink-0"
-              :title="j.contextQuality.reason || ''"
-            >
-              {{
-                j.contextQuality.level === "good"
-                  ? "Good"
-                  : j.contextQuality.level === "searchable"
-                    ? "Search"
-                    : "Bad"
-              }}
-            </a-tag>
-            <span class="text-accent text-xs font-semibold shrink-0">{{
-              jobDisplayIid(j)
-            }}</span>
-            <a-spin
-              v-if="jobLoading && selectedJobId === j.id"
-              size="small"
-              class="ml-auto"
-            />
-            <a-popconfirm
-              v-else
-              title="Xóa job này?"
-              ok-text="Xóa"
-              cancel-text="Huỷ"
-              ok-type="danger"
-              @confirm.stop="onDeleteJob(j.id)"
-            >
-              <button
-                type="button"
-                class="ml-auto shrink-0 text-[11px] leading-none text-ink-faint hover:text-red-500 opacity-0 group-hover/job:opacity-100 transition-opacity px-0.5"
-                :disabled="jobStatusBusy === j.id"
-                @click.stop
-                title="Xóa job"
+                      <a-menu-item
+                        v-if="
+                          !(MANUAL_JOB_STATUSES as readonly string[]).includes(
+                            j.status,
+                          )
+                        "
+                        :key="j.status"
+                        disabled
+                      >
+                        {{ statusLabel(j.status) }}
+                      </a-menu-item>
+                      <a-menu-item
+                        v-for="s in MANUAL_JOB_STATUSES"
+                        :key="s"
+                      >
+                        {{ statusLabel(s) }}
+                      </a-menu-item>
+                    </a-menu>
+                  </template>
+                </a-dropdown>
+              </div>
+              <a-tag
+                v-if="j.contextQuality?.level"
+                :color="contextQualityColor(j.contextQuality.level)"
+                class="m-0 !text-[10px] !leading-4 !px-1 !py-0 shrink-0"
+                :title="j.contextQuality.reason || ''"
               >
-                ×
-              </button>
-            </a-popconfirm>
+                {{
+                  j.contextQuality.level === "good"
+                    ? "Good"
+                    : j.contextQuality.level === "searchable"
+                      ? "Search"
+                      : "Bad"
+                }}
+              </a-tag>
+              <span class="text-accent text-xs font-semibold shrink-0">{{
+                jobDisplayIid(j)
+              }}</span>
+              <a-spin
+                v-if="jobLoading && selectedJobId === j.id"
+                size="small"
+                class="ml-auto"
+              />
+              <a-popconfirm
+                v-else
+                title="Xóa job này?"
+                ok-text="Xóa"
+                cancel-text="Huỷ"
+                ok-type="danger"
+                @confirm.stop="onDeleteJob(j.id)"
+              >
+                <button
+                  type="button"
+                  class="ml-auto shrink-0 text-[11px] leading-none text-ink-faint hover:text-red-500 opacity-100 sm:opacity-0 sm:group-hover/job:opacity-100 transition-opacity px-0.5"
+                  :disabled="jobStatusBusy === j.id"
+                  @click.stop
+                  title="Xóa job"
+                >
+                  ×
+                </button>
+              </a-popconfirm>
+            </div>
+            <div class="truncate text-ink-muted text-xs mt-0.5">
+              {{ j.issue?.title }}
+            </div>
           </div>
-          <div class="truncate text-ink-muted text-xs mt-0.5">
-            {{ j.issue?.title }}
+          <div
+            v-if="!sortedJobs.length"
+            class="text-xs text-ink-faint p-2 text-center"
+          >
+            Chưa có job
           </div>
         </div>
       </div>
@@ -760,7 +818,10 @@ async function submitCreateIssue() {
 
     <!-- Mid: tabs -->
     <section
-      class="col-span-5 flex flex-col min-h-0 overflow-hidden rounded-2xl panel-glass shadow-panel relative"
+      class="flex flex-col min-h-0 overflow-hidden rounded-2xl panel-glass shadow-panel relative lg:col-span-5"
+      :class="
+        mobilePane === 'detail' ? 'flex flex-1 min-h-0' : 'hidden lg:flex'
+      "
     >
       <div
         v-if="jobLoading"
@@ -1068,7 +1129,8 @@ async function submitCreateIssue() {
 
     <!-- Right: chat -->
     <aside
-      class="col-span-4 flex flex-col min-h-0 overflow-hidden rounded-2xl panel-glass shadow-panel relative"
+      class="flex flex-col min-h-0 overflow-hidden rounded-2xl panel-glass shadow-panel relative lg:col-span-4"
+      :class="mobilePane === 'chat' ? 'flex flex-1 min-h-0' : 'hidden lg:flex'"
     >
       <div
         v-if="jobLoading"

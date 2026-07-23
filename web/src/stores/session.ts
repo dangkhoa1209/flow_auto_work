@@ -17,8 +17,17 @@ export type Membership = {
   project: {
     id: string;
     displayName?: string;
+    projectName?: string;
     gitlabPath: string;
+    gitlabHost?: string;
     repoPath?: string;
+    localPath?: string;
+    isActive?: boolean;
+    cloneStatus?: string;
+    cloneError?: string | null;
+    hasGitlabToken?: boolean;
+    mainBranch?: string | null;
+    workingBranch?: string | null;
   };
 };
 
@@ -38,13 +47,12 @@ export const useSessionStore = defineStore("session", () => {
   const loading = ref(false);
   const bootstrapped = ref(false);
 
-  /** Có refresh token = còn phiên đăng nhập (access có thể hết hạn). */
+  /** Có refresh token = còn phiên (project có thể chọn sau ở Settings). */
   const isLoggedIn = computed(
     () =>
       Boolean(
         (session.value.accessToken || session.value.refreshToken) &&
-          session.value.username &&
-          session.value.projectId,
+          session.value.username,
       ),
   );
 
@@ -179,13 +187,16 @@ export const useSessionStore = defineStore("session", () => {
     username?: string;
   }) {
     applyAuthTokens(tokens);
-    syncFromStorage();
+    session.value = loadSession();
+    if (tokens.username) {
+      session.value.username = tokens.username;
+      persist();
+    }
   }
 
   async function logout() {
     const prev = loadSession();
     const refreshToken = prev.refreshToken;
-    // Giữ gợi ý login lần sau (username + project)
     if (prev.username) {
       try {
         localStorage.setItem(
@@ -199,7 +210,6 @@ export const useSessionStore = defineStore("session", () => {
         /* ignore */
       }
     }
-    // Clear local TRƯỚC — tránh guard còn thấy isLoggedIn khi vào /login
     clearSession();
     session.value = {
       username: null,
@@ -211,7 +221,6 @@ export const useSessionStore = defineStore("session", () => {
     me.value = null;
     memberships.value = [];
 
-    // Revoke trên server không chặn UI
     if (refreshToken) {
       void api("/api/auth/logout", {
         method: "POST",
@@ -219,6 +228,36 @@ export const useSessionStore = defineStore("session", () => {
         skipRefresh: true,
       }).catch(() => undefined);
     }
+  }
+
+  /** Sync Pinia after localStorage was cleared by api client */
+  function handleSessionExpired() {
+    session.value = {
+      username: null,
+      projectId: null,
+      accessToken: null,
+      refreshToken: null,
+      accessExpiresAt: null,
+    };
+    me.value = null;
+    memberships.value = [];
+  }
+
+  if (typeof window !== "undefined") {
+    window.addEventListener("flow:session-expired", handleSessionExpired);
+  }
+
+  /** Activate project on server + update session.projectId */
+  async function activateProject(projectId: string): Promise<void> {
+    const id = projectId.trim();
+    if (!id) throw new Error("projectId required");
+    const res = await api<{ memberships?: Membership[] }>(
+      `/api/projects/${encodeURIComponent(id)}/activate`,
+      { method: "POST", body: "{}" },
+    );
+    if (res.memberships) setMemberships(res.memberships);
+    setSession({ projectId: id });
+    await refreshMe();
   }
 
   return {
@@ -234,7 +273,9 @@ export const useSessionStore = defineStore("session", () => {
     setSession,
     setAuthTokens,
     setMemberships,
+    activateProject,
     logout,
+    handleSessionExpired,
     persist,
     syncFromStorage,
   };

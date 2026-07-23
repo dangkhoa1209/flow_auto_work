@@ -50,6 +50,10 @@ export async function connectMongo(): Promise<Db> {
     );
   }
   await db.collection("jobs").createIndex({ status: 1, updatedAt: -1 });
+  await db
+    .collection("jobs")
+    .createIndex({ workspaceProjectId: 1, updatedAt: -1 });
+  await db.collection("jobs").createIndex({ ownerUsername: 1, updatedAt: -1 });
   await db.collection("notes").createIndex({ issueIid: 1, createdAt: -1 });
   await db.collection("notes").createIndex({ jobId: 1, createdAt: -1 });
   await db.collection("chat").createIndex({ jobId: 1, createdAt: 1 });
@@ -114,9 +118,16 @@ export async function upsertJobDoc(
 export async function listJobDocs(opts?: {
   limit?: number;
   status?: JobStatus;
+  workspaceProjectId?: string;
+  ownerUsername?: string;
 }): Promise<JobDoc[]> {
   await connectMongo();
-  const filter = opts?.status ? { status: opts.status } : {};
+  const filter: Record<string, unknown> = {};
+  if (opts?.status) filter.status = opts.status;
+  if (opts?.workspaceProjectId) {
+    filter.workspaceProjectId = opts.workspaceProjectId;
+  }
+  if (opts?.ownerUsername) filter.ownerUsername = opts.ownerUsername;
   return jobs()
     .find(filter)
     .sort({ updatedAt: -1 })

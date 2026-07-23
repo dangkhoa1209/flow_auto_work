@@ -18,14 +18,23 @@ import {
 } from "./types.js";
 import { getRuntimeContext } from "./workspace/runtime.js";
 import { fetchGitlabProject } from "./gitlab/client.js";
+import {
+  SEED_USERNAME,
+  seedWorkspaceProjectId,
+} from "./workspace/seed.js";
 
 export async function saveJob(
   job: JobRecord,
-  extra?: { source?: string },
+  extra?: { source?: string; preserveUpdatedAt?: boolean },
 ): Promise<void> {
-  job.updatedAt = new Date().toISOString();
+  if (!extra?.preserveUpdatedAt) {
+    job.updatedAt = new Date().toISOString();
+  } else if (!job.updatedAt) {
+    job.updatedAt = job.createdAt || new Date().toISOString();
+  }
   // Keep legacy field in sync for old readers
   if (job.devNotes != null) job.techLeadNotes = job.devNotes;
+  if (job.id && !job.flowTaskId) job.flowTaskId = job.id;
   await upsertJobDoc(job, extra);
   const { publishRealtime } = await import("./realtime/hub.js");
   // Patch single job status on UI — avoid spamming full jobs list refresh
@@ -34,6 +43,43 @@ export async function saveJob(
     jobId: job.id,
     status: job.status,
   });
+}
+
+/** Stamp Flow user + workspace project + flowTaskId from current runtime. */
+export function applyJobOwnership(
+  job: JobRecord,
+  opts?: { force?: boolean },
+): boolean {
+  const rt = getRuntimeContext();
+  if (!rt) return false;
+  let changed = false;
+  const force = Boolean(opts?.force);
+
+  if (force || !job.ownerUsername) {
+    if (job.ownerUsername !== rt.gitlabUsername) {
+      job.ownerUsername = rt.gitlabUsername;
+      changed = true;
+    }
+  }
+  if (force || !job.workspaceProjectId) {
+    if (job.workspaceProjectId !== rt.projectId) {
+      job.workspaceProjectId = rt.projectId;
+      changed = true;
+    }
+  }
+  if (job.id && job.flowTaskId !== job.id) {
+    job.flowTaskId = job.id;
+    changed = true;
+  }
+  if (rt.baseBranch && (force || !job.baseBranch)) {
+    job.baseBranch = rt.baseBranch;
+    changed = true;
+  }
+  if (rt.workBranch?.trim() && (force || !job.workBranch)) {
+    job.workBranch = rt.workBranch.trim();
+    changed = true;
+  }
+  return changed;
 }
 
 function normalizeJob(doc: JobRecord & { _id?: string; source?: string }): JobRecord {
@@ -48,6 +94,7 @@ function normalizeJob(doc: JobRecord & { _id?: string; source?: string }): JobRe
         ? "adhoc"
         : "issue";
   }
+  if (job.id && !job.flowTaskId) job.flowTaskId = job.id;
   return job;
 }
 
@@ -92,12 +139,15 @@ export async function ensureJob(
     if (opts?.requireDocsFirst !== undefined) {
       existing.requireDocsFirst = opts.requireDocsFirst;
     }
+    applyJobOwnership(existing);
     await saveJob(existing, { source: opts?.source });
     return existing;
   }
 
+  const id = jobIdForIssue(issue.projectId, issue.issueIid);
   const job: JobRecord = {
-    id: jobIdForIssue(issue.projectId, issue.issueIid),
+    id,
+    flowTaskId: id,
     status: "draft",
     kind: "issue",
     issue,
@@ -109,8 +159,15 @@ export async function ensureJob(
     createdAt: now,
     updatedAt: now,
   };
+  applyJobOwnership(job, { force: true });
   await saveJob(job, { source: opts?.source ?? "ensure" });
-  logger.info("Ensured draft job", { jobId: job.id, issueIid: issue.issueIid });
+  logger.info("Ensured draft job", {
+    jobId: job.id,
+    flowTaskId: job.flowTaskId,
+    issueIid: issue.issueIid,
+    ownerUsername: job.ownerUsername,
+    workspaceProjectId: job.workspaceProjectId,
+  });
   return job;
 }
 
@@ -143,6 +200,7 @@ export async function createAdhocJob(opts: {
 
   const job: JobRecord = {
     id,
+    flowTaskId: id,
     status: "draft",
     kind: "adhoc",
     issue: {
@@ -170,8 +228,11 @@ export async function createAdhocJob(opts: {
   await saveJob(job, { source: opts.source ?? "adhoc" });
   logger.info("Created adhoc job", {
     jobId: job.id,
+    flowTaskId: job.flowTaskId,
     title,
     branch,
+    ownerUsername: job.ownerUsername,
+    workspaceProjectId: job.workspaceProjectId,
     reusedWorkBranch: Boolean(fixedWork),
   });
   return job;
@@ -194,10 +255,12 @@ export async function migrateAdhocJobToIssue(
   const migrated: JobRecord = {
     ...adhocJob,
     id: newId,
+    flowTaskId: newId,
     kind: "issue",
     issue,
     updatedAt: now,
   };
+  applyJobOwnership(migrated);
 
   await saveJob(migrated, { source: "adhoc_migrate" });
   await rekeyJobSideDocs({
@@ -210,13 +273,21 @@ export async function migrateAdhocJobToIssue(
   logger.info("Migrated adhoc job → issue job", {
     from: oldId,
     to: newId,
+    flowTaskId: newId,
     issueIid: issue.issueIid,
   });
   return migrated;
 }
 
-export async function listJobs(): Promise<JobRecord[]> {
-  const docs = await listJobDocs({ limit: 500 });
+export async function listJobs(opts?: {
+  workspaceProjectId?: string;
+  ownerUsername?: string;
+}): Promise<JobRecord[]> {
+  const docs = await listJobDocs({
+    limit: 500,
+    workspaceProjectId: opts?.workspaceProjectId,
+    ownerUsername: opts?.ownerUsername,
+  });
   return docs.map((doc) => normalizeJob(doc));
 }
 
@@ -270,6 +341,46 @@ export async function resolveLegacyDiffApprovalJobs(): Promise<number> {
     logger.info("Resolved legacy awaiting_diff_approval → succeeded", {
       jobId: job.id,
       issueIid: job.issue.issueIid,
+    });
+  }
+  return n;
+}
+
+/**
+ * Boot: gắn mọi job hiện có vào user + project mặc định (khoadev / ykk)
+ * và đảm bảo flowTaskId = job.id.
+ */
+export async function assignJobsToDefaultWorkspace(): Promise<number> {
+  const workspaceProjectId = seedWorkspaceProjectId();
+  const jobs = await listJobs();
+  let n = 0;
+  for (const job of jobs) {
+    let changed = false;
+    if (job.ownerUsername !== SEED_USERNAME) {
+      job.ownerUsername = SEED_USERNAME;
+      changed = true;
+    }
+    if (job.workspaceProjectId !== workspaceProjectId) {
+      job.workspaceProjectId = workspaceProjectId;
+      changed = true;
+    }
+    if (job.flowTaskId !== job.id) {
+      job.flowTaskId = job.id;
+      changed = true;
+    }
+    if (!changed) continue;
+    // Keep original updatedAt so Jobs list order stays newest-first
+    await saveJob(job, {
+      source: "ownership_migrate",
+      preserveUpdatedAt: true,
+    });
+    n += 1;
+  }
+  if (n > 0) {
+    logger.info("Assigned jobs to default workspace", {
+      count: n,
+      ownerUsername: SEED_USERNAME,
+      workspaceProjectId,
     });
   }
   return n;

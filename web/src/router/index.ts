@@ -76,4 +76,14 @@ router.beforeEach(async (to) => {
   return true;
 });
 
+if (typeof window !== "undefined") {
+  window.addEventListener("flow:session-expired", () => {
+    const session = useSessionStore();
+    session.handleSessionExpired();
+    if (router.currentRoute.value.name !== "login") {
+      void router.push({ name: "login" });
+    }
+  });
+}
+
 export default router;

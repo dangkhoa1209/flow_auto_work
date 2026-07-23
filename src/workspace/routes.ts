@@ -12,22 +12,27 @@ import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 import {
+  activateProject,
+  createUserProject,
+  deleteUserProject,
   getMembership,
+  getProject,
   getUserByUsername,
   getUserSecrets,
   listMembershipsForUser,
-  upsertMembership,
+  updateProjectFields,
   upsertProject,
   upsertUserLogin,
   clearCursorApiKey,
   updateUserPreferences,
 } from "./store.js";
-import { toPublicUser } from "./types.js";
-import { resolveRuntimeContext } from "./resolve.js";
+import { toPublicUser, defaultLocalPath, normalizeGitlabHost } from "./types.js";
+import { assertProjectCloneReady, resolveRuntimeContext } from "./resolve.js";
 import { runWithRuntimeContext } from "./runtime.js";
 import { getConfig } from "../config.js";
 import { Cursor } from "@cursor/sdk";
 import { verifyAccessToken } from "../auth/tokens.js";
+import { verifyPassword } from "../auth/password.js";
 import {
   consumeRefreshSession,
   revokeAllRefreshSessions,
@@ -39,6 +44,8 @@ import {
   verifyRefreshToken,
   REFRESH_TTL_SEC,
 } from "../auth/tokens.js";
+import { buildOauthCloneUrl, isGitRepo, runGitClone } from "./clone.js";
+import { logger } from "../logger.js";
 
 type Req = {
   req: {
@@ -101,6 +108,57 @@ async function issueAuthTokens(username: string) {
   };
 }
 
+function publicProject(project: Awaited<ReturnType<typeof getProject>>) {
+  if (!project) return null;
+  return {
+    id: project.id,
+    userId: project.userId,
+    projectName: project.projectName,
+    displayName: project.displayName,
+    gitlabHost: project.gitlabHost,
+    gitlabPath: project.gitlabPath,
+    gitlabProjectId: project.gitlabProjectId ?? null,
+    localPath: project.localPath,
+    repoPath: project.repoPath || project.localPath,
+    mainBranch: project.mainBranch ?? null,
+    workingBranch: project.workingBranch ?? null,
+    isActive: project.isActive,
+    cloneStatus: project.cloneStatus,
+    cloneError: project.cloneError ?? null,
+    hasGitlabToken: Boolean(project.gitlabTokenEnc),
+    createdAt: project.createdAt,
+    updatedAt: project.updatedAt,
+  };
+}
+
+function sanitizeMembership(m: {
+  id: string;
+  userId: string;
+  projectId: string;
+  baseBranch?: string;
+  workBranch?: string;
+  role: string;
+  joinedAt: string;
+  updatedAt: string;
+  project: NonNullable<Awaited<ReturnType<typeof getProject>>>;
+}) {
+  return {
+    id: m.id,
+    userId: m.userId,
+    projectId: m.projectId,
+    baseBranch: m.baseBranch,
+    workBranch: m.workBranch,
+    role: m.role,
+    joinedAt: m.joinedAt,
+    updatedAt: m.updatedAt,
+    project: publicProject(m.project),
+  };
+}
+
+async function listPublicMemberships(username: string) {
+  return (await listMembershipsForUser(username)).map(sanitizeMembership);
+}
+
 export function createWorkspaceRoutes() {
   const ws = new Hono();
 
@@ -109,11 +167,12 @@ export function createWorkspaceRoutes() {
     const config = getConfig();
     const gitlabBaseUrl = config.GITLAB_BASE_URL.replace(/\/$/, "");
     return c.json({
-      suggestedUsername: config.GITLAB_ASSIGNEE_USERNAME ?? null,
       gitlabBaseUrl,
       gitlabPatUrl: `${gitlabBaseUrl}/-/user_settings/personal_access_tokens`,
       cursorApiKeyUrl: "https://cursor.com/dashboard?tab=integrations",
       defaultCursorModel: "auto",
+      authMode: "password",
+      bypassEnabled: Boolean(config.AUTH_BYPASS_PASSWORD?.trim()),
     });
   });
 
@@ -140,63 +199,135 @@ export function createWorkspaceRoutes() {
   });
 
   /**
-   * Login / register.
-   * If username omitted but gitlabToken provided → resolve username from GitLab /user.
-   * Tokens verified then stored encrypted (never returned).
+   * Register new username + password, then issue tokens (same shape as login).
    */
-  ws.post("/auth/login", async (c) => {
+  ws.post("/auth/register", async (c) => {
     const body = (await c.req.json().catch(() => ({}))) as {
-      gitlabUsername?: string;
-      gitlabToken?: string;
-      cursorApiKey?: string;
+      username?: string;
+      password?: string;
       displayName?: string;
     };
-    let username = (body.gitlabUsername || "").trim().replace(/^@/, "");
-    let gitlabToken = body.gitlabToken?.trim();
-    let cursorApiKey = body.cursorApiKey?.trim();
+    const username = (body.username || "").trim().replace(/^@/, "");
+    const password = body.password ?? "";
+    const displayName = body.displayName?.trim();
 
-    if (!username && gitlabToken) {
-      const profile = await verifyGitlabTokenUser(gitlabToken);
-      username = profile.username;
-      body.displayName = body.displayName || profile.name;
-    }
     if (!username) {
+      return c.json({ error: "username required" }, 400);
+    }
+    if (!/^[a-zA-Z0-9._-]{3,32}$/.test(username)) {
       return c.json(
-        { error: "gitlabUsername required (or paste GitLab PAT to auto-detect)" },
+        {
+          error:
+            "Username 3–32 ký tự: chữ, số, chấm, gạch dưới, gạch ngang",
+        },
         400,
       );
     }
+    if (password.length < 6) {
+      return c.json({ error: "Password tối thiểu 6 ký tự" }, 400);
+    }
 
     const existing = await getUserByUsername(username);
-    // First login: require GitLab PAT (Cursor key optional until Run)
-    if (!existing?.gitlabTokenEnc && !gitlabToken) {
-      return c.json({ error: "gitlabToken required" }, 400);
+    if (existing) {
+      return c.json({ error: "Username đã tồn tại" }, 409);
     }
 
-    if (gitlabToken) {
-      const profile = await verifyGitlabTokenUser(gitlabToken);
-      if (profile.username.toLowerCase() !== username.toLowerCase()) {
-        return c.json(
-          {
-            error: `Token belongs to @${profile.username}, not @${username}`,
-          },
-          400,
-        );
-      }
-      body.displayName = body.displayName || profile.name;
-    }
-
-    const user = await upsertUserLogin({
-      gitlabUsername: username,
-      displayName: body.displayName,
-      gitlabToken,
-      cursorApiKey,
+    const { createOrUpdateUserPassword } = await import("./store.js");
+    const user = await createOrUpdateUserPassword({
+      username,
+      password,
+      displayName: displayName || username,
     });
-    const memberships = await listMembershipsForUser(username);
+    const memberships = await listPublicMemberships(username);
     const tokens = await issueAuthTokens(username);
     return c.json({
       user,
       memberships,
+      activeProjectId: memberships[0]?.projectId ?? null,
+      ...tokens,
+    });
+  });
+
+  /**
+   * Login with username + password.
+   * If AUTH_BYPASS_PASSWORD is set and matches, skip passwordHash check.
+   */
+  ws.post("/auth/login", async (c) => {
+    const body = (await c.req.json().catch(() => ({}))) as {
+      username?: string;
+      password?: string;
+      gitlabUsername?: string;
+      /** Legacy fields ignored for auth; use project settings for PAT */
+      gitlabToken?: string;
+      cursorApiKey?: string;
+      displayName?: string;
+    };
+    const username = (
+      body.username ||
+      body.gitlabUsername ||
+      ""
+    )
+      .trim()
+      .replace(/^@/, "");
+    const password = body.password ?? "";
+    if (!username) {
+      return c.json({ error: "username required" }, 400);
+    }
+    if (!password) {
+      return c.json({ error: "password required" }, 400);
+    }
+
+    const config = getConfig();
+    const bypass = config.AUTH_BYPASS_PASSWORD?.trim();
+    const existing = await getUserByUsername(username);
+    if (!existing) {
+      return c.json(
+        {
+          error:
+            "User not found. Chưa có đăng ký — dùng tài khoản đã seed hoặc nhờ admin tạo user.",
+        },
+        401,
+      );
+    }
+
+    const bypassOk = Boolean(bypass && password === bypass);
+    if (!bypassOk) {
+      if (!existing.passwordHash) {
+        return c.json(
+          {
+            error:
+              "Tài khoản này chưa có password (login GitLab cũ). Dùng user khoadev hoặc nhờ admin set password.",
+          },
+          401,
+        );
+      }
+      const ok = await verifyPassword(password, existing.passwordHash);
+      if (!ok) return c.json({ error: "Invalid username or password" }, 401);
+    }
+
+    if (body.cursorApiKey?.trim()) {
+      await upsertUserLogin({
+        gitlabUsername: username,
+        cursorApiKey: body.cursorApiKey,
+        displayName: body.displayName,
+      });
+    }
+
+    const user = toPublicUser(
+      (await getUserByUsername(username)) || existing,
+    );
+    const memberships = await listPublicMemberships(username);
+    const tokens = await issueAuthTokens(username);
+    const active =
+      memberships.find((m) => (m.project as { isActive?: boolean } | null)?.isActive)
+        ?.projectId ||
+      memberships[0]?.projectId ||
+      null;
+    return c.json({
+      user,
+      memberships,
+      activeProjectId: active,
+      bypassUsed: bypassOk,
       ...tokens,
     });
   });
@@ -216,20 +347,32 @@ export function createWorkspaceRoutes() {
         rawToken: raw,
       });
       if (!ok) {
-        return c.json({ error: "Refresh token revoked or unknown" }, 401);
+        return c.json(
+          {
+            error: "Phiên đăng nhập hết hạn hoặc không hợp lệ — vui lòng đăng nhập lại",
+            code: "SESSION_EXPIRED",
+          },
+          401,
+        );
       }
-      // Rotate: revoke old, issue new pair
-      await revokeRefreshSession(claims.jti);
       const user = await getUserByUsername(claims.sub);
-      if (!user) return c.json({ error: "User not found" }, 401);
+      if (!user) {
+        await revokeRefreshSession(claims.jti);
+        return c.json({ error: "User not found", code: "SESSION_EXPIRED" }, 401);
+      }
+      // Issue new pair first, then revoke old (avoid locking user out if issue fails)
       const tokens = await issueAuthTokens(claims.sub);
+      await revokeRefreshSession(claims.jti);
       return c.json({
         user: toPublicUser(user),
         ...tokens,
       });
     } catch (err) {
       return c.json(
-        { error: err instanceof Error ? err.message : "Invalid refresh token" },
+        {
+          error: err instanceof Error ? err.message : "Invalid refresh token",
+          code: "SESSION_EXPIRED",
+        },
         401,
       );
     }
@@ -263,7 +406,7 @@ export function createWorkspaceRoutes() {
     if (!username) return c.json({ error: "X-Flow-User required" }, 401);
     const raw = await getUserByUsername(username);
     if (!raw) return c.json({ error: "User not found — login first" }, 404);
-    const memberships = await listMembershipsForUser(username);
+    const memberships = await listPublicMemberships(username);
     return c.json({ user: toPublicUser(raw), memberships });
   });
 
@@ -282,15 +425,17 @@ export function createWorkspaceRoutes() {
       body.cursorModel === undefined
     ) {
       return c.json(
-        { error: "Provide gitlabToken, cursorApiKey, and/or cursorModel" },
+        { error: "Provide cursorApiKey and/or cursorModel (GitLab PAT → project settings)" },
         400,
       );
     }
+    // GitLab PAT on user is legacy; prefer project token. Still allow optional store.
     if (body.gitlabToken?.trim()) {
-      const profile = await verifyGitlabTokenUser(body.gitlabToken.trim());
-      if (profile.username.toLowerCase() !== username.toLowerCase()) {
+      try {
+        await verifyGitlabTokenUser(body.gitlabToken.trim());
+      } catch (err) {
         return c.json(
-          { error: `Token belongs to @${profile.username}` },
+          { error: err instanceof Error ? err.message : String(err) },
           400,
         );
       }
@@ -403,15 +548,17 @@ export function createWorkspaceRoutes() {
     }
   });
 
-  /** GitLab projects the logged-in user can access */
+  /** GitLab projects accessible with the active project PAT (or any project token). */
   ws.get("/gitlab/my-projects", async (c) => {
     const username = headerUser(c);
     if (!username) return c.json({ error: "X-Flow-User required" }, 401);
-    const secrets = await import("./store.js").then((m) =>
-      m.getUserSecrets(username),
-    );
+    const projectId = headerProject(c);
+    const secrets = await getUserSecrets(username, projectId || undefined);
     if (!secrets?.gitlabToken) {
-      return c.json({ error: "Login with GitLab PAT first" }, 401);
+      return c.json(
+        { error: "Add GitLab PAT on the project (Settings → Project)" },
+        401,
+      );
     }
     try {
       const projects = await listMyGitlabProjects(secrets.gitlabToken);
@@ -430,12 +577,15 @@ export function createWorkspaceRoutes() {
     if (!username) return c.json({ error: "X-Flow-User required" }, 401);
     const gitlabPath = (c.req.query("gitlabPath") || "").trim();
     const repoPath = (c.req.query("repoPath") || "").trim();
+    const projectId =
+      (c.req.query("projectId") || "").trim() || headerProject(c);
     if (!gitlabPath) return c.json({ error: "gitlabPath required" }, 400);
-    const secrets = await import("./store.js").then((m) =>
-      m.getUserSecrets(username),
-    );
+    const secrets = await getUserSecrets(username, projectId || undefined);
     if (!secrets?.gitlabToken) {
-      return c.json({ error: "Login with GitLab PAT first" }, 401);
+      return c.json(
+        { error: "Add GitLab PAT on the project (Settings → Project)" },
+        401,
+      );
     }
     try {
       const remote = await listGitlabBranches(gitlabPath, secrets.gitlabToken);
@@ -469,23 +619,265 @@ export function createWorkspaceRoutes() {
     }
   });
 
+  /** Preview GitLab projects/branches with a raw PAT (wizard, before project saved). */
+  ws.post("/gitlab/preview", async (c) => {
+    const username = headerUser(c);
+    if (!username) return c.json({ error: "X-Flow-User required" }, 401);
+    const body = (await c.req.json().catch(() => ({}))) as {
+      gitlabToken?: string;
+      gitlabPath?: string;
+    };
+    const token = body.gitlabToken?.trim();
+    if (!token) return c.json({ error: "gitlabToken required" }, 400);
+    try {
+      await verifyGitlabTokenUser(token);
+      const projects = await listMyGitlabProjects(token);
+      let branches: Array<{ name: string; default?: boolean }> = [];
+      let defaultBranch: string | null = null;
+      const gitlabPath = body.gitlabPath?.trim();
+      if (gitlabPath) {
+        branches = await listGitlabBranches(gitlabPath, token);
+        defaultBranch = branches.find((b) => b.default)?.name ?? null;
+      }
+      return c.json({ projects, branches, defaultBranch });
+    } catch (err) {
+      return c.json(
+        { error: err instanceof Error ? err.message : String(err) },
+        400,
+      );
+    }
+  });
+
+  /** Resolve default clone path without creating a project. */
+  ws.get("/projects/default-path", async (c) => {
+    const username = headerUser(c);
+    if (!username) return c.json({ error: "X-Flow-User required" }, 401);
+    const projectName = (c.req.query("projectName") || "project").trim();
+    return c.json({
+      localPath: defaultLocalPath(username, projectName),
+    });
+  });
+
   /**
-   * Join (or create) a project — one user can join many.
-   * Body: gitlabPath, repoPath (local), baseBranch?, workBranch?
+   * Create a user-owned project (PAT on project). Does not clone until /clone.
+   */
+  ws.post("/projects", async (c) => {
+    const username = headerUser(c);
+    if (!username) return c.json({ error: "X-Flow-User required" }, 401);
+    const body = (await c.req.json().catch(() => ({}))) as {
+      projectName?: string;
+      gitlabPath?: string;
+      gitlabToken?: string;
+      gitlabHost?: string;
+      localPath?: string;
+      mainBranch?: string;
+      workingBranch?: string;
+      displayName?: string;
+      activate?: boolean;
+    };
+    const projectName = body.projectName?.trim();
+    const gitlabPath = body.gitlabPath?.trim();
+    if (!projectName || !gitlabPath) {
+      return c.json({ error: "projectName and gitlabPath required" }, 400);
+    }
+    try {
+      let gitlabProjectId: number | undefined;
+      if (body.gitlabToken?.trim()) {
+        try {
+          const gl = await fetchGitlabProject(
+            gitlabPath,
+            body.gitlabToken.trim(),
+          );
+          gitlabProjectId = gl.id;
+        } catch (err) {
+          logger.warn("Could not resolve GitLab project id on create", {
+            err: String(err),
+          });
+        }
+      }
+      const usedDefaultPath = !body.localPath?.trim();
+      const project = await createUserProject({
+        username,
+        projectName,
+        gitlabPath,
+        gitlabToken: body.gitlabToken,
+        gitlabHost: body.gitlabHost || normalizeGitlabHost(),
+        localPath:
+          body.localPath?.trim() ||
+          defaultLocalPath(username, projectName),
+        mainBranch: body.mainBranch,
+        workingBranch: body.workingBranch,
+        displayName: body.displayName,
+        gitlabProjectId,
+        isActive: body.activate !== false,
+      });
+      const memberships = await listPublicMemberships(username);
+      return c.json({
+        project: publicProject(project),
+        memberships,
+        needsCloneConfirm: project.cloneStatus !== "ready",
+        defaultLocalPath: project.localPath,
+        usedDefaultPath,
+      });
+    } catch (err) {
+      return c.json(
+        { error: err instanceof Error ? err.message : String(err) },
+        400,
+      );
+    }
+  });
+
+  /** Confirm + start background git clone for a project. */
+  ws.post("/projects/:projectId/clone", async (c) => {
+    const username = headerUser(c);
+    if (!username) return c.json({ error: "X-Flow-User required" }, 401);
+    const projectId = decodeURIComponent(c.req.param("projectId") || "").trim();
+    const body = (await c.req.json().catch(() => ({}))) as {
+      confirm?: boolean;
+      gitlabToken?: string;
+      localPath?: string;
+    };
+    if (!body.confirm) {
+      return c.json(
+        {
+          error: "Set confirm:true after UI confirmation prompt",
+          hint: "Clone will run: git clone https://oauth2:***@host/group/repo.git localPath",
+        },
+        400,
+      );
+    }
+    let project = await getProject(projectId);
+    if (!project || project.userId !== username.toLowerCase()) {
+      return c.json({ error: "Project not found" }, 404);
+    }
+    if (body.gitlabToken?.trim() || body.localPath?.trim()) {
+      project = await updateProjectFields(projectId, {
+        ...(body.gitlabToken?.trim()
+          ? { gitlabToken: body.gitlabToken.trim() }
+          : {}),
+        ...(body.localPath?.trim() ? { localPath: body.localPath.trim() } : {}),
+      });
+    }
+    const secrets = await getUserSecrets(username, projectId);
+    const token = secrets?.gitlabToken;
+    if (!token) {
+      return c.json({ error: "Project GitLab PAT required before clone" }, 400);
+    }
+    if (await isGitRepo(project.localPath)) {
+      await updateProjectFields(projectId, {
+        cloneStatus: "ready",
+        cloneError: null,
+      });
+      return c.json({
+        ok: true,
+        alreadyCloned: true,
+        project: publicProject(await getProject(projectId)),
+      });
+    }
+    if (project.cloneStatus === "cloning") {
+      return c.json({ ok: true, cloning: true, project: publicProject(project) });
+    }
+
+    await updateProjectFields(projectId, {
+      cloneStatus: "cloning",
+      cloneError: null,
+    });
+
+    const cloneUrl = buildOauthCloneUrl(
+      project.gitlabHost,
+      token,
+      project.gitlabPath,
+    );
+    const localPath = project.localPath;
+
+    // Background clone — do not block HTTP
+    void (async () => {
+      try {
+        await runGitClone({ cloneUrl, localPath });
+        await updateProjectFields(projectId, {
+          cloneStatus: "ready",
+          cloneError: null,
+        });
+        logger.info("Project clone ready", { projectId, localPath });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        await updateProjectFields(projectId, {
+          cloneStatus: "failed",
+          cloneError: msg,
+        });
+        logger.error("Project clone failed", { projectId, err: msg });
+      }
+    })();
+
+    return c.json({
+      ok: true,
+      cloning: true,
+      project: publicProject(await getProject(projectId)),
+    });
+  });
+
+  ws.get("/projects/:projectId/clone-status", async (c) => {
+    const username = headerUser(c);
+    if (!username) return c.json({ error: "X-Flow-User required" }, 401);
+    const projectId = decodeURIComponent(c.req.param("projectId") || "").trim();
+    const project = await getProject(projectId);
+    if (!project || project.userId !== username.toLowerCase()) {
+      return c.json({ error: "Project not found" }, 404);
+    }
+    const ready = await assertProjectCloneReady(projectId);
+    return c.json({
+      project: publicProject(project),
+      ...ready,
+    });
+  });
+
+  ws.post("/projects/:projectId/activate", async (c) => {
+    const username = headerUser(c);
+    if (!username) return c.json({ error: "X-Flow-User required" }, 401);
+    const projectId = decodeURIComponent(c.req.param("projectId") || "").trim();
+    try {
+      const project = await activateProject(username, projectId);
+      const memberships = await listPublicMemberships(username);
+      return c.json({ project: publicProject(project), memberships });
+    } catch (err) {
+      return c.json(
+        { error: err instanceof Error ? err.message : String(err) },
+        400,
+      );
+    }
+  });
+
+  ws.delete("/projects/:projectId", async (c) => {
+    const username = headerUser(c);
+    if (!username) return c.json({ error: "X-Flow-User required" }, 401);
+    const projectId = decodeURIComponent(c.req.param("projectId") || "").trim();
+    try {
+      await deleteUserProject(username, projectId);
+      const memberships = await listPublicMemberships(username);
+      return c.json({ ok: true, memberships });
+    } catch (err) {
+      return c.json(
+        { error: err instanceof Error ? err.message : String(err) },
+        400,
+      );
+    }
+  });
+
+  /**
+   * Legacy join — still works if path already exists; prefer POST /projects + clone.
    */
   ws.post("/projects/join", async (c) => {
     const username = headerUser(c);
     if (!username) return c.json({ error: "X-Flow-User required" }, 401);
-    const rawUser = await getUserByUsername(username);
-    if (!rawUser?.gitlabTokenEnc) {
-      return c.json({ error: "Login with GitLab token first" }, 400);
-    }
     const body = (await c.req.json().catch(() => ({}))) as {
       gitlabPath?: string;
       repoPath?: string;
       baseBranch?: string;
       workBranch?: string;
       displayName?: string;
+      gitlabToken?: string;
+      projectName?: string;
+      gitlabHost?: string;
     };
     const gitlabPath = body.gitlabPath?.trim();
     const repoPath = body.repoPath?.trim();
@@ -498,31 +890,44 @@ export function createWorkspaceRoutes() {
       return c.json({ error: `repoPath not readable: ${repoPath}` }, 400);
     }
 
-    const secrets = await import("./store.js").then((m) =>
-      m.getUserSecrets(username),
-    );
-    if (!secrets?.gitlabToken) return c.json({ error: "Missing GitLab token" }, 400);
+    const secrets = await getUserSecrets(username);
+    const token = body.gitlabToken?.trim() || secrets?.gitlabToken;
+    if (!token) {
+      return c.json({ error: "gitlabToken required on body or project" }, 400);
+    }
 
-    const gl = await fetchGitlabProject(gitlabPath, secrets.gitlabToken);
+    const gl = await fetchGitlabProject(gitlabPath, token);
+    const projectName =
+      body.projectName?.trim() || gl.pathWithNamespace.split("/").pop() || "repo";
     const project = await upsertProject({
       gitlabPath: gl.pathWithNamespace,
       repoPath,
       displayName: body.displayName || gl.name,
       gitlabProjectId: gl.id,
       createdByUsername: username,
-    });
-    const membership = await upsertMembership({
       userId: username,
-      projectId: project.id,
-      baseBranch: body.baseBranch,
-      workBranch: body.workBranch,
-      role: "dev",
+      projectName,
+      gitlabHost: body.gitlabHost,
+      gitlabToken: token,
+      mainBranch: body.baseBranch,
+      workingBranch: body.workBranch,
     });
-    const memberships = await listMembershipsForUser(username);
-    return c.json({ project, membership, memberships });
+    await updateProjectFields(project.id, {
+      cloneStatus: "ready",
+      cloneError: null,
+      isActive: true,
+      mainBranch: body.baseBranch || "",
+      workingBranch: body.workBranch || "",
+    });
+    const memberships = await listPublicMemberships(username);
+    return c.json({
+      project: publicProject(await getProject(project.id)),
+      membership: memberships.find((m) => m.projectId === project.id),
+      memberships,
+    });
   });
 
-  /** Update base/work branch (and optional local repo path) for a membership */
+  /** Update branches / path / token for owned project */
   ws.put("/me/projects/:projectId", async (c) => {
     const username = headerUser(c);
     if (!username) return c.json({ error: "X-Flow-User required" }, 401);
@@ -532,43 +937,43 @@ export function createWorkspaceRoutes() {
       baseBranch?: string;
       workBranch?: string;
       repoPath?: string;
+      localPath?: string;
+      gitlabToken?: string;
+      gitlabHost?: string;
+      gitlabPath?: string;
     };
     const existing = await getMembership(username, projectId);
     if (!existing) {
       return c.json({ error: "Not a member of this project" }, 404);
     }
-    if (body.repoPath?.trim()) {
+    const localPath = body.localPath?.trim() || body.repoPath?.trim();
+    if (localPath) {
       try {
-        await access(body.repoPath.trim(), constants.R_OK);
+        await access(localPath, constants.R_OK);
       } catch {
-        return c.json({ error: `repoPath not readable` }, 400);
-      }
-      const project = await import("./store.js").then((m) =>
-        m.getProject(projectId),
-      );
-      if (project) {
-        await upsertProject({
-          gitlabPath: project.gitlabPath,
-          repoPath: body.repoPath.trim(),
-          displayName: project.displayName,
-          gitlabProjectId: project.gitlabProjectId,
-          createdByUsername: project.createdByUsername,
-        });
+        // allow setting path before clone
       }
     }
-    // Always pass branch fields when present in body (incl. empty → clear)
-    const membership = await upsertMembership({
-      userId: username,
-      projectId,
+    const project = await updateProjectFields(projectId, {
+      ...(localPath ? { localPath } : {}),
       ...(Object.prototype.hasOwnProperty.call(body, "baseBranch")
-        ? { baseBranch: body.baseBranch ?? "" }
+        ? { mainBranch: body.baseBranch ?? "" }
         : {}),
       ...(Object.prototype.hasOwnProperty.call(body, "workBranch")
-        ? { workBranch: body.workBranch ?? "" }
+        ? { workingBranch: body.workBranch ?? "" }
         : {}),
+      ...(body.gitlabToken?.trim()
+        ? { gitlabToken: body.gitlabToken.trim() }
+        : {}),
+      ...(body.gitlabHost?.trim() ? { gitlabHost: body.gitlabHost } : {}),
+      ...(body.gitlabPath?.trim() ? { gitlabPath: body.gitlabPath } : {}),
     });
-    const memberships = await listMembershipsForUser(username);
-    return c.json({ membership, memberships });
+    const memberships = await listPublicMemberships(username);
+    return c.json({
+      membership: memberships.find((m) => m.projectId === projectId),
+      project: publicProject(project),
+      memberships,
+    });
   });
 
   /**

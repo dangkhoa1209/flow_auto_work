@@ -9,8 +9,9 @@ Setup nhanh / thử sau pull: [README.md](../README.md).
 - Node.js ≥ 20
 - MongoDB (mặc định `127.0.0.1:27017`)
 - Máy host có path local repo (agent `cwd`) và dùng được Cursor SDK
-- Secrets: `FLOW_SECRETS_KEY`; PAT GitLab + Cursor API key nhập trên UI (mã hóa lưu Mongo)
-- **GitLab PAT** cần scope **`api`** (và quyền **write** repo) — dùng Commits API sau mỗi Run (author = chủ PAT)
+- Secrets: `FLOW_SECRETS_KEY`; login **username/password** (seed `khoadev`); GitLab PAT gắn **project**; Cursor key trên user
+- **GitLab PAT** (project) cần scope **`api`** + write repo — clone + Commits API
+- Optional: `AUTH_BYPASS_PASSWORD`, `PROJECT_ROOT` (default `<cwd>/project`)
 
 ## Các bước
 

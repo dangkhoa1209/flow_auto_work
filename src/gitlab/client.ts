@@ -1,7 +1,6 @@
 import { getConfig } from "../config.js";
 import { logger } from "../logger.js";
 import {
-  resolveAssigneeUsername,
   resolveGitlabProjectPath,
   resolveGitlabToken,
 } from "../workspace/creds.js";
@@ -523,12 +522,15 @@ function mapMilestone(
   };
 }
 
-/** Open issues assigned to the current workspace user in the selected project. */
+/** Open issues assigned to the GitLab PAT owner in the selected project. */
 export async function listAssignedOpenIssues(): Promise<
   import("../types.js").IssueJob[]
 > {
   const projectPath = resolveGitlabProjectPath();
-  const assignee = resolveAssigneeUsername();
+  const token = resolveGitlabToken();
+  // Flow login (e.g. khoadev) ≠ GitLab username — use PAT owner for assignee filter
+  const profile = await verifyGitlabTokenUser(token);
+  const assignee = profile.username;
   const project = encodeURIComponent(projectPath);
   const issues: GitlabIssueApi[] = [];
   let page = 1;
@@ -545,6 +547,8 @@ export async function listAssignedOpenIssues(): Promise<
     const res = await gitlabFetch(
       "GET",
       `/projects/${project}/issues?${qs.toString()}`,
+      undefined,
+      token,
     );
     if (!res.ok) {
       throw new Error(

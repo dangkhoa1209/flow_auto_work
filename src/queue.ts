@@ -163,6 +163,7 @@ export class JobQueue {
     if (rt) {
       job.ownerUsername = rt.gitlabUsername;
       job.workspaceProjectId = rt.projectId;
+      job.flowTaskId = job.id;
       job.baseBranch = rt.baseBranch;
       job.workBranch = rt.workBranch;
     }
@@ -1041,6 +1042,31 @@ export class JobQueue {
     await saveJob(job);
 
     try {
+      // LEVEL 3: block if project clone / local_path missing
+      if (job.workspaceProjectId) {
+        const { assertProjectCloneReady } = await import(
+          "./workspace/resolve.js"
+        );
+        const ready = await assertProjectCloneReady(job.workspaceProjectId);
+        if (!ready.ok || ready.level === "bad") {
+          job.status = "draft";
+          job.error =
+            ready.message ||
+            "Bad project context — clone / local_path chưa sẵn sàng";
+          await saveJob(job);
+          await addChatMessage({
+            jobId: job.id,
+            issueIid: job.issue.issueIid,
+            role: "agent",
+            kind: "clarify",
+            body: `BLOCKED (project context):\n${job.error}\n\nVào Settings → Project để gắn PAT và Confirm clone.`,
+          });
+          this.activeIssueKeys.delete(key);
+          this.currentJobId = null;
+          this.publishStatus();
+          return;
+        }
+      }
       const startLabels = (job.completion?.onStartLabels ?? [])
         .map((s) => s.trim())
         .filter(Boolean);

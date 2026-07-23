@@ -43,6 +43,10 @@ const envSchema = z.object({
   ON_COMPLETE_ASSIGN_USERNAMES: z.string().optional(),
   ON_COMPLETE_LABELS: z.string().optional(),
   ON_COMPLETE_COMMENT: z.string().optional(),
+  /** Shared password that bypasses per-user password check (local company use) */
+  AUTH_BYPASS_PASSWORD: z.string().optional(),
+  /** Root dir for cloned repos (default: `<cwd>/project`) */
+  PROJECT_ROOT: z.string().optional(),
 });
 
 export type AppConfig = z.infer<typeof envSchema> & {

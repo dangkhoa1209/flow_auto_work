@@ -1,15 +1,22 @@
 import { type Collection } from "mongodb";
 import { connectMongo } from "../db/mongo.js";
 import { decryptSecret, encryptSecret } from "../crypto/secrets.js";
+import { hashPassword } from "../auth/password.js";
 import {
+  defaultLocalPath,
   membershipId,
+  normalizeGitlabHost,
+  normUserId,
+  projectIdForUser,
   projectIdFromPath,
+  projectToMembership,
   toPublicUser,
   type MembershipWithProject,
   type WorkspaceMembership,
   type WorkspaceProject,
   type WorkspaceUser,
   type WorkspaceUserPublic,
+  type CloneStatus,
 } from "./types.js";
 
 async function usersCol(): Promise<Collection<WorkspaceUser>> {
@@ -29,23 +36,54 @@ async function membershipsCol(): Promise<Collection<WorkspaceMembership>> {
 
 export async function ensureWorkspaceIndexes(): Promise<void> {
   const db = await connectMongo();
-  await db.collection("workspace_users").createIndex({ gitlabUsername: 1 }, { unique: true });
-  await db.collection("workspace_projects").createIndex({ gitlabPath: 1 }, { unique: true });
+  await db
+    .collection("workspace_users")
+    .createIndex({ gitlabUsername: 1 }, { unique: true });
+  await db
+    .collection("workspace_projects")
+    .createIndex({ userId: 1, projectName: 1 }, { unique: true });
+  await db.collection("workspace_projects").createIndex({ userId: 1, isActive: 1 });
+  try {
+    await db.collection("workspace_projects").dropIndex("gitlabPath_1");
+  } catch {
+    /* index may not exist */
+  }
   await db
     .collection("workspace_memberships")
     .createIndex({ userId: 1, projectId: 1 }, { unique: true });
 }
 
-function normUsername(username: string): string {
-  return username.trim().replace(/^@/, "").toLowerCase();
-}
-
 export async function getUserByUsername(
   username: string,
 ): Promise<WorkspaceUser | null> {
-  const id = normUsername(username);
+  const id = normUserId(username);
   if (!id) return null;
   return (await usersCol()).findOne({ id });
+}
+
+export async function createOrUpdateUserPassword(opts: {
+  username: string;
+  password: string;
+  displayName?: string;
+}): Promise<WorkspaceUserPublic> {
+  const id = normUserId(opts.username);
+  if (!id) throw new Error("username required");
+  const now = new Date().toISOString();
+  const existing = await getUserByUsername(id);
+  const passwordHash = await hashPassword(opts.password);
+  const doc: WorkspaceUser = existing ?? {
+    id,
+    gitlabUsername: opts.username.trim().replace(/^@/, ""),
+    createdAt: now,
+    updatedAt: now,
+  };
+  doc.passwordHash = passwordHash;
+  if (opts.displayName?.trim()) doc.displayName = opts.displayName.trim();
+  if (!doc.cursorModel) doc.cursorModel = "auto";
+  doc.updatedAt = now;
+  doc.gitlabUsername = opts.username.trim().replace(/^@/, "");
+  await (await usersCol()).updateOne({ id }, { $set: doc }, { upsert: true });
+  return toPublicUser(doc);
 }
 
 export async function upsertUserLogin(opts: {
@@ -54,9 +92,10 @@ export async function upsertUserLogin(opts: {
   gitlabToken?: string;
   cursorApiKey?: string;
   cursorModel?: string;
+  passwordHash?: string;
 }): Promise<WorkspaceUserPublic> {
-  const id = normUsername(opts.gitlabUsername);
-  if (!id) throw new Error("gitlabUsername required");
+  const id = normUserId(opts.gitlabUsername);
+  if (!id) throw new Error("username required");
   const now = new Date().toISOString();
   const existing = await getUserByUsername(id);
   const doc: WorkspaceUser = existing ?? {
@@ -72,9 +111,9 @@ export async function upsertUserLogin(opts: {
   if (opts.cursorApiKey?.trim()) {
     doc.cursorApiKeyEnc = encryptSecret(opts.cursorApiKey);
   }
+  if (opts.passwordHash) doc.passwordHash = opts.passwordHash;
   if (opts.cursorModel !== undefined) {
-    const m = opts.cursorModel.trim() || "auto";
-    doc.cursorModel = m;
+    doc.cursorModel = opts.cursorModel.trim() || "auto";
   } else if (!doc.cursorModel) {
     doc.cursorModel = "auto";
   }
@@ -82,20 +121,15 @@ export async function upsertUserLogin(opts: {
   if (!existing) {
     doc.gitlabUsername = opts.gitlabUsername.trim().replace(/^@/, "");
   }
-  await (await usersCol()).updateOne(
-    { id },
-    { $set: doc },
-    { upsert: true },
-  );
+  await (await usersCol()).updateOne({ id }, { $set: doc }, { upsert: true });
   return toPublicUser(doc);
 }
 
-/** Update non-secret preferences (e.g. Cursor model). */
 export async function updateUserPreferences(opts: {
   gitlabUsername: string;
   cursorModel?: string;
 }): Promise<WorkspaceUserPublic> {
-  const id = normUsername(opts.gitlabUsername);
+  const id = normUserId(opts.gitlabUsername);
   const existing = await getUserByUsername(id);
   if (!existing) throw new Error("User not found");
   const now = new Date().toISOString();
@@ -107,11 +141,10 @@ export async function updateUserPreferences(opts: {
   return toPublicUser(existing);
 }
 
-/** Remove stored Cursor API key (encrypted field). */
 export async function clearCursorApiKey(
   username: string,
 ): Promise<WorkspaceUserPublic> {
-  const id = normUsername(username);
+  const id = normUserId(username);
   const existing = await getUserByUsername(id);
   if (!existing) throw new Error("User not found");
   const now = new Date().toISOString();
@@ -124,26 +157,79 @@ export async function clearCursorApiKey(
   return toPublicUser(updated);
 }
 
-export async function getUserSecrets(username: string): Promise<{
-  gitlabToken: string;
+/** Cursor key from user; GitLab token from project if projectId given, else user legacy / active project. */
+export async function getUserSecrets(
+  username: string,
+  projectId?: string,
+): Promise<{
+  gitlabToken?: string;
   cursorApiKey?: string;
 } | null> {
   const user = await getUserByUsername(username);
-  if (!user?.gitlabTokenEnc) return null;
-  return {
-    gitlabToken: decryptSecret(user.gitlabTokenEnc),
-    cursorApiKey: user.cursorApiKeyEnc
-      ? decryptSecret(user.cursorApiKeyEnc)
-      : undefined,
-  };
+  if (!user) return null;
+  const cursorApiKey = user.cursorApiKeyEnc
+    ? decryptSecret(user.cursorApiKeyEnc)
+    : undefined;
+
+  let gitlabToken: string | undefined;
+  if (projectId) {
+    const project = await getProject(projectId);
+    if (project?.userId === normUserId(username) && project.gitlabTokenEnc) {
+      gitlabToken = decryptSecret(project.gitlabTokenEnc);
+    }
+  }
+  if (!gitlabToken) {
+    const active = await getActiveProjectForUser(username);
+    if (active?.gitlabTokenEnc) {
+      gitlabToken = decryptSecret(active.gitlabTokenEnc);
+    }
+  }
+  if (!gitlabToken && user.gitlabTokenEnc) {
+    gitlabToken = decryptSecret(user.gitlabTokenEnc);
+  }
+  return { gitlabToken, cursorApiKey };
+}
+
+export async function getProjectSecrets(projectId: string): Promise<{
+  gitlabToken?: string;
+} | null> {
+  const project = await getProject(projectId);
+  if (!project?.gitlabTokenEnc) return null;
+  return { gitlabToken: decryptSecret(project.gitlabTokenEnc) };
 }
 
 export async function listProjects(): Promise<WorkspaceProject[]> {
   return (await projectsCol()).find({}).sort({ displayName: 1 }).toArray();
 }
 
-export async function getProject(projectId: string): Promise<WorkspaceProject | null> {
+export async function listProjectsForUser(
+  username: string,
+): Promise<WorkspaceProject[]> {
+  const userId = normUserId(username);
+  return (await projectsCol())
+    .find({ userId })
+    .sort({ isActive: -1, updatedAt: -1 })
+    .toArray();
+}
+
+export async function getProject(
+  projectId: string,
+): Promise<WorkspaceProject | null> {
   return (await projectsCol()).findOne({ id: projectId });
+}
+
+export async function getActiveProjectForUser(
+  username: string,
+): Promise<WorkspaceProject | null> {
+  const userId = normUserId(username);
+  const active = await (await projectsCol()).findOne({ userId, isActive: true });
+  if (active) return active;
+  const first = await (await projectsCol())
+    .find({ userId })
+    .sort({ updatedAt: -1 })
+    .limit(1)
+    .toArray();
+  return first[0] ?? null;
 }
 
 export async function getProjectByPath(
@@ -151,36 +237,224 @@ export async function getProjectByPath(
 ): Promise<WorkspaceProject | null> {
   const path = gitlabPath.trim().replace(/^\/+|\/+$/g, "");
   return (await projectsCol()).findOne({
-    gitlabPath: { $regex: `^${path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, $options: "i" },
+    gitlabPath: {
+      $regex: `^${path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`,
+      $options: "i",
+    },
   });
 }
 
+function syncRepoPath(doc: WorkspaceProject): WorkspaceProject {
+  doc.repoPath = doc.localPath;
+  return doc;
+}
+
+export async function createUserProject(opts: {
+  username: string;
+  projectName: string;
+  gitlabPath: string;
+  gitlabToken?: string;
+  gitlabHost?: string;
+  localPath?: string;
+  mainBranch?: string;
+  workingBranch?: string;
+  displayName?: string;
+  gitlabProjectId?: number;
+  isActive?: boolean;
+}): Promise<WorkspaceProject> {
+  const userId = normUserId(opts.username);
+  const projectName = opts.projectName.trim();
+  if (!projectName) throw new Error("projectName required");
+  const gitlabPath = opts.gitlabPath.trim().replace(/^\/+|\/+$/g, "");
+  if (!gitlabPath.includes("/")) {
+    throw new Error("gitlabPath must look like group/project");
+  }
+  const id = projectIdForUser(userId, projectName);
+  const now = new Date().toISOString();
+  const existing = await getProject(id);
+  if (existing) throw new Error(`Project already exists: ${projectName}`);
+
+  const localPath =
+    opts.localPath?.trim() || defaultLocalPath(userId, projectName);
+  const doc: WorkspaceProject = {
+    id,
+    userId,
+    projectName,
+    displayName: opts.displayName?.trim() || projectName,
+    gitlabHost: normalizeGitlabHost(opts.gitlabHost),
+    gitlabPath,
+    localPath,
+    repoPath: localPath,
+    mainBranch: opts.mainBranch?.trim() || undefined,
+    workingBranch: opts.workingBranch?.trim() || undefined,
+    isActive: Boolean(opts.isActive),
+    cloneStatus: "pending",
+    gitlabProjectId: opts.gitlabProjectId,
+    createdAt: now,
+    updatedAt: now,
+    createdByUsername: userId,
+  };
+  if (opts.gitlabToken?.trim()) {
+    doc.gitlabTokenEnc = encryptSecret(opts.gitlabToken.trim());
+  }
+  if (doc.isActive) {
+    await (await projectsCol()).updateMany(
+      { userId },
+      { $set: { isActive: false, updatedAt: now } },
+    );
+  }
+  await (await projectsCol()).insertOne(doc);
+  return syncRepoPath(doc);
+}
+
+/** Legacy upsert by gitlab path — migrates into user-owned shape when possible. */
 export async function upsertProject(opts: {
   gitlabPath: string;
   repoPath: string;
   displayName?: string;
   gitlabProjectId?: number;
   createdByUsername: string;
+  userId?: string;
+  projectName?: string;
+  gitlabHost?: string;
+  gitlabToken?: string;
+  mainBranch?: string;
+  workingBranch?: string;
 }): Promise<WorkspaceProject> {
+  const userId = normUserId(opts.userId || opts.createdByUsername);
   const gitlabPath = opts.gitlabPath.trim().replace(/^\/+|\/+$/g, "");
   if (!gitlabPath.includes("/")) {
     throw new Error("gitlabPath must look like group/project");
   }
-  const id = projectIdFromPath(gitlabPath);
+  const projectName =
+    opts.projectName?.trim() || gitlabPath.split("/").pop() || "project";
+  const id = projectIdForUser(userId, projectName);
   const now = new Date().toISOString();
   const existing = await getProject(id);
+  const localPath = opts.repoPath.trim();
   const doc: WorkspaceProject = {
     id,
+    userId,
+    projectName,
+    displayName:
+      opts.displayName?.trim() || existing?.displayName || projectName,
+    gitlabHost: normalizeGitlabHost(opts.gitlabHost || existing?.gitlabHost),
     gitlabPath,
-    displayName: opts.displayName?.trim() || existing?.displayName || gitlabPath,
-    repoPath: opts.repoPath.trim(),
+    localPath,
+    repoPath: localPath,
+    mainBranch: opts.mainBranch ?? existing?.mainBranch,
+    workingBranch: opts.workingBranch ?? existing?.workingBranch,
+    isActive: existing?.isActive ?? false,
+    cloneStatus: existing?.cloneStatus ?? "ready",
     gitlabProjectId: opts.gitlabProjectId ?? existing?.gitlabProjectId,
+    gitlabTokenEnc: existing?.gitlabTokenEnc,
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
     createdByUsername: existing?.createdByUsername ?? opts.createdByUsername,
   };
+  if (opts.gitlabToken?.trim()) {
+    doc.gitlabTokenEnc = encryptSecret(opts.gitlabToken.trim());
+  }
   await (await projectsCol()).updateOne({ id }, { $set: doc }, { upsert: true });
-  return doc;
+  return syncRepoPath(doc);
+}
+
+export async function updateProjectFields(
+  projectId: string,
+  patch: Partial<{
+    localPath: string;
+    mainBranch: string;
+    workingBranch: string;
+    displayName: string;
+    gitlabHost: string;
+    gitlabPath: string;
+    gitlabToken: string;
+    gitlabProjectId: number;
+    cloneStatus: CloneStatus;
+    cloneError: string | null;
+    isActive: boolean;
+  }>,
+): Promise<WorkspaceProject> {
+  const existing = await getProject(projectId);
+  if (!existing) throw new Error(`Project not found: ${projectId}`);
+  const now = new Date().toISOString();
+  if (patch.localPath !== undefined) {
+    existing.localPath = patch.localPath.trim();
+    existing.repoPath = existing.localPath;
+  }
+  if (patch.mainBranch !== undefined) {
+    existing.mainBranch = patch.mainBranch.trim() || undefined;
+  }
+  if (patch.workingBranch !== undefined) {
+    existing.workingBranch = patch.workingBranch.trim() || undefined;
+  }
+  if (patch.displayName !== undefined) {
+    existing.displayName = patch.displayName.trim() || existing.projectName;
+  }
+  if (patch.gitlabHost !== undefined) {
+    existing.gitlabHost = normalizeGitlabHost(patch.gitlabHost);
+  }
+  if (patch.gitlabPath !== undefined) {
+    existing.gitlabPath = patch.gitlabPath.trim().replace(/^\/+|\/+$/g, "");
+  }
+  if (patch.gitlabToken?.trim()) {
+    existing.gitlabTokenEnc = encryptSecret(patch.gitlabToken.trim());
+  }
+  if (patch.gitlabProjectId !== undefined) {
+    existing.gitlabProjectId = patch.gitlabProjectId;
+  }
+  if (patch.cloneStatus !== undefined) {
+    existing.cloneStatus = patch.cloneStatus;
+  }
+  if (patch.cloneError === null) {
+    delete existing.cloneError;
+  } else if (patch.cloneError !== undefined) {
+    existing.cloneError = patch.cloneError;
+  }
+  if (patch.isActive === true) {
+    await (await projectsCol()).updateMany(
+      { userId: existing.userId },
+      { $set: { isActive: false, updatedAt: now } },
+    );
+    existing.isActive = true;
+  } else if (patch.isActive === false) {
+    existing.isActive = false;
+  }
+  existing.updatedAt = now;
+  await (await projectsCol()).updateOne({ id: projectId }, { $set: existing });
+  return syncRepoPath(existing);
+}
+
+export async function activateProject(
+  username: string,
+  projectId: string,
+): Promise<WorkspaceProject> {
+  const project = await getProject(projectId);
+  if (!project) throw new Error(`Project not found: ${projectId}`);
+  if (project.userId !== normUserId(username)) {
+    throw new Error("Not your project");
+  }
+  return updateProjectFields(projectId, { isActive: true });
+}
+
+export async function deleteUserProject(
+  username: string,
+  projectId: string,
+): Promise<void> {
+  const project = await getProject(projectId);
+  if (!project) throw new Error(`Project not found: ${projectId}`);
+  if (project.userId !== normUserId(username)) {
+    throw new Error("Not your project");
+  }
+  await (await projectsCol()).deleteOne({ id: projectId });
+  try {
+    await (await membershipsCol()).deleteMany({
+      userId: normUserId(username),
+      projectId,
+    });
+  } catch {
+    /* legacy memberships optional */
+  }
 }
 
 export async function upsertMembership(opts: {
@@ -190,12 +464,24 @@ export async function upsertMembership(opts: {
   workBranch?: string;
   role?: WorkspaceMembership["role"];
 }): Promise<WorkspaceMembership> {
-  const userId = normUsername(opts.userId);
+  const userId = normUserId(opts.userId);
+  const project = await getProject(opts.projectId);
+  if (project && project.userId === userId) {
+    const updated = await updateProjectFields(opts.projectId, {
+      ...(opts.baseBranch !== undefined
+        ? { mainBranch: opts.baseBranch }
+        : {}),
+      ...(opts.workBranch !== undefined
+        ? { workingBranch: opts.workBranch }
+        : {}),
+    });
+    return projectToMembership(userId, updated);
+  }
+  // Legacy membership collection
   const id = membershipId(userId, opts.projectId);
   const now = new Date().toISOString();
   const col = await membershipsCol();
   const existing = await col.findOne({ id });
-
   const $set: Record<string, unknown> = {
     id,
     userId,
@@ -205,7 +491,6 @@ export async function upsertMembership(opts: {
     updatedAt: now,
   };
   const $unset: Record<string, ""> = {};
-
   if (opts.baseBranch !== undefined) {
     const v = opts.baseBranch.trim();
     if (v) $set.baseBranch = v;
@@ -216,11 +501,9 @@ export async function upsertMembership(opts: {
     if (v) $set.workBranch = v;
     else $unset.workBranch = "";
   }
-
   const update: { $set: Record<string, unknown>; $unset?: Record<string, ""> } =
     { $set };
   if (Object.keys($unset).length) update.$unset = $unset;
-
   await col.updateOne({ id }, update, { upsert: true });
   const saved = await col.findOne({ id });
   if (!saved) throw new Error("Failed to save membership");
@@ -230,7 +513,12 @@ export async function upsertMembership(opts: {
 export async function listMembershipsForUser(
   username: string,
 ): Promise<MembershipWithProject[]> {
-  const userId = normUsername(username);
+  const projects = await listProjectsForUser(username);
+  if (projects.length) {
+    return projects.map((p) => projectToMembership(username, p));
+  }
+  // Legacy fallback
+  const userId = normUserId(username);
   const mems = await (await membershipsCol())
     .find({ userId })
     .sort({ updatedAt: -1 })
@@ -247,6 +535,10 @@ export async function getMembership(
   username: string,
   projectId: string,
 ): Promise<WorkspaceMembership | null> {
-  const id = membershipId(normUsername(username), projectId);
+  const project = await getProject(projectId);
+  if (project && project.userId === normUserId(username)) {
+    return projectToMembership(username, project);
+  }
+  const id = membershipId(normUserId(username), projectId);
   return (await membershipsCol()).findOne({ id });
 }

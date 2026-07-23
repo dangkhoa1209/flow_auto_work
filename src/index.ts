@@ -47,7 +47,7 @@ async function main() {
 
   await ensureWorkspaceIndexes();
   await ensureAuthIndexes();
-  logger.info("Workspace indexes OK");
+  logger.info("Workspace + auth indexes OK");
 
   await failInterruptedJobs();
   const legacy = await resolveLegacyDiffApprovalJobs();
