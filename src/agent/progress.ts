@@ -36,16 +36,26 @@ export function appendJobProgress(
   text: string,
 ): void {
   if (!jobId) return;
-  const preserveBreaks = kind === "prompt";
+  const preserveBreaks = kind === "prompt" || kind === "thinking" || kind === "assistant";
   const line = preserveBreaks
-    ? text.replace(/\r\n/g, "\n").replace(/[^\S\n]+/g, " ").trim()
+    ? text
+        .replace(/\r\n/g, "\n")
+        .replace(/[^\S\n]+/g, " ")
+        .replace(/\n{3,}/g, "\n\n")
+        .trim()
     : text.replace(/\s+/g, " ").trim();
   if (!line) return;
   const list = buffers.get(jobId) ?? [];
   const last = list[list.length - 1];
   // Coalesce consecutive assistant/thinking chunks into one growing line
   if (last && (kind === "assistant" || kind === "thinking") && last.kind === kind) {
-    last.text = `${last.text}${line}`.slice(0, 4000);
+    const needsSpace =
+      !/\s$/.test(last.text) &&
+      !/^\s/.test(line) &&
+      !last.text.endsWith("\n") &&
+      !line.startsWith("\n");
+    const joined = `${last.text}${needsSpace ? " " : ""}${line}`;
+    last.text = joined.slice(0, 8000);
     last.at = new Date().toISOString();
     buffers.set(jobId, list);
     publishRealtime({

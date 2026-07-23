@@ -12,9 +12,10 @@ import {
   contextQualityColor,
   CONTEXT_QUALITY_STANDARDS,
 } from "@/utils/status";
-import { PlusOutlined, ReloadOutlined } from "@ant-design/icons-vue";
+import { PlusOutlined, ReloadOutlined, CopyOutlined } from "@ant-design/icons-vue";
 import RelatedTaskPreviewModal from "@/components/RelatedTaskPreviewModal.vue";
 import ChatMessageBody from "@/components/ChatMessageBody.vue";
+import JobDiffPanel from "@/components/JobDiffPanel.vue";
 import type { TaskDetail } from "@/stores/work";
 
 const router = useRouter();
@@ -483,6 +484,21 @@ function jobDisplayIid(j: { issue?: { issueIid?: number }; kind?: string }) {
   return `#${iid}`;
 }
 
+function jobBranch(j: { branch?: string; workBranch?: string }): string {
+  return (j.branch || j.workBranch || "").trim();
+}
+
+async function copyJobBranch(branch: string) {
+  const t = branch.trim();
+  if (!t) return;
+  try {
+    await navigator.clipboard.writeText(t);
+    message.success("Đã copy branch");
+  } catch {
+    message.error("Không copy được");
+  }
+}
+
 async function openAdhocModal() {
   adhocTitle.value = "";
   adhocMessage.value = "";
@@ -805,6 +821,25 @@ async function submitCreateIssue() {
             <div class="truncate text-ink-muted text-xs mt-0.5">
               {{ j.issue?.title }}
             </div>
+            <div
+              v-if="jobBranch(j)"
+              class="flex items-center gap-1 mt-0.5 min-w-0"
+              @click.stop
+            >
+              <code
+                class="text-[10px] font-mono text-ink-faint truncate flex-1"
+                :title="jobBranch(j)"
+                >{{ jobBranch(j) }}</code
+              >
+              <button
+                type="button"
+                class="shrink-0 text-ink-faint hover:text-accent p-0.5"
+                title="Copy branch"
+                @click="copyJobBranch(jobBranch(j))"
+              >
+                <CopyOutlined class="text-[10px]" />
+              </button>
+            </div>
           </div>
           <div
             v-if="!sortedJobs.length"
@@ -885,15 +920,23 @@ async function submitCreateIssue() {
                   </template>
                 </h2>
                 <p
-                  v-if="isCurrentAdhoc && currentJob?.branch"
-                  class="text-xs text-ink-faint m-0 mb-2 font-mono"
+                  v-if="currentJob && jobBranch(currentJob)"
+                  class="text-xs text-ink-faint m-0 mb-1 font-mono flex items-center gap-1.5 flex-wrap"
                 >
-                  {{ currentJob.branch }}
-                  <span v-if="currentJob.commitSha">
+                  <span class="truncate">{{ jobBranch(currentJob) }}</span>
+                  <button
+                    type="button"
+                    class="text-ink-faint hover:text-accent"
+                    title="Copy branch"
+                    @click="copyJobBranch(jobBranch(currentJob))"
+                  >
+                    <CopyOutlined class="text-[11px]" />
+                  </button>
+                  <span v-if="currentJob.commitSha" class="text-ink-faint">
                     · {{ currentJob.commitSha.slice(0, 8) }}</span
                   >
                 </p>
-                <p v-else-if="detailMeta" class="text-xs text-ink-faint m-0 mb-2">
+                <p v-if="detailMeta" class="text-xs text-ink-faint m-0 mb-2">
                   {{ detailMeta }}
                 </p>
 
@@ -1088,24 +1131,45 @@ async function submitCreateIssue() {
         <a-tab-pane key="progress" tab="Progress">
           <div
             ref="progressBox"
-            class="mono-log h-full min-h-0 overflow-y-auto p-3 rounded-xl bg-surface-soft border border-line"
+            class="h-full min-h-0 overflow-y-auto p-2.5 sm:p-3 rounded-xl bg-surface-soft border border-line space-y-2"
             :class="progressLive ? 'ring-2 ring-accent-glow/50' : ''"
           >
             <div
               v-for="l in progressLines"
               :key="l.id"
-              class="mb-2 border-b border-line pb-1.5"
+              class="rounded-xl border border-line/80 bg-surface-raised/70 px-2.5 py-2 shadow-sm"
             >
-              <span class="text-accent font-medium">{{ l.kind }}</span>
-              <span class="text-ink-faint ml-2">{{
-                new Date(l.at).toLocaleTimeString()
-              }}</span>
+              <div class="flex items-center gap-2 mb-1.5">
+                <span
+                  class="text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-md"
+                  :class="{
+                    'bg-violet-100 text-violet-700': l.kind === 'thinking',
+                    'bg-sky-100 text-sky-700': l.kind === 'assistant',
+                    'bg-amber-100 text-amber-800': l.kind === 'tool',
+                    'bg-emerald-100 text-emerald-700': l.kind === 'status' || l.kind === 'usage',
+                    'bg-slate-100 text-slate-600':
+                      l.kind !== 'thinking' &&
+                      l.kind !== 'assistant' &&
+                      l.kind !== 'tool' &&
+                      l.kind !== 'status' &&
+                      l.kind !== 'usage',
+                  }"
+                  >{{ l.kind }}</span
+                >
+                <span class="text-[10px] text-ink-faint font-mono">{{
+                  new Date(l.at).toLocaleTimeString()
+                }}</span>
+              </div>
               <div
-                class="text-ink-soft"
+                class="text-[12px] leading-relaxed text-ink-soft break-words"
                 :class="
-                  l.kind === 'prompt'
-                    ? 'whitespace-pre-wrap break-words mt-1 max-h-80 overflow-y-auto rounded-lg bg-surface-raised/80 p-2 text-[11px] leading-relaxed border border-line'
-                    : ''
+                  l.kind === 'prompt' ||
+                  l.kind === 'thinking' ||
+                  l.kind === 'assistant'
+                    ? 'whitespace-pre-wrap font-sans max-h-72 overflow-y-auto'
+                    : l.kind === 'tool'
+                      ? 'font-mono text-[11px] whitespace-pre-wrap'
+                      : 'font-mono text-[11px]'
                 "
               >
                 {{ l.text }}
@@ -1113,7 +1177,7 @@ async function submitCreateIssue() {
             </div>
             <div
               v-if="!progressLines.length"
-              class="text-ink-faint text-center py-8"
+              class="text-ink-faint text-center py-8 text-sm"
             >
               {{
                 progressLive ? "Đang chờ Cursor stream…" : "Chưa có progress"
@@ -1121,8 +1185,14 @@ async function submitCreateIssue() {
             </div>
           </div>
         </a-tab-pane>
-        <a-tab-pane key="diff" tab="Diff" disabled>
-          <a-empty description="Mở Diff từ Handoff (phase sau)" />
+        <a-tab-pane key="diff" tab="Diff" :disabled="!selectedJobId">
+          <div class="h-full min-h-0 flex flex-col overflow-hidden">
+            <JobDiffPanel
+              class="flex-1 min-h-0"
+              :job-id="selectedJobId"
+              :branch="currentJob ? jobBranch(currentJob) : null"
+            />
+          </div>
         </a-tab-pane>
       </a-tabs>
     </section>

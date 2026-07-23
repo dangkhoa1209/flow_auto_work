@@ -16,7 +16,7 @@ import {
   writeRepoFile,
 } from "../git/files.js";
 import { getConfig } from "../config.js";
-import { getReviewDiff } from "../git/diff.js";
+import { getReviewDiff, listJobCommits } from "../git/diff.js";
 import {
   addChatMessage,
   addNote,
@@ -1540,41 +1540,137 @@ export function createApiRoutes() {
     });
   });
 
+  api.get("/jobs/:id/commits", async (c) => {
+    const job = await getJobDoc(c.req.param("id"));
+    if (!job) return c.json({ error: "not found" }, 404);
+    const { getRuntimeContext } = await import("../workspace/runtime.js");
+    const rt = getRuntimeContext();
+    try {
+      const commits = await listJobCommits({
+        issueIid: job.issue.issueIid > 0 ? job.issue.issueIid : undefined,
+        branch: job.branch || job.workBranch,
+        baseBranch:
+          job.baseBranch ||
+          rt?.baseBranch ||
+          job.mergeTarget ||
+          undefined,
+        commitShas: job.commitShas,
+        commitSha: job.commitSha,
+      });
+      return c.json({
+        jobId: job.id,
+        branch: job.branch || job.workBranch || null,
+        commitSha: job.commitSha || null,
+        commits,
+      });
+    } catch (err) {
+      return c.json(
+        { error: err instanceof Error ? err.message : String(err) },
+        400,
+      );
+    }
+  });
+
+  api.post("/jobs/:id/commits/:sha/revert", async (c) => {
+    const job = await getJobDoc(c.req.param("id"));
+    if (!job) return c.json({ error: "not found" }, 404);
+    const sha = c.req.param("sha")?.trim();
+    if (!sha) return c.json({ error: "sha required" }, 400);
+    const branch = (job.branch || job.workBranch || "").trim();
+    if (!branch) {
+      return c.json({ error: "Job chưa có branch để revert" }, 400);
+    }
+    const body = (await c.req.json().catch(() => ({}))) as {
+      message?: string;
+    };
+    const { getRuntimeContext } = await import("../workspace/runtime.js");
+    const rt = getRuntimeContext();
+    const repoPath = rt?.repoPath;
+    if (!repoPath) {
+      return c.json({ error: "No local repo path — clone project trước" }, 400);
+    }
+    const projectIdOrPath =
+      rt?.gitlabProjectId ?? rt?.gitlabPath ?? job.issue.projectId;
+    try {
+      const { revertCommitViaGitlab } = await import("../git/revert.js");
+      const result = await revertCommitViaGitlab({
+        repoPath,
+        branch,
+        sha,
+        projectIdOrPath,
+        token: rt?.gitlabToken,
+        message: body.message,
+      });
+      job.commitSha = result.commitSha;
+      const prev = Array.isArray(job.commitShas) ? job.commitShas : [];
+      if (!prev.includes(result.commitSha)) {
+        job.commitShas = [...prev, result.commitSha].slice(-20);
+      }
+      await saveJob(job, { source: "revert" });
+      return c.json({
+        ok: true,
+        job,
+        commitSha: result.commitSha,
+        message: result.message,
+      });
+    } catch (err) {
+      logger.error("Revert commit failed", {
+        jobId: job.id,
+        sha,
+        err: String(err),
+      });
+      return c.json(
+        { error: err instanceof Error ? err.message : String(err) },
+        400,
+      );
+    }
+  });
+
   api.get("/jobs/:id/diff", async (c) => {
     const job = await getJobDoc(c.req.param("id"));
     if (!job) return c.json({ error: "not found" }, 404);
     const { getRuntimeContext } = await import("../workspace/runtime.js");
     const rt = getRuntimeContext();
-    const diff = await getReviewDiff({
-      issueIid: job.issue.issueIid,
-      branch: job.branch || job.workBranch,
-      baseBranch:
-        job.baseBranch ||
-        rt?.baseBranch ||
-        job.mergeTarget ||
-        undefined,
-      commitSha: job.commitSha,
-    });
-    const text = [diff.rangeDiff, diff.staged, diff.unstaged]
-      .filter(Boolean)
-      .join("\n");
-    const paths =
-      diff.files?.length > 0
-        ? diff.files.map((f) => f.path)
-        : extractPathsFromUnifiedDiff(text);
-    return c.json({
-      jobId: job.id,
-      issueIid: job.issue.issueIid,
-      status: job.status,
-      branch: job.branch || null,
-      commitSha: job.commitSha || null,
-      diff,
-      paths,
-      files: diff.files,
-      awaitingDiffApproval:
-        job.status === "awaiting_diff_approval" ||
-        isAwaitingDiffApproval(job.id),
-    });
+    const singleCommit =
+      (c.req.query("commit") || c.req.query("sha") || "").trim() || undefined;
+    try {
+      const diff = await getReviewDiff({
+        issueIid: job.issue.issueIid > 0 ? job.issue.issueIid : undefined,
+        branch: job.branch || job.workBranch,
+        baseBranch:
+          job.baseBranch ||
+          rt?.baseBranch ||
+          job.mergeTarget ||
+          undefined,
+        commitSha: job.commitSha,
+        singleCommit,
+      });
+      const text = [diff.rangeDiff, diff.staged, diff.unstaged]
+        .filter(Boolean)
+        .join("\n");
+      const paths =
+        diff.files?.length > 0
+          ? diff.files.map((f) => f.path)
+          : extractPathsFromUnifiedDiff(text);
+      return c.json({
+        jobId: job.id,
+        issueIid: job.issue.issueIid,
+        status: job.status,
+        branch: job.branch || job.workBranch || null,
+        commitSha: singleCommit || job.commitSha || null,
+        diff,
+        paths,
+        files: diff.files,
+        awaitingDiffApproval:
+          job.status === "awaiting_diff_approval" ||
+          isAwaitingDiffApproval(job.id),
+      });
+    } catch (err) {
+      return c.json(
+        { error: err instanceof Error ? err.message : String(err) },
+        400,
+      );
+    }
   });
 
   api.post("/jobs/:id/kill", async (c) => {

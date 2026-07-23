@@ -26,9 +26,12 @@ export type Job = {
   runCount?: number;
   agentId?: string;
   commitSha?: string;
+  commitShas?: string[];
   error?: string;
   summary?: string;
   branch?: string;
+  workBranch?: string;
+  baseBranch?: string;
   requireDocsFirst?: boolean;
   lastQuestion?: string;
   devNotes?: string;
