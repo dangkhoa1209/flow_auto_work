@@ -9,6 +9,11 @@ import {
   commentOnIssue,
   getProjectDefaultBranch,
 } from "./gitlab/client.js";
+import {
+  postAgentGitlabComments,
+  stripGitlabCommentBlocks,
+  withAiGeneratedMarker,
+} from "./gitlab/agent-comment.js";
 import { ensureJob, loadJob, saveJob } from "./job-store.js";
 import { logger } from "./logger.js";
 import {
@@ -404,10 +409,41 @@ export class JobQueue {
         role: "agent",
         kind: "qa",
         body:
-          result.summary?.trim() ||
-          result.text.trim().slice(0, 8000) ||
-          "(no reply)",
+          stripGitlabCommentBlocks(
+            result.summary?.trim() ||
+              result.text.trim().slice(0, 8000) ||
+              "(no reply)",
+          ) || "(no reply)",
       });
+
+      // Human asked agent to comment → Flow posts via GitLab API (AI-Generated)
+      try {
+        const posted = await postAgentGitlabComments({
+          projectId: job.issue.projectId,
+          issueIid: job.issue.issueIid,
+          agentText: result.text,
+          jobId: job.id,
+        });
+        if (posted.posted > 0) {
+          await addChatMessage({
+            jobId: job.id,
+            issueIid: job.issue.issueIid,
+            role: "system",
+            kind: "note",
+            body: `Đã đăng ${posted.posted} comment lên GitLab #${job.issue.issueIid} (AI-Generated).`,
+          });
+        }
+      } catch (err) {
+        await addChatMessage({
+          jobId: job.id,
+          issueIid: job.issue.issueIid,
+          role: "system",
+          kind: "note",
+          body: `Đăng comment GitLab thất bại: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        }).catch(() => undefined);
+      }
 
       if (result.kind === "need_clarification") {
         const refreshed = await loadJob(job.id);
@@ -1072,12 +1108,9 @@ export class JobQueue {
       await saveJob(job);
 
       if (hasChange) {
-        const defaultComment = [
-          "AI-Generated",
-          result.summary?.trim() || null,
-        ]
-          .filter(Boolean)
-          .join("\n\n");
+        const defaultComment = withAiGeneratedMarker(
+          result.summary?.trim() || "(AI run completed — see commit)",
+        );
         const extraComment = job.completion?.comment?.trim();
         const finalComment = [defaultComment, extraComment]
           .filter(Boolean)
@@ -1093,6 +1126,30 @@ export class JobQueue {
           jobId: job.id,
           headBefore,
           commitSha,
+        });
+      }
+
+      // Explicit <<<GITLAB_COMMENT>>> from agent (comment-only or extra notes)
+      try {
+        const posted = await postAgentGitlabComments({
+          projectId: job.issue.projectId,
+          issueIid: job.issue.issueIid,
+          agentText: result.text,
+          jobId: job.id,
+        });
+        if (posted.posted > 0) {
+          await addChatMessage({
+            jobId: job.id,
+            issueIid: job.issue.issueIid,
+            role: "system",
+            kind: "note",
+            body: `Đã đăng ${posted.posted} comment lên GitLab #${job.issue.issueIid} (AI-Generated).`,
+          });
+        }
+      } catch (err) {
+        logger.warn("Agent GITLAB_COMMENT post failed", {
+          jobId: job.id,
+          err: String(err),
         });
       }
 

@@ -14,6 +14,34 @@ export function docsCommitMessageForIssue(issue: IssueJob): string {
   return `docs #${issue.issueIid} ${title}`;
 }
 
+/**
+ * Instruct agent how to comment on GitLab without digging tokens/Mongo.
+ * Empty for adhoc sessions (no issue yet).
+ */
+export function gitlabCommentInstructions(issue: IssueJob): string {
+  if (issue.issueIid <= 0 || issue.action === "adhoc") return "";
+  return `
+# COMMENT ON THIS GITLAB ISSUE (#${issue.issueIid})
+When the human asks you to **comment / cmt / ghi chú / trả lời trên issue/task** (GitLab):
+
+**DO NOT** dig MongoDB, decrypt secrets, git credential, browser cookies, Flow session files, Tailscale, or invent PATs.
+**DO NOT** call the GitLab API yourself (curl / glab / scripts that need a token).
+
+Instead, put the comment text in this block — **Flow Auto Work posts it for you** and adds an \`AI-Generated\` tag:
+
+<<<GITLAB_COMMENT>>>
+Nội dung comment (tiếng Việt trừ khi human yêu cầu khác)…
+<<<END_GITLAB_COMMENT>>>
+
+Rules:
+- You may use **multiple** GITLAB_COMMENT blocks in one reply.
+- You may combine with <<<DONE>>> / <<<NEED_CLARIFICATION>>> (comment blocks can appear before DONE).
+- Do not put secrets, tokens, or .env contents in the comment.
+- Issue URL: ${issue.url || `(#${issue.issueIid})`}
+
+`;
+}
+
 function sharedPreamble(issue: IssueJob, techLeadNotes?: string): {
   notesBlock: string;
   description: string;
@@ -133,7 +161,7 @@ DOCS:
 
 List every \`docs/**/*.{md,mdc}\` file you created or substantially updated under DOCS.
 10. If blocked, use NEED_CLARIFICATION for the Flow Auto Work UI.
-`;
+${gitlabCommentInstructions(issue)}`;
 }
 
 export function buildWorkPrompt(
@@ -229,7 +257,7 @@ Tóm tắt ngắn bằng tiếng Việt: đã làm gì / thay đổi chính (1�
 <<<END_DONE>>>
 
 The DONE summary MUST be written in Vietnamese (tiếng Việt).
-${extraBlock}`;
+${gitlabCommentInstructions(issue)}${extraBlock}`;
 }
 
 export function buildResumePrompt(answer: string, issue: IssueJob): string {
@@ -294,7 +322,7 @@ ${message.trim()}
 - Tránh lặp lại "Muốn sửa code thêm → Bật Run" trừ khi họ hỏi tiếp.
 - Nếu cần chi tiết dài (bảng config, chuỗi issue): nói ngắn "chi tiết nằm ở issue / Progress" thay vì paste cả khối.
 
-<<<NEED_CLARIFICATION>>> / <<<DONE>>> blocks same as usual when applicable.`;
+${gitlabCommentInstructions(issue)}<<<NEED_CLARIFICATION>>> / <<<DONE>>> blocks same as usual when applicable.`;
 }
 
 /** Free session (hotfix / adhoc) — no GitLab issue yet. */

@@ -2,6 +2,10 @@ import { Agent, CursorAgentError } from "@cursor/sdk";
 import { setMaxListeners } from "node:events";
 import { getReviewDiff } from "../git/diff.js";
 import { collectLinkedIssueContext } from "../gitlab/linked-context.js";
+import {
+  postAgentGitlabComments,
+  stripGitlabCommentBlocks,
+} from "../gitlab/agent-comment.js";
 import { logger } from "../logger.js";
 import type { IssueJob } from "../types.js";
 import {
@@ -21,6 +25,8 @@ import {
   beginCancellableJob,
   cancelActiveAgentRun,
 } from "./run.js";
+import { gitlabCommentInstructions } from "./prompt.js";
+import { addChatMessage } from "../db/mongo.js";
 
 setMaxListeners(50);
 
@@ -104,7 +110,7 @@ export async function answerTaskQuestion(opts: {
 6. Keep the final answer concise (roughly under ~25 lines).
 7. Chat UI is narrow: lead with 1–2 sentences + short bullets. No giant Markdown tables; no pasting full QC matrices. Skip machine tags like <<<DONE>>> in the human-readable body.
 
-## Issue #${opts.issue.issueIid}
+${gitlabCommentInstructions(opts.issue)}## Issue #${opts.issue.issueIid}
 Title: ${opts.issue.title}
 URL: ${opts.issue.url}
 Labels: ${opts.issue.labels.join(", ") || "(none)"}
@@ -268,8 +274,32 @@ ${opts.question}`;
             )
           : null;
         appendJobProgress(jobId, "status", "Q&A finished");
+
+        // Post any <<<GITLAB_COMMENT>>> blocks Flow-side
+        let commentsPosted = 0;
+        try {
+          const posted = await postAgentGitlabComments({
+            projectId: opts.issue.projectId,
+            issueIid: opts.issue.issueIid,
+            agentText: text,
+            jobId,
+          });
+          commentsPosted = posted.posted;
+          if (commentsPosted > 0 && jobId) {
+            await addChatMessage({
+              jobId,
+              issueIid: opts.issue.issueIid,
+              role: "system",
+              kind: "note",
+              body: `Đã đăng ${commentsPosted} comment lên GitLab #${opts.issue.issueIid} (AI-Generated).`,
+            });
+          }
+        } catch (err) {
+          logger.warn("Q&A GitLab comment post failed", { err: String(err) });
+        }
+
         return {
-          answer: text,
+          answer: stripGitlabCommentBlocks(text) || text,
           agentId: disposed.agentId,
           usage,
           resumed,
