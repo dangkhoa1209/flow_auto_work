@@ -223,6 +223,24 @@ export async function attemptMergeIntoBase(opts: {
     // offline / no remote / diverged — continue with local target
   }
 
+  // Sync source from origin so GitLab-API commits are visible locally
+  try {
+    await git(opts.repoPath, [
+      "fetch",
+      "origin",
+      `+refs/heads/${source}:refs/remotes/origin/${source}`,
+    ]);
+    if (await branchExists(opts.repoPath, `origin/${source}`)) {
+      await git(opts.repoPath, ["branch", "-f", source, `origin/${source}`]);
+      logger.info("Updated local source branch from origin", { source });
+    }
+  } catch (err) {
+    logger.warn("Could not fetch source branch from origin before merge", {
+      source,
+      err: String(err),
+    });
+  }
+
   try {
     const { stdout } = await git(opts.repoPath, [
       "merge",

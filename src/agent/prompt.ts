@@ -108,7 +108,6 @@ export function buildDocsPhasePrompt(
   const linkedBlock = linkedContext?.trim()
     ? `\n## Linked / related context\n${linkedContext.trim()}\n`
     : "";
-  const commitMsg = docsCommitMessageForIssue(issue);
 
   return `# MISSION — DOCS PHASE ONLY (NO APP CODE)
 You are preparing documentation for GitLab issue #${issue.issueIid} on AiHR v3 BEFORE any implementation.
@@ -146,12 +145,8 @@ ${linkedBlock}
    - Code map / API / DB / FE
    - Rủi ro & giả định liên quan task này (có thể ghi ngắn trong doc feature)
    - Plan implement ngắn nếu cần — chưa code
-7. Commit with message:
-
-   ${commitMsg}
-
-8. Do NOT push / MR / switch branches. Stay on current branch.
-9. When docs are ready, end with EXACTLY this block (paths = feature docs you created/updated; may include \`.md\` / \`.mdc\`):
+7. Do NOT \`git commit\`, \`git push\`, open/merge MRs, or switch branches. Stay on the current branch. Flow Auto Work will commit your file changes to GitLab via API after you finish.
+8. When docs are ready, end with EXACTLY this block (paths = feature docs you created/updated; may include \`.md\` / \`.mdc\`):
 
 <<<DOCS_READY>>>
 SUMMARY: Tóm tắt ngắn tiếng Việt (1–3 câu): đã đọc/sửa docs feature nào, điểm chính.
@@ -161,7 +156,7 @@ DOCS:
 <<<END_DOCS_READY>>>
 
 List every \`docs/**/*.{md,mdc}\` file you created or substantially updated under DOCS.
-10. If blocked, use NEED_CLARIFICATION for the Flow Auto Work UI.
+9. If blocked, use NEED_CLARIFICATION for the Flow Auto Work UI.
 ${gitlabCommentInstructions(issue)}`;
 }
 
@@ -176,7 +171,6 @@ export function buildWorkPrompt(
     contextQualityBlock?: string;
   },
 ): string {
-  const commitMsg = commitMessageForIssue(issue);
   const { notesBlock, description } = sharedPreamble(issue, techLeadNotes);
 
   const chatBlock = opts?.chatContext?.trim()
@@ -219,8 +213,9 @@ You MUST follow AiHR conventions — do not invent patterns that contradict them
 
 Load the relevant module/feature docs (max ~3) and applicable rules before changing code.
 Do not touch .env, credentials, or secrets.
-Do not force-push, do not amend commits already on remote, do not create or merge MRs.
+Do NOT \`git commit\`, \`git push\`, force-push, amend remote commits, or create/merge MRs.
 Do NOT switch git branches. Stay on the branch that is already checked out.
+Flow Auto Work will commit your file changes to GitLab via API (PAT identity) after you finish.
 
 ${qualityBlock}${chatBlock}${notesBlock}${docsGateBlock}# BUSINESS REQUIREMENTS (GITLAB ISSUE #${issue.issueIid})
 Title: ${issue.title}
@@ -238,12 +233,8 @@ Ignore image/file attachments — only use text. Do not try to download or open 
 1. Analyze the requirements but execute them EXACTLY as demanded in UI CHAT REQUESTS and DEV NOTES when present (those override conflicting business wording). Latest Human chat messages win for this run.
 2. Investigate via docs (and the approved feature docs if listed above), then write a short plan.
 3. Implement on the CURRENT git branch only (do not checkout/create other branches). Keep the change scoped to this issue.
-4. Commit exactly with this message format (one commit preferred):
-
-   ${commitMsg}
-
-5. Stop after the commit — do NOT push and do NOT open an MR. The orchestrator treats a successful local commit as done.
-6. If requirements are ambiguous or you are not confident which approach to take, do NOT guess.
+4. Leave changes as modified files in the working tree — do NOT \`git commit\` or \`git push\`. The orchestrator commits to GitLab when you are done.
+5. If requirements are ambiguous or you are not confident which approach to take, do NOT guess.
    The human answers in the **Flow Auto Work UI** (not Teams).
    End your final reply with EXACTLY this block (and nothing after it):
 
@@ -251,7 +242,7 @@ Ignore image/file attachments — only use text. Do not try to download or open 
 Your specific question(s) for the human here.
 <<<END_NEED_CLARIFICATION>>>
 
-7. If you finished successfully, end with:
+6. If you finished successfully, end with:
 
 <<<DONE>>>
 Tóm tắt ngắn bằng tiếng Việt: đã làm gì / thay đổi chính (1–3 câu).
@@ -262,7 +253,6 @@ ${gitlabCommentInstructions(issue)}${extraBlock}`;
 }
 
 export function buildResumePrompt(answer: string, issue: IssueJob): string {
-  const commitMsg = commitMessageForIssue(issue);
   return `The human answered your clarification in the Flow Auto Work UI:
 
 ---
@@ -271,11 +261,8 @@ ${answer}
 
 Continue the same workflow on the CURRENT branch (do not switch branches).
 Implement if clear enough; otherwise ask again with the NEED_CLARIFICATION block (UI will collect the next answer).
-When finished, commit with message:
-
-${commitMsg}
-
-Then use the DONE block. The DONE summary MUST be in Vietnamese (tiếng Việt). Do not push or open an MR.`;
+Leave file changes uncommitted — do NOT \`git commit\` or \`git push\` (orchestrator commits to GitLab via API).
+Then use the DONE block. The DONE summary MUST be in Vietnamese (tiếng Việt).`;
 }
 
 /**
@@ -287,7 +274,6 @@ export function buildFollowUpPrompt(
   issue: IssueJob,
   opts?: { chatHistory?: string; contextQualityBlock?: string },
 ): string {
-  const commitMsg = commitMessageForIssue(issue);
   const history = opts?.chatHistory?.trim();
   const historyBlock = history
     ? `
@@ -309,12 +295,8 @@ ${message.trim()}
 1. If they ask a question → answer clearly (Vietnamese if they wrote Vietnamese). You may briefly inspect the repo.
 2. If they ask to fix / add / change / re-test / seed data / run something → **do it** on the CURRENT branch (do not switch branches).
 3. Prefer small, correct changes. Stay scoped to this issue unless they explicitly expand scope.
-4. Do NOT push, force-push, amend remote commits, or open/merge MRs.
-5. If you changed code and are done with this request, commit with:
-
-   ${commitMsg}
-
-6. If you need more info, end with NEED_CLARIFICATION. If finished this follow-up, end with DONE (summary in Vietnamese).
+4. Do NOT \`git commit\`, \`git push\`, force-push, amend remote commits, or open/merge MRs. Flow Auto Work commits to GitLab via API after you finish.
+5. If you need more info, end with NEED_CLARIFICATION. If finished this follow-up, end with DONE (summary in Vietnamese).
 
 ## Chat reply style (UI is a narrow chat panel — keep it readable)
 - Vietnamese, short: **1–2 câu mở đầu** + bullet ngắn (≤ 8 dòng ý chính). Không dump bảng Markdown khổng lồ.
@@ -333,7 +315,6 @@ export function buildAdhocFollowUpPrompt(
   opts?: { chatHistory?: string; contextQualityBlock?: string },
 ): string {
   const title = sessionTitle.replace(/\s+/g, " ").trim() || "Ad-hoc session";
-  const commitMsg = `hotfix: ${title}`;
   const history = opts?.chatHistory?.trim();
   const historyBlock = history
     ? `
@@ -356,12 +337,8 @@ ${message.trim()}
 1. If they ask a question → answer clearly (Vietnamese if they wrote Vietnamese). You may briefly inspect the repo.
 2. If they ask to fix / add / change / re-test / seed data / run something → **do it** on the CURRENT branch (do not switch branches).
 3. Prefer small, correct changes. Stay scoped to the request.
-4. Do NOT push, force-push, amend remote commits, or open/merge MRs.
-5. If you changed code and are done with this request, commit with:
-
-   ${commitMsg}
-
-6. If you need more info, end with NEED_CLARIFICATION. If finished this follow-up, end with DONE (summary in Vietnamese — useful as issue description later).
+4. Do NOT \`git commit\`, \`git push\`, force-push, amend remote commits, or open/merge MRs. Flow Auto Work commits to GitLab via API after you finish.
+5. If you need more info, end with NEED_CLARIFICATION. If finished this follow-up, end with DONE (summary in Vietnamese — useful as issue description later).
 
 ## Chat reply style (UI is a narrow chat panel — keep it readable)
 - Vietnamese, short: **1–2 câu mở đầu** + bullet ngắn (≤ 8 dòng ý chính). Không dump bảng Markdown khổng lồ.

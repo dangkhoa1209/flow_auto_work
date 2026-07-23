@@ -1,6 +1,12 @@
 import { getConfig } from "./config.js";
 import {
-  commitAllTracked,
+  collectCommitActions,
+  softResetTo,
+  syncLocalToRemoteCommit,
+} from "./git/changes-for-api.js";
+import {
+  currentBranch,
+  detectDefaultBranch,
   getHeadSha,
   hasUncommittedChanges,
   prepareRepoForIssue,
@@ -9,6 +15,10 @@ import {
   commentOnIssue,
   getProjectDefaultBranch,
 } from "./gitlab/client.js";
+import {
+  createRepositoryCommit,
+  gitlabBranchExists,
+} from "./gitlab/commits.js";
 import {
   postAgentGitlabComments,
   stripGitlabCommentBlocks,
@@ -437,7 +447,7 @@ export class JobQueue {
         };
       }
 
-      const { hasChange } = await this.finalizeLocalCommit(
+      const { hasChange } = await this.finalizeGitlabCommit(
         job,
         repoPath,
         headBefore,
@@ -810,55 +820,109 @@ export class JobQueue {
     return result;
   }
 
-  private async finalizeLocalCommit(
+  /**
+   * Commit via GitLab Commits API (author = PAT owner), then sync local to that SHA.
+   * If the agent already `git commit` locally, soft-reset to headBefore and re-commit via API.
+   */
+  private async finalizeGitlabCommit(
     job: JobRecord,
     repoPath: string,
     headBefore: string | null,
     commitMsg: string,
   ): Promise<{ commitSha: string | null; hasChange: boolean }> {
-    let madeCommit = false;
-    let commitSha: string | null = null;
-    if (await hasUncommittedChanges(repoPath)) {
-      commitSha = await commitAllTracked(repoPath, commitMsg);
-      if (commitSha) {
-        madeCommit = true;
-      } else {
-        logger.info(
-          "Nothing to commit — treating agent output as already committed",
-          { jobId: job.id },
-        );
-      }
-    } else {
-      logger.info("Working tree clean — already committed", {
+    const rt = getRuntimeContext();
+    const headNow = await getHeadSha(repoPath);
+    const dirty = await hasUncommittedChanges(repoPath);
+
+    if (!dirty && headBefore && headNow && headBefore === headNow) {
+      logger.info("No local changes to commit via GitLab API", {
         jobId: job.id,
       });
+      return { commitSha: headNow, hasChange: false };
     }
-    commitSha = (await getHeadSha(repoPath)) ?? commitSha;
+
+    // Agent may have committed locally — soft-reset so one API commit (PAT identity)
+    if (headBefore && headNow && headBefore !== headNow) {
+      logger.info("Soft-reset local commits before GitLab API commit", {
+        jobId: job.id,
+        headBefore: headBefore.slice(0, 12),
+        headNow: headNow.slice(0, 12),
+      });
+      await softResetTo(repoPath, headBefore);
+    }
+
     this.assertNotKilled(job);
 
-    const dirty = await hasUncommittedChanges(repoPath);
-    if (dirty) {
-      logger.warn(
-        "Uncommitted changes remain after agent finish; continuing",
-        { jobId: job.id },
-      );
+    const actions = await collectCommitActions(repoPath);
+    if (!actions.length) {
+      const sha = (await getHeadSha(repoPath)) ?? headBefore;
+      logger.info("Nothing to commit via GitLab API", { jobId: job.id });
+      return { commitSha: sha, hasChange: false };
     }
 
-    const hasChange =
-      madeCommit ||
-      Boolean(headBefore && commitSha && headBefore !== commitSha);
-
-    if (hasChange && commitSha) {
-      job.commitSha = commitSha;
-      const prev = Array.isArray(job.commitShas) ? job.commitShas : [];
-      if (!prev.includes(commitSha)) {
-        job.commitShas = [...prev, commitSha].slice(-20);
-      } else {
-        job.commitShas = prev;
-      }
+    const branch =
+      (job.branch || job.workBranch || "").trim() ||
+      (await currentBranch(repoPath));
+    const projectIdOrPath =
+      rt?.gitlabProjectId ??
+      rt?.gitlabPath ??
+      job.issue.projectId;
+    if (projectIdOrPath === undefined || projectIdOrPath === "") {
+      throw new Error("No GitLab project for Commits API");
     }
 
-    return { commitSha, hasChange };
+    const remoteExists = await gitlabBranchExists(projectIdOrPath, branch);
+    let startBranch: string | undefined;
+    if (!remoteExists) {
+      startBranch =
+        rt?.baseBranch?.trim() ||
+        job.baseBranch?.trim() ||
+        (await detectDefaultBranch(repoPath));
+      logger.info("GitLab branch missing — creating via start_branch", {
+        jobId: job.id,
+        branch,
+        startBranch,
+      });
+    }
+
+    logger.info("Creating GitLab commit via API", {
+      jobId: job.id,
+      branch,
+      actions: actions.length,
+      remoteExists,
+    });
+
+    const created = await createRepositoryCommit({
+      projectIdOrPath,
+      branch,
+      startBranch,
+      message: commitMsg,
+      actions,
+      token: rt?.gitlabToken,
+    });
+
+    this.assertNotKilled(job);
+
+    await syncLocalToRemoteCommit(repoPath, branch, created.id);
+
+    const commitSha = created.id;
+    job.commitSha = commitSha;
+    const prev = Array.isArray(job.commitShas) ? job.commitShas : [];
+    if (!prev.includes(commitSha)) {
+      job.commitShas = [...prev, commitSha].slice(-20);
+    } else {
+      job.commitShas = prev;
+    }
+
+    const stillDirty = await hasUncommittedChanges(repoPath);
+    if (stillDirty) {
+      logger.warn("Working tree still dirty after GitLab sync", {
+        jobId: job.id,
+        commitSha: commitSha.slice(0, 12),
+      });
+    }
+
+    return { commitSha, hasChange: true };
   }
 
   private async runJob(
@@ -1061,7 +1125,7 @@ export class JobQueue {
           job.docsPath = paths[0];
         }
 
-        await this.finalizeLocalCommit(
+        await this.finalizeGitlabCommit(
           job,
           repoPath,
           headBefore,
@@ -1112,7 +1176,7 @@ export class JobQueue {
         });
       }
 
-      const { commitSha, hasChange } = await this.finalizeLocalCommit(
+      const { commitSha, hasChange } = await this.finalizeGitlabCommit(
         job,
         repoPath,
         headBefore,

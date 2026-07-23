@@ -88,7 +88,7 @@ export type JobStatus =
   | "awaiting_docs_approval"
   /** @deprecated legacy — migrated to succeeded on boot (push/MR gate removed) */
   | "awaiting_diff_approval"
-  /** Code done (local commit) — chờ user assign / labels thủ công */
+  /** Code done (GitLab API commit) — chờ user assign / labels thủ công */
   | "awaiting_handoff"
   | "succeeded"
   | "failed";
@@ -120,7 +120,7 @@ export type JobRecord = {
   runId?: string;
   branch?: string;
   mrUrl?: string;
-  /** Latest local commit SHA after a successful run (post-scrub) */
+  /** Latest commit SHA after a successful run (GitLab API) */
   commitSha?: string;
   /** History of commit SHAs across re-runs (newest last) */
   commitShas?: string[];

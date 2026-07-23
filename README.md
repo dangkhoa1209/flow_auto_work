@@ -1,8 +1,8 @@
 # Flow Auto Work
 
-Orchestrator **local**: GitLab issues → UI Run → Cursor SDK trên repo máy bạn → commit local → **`awaiting_handoff`** → user assign/labels → `succeeded`.
+Orchestrator **local**: GitLab issues → UI Run → Cursor SDK trên repo máy bạn → **commit qua GitLab API** (PAT) → **`awaiting_handoff`** → user assign/labels → `succeeded`.
 
-> Chi tiết: [`docs/NOTES.md`](docs/NOTES.md) · Roadmap: [`docs/ROADMAP.md`](docs/ROADMAP.md) · Mục lục docs: [`docs/README.md`](docs/README.md).
+> Chi tiết: [`docs/NOTES.md`](docs/NOTES.md) · Deploy: [`docs/DEPLOY.md`](docs/DEPLOY.md) · Roadmap: [`docs/ROADMAP.md`](docs/ROADMAP.md) · Mục lục: [`docs/README.md`](docs/README.md).
 
 ## Tính năng chính
 
@@ -14,7 +14,7 @@ Orchestrator **local**: GitLab issues → UI Run → Cursor SDK trên repo máy 
 | Done | 1 issue = 1 job; Dev Notes; Run / Run all; Hotfix (adhoc) |
 | Handoff | Assign + **add** labels → `succeeded` (có thể merge → base branch) |
 | Comment | Khi xong có code change: `AI-Generated` + summary tiếng Việt |
-| Git | Work branch workspace (hoặc `feat/…`); commit local, không auto push/MR |
+| Git | Work branch workspace (hoặc `feat/…`); commit qua GitLab API (author = PAT); merge local + push target |
 | Stack | Hono API · Mongo · Cursor SDK local · **SSE realtime** (`/api/events`) |
 
 ## Flow dự án (end-to-end)
@@ -27,7 +27,7 @@ Login (GitLab PAT + Cursor API key, mã hóa)
        → on-start labels (optional)
        → [optional] Docs phase → awaiting_docs_approval → Approve
        → Cursor agent (+ clarify trên UI)
-       → commit local (nếu dirty)
+       → commit qua GitLab API (nếu dirty) + sync local
        → awaiting_handoff + comment GitLab (nếu có đổi code)
   → Handoff: assign / labels (± merge → base)
   → succeeded
@@ -100,7 +100,7 @@ npm run dev
 | Force Stop / Reset window | Header Chat agent khi đang Run hoặc Gửi |
 | Realtime | Run job → Progress/status cập nhật qua SSE, không poll |
 
-Deploy sau reverse proxy (nginx/Caddy): **tắt buffer** cho `/api/events` (SSE), giữ connection dài (vd. `proxy_buffering off;` / `flush_interval -1`).
+Deploy / reverse proxy SSE / tunnel: [`docs/DEPLOY.md`](docs/DEPLOY.md).
 
 ### Auth session
 

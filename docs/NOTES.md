@@ -2,7 +2,7 @@
 
 Tài liệu ghi lại những gì đã xây trong project (local orchestrator GitLab + Cursor SDK + UI).
 
-Setup nhanh: [README.md](../README.md) · Roadmap: [ROADMAP.md](./ROADMAP.md).
+Setup nhanh: [README.md](../README.md) · Deploy: [DEPLOY.md](./DEPLOY.md) · Roadmap: [ROADMAP.md](./ROADMAP.md).
 
 ## Mục tiêu
 
@@ -34,10 +34,10 @@ JobQueue (serial)
   → on-start labels (optional)
   → [optional] Docs phase → awaiting_docs_approval → Approve
   → Cursor agent (context: § Agent context) → clarify loop
-  → commit local (nếu dirty) → awaiting_handoff
+  → commit GitLab API (nếu dirty) + sync local → awaiting_handoff
   → comment "AI-Generated" + summary VI (khi có code change)
   → user handoff → succeeded
-  (không auto push / MR)
+  (merge work→base vẫn local git + push target; không auto MR)
 ```
 
 **Onboarding**: GitLab PAT → project (+ local path) → base + work branch optional. Cursor key khi **Run** nếu chưa có.
@@ -57,7 +57,7 @@ Login → workspace (project + repo path + branches)
        → dựng MISSION prompt (chat + notes + issue + linked [+ docs])
        → Cursor Agent (create | resume agentId)
        → clarify loop nếu cần
-       → commit local
+       → commit qua GitLab API + sync local
   → awaiting_handoff → Handoff UI → succeeded
 ```
 
@@ -239,8 +239,11 @@ Browser EventSource → GET /api/events
 ## Git / commit
 
 - Work branch workspace hoặc `feat/…`.  
-- `feat #<iid> <title>` · adhoc: `hotfix: …`.  
-- Commit local; không auto push/MR.
+- Message: `feat #<iid> <title>` · adhoc: `hotfix: …` · docs: `docs #<iid> …`.  
+- **Commit qua GitLab Commits API** (author = chủ PAT); không `git commit` local làm nguồn sự thật.  
+- Sau API: fetch + reset local tới SHA GitLab (merge/handoff thấy tip đúng).  
+- Merge work → base: vẫn local `git merge` + `git push` target (trước merge có fetch source từ origin).  
+- Không auto mở MR.
 
 ---
 
@@ -263,7 +266,7 @@ Xem [README.md](../README.md).
 ## Lịch sử thay đổi (tóm tắt)
 
 1. Orchestrator UI-primary + Cursor local + Mongo jobs.  
-2. Done = local commit; bỏ push/MR / diff-approval gate.  
+2. Done = GitLab API commit (PAT author) + sync local; merge/handoff vẫn local.  
 3. `awaiting_handoff` + Handoff UI + thống kê.  
 4. Comment `AI-Generated` + summary VI.  
 5. Vue workbench (light) · Hotfix · job status/delete · Related preview.  
