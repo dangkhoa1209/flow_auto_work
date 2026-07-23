@@ -401,53 +401,32 @@ export class JobQueue {
       applyTokenUsageToJob(job, result.usage);
       await saveJob(job);
 
-      result = await this.runClarifyLoop(job, result);
+      // Đăng GITLAB_COMMENT ngay — không chờ clarify (tránh treo + mất comment)
+      await this.deliverAgentGitlabComments(job, result.text);
 
+      const chatBody =
+        stripGitlabCommentBlocks(
+          result.summary?.trim() ||
+            result.text.trim().slice(0, 8000) ||
+            "(no reply)",
+        ) ||
+        result.question?.trim() ||
+        "(no reply)";
       await addChatMessage({
         jobId: job.id,
         issueIid: job.issue.issueIid,
         role: "agent",
-        kind: "qa",
-        body:
-          stripGitlabCommentBlocks(
-            result.summary?.trim() ||
-              result.text.trim().slice(0, 8000) ||
-              "(no reply)",
-          ) || "(no reply)",
+        kind: result.kind === "need_clarification" ? "clarify" : "qa",
+        body: chatBody,
       });
 
-      // Human asked agent to comment → Flow posts via GitLab API (AI-Generated)
-      try {
-        const posted = await postAgentGitlabComments({
-          projectId: job.issue.projectId,
-          issueIid: job.issue.issueIid,
-          agentText: result.text,
-          jobId: job.id,
-        });
-        if (posted.posted > 0) {
-          await addChatMessage({
-            jobId: job.id,
-            issueIid: job.issue.issueIid,
-            role: "system",
-            kind: "note",
-            body: `Đã đăng ${posted.posted} comment lên GitLab #${job.issue.issueIid} (AI-Generated).`,
-          });
-        }
-      } catch (err) {
-        await addChatMessage({
-          jobId: job.id,
-          issueIid: job.issue.issueIid,
-          role: "system",
-          kind: "note",
-          body: `Đăng comment GitLab thất bại: ${
-            err instanceof Error ? err.message : String(err)
-          }`,
-        }).catch(() => undefined);
-      }
-
+      // IDE follow-up: KHÔNG runClarifyLoop (sẽ block HTTP /continue mãi).
+      // Trả về UI ngay — user trả lời ở ô Clarify.
       if (result.kind === "need_clarification") {
-        const refreshed = await loadJob(job.id);
-        if (refreshed) job = refreshed;
+        job.status = "awaiting_clarification";
+        job.lastQuestion = result.question ?? chatBody;
+        job.error = undefined;
+        await saveJob(job);
         return {
           ok: true,
           job,
@@ -742,6 +721,41 @@ export class JobQueue {
     }
   }
 
+  private async deliverAgentGitlabComments(
+    job: JobRecord,
+    agentText: string,
+  ): Promise<number> {
+    try {
+      const posted = await postAgentGitlabComments({
+        projectId: job.issue.projectId,
+        issueIid: job.issue.issueIid,
+        agentText,
+        jobId: job.id,
+      });
+      if (posted.posted > 0) {
+        await addChatMessage({
+          jobId: job.id,
+          issueIid: job.issue.issueIid,
+          role: "system",
+          kind: "note",
+          body: `Đã đăng ${posted.posted} comment lên GitLab #${job.issue.issueIid} (AI-Generated).`,
+        });
+      }
+      return posted.posted;
+    } catch (err) {
+      await addChatMessage({
+        jobId: job.id,
+        issueIid: job.issue.issueIid,
+        role: "system",
+        kind: "note",
+        body: `Đăng comment GitLab thất bại: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      }).catch(() => undefined);
+      return 0;
+    }
+  }
+
   private async runClarifyLoop(
     job: JobRecord,
     initial: Awaited<ReturnType<typeof runNewAgent>>,
@@ -749,6 +763,9 @@ export class JobQueue {
     const config = getConfig();
     let result = initial;
     while (result.kind === "need_clarification") {
+      // Comment trước khi chờ UI — tránh mất GITLAB_COMMENT khi treo clarify
+      await this.deliverAgentGitlabComments(job, result.text);
+
       job.clarifyRound += 1;
       if (job.clarifyRound > config.MAX_CLARIFY_ROUNDS) {
         throw new Error(

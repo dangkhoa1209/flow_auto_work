@@ -36,6 +36,7 @@ Nội dung comment (tiếng Việt trừ khi human yêu cầu khác)…
 Rules:
 - You may use **multiple** GITLAB_COMMENT blocks in one reply.
 - You may combine with <<<DONE>>> / <<<NEED_CLARIFICATION>>> (comment blocks can appear before DONE).
+- If you already asked the team on GitLab via GITLAB_COMMENT, prefer ending with <<<DONE>>> (short note). Only use NEED_CLARIFICATION when you need an answer **in the Flow UI** to continue coding this turn.
 - Do not put secrets, tokens, or .env contents in the comment.
 - Issue URL: ${issue.url || `(#${issue.issueIid})`}
 
