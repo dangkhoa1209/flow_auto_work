@@ -12,6 +12,7 @@ import RelatedTaskPreviewModal from "@/components/RelatedTaskPreviewModal.vue";
 import TaskList from "@/components/work/TaskList.vue";
 import JobContext from "@/components/work/JobContext.vue";
 import AgentConsole from "@/components/work/AgentConsole.vue";
+import IssueIidLink from "@/components/IssueIidLink.vue";
 import { useWorkbench } from "@/composables/useWorkbench";
 import { usePaneLayout } from "@/composables/usePaneLayout";
 import { useWorkbenchShortcuts } from "@/composables/useWorkbenchShortcuts";
@@ -253,11 +254,28 @@ function onPaneResize(event: { panes: Array<{ size: number }> }) {
         </div>
 
         <div
-          v-if="wb.detailTitle"
-          class="shrink-0 px-1 text-[11px] text-ink-faint truncate leading-tight"
+          v-if="wb.detailTitle || wb.selectedTaskIid || wb.currentJob?.issue?.issueIid"
+          class="shrink-0 px-1 text-[11px] text-ink-faint truncate leading-tight flex items-center gap-1.5 min-w-0"
         >
-          <span class="font-medium text-ink-soft">{{ wb.detailTitle }}</span>
-          <span v-if="wb.detailMeta"> · {{ wb.detailMeta }}</span>
+          <IssueIidLink
+            v-if="!wb.isCurrentAdhoc"
+            :iid="
+              wb.taskDetail?.issueIid ||
+              wb.currentJob?.issue?.issueIid ||
+              wb.selectedTaskIid
+            "
+            :url="wb.taskDetail?.url || wb.currentJob?.issue?.url"
+            link-class="!text-[11px] shrink-0"
+          />
+          <span
+            v-else
+            class="text-accent font-semibold shrink-0"
+            >Hotfix</span
+          >
+          <span v-if="wb.detailTitle" class="font-medium text-ink-soft truncate">{{
+            wb.detailTitle
+          }}</span>
+          <span v-if="wb.detailMeta" class="truncate">· {{ wb.detailMeta }}</span>
         </div>
 
         <JobContext

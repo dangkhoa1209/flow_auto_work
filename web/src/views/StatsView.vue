@@ -2,12 +2,14 @@
 import { onMounted, ref } from "vue";
 import { message } from "ant-design-vue";
 import { api } from "@/api/client";
+import IssueIidLink from "@/components/IssueIidLink.vue";
 import { statusLabel } from "@/utils/status";
 
 type DayItem = {
   issueIid?: number;
   title?: string;
   status?: string;
+  url?: string;
 };
 
 type DayBucket = {
@@ -52,7 +54,7 @@ onMounted(async () => {
               :key="idx"
               class="py-1.5 text-sm text-ink-soft border-b border-line last:border-0"
             >
-              <span class="text-accent font-semibold">#{{ it.issueIid }}</span>
+              <IssueIidLink :iid="it.issueIid" :url="it.url" />
               {{ it.title }}
               <a-tag class="ml-2">{{ statusLabel(it.status) }}</a-tag>
             </div>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from "vue";
+import { onMounted, onUnmounted, ref, watch } from "vue";
 import {
   ClearOutlined,
   PauseCircleOutlined,
@@ -16,6 +16,9 @@ import {
 import type { Job } from "@/stores/work";
 
 const PROGRESS_OPEN_KEY = "flow.console.progressOpen";
+const PROGRESS_H_KEY = "flow.console.progressHeight";
+const PROGRESS_H_MIN = 120;
+const PROGRESS_H_DEFAULT = 240;
 
 const props = withDefaults(
   defineProps<{
@@ -54,17 +57,28 @@ const emit = defineEmits<{
   resetWindow: [];
 }>();
 
+const rootEl = ref<HTMLElement | null>(null);
 const chatBox = ref<HTMLElement | null>(null);
 const progressBox = ref<HTMLElement | null>(null);
 const mobileConsoleTab = ref<"chat" | "logs">("chat");
-/** Desktop Progress panel open (persisted) */
 const progressOpen = ref(true);
+const progressHeight = ref(PROGRESS_H_DEFAULT);
+const progressDragging = ref(false);
+
+let dragStartY = 0;
+let dragStartH = 0;
+let dragMoved = false;
+let dragPointerId: number | null = null;
 
 onMounted(() => {
   try {
     const raw = localStorage.getItem(PROGRESS_OPEN_KEY);
     if (raw === "0" || raw === "false") progressOpen.value = false;
     else if (raw === "1" || raw === "true") progressOpen.value = true;
+    const h = Number(localStorage.getItem(PROGRESS_H_KEY));
+    if (Number.isFinite(h) && h >= PROGRESS_H_MIN) {
+      progressHeight.value = Math.round(h);
+    }
   } catch {
     /* ignore */
   }
@@ -78,9 +92,70 @@ watch(progressOpen, (open) => {
   }
 });
 
+function persistProgressHeight() {
+  try {
+    localStorage.setItem(PROGRESS_H_KEY, String(progressHeight.value));
+  } catch {
+    /* ignore */
+  }
+}
+
+function maxProgressHeight() {
+  const rootH = rootEl.value?.clientHeight ?? 640;
+  return Math.max(PROGRESS_H_MIN, Math.floor(rootH * 0.72));
+}
+
+function clampProgressHeight(h: number) {
+  return Math.min(maxProgressHeight(), Math.max(PROGRESS_H_MIN, Math.round(h)));
+}
+
 function toggleProgress() {
   progressOpen.value = !progressOpen.value;
 }
+
+function onProgressRailPointerDown(e: PointerEvent) {
+  if (props.mobileTabs || e.button !== 0) return;
+  if (!progressOpen.value) {
+    progressOpen.value = true;
+    return;
+  }
+  dragStartY = e.clientY;
+  dragStartH = progressHeight.value;
+  dragMoved = false;
+  dragPointerId = e.pointerId;
+  progressDragging.value = true;
+  (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+  window.addEventListener("pointermove", onProgressRailPointerMove);
+  window.addEventListener("pointerup", onProgressRailPointerUp);
+  window.addEventListener("pointercancel", onProgressRailPointerUp);
+}
+
+function onProgressRailPointerMove(e: PointerEvent) {
+  if (!progressDragging.value) return;
+  const dy = dragStartY - e.clientY;
+  if (Math.abs(dy) > 4) dragMoved = true;
+  progressHeight.value = clampProgressHeight(dragStartH + dy);
+}
+
+function onProgressRailPointerUp(e: PointerEvent) {
+  if (dragPointerId != null && e.pointerId !== dragPointerId) return;
+  window.removeEventListener("pointermove", onProgressRailPointerMove);
+  window.removeEventListener("pointerup", onProgressRailPointerUp);
+  window.removeEventListener("pointercancel", onProgressRailPointerUp);
+  progressDragging.value = false;
+  dragPointerId = null;
+  if (!dragMoved) {
+    toggleProgress();
+  } else {
+    persistProgressHeight();
+  }
+}
+
+onUnmounted(() => {
+  window.removeEventListener("pointermove", onProgressRailPointerMove);
+  window.removeEventListener("pointerup", onProgressRailPointerUp);
+  window.removeEventListener("pointercancel", onProgressRailPointerUp);
+});
 
 const chatScroll = useAutoScroll(chatBox, () => [
   props.chat.length,
@@ -91,7 +166,9 @@ const progressScroll = useAutoScroll(progressBox, () => props.progressLines.leng
 
 <template>
   <aside
+    ref="rootEl"
     class="flex flex-col min-h-0 overflow-hidden rounded-2xl panel-glass shadow-panel relative h-full"
+    :class="{ 'select-none': progressDragging }"
   >
     <div
       v-if="jobLoading"
@@ -205,14 +282,7 @@ const progressScroll = useAutoScroll(progressBox, () => props.progressLines.leng
       <!-- Chat panel -->
       <div
         v-show="!mobileTabs || mobileConsoleTab === 'chat'"
-        class="flex flex-col min-h-0 border-b border-line"
-        :class="
-          mobileTabs
-            ? 'flex-1'
-            : progressOpen
-              ? 'flex-[1_1_50%]'
-              : 'flex-1'
-        "
+        class="flex flex-col min-h-0 border-b border-line flex-1"
       >
         <div
           ref="chatBox"
@@ -313,17 +383,21 @@ const progressScroll = useAutoScroll(progressBox, () => props.progressLines.leng
         </div>
       </div>
 
-      <!-- Progress / Logs — slim IDE-style collapse rail -->
+      <!-- Progress / Logs — collapse + drag-resize (desktop) -->
       <div
         v-show="mobileTabs ? mobileConsoleTab === 'logs' : true"
-        class="flex flex-col min-h-0 console-progress"
-        :class="[
-          mobileTabs
-            ? 'flex-1'
-            : progressOpen
-              ? 'flex-[1_1_42%]'
-              : 'shrink-0',
-        ]"
+        class="console-progress flex flex-col min-h-0"
+        :class="{
+          'flex-1': mobileTabs,
+          'shrink-0': !mobileTabs,
+          'is-dragging': progressDragging,
+          'is-collapsed': !mobileTabs && !progressOpen,
+        }"
+        :style="
+          !mobileTabs && progressOpen
+            ? { height: `${progressHeight}px` }
+            : undefined
+        "
       >
         <button
           type="button"
@@ -336,11 +410,11 @@ const progressScroll = useAutoScroll(progressBox, () => props.progressLines.leng
             mobileTabs
               ? undefined
               : progressOpen
-                ? 'Thu gọn Progress'
+                ? 'Kéo để đổi chiều cao · click để thu gọn'
                 : 'Mở Progress'
           "
           :aria-expanded="mobileTabs ? undefined : progressOpen"
-          @click="!mobileTabs && toggleProgress()"
+          @pointerdown="onProgressRailPointerDown"
         >
           <span class="console-progress__grip" aria-hidden="true">
             <i /><i /><i />

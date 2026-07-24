@@ -2,6 +2,9 @@
 import { computed } from "vue";
 import type { TaskDetail } from "@/stores/work";
 import ChatMessageBody from "@/components/ChatMessageBody.vue";
+import IssueIidLink from "@/components/IssueIidLink.vue";
+import { gitlabIssueUrl } from "@/utils/gitlabIssueUrl";
+import { useSessionStore } from "@/stores/session";
 
 const props = defineProps<{
   open: boolean;
@@ -15,6 +18,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   "update:open": [boolean];
 }>();
+
+const session = useSessionStore();
 
 const openProxy = computed({
   get: () => props.open,
@@ -32,7 +37,20 @@ const iid = computed(
   () => props.detail?.issueIid || props.fallback?.iid || null,
 );
 
-const url = computed(() => props.detail?.url || props.fallback?.url || "");
+const url = computed(() => {
+  const direct = props.detail?.url || props.fallback?.url || "";
+  if (direct) return direct;
+  const project = session.memberships.find(
+    (m) => m.projectId === session.projectId,
+  )?.project;
+  return (
+    gitlabIssueUrl({
+      iid: iid.value,
+      gitlabHost: project?.gitlabHost,
+      gitlabPath: project?.gitlabPath,
+    }) || ""
+  );
+});
 
 const humanComments = computed(() =>
   (props.detail?.notes || []).filter((n) => !n.system && n.body?.trim()),
@@ -59,8 +77,14 @@ const meta = computed(() => {
     v-model:open="openProxy"
     :footer="null"
     width="640px"
-    :title="iid ? `#${iid} — ${title}` : 'Task'"
+    :title="iid ? undefined : 'Task'"
   >
+    <template v-if="iid" #title>
+      <span class="inline-flex items-center gap-1.5 min-w-0">
+        <IssueIidLink :iid="iid" :url="url || null" />
+        <span class="truncate">— {{ title }}</span>
+      </span>
+    </template>
     <a-spin :spinning="Boolean(loading)">
       <a-alert
         v-if="error"

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { CopyOutlined } from "@ant-design/icons-vue";
 import ChatMessageBody from "@/components/ChatMessageBody.vue";
+import IssueIidLink from "@/components/IssueIidLink.vue";
 import JobDiffPanel from "@/components/JobDiffPanel.vue";
 import {
   contextQualityLabel,
@@ -130,25 +131,14 @@ const emit = defineEmits<{
                   {{ detailTitle }}
                 </template>
                 <template v-else>
-                  <a
-                    v-if="taskDetail?.url || currentJob?.issue?.url"
-                    :href="taskDetail?.url || currentJob?.issue?.url"
-                    target="_blank"
-                    rel="noopener"
-                    class="text-accent hover:underline"
-                    >#{{
+                  <IssueIidLink
+                    :iid="
                       taskDetail?.issueIid ||
                       currentJob?.issue?.issueIid ||
                       selectedTaskIid
-                    }}</a
-                  >
-                  <span v-else
-                    >#{{
-                      taskDetail?.issueIid ||
-                      currentJob?.issue?.issueIid ||
-                      selectedTaskIid
-                    }}</span
-                  >
+                    "
+                    :url="taskDetail?.url || currentJob?.issue?.url"
+                  />
                   {{ detailTitle }}
                 </template>
               </h2>
@@ -263,7 +253,7 @@ const emit = defineEmits<{
                     "
                   >
                     <div class="text-sm text-ink-soft">
-                      <span class="text-accent font-semibold">#{{ r.iid }}</span>
+                      <IssueIidLink :iid="r.iid" :url="r.url" />
                       — {{ r.title }}
                     </div>
                     <div class="text-xs text-ink-faint mt-0.5">

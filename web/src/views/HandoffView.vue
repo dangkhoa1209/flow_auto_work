@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from "vue";
 import { message } from "ant-design-vue";
 import { storeToRefs } from "pinia";
 import { api } from "@/api/client";
+import IssueIidLink from "@/components/IssueIidLink.vue";
 import { useSettingsStore } from "@/stores/settings";
 import { useWorkStore } from "@/stores/work";
 
@@ -102,8 +103,12 @@ async function mergeBranch() {
         "
         @click="selectedId = j.id"
       >
-        <div class="text-accent text-xs font-semibold">
-          #{{ j.issue?.issueIid }}
+        <div class="text-xs">
+          <IssueIidLink
+            :iid="j.issue?.issueIid"
+            :url="j.issue?.url"
+            link-class="!text-xs"
+          />
         </div>
         <div class="text-sm text-ink-soft">{{ j.issue?.title }}</div>
         <div class="text-xs text-ink-faint mt-1 truncate">
@@ -118,7 +123,11 @@ async function mergeBranch() {
     >
       <template v-if="selected">
         <h2 class="text-lg font-semibold text-ink mt-0">
-          #{{ selected.issue?.issueIid }} — {{ selected.issue?.title }}
+          <IssueIidLink
+            :iid="selected.issue?.issueIid"
+            :url="selected.issue?.url"
+          />
+          — {{ selected.issue?.title }}
         </h2>
         <p class="text-sm text-ink-muted whitespace-pre-wrap">
           {{ selected.summary || "—" }}

@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { TransitionGroup, ref, watch } from "vue";
+import { onMounted, onUnmounted, ref, watch, TransitionGroup } from "vue";
 import {
   PlusOutlined,
   ReloadOutlined,
+  DownOutlined,
 } from "@ant-design/icons-vue";
+import IssueIidLink from "@/components/IssueIidLink.vue";
 import {
   statusLabel,
   statusColor,
@@ -11,6 +13,11 @@ import {
   contextQualityColor,
 } from "@/utils/status";
 import type { Job, Task } from "@/stores/work";
+
+const JOBS_OPEN_KEY = "flow.tasklist.jobsOpen";
+const JOBS_H_KEY = "flow.tasklist.jobsHeight";
+const JOBS_H_MIN = 120;
+const JOBS_H_DEFAULT = 220;
 
 const props = defineProps<{
   filteredTasks: Task[];
@@ -45,6 +52,101 @@ const emit = defineEmits<{
   deleteJob: [jobId: string];
 }>();
 
+const rootEl = ref<HTMLElement | null>(null);
+const jobsOpen = ref(true);
+const jobsHeight = ref(JOBS_H_DEFAULT);
+const jobsDragging = ref(false);
+
+let dragStartY = 0;
+let dragStartH = 0;
+let dragMoved = false;
+let dragPointerId: number | null = null;
+
+onMounted(() => {
+  try {
+    const open = localStorage.getItem(JOBS_OPEN_KEY);
+    if (open === "0" || open === "false") jobsOpen.value = false;
+    else if (open === "1" || open === "true") jobsOpen.value = true;
+    const h = Number(localStorage.getItem(JOBS_H_KEY));
+    if (Number.isFinite(h) && h >= JOBS_H_MIN) jobsHeight.value = Math.round(h);
+  } catch {
+    /* ignore */
+  }
+});
+
+watch(jobsOpen, (open) => {
+  try {
+    localStorage.setItem(JOBS_OPEN_KEY, open ? "1" : "0");
+  } catch {
+    /* ignore */
+  }
+});
+
+function persistJobsHeight() {
+  try {
+    localStorage.setItem(JOBS_H_KEY, String(jobsHeight.value));
+  } catch {
+    /* ignore */
+  }
+}
+
+function maxJobsHeight() {
+  const rootH = rootEl.value?.clientHeight ?? 640;
+  return Math.max(JOBS_H_MIN, Math.floor(rootH * 0.72));
+}
+
+function clampJobsHeight(h: number) {
+  return Math.min(maxJobsHeight(), Math.max(JOBS_H_MIN, Math.round(h)));
+}
+
+function toggleJobs() {
+  jobsOpen.value = !jobsOpen.value;
+}
+
+function onJobsRailPointerDown(e: PointerEvent) {
+  if (e.button !== 0) return;
+  if (!jobsOpen.value) {
+    jobsOpen.value = true;
+    return;
+  }
+  dragStartY = e.clientY;
+  dragStartH = jobsHeight.value;
+  dragMoved = false;
+  dragPointerId = e.pointerId;
+  jobsDragging.value = true;
+  (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+  window.addEventListener("pointermove", onJobsRailPointerMove);
+  window.addEventListener("pointerup", onJobsRailPointerUp);
+  window.addEventListener("pointercancel", onJobsRailPointerUp);
+}
+
+function onJobsRailPointerMove(e: PointerEvent) {
+  if (!jobsDragging.value) return;
+  const dy = dragStartY - e.clientY;
+  if (Math.abs(dy) > 4) dragMoved = true;
+  jobsHeight.value = clampJobsHeight(dragStartH + dy);
+}
+
+function onJobsRailPointerUp(e: PointerEvent) {
+  if (dragPointerId != null && e.pointerId !== dragPointerId) return;
+  window.removeEventListener("pointermove", onJobsRailPointerMove);
+  window.removeEventListener("pointerup", onJobsRailPointerUp);
+  window.removeEventListener("pointercancel", onJobsRailPointerUp);
+  jobsDragging.value = false;
+  dragPointerId = null;
+  if (!dragMoved) {
+    toggleJobs();
+  } else {
+    persistJobsHeight();
+  }
+}
+
+onUnmounted(() => {
+  window.removeEventListener("pointermove", onJobsRailPointerMove);
+  window.removeEventListener("pointerup", onJobsRailPointerUp);
+  window.removeEventListener("pointercancel", onJobsRailPointerUp);
+});
+
 function jobDisplayIid(j: Job) {
   const iid = j.issue?.issueIid;
   if (!iid || iid <= 0 || j.kind === "adhoc") return "Hotfix";
@@ -71,7 +173,6 @@ function jobLabels(j: Job) {
   );
 }
 
-/** Flash job cards when status changes via SSE */
 const flashIds = ref<Set<string>>(new Set());
 const prevStatus = ref<Map<string, string>>(new Map());
 
@@ -98,7 +199,9 @@ watch(
 
 <template>
   <aside
+    ref="rootEl"
     class="flex flex-col min-h-0 overflow-hidden rounded-2xl panel-glass shadow-panel h-full"
+    :class="{ 'select-none': jobsDragging }"
   >
     <div class="shrink-0 p-3 border-b border-line space-y-2">
       <div class="flex items-center justify-between gap-2">
@@ -175,7 +278,11 @@ watch(
 
     <div class="flex-1 min-h-0 overflow-y-auto p-2 relative">
       <div v-if="loading" class="space-y-2 p-1" aria-hidden="true">
-        <div v-for="n in 5" :key="n" class="rounded-xl border border-line/60 p-2.5 space-y-2">
+        <div
+          v-for="n in 5"
+          :key="n"
+          class="rounded-xl border border-line/60 p-2.5 space-y-2"
+        >
           <div class="skel h-3 w-12" />
           <div class="skel h-3.5 w-[88%]" />
           <div class="skel h-2.5 w-2/3" />
@@ -208,8 +315,8 @@ watch(
               "
             />
             <div class="min-w-0">
-              <div class="text-xs font-semibold text-accent">
-                #{{ t.issueIid }}
+              <div class="text-xs">
+                <IssueIidLink :iid="t.issueIid" :url="t.url" link-class="!text-xs" />
               </div>
               <div class="text-sm text-ink-soft line-clamp-2">{{ t.title }}</div>
               <div
@@ -246,14 +353,39 @@ watch(
     </div>
 
     <div
-      class="shrink-0 border-t border-line flex flex-col h-[34%] min-h-[132px] max-h-[42%] bg-surface-soft/80 overflow-hidden"
+      class="jobs-panel shrink-0 flex flex-col overflow-hidden border-t border-line bg-surface-soft/80"
+      :class="{ 'is-dragging': jobsDragging, 'is-collapsed': !jobsOpen }"
+      :style="jobsOpen ? { height: `${jobsHeight}px` } : undefined"
     >
-      <div
-        class="shrink-0 text-xs font-semibold uppercase tracking-wide text-ink-faint px-3 py-1.5 border-b border-line/60 bg-surface-soft"
+      <button
+        type="button"
+        class="jobs-panel__rail"
+        :title="
+          jobsOpen
+            ? 'Kéo để đổi chiều cao · click để thu gọn'
+            : 'Mở Jobs'
+        "
+        :aria-expanded="jobsOpen"
+        @pointerdown="onJobsRailPointerDown"
       >
-        Jobs
-      </div>
-      <div class="flex-1 min-h-0 overflow-y-auto overscroll-contain p-2">
+        <span class="jobs-panel__grip" aria-hidden="true">
+          <i /><i /><i />
+        </span>
+        <span class="jobs-panel__label">Jobs</span>
+        <span v-if="sortedJobs.length" class="jobs-panel__count">{{
+          sortedJobs.length
+        }}</span>
+        <span class="flex-1" />
+        <DownOutlined
+          class="jobs-panel__chevron"
+          :class="{ 'is-open': jobsOpen }"
+        />
+      </button>
+
+      <div
+        v-show="jobsOpen"
+        class="flex-1 min-h-0 overflow-y-auto overscroll-contain p-2"
+      >
         <TransitionGroup
           name="list-slide"
           tag="div"
@@ -324,9 +456,17 @@ watch(
                       : "Bad"
                 }}
               </a-tag>
-              <span class="text-accent text-xs font-semibold shrink-0">{{
-                jobDisplayIid(j)
-              }}</span>
+              <span
+                v-if="jobDisplayIid(j) === 'Hotfix'"
+                class="text-accent text-xs font-semibold shrink-0"
+                >Hotfix</span
+              >
+              <IssueIidLink
+                v-else
+                :iid="j.issue?.issueIid"
+                :url="j.issue?.url"
+                link-class="!text-xs shrink-0"
+              />
               <a-spin
                 v-if="jobLoading && selectedJobId === j.id"
                 size="small"
