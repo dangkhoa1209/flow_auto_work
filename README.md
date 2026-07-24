@@ -1,4 +1,4 @@
-# Flow Auto Work
+# Flow Auto WorkBench
 
 Orchestrator **local**: login password → GitLab projects (clone + PAT) → UI Run → Cursor SDK → **commit qua GitLab API** → **`awaiting_handoff`** → assign/labels → `succeeded`.
 

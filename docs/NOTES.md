@@ -1,4 +1,4 @@
-# Flow Auto Work — Ghi chú phát triển
+# Flow Auto WorkBench — Ghi chú phát triển
 
 Tài liệu ghi lại những gì đã xây trong project (local orchestrator GitLab + Cursor SDK + UI).
 
@@ -26,9 +26,15 @@ UI (http://127.0.0.1:8787 — Vue web/dist)
   │    ├─ Tasks (assign bạn · Milestone · #iid) / Hotfix / Jobs
   │    ├─ Issue detail · Related preview · Dev Notes · Progress
   │    └─ Chat · Clarify · Force Stop · Reset window
+  │         └─ ảnh /uploads/ → /api/gitlab/file → GitLab API v4 uploads
   ├─ Handoff — awaiting_handoff → assign + add labels → succeeded
   ├─ Thống kê
   └─ Settings — project path, branches, Cursor, labels
+
+Express (:8787)
+  ├─ Global MW: helmet · cors · morgan · rate-limit
+  ├─ Native: GET /api/events (SSE) · GET/POST /api/jobs (sample)
+  └─ Bridge: còn lại /api/* → Hono (auth, tasks, jobs…, gitlab/file)
 
 JobQueue (serial)
   → on-start labels (optional)
@@ -191,6 +197,30 @@ Light theme (Vue + Ant Design Vue + Tailwind).
 | POST | `/api/jobs/:id/reset-window` | Dừng nếu busy + xóa window; Run/chat/Q&A sau mở cửa sổ mới |
 | POST | `/api/jobs/:id/clarify` / `ask` / `continue` | clarify / Q&A / follow-up |
 | POST | `/api/jobs/:id/completion-actions` | handoff → succeeded |
+| GET | `/api/gitlab/file` | Proxy ảnh markdown `/uploads/…` (xem mục dưới) |
+
+---
+
+## Ảnh GitLab trong issue / chat (`/uploads/`)
+
+Markdown GitLab thường có `![…](/uploads/<secret>/image.png)`. Browser **không** gửi được PAT; cookie GitLab cũng **không** đi kèm request từ `localhost` (SameSite) → mở URL web trực tiếp dễ **404**. Fetch web path `gitlab.com/.../uploads/...` từ server lại bị **Cloudflare** (`Just a moment…`).
+
+**Cách đang dùng**
+
+1. UI (`web/src/utils/chatFormat.ts`) rewrite mọi URL `/uploads/` →  
+   `GET /api/gitlab/file?u=<absolute>&user=&project=&access_token=`  
+   (`access_token` vì `<img>` không gửi `Authorization`).
+2. Backend (`src/gitlab/uploads.ts`) tải qua **REST API** (không dính CF web):  
+   `GET /api/v4/projects/:id/uploads/:secret/:filename` + `PRIVATE-TOKEN` của workspace.
+3. Stream bytes về browser với `Content-Type` upstream; cache ngắn `private, max-age=300`.
+
+| Cách | Kết quả |
+|------|---------|
+| `<img src="https://gitlab.com/…/uploads/…">` từ Flow | 404 (không cookie) |
+| Server `fetch` web `/uploads/` | 403 Cloudflare |
+| Server `fetch` `/api/v4/…/uploads/:secret/:filename` | OK → proxy |
+
+**File liên quan:** `src/api/routes.ts` (`/gitlab/file`) · `src/gitlab/uploads.ts` · `web/src/utils/chatFormat.ts`.
 
 ---
 
@@ -199,8 +229,9 @@ Light theme (Vue + Ant Design Vue + Tailwind).
 | Path | Vai trò |
 |------|---------|
 | `src/index.ts` | Boot |
-| `src/server.ts` | Hono + static `web/dist` |
-| `src/api/routes.ts` | REST |
+| `src/app.ts` / `src/server.ts` | Express transport (helmet/cors/morgan; SSE + sample jobs; Hono bridge `/api/*`) |
+| `src/api/routes.ts` | REST (Hono legacy + gitlab file proxy) |
+| `src/gitlab/uploads.ts` | Download markdown upload qua API v4 |
 | `src/queue.ts` | serial jobs; inject chat vào Run |
 | `src/agent/run.ts` | Cursor SDK + `buildMissionPrompt` |
 | `src/agent/prompt.ts` | MISSION prompts |
@@ -276,4 +307,5 @@ Xem [README.md](../README.md).
 3. `awaiting_handoff` + Handoff UI + thống kê.  
 4. Comment `AI-Generated` + summary VI.  
 5. Vue workbench (light) · Hotfix · job status/delete · Related preview.  
-6. Agent context: chat + notes + linked + docs gate có ưu tiên rõ.
+6. Agent context: chat + notes + linked + docs gate có ưu tiên rõ.  
+7. Ảnh issue: proxy `/api/gitlab/file` → GitLab `GET /api/v4/projects/:id/uploads/:secret/:filename` (tránh CF + SameSite 404).

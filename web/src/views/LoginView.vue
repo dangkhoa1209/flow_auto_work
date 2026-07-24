@@ -2,12 +2,13 @@
 import { onMounted, reactive, ref } from "vue";
 import { useRouter } from "vue-router";
 import { message } from "ant-design-vue";
-import { api } from "@/api/client";
+import type { AuthTokensResponse } from "@/api/authApi";
+import { LAST_LOGIN_KEY } from "@/api/tokenStorage";
+import { useAuthStore } from "@/stores/auth";
 import { useSessionStore, type Membership } from "@/stores/session";
 
-const LAST_LOGIN_KEY = "flow_auto_work_last_login";
-
 const router = useRouter();
+const auth = useAuthStore();
 const session = useSessionStore();
 
 const mode = ref<"login" | "register">("login");
@@ -39,32 +40,25 @@ function switchMode(next: "login" | "register") {
   form.password2 = "";
 }
 
-type AuthRes = {
-  user: { gitlabUsername?: string };
-  memberships?: Membership[];
-  activeProjectId?: string | null;
-  accessToken: string;
-  refreshToken: string;
-  expiresIn?: number;
-  accessExpiresAt?: number;
-};
-
-async function applyAuthAndGo(res: AuthRes) {
+async function applyAuthAndGo(res: AuthTokensResponse) {
   const username = (
     res.user?.gitlabUsername || form.username.trim()
   ).replace(/^@/, "");
 
-  session.setAuthTokens({
+  const projectId =
+    res.activeProjectId || res.memberships?.[0]?.projectId || null;
+
+  auth.setTokens({
     accessToken: res.accessToken,
     refreshToken: res.refreshToken,
     expiresIn: res.expiresIn,
     accessExpiresAt: res.accessExpiresAt,
     username,
+    projectId,
+    user: res.user,
   });
 
-  const projectId =
-    res.activeProjectId || res.memberships?.[0]?.projectId || null;
-  session.setMemberships(res.memberships || []);
+  session.setMemberships((res.memberships || []) as Membership[]);
   session.setSession({ username, projectId });
 
   try {
@@ -99,14 +93,7 @@ async function onLogin(e?: Event) {
 
   loading.value = true;
   try {
-    const res = await api<AuthRes>("/api/auth/login", {
-      method: "POST",
-      body: JSON.stringify({
-        username: form.username.trim(),
-        password: form.password,
-      }),
-      skipRefresh: true,
-    });
+    const res = await auth.login(form.username.trim(), form.password);
     message.success("Đăng nhập thành công");
     await applyAuthAndGo(res);
   } catch (err) {
@@ -141,14 +128,10 @@ async function onRegister(e?: Event) {
 
   loading.value = true;
   try {
-    const res = await api<AuthRes>("/api/auth/register", {
-      method: "POST",
-      body: JSON.stringify({
-        username: form.username.trim(),
-        password: form.password,
-        displayName: form.displayName.trim() || undefined,
-      }),
-      skipRefresh: true,
+    const res = await auth.register({
+      username: form.username.trim(),
+      password: form.password,
+      displayName: form.displayName.trim() || undefined,
     });
     message.success("Đăng ký thành công");
     await applyAuthAndGo(res);
@@ -165,7 +148,15 @@ async function onRegister(e?: Event) {
 <template>
   <div class="min-h-screen flex items-center justify-center px-4 bg-slate-50">
     <div class="w-full max-w-md bg-white border border-slate-200 rounded-lg p-6 shadow-sm">
-      <h1 class="text-xl font-semibold m-0 mb-4">Flow Auto Work</h1>
+      <div class="mb-5 flex justify-center">
+        <img
+          src="/logo.svg"
+          alt="Flow Auto WorkBench"
+          class="h-12 w-auto max-w-full object-contain"
+          width="240"
+          height="60"
+        />
+      </div>
 
       <div class="flex gap-2 mb-5">
         <a-button

@@ -47,6 +47,16 @@ const envSchema = z.object({
   AUTH_BYPASS_PASSWORD: z.string().optional(),
   /** Root dir for cloned repos (default: `<cwd>/project`) */
   PROJECT_ROOT: z.string().optional(),
+  NODE_ENV: z.string().optional(),
+  /**
+   * Comma-separated browser origins allowed for CORS (Vue UI).
+   * Default: Vite dev + API same-origin ports.
+   */
+  CORS_ORIGINS: z.string().optional(),
+  /** express-rate-limit window ms (default 15m) */
+  RATE_LIMIT_WINDOW_MS: z.coerce.number().optional(),
+  /** Max requests per window per IP (default 300). 0 = disable */
+  RATE_LIMIT_MAX: z.coerce.number().optional(),
 });
 
 export type AppConfig = z.infer<typeof envSchema> & {
@@ -57,6 +67,10 @@ export type AppConfig = z.infer<typeof envSchema> & {
   teamsEnabled: boolean;
   STARTUP_SCAN: boolean;
   STARTUP_SCAN_INCLUDE_SUCCEEDED: boolean;
+  isProd: boolean;
+  corsOrigins: string[];
+  rateLimitWindowMs: number;
+  rateLimitMax: number;
 };
 
 let cached: AppConfig | null = null;
@@ -80,6 +94,21 @@ export function getConfig(): AppConfig {
       (env.TEAMS_CHAT_ID || env.TEAMS_USER_ID),
   );
 
+  const isProd =
+    (env.NODE_ENV || process.env.NODE_ENV || "").toLowerCase() === "production";
+
+  const defaultCors = [
+    "http://127.0.0.1:5173",
+    "http://localhost:5173",
+    "http://127.0.0.1:8787",
+    "http://localhost:8787",
+  ];
+  const corsOrigins = (env.CORS_ORIGINS ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const resolvedCors = corsOrigins.length > 0 ? corsOrigins : defaultCors;
+
   cached = {
     ...env,
     skipLabels: env.SKIP_LABELS.split(",")
@@ -98,6 +127,10 @@ export function getConfig(): AppConfig {
       .map((s) => s.trim())
       .filter(Boolean),
     teamsEnabled,
+    isProd,
+    corsOrigins: resolvedCors,
+    rateLimitWindowMs: env.RATE_LIMIT_WINDOW_MS ?? 15 * 60 * 1000,
+    rateLimitMax: env.RATE_LIMIT_MAX ?? 1000,
   };
 
   // Fail fast on leftover .env.example placeholders (common cause of 401 on scan)

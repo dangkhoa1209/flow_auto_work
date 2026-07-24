@@ -1,5 +1,9 @@
 import { marked } from "marked";
-import { loadSession } from "@/api/client";
+import { API } from "@/api/endpoints";
+import {
+  getAccessToken,
+  loadPersistedAuth,
+} from "@/api/tokenStorage";
 
 marked.setOptions({
   gfm: true,
@@ -19,14 +23,18 @@ function gitlabProjectBase(issueUrl: string): string | null {
   }
 }
 
-/** Browser <img> cannot send Authorization → pass access_token on query. */
+/**
+ * Browser <img> cannot send Authorization / GitLab cookies (SameSite).
+ * Proxy via our API which downloads through GitLab REST uploads API + PAT.
+ */
 function toGitlabFileProxy(absoluteUrl: string): string {
-  const session = loadSession();
+  const persisted = loadPersistedAuth();
   const qs = new URLSearchParams({ u: absoluteUrl });
-  if (session.username) qs.set("user", session.username);
-  if (session.projectId) qs.set("project", session.projectId);
-  if (session.accessToken) qs.set("access_token", session.accessToken);
-  return `/api/gitlab/file?${qs.toString()}`;
+  if (persisted.username) qs.set("user", persisted.username);
+  if (persisted.projectId) qs.set("project", persisted.projectId);
+  const access = getAccessToken();
+  if (access) qs.set("access_token", access);
+  return `${API.gitlab.file}?${qs.toString()}`;
 }
 
 function absolutizeUploadPath(path: string, issueUrl?: string | null): string | null {
@@ -51,7 +59,6 @@ function rewriteUploadMarkdown(s: string, issueUrl?: string | null): string {
       if (!/\/uploads\//i.test(full)) return `${a}${url}${c}`;
       if (full.startsWith("/api/gitlab/file?")) return `${a}${url}${c}`;
       try {
-        // Only proxy http(s) gitlab uploads
         const parsed = new URL(full);
         if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
           return `${a}${url}${c}`;

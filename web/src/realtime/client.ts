@@ -1,4 +1,5 @@
-import { loadSession } from "@/api/client";
+import { API } from "@/api/endpoints";
+import { getAccessToken, loadPersistedAuth } from "@/api/tokenStorage";
 
 export type RealtimeStatus = {
   type: "status";
@@ -40,12 +41,13 @@ type Handlers = {
  * Auto-reconnects (browser EventSource default).
  */
 export function connectRealtime(handlers: Handlers): () => void {
-  const session = loadSession();
+  const persisted = loadPersistedAuth();
   const qs = new URLSearchParams();
-  if (session.username) qs.set("u", session.username);
-  if (session.projectId) qs.set("p", session.projectId);
-  if (session.accessToken) qs.set("access_token", session.accessToken);
-  const url = `/api/events${qs.toString() ? `?${qs}` : ""}`;
+  if (persisted.username) qs.set("u", persisted.username);
+  if (persisted.projectId) qs.set("p", persisted.projectId);
+  const access = getAccessToken();
+  if (access) qs.set("access_token", access);
+  const url = `${API.events}${qs.toString() ? `?${qs}` : ""}`;
 
   const es = new EventSource(url);
 

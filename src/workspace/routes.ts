@@ -708,7 +708,7 @@ export function createWorkspaceRoutes() {
           defaultLocalPath(username, projectName),
         mainBranch: body.mainBranch,
         workingBranch: body.workingBranch,
-        displayName: body.displayName,
+        displayName: projectName,
         gitlabProjectId,
         isActive: body.activate !== false,
       });

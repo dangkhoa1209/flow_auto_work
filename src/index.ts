@@ -1,4 +1,3 @@
-import { serve } from "@hono/node-server";
 import { setMaxListeners } from "node:events";
 import { isTransientCursorTransportError } from "./agent/run.js";
 import { getConfig } from "./config.js";
@@ -8,7 +7,7 @@ import {
   resolveLegacyDiffApprovalJobs,
 } from "./job-store.js";
 import { logger } from "./logger.js";
-import { createApp } from "./server.js";
+import { startHttpServer } from "./server.js";
 import { ensureWorkspaceIndexes } from "./workspace/store.js";
 import { applyGitlabAssigneeFromEnvToken } from "./gitlab/identity.js";
 import { ensureAuthIndexes } from "./auth/sessions.js";
@@ -56,17 +55,7 @@ async function main() {
   }
   logger.info("Job store OK");
 
-  const app = createApp();
-  serve(
-    {
-      fetch: app.fetch,
-      hostname: config.HOST,
-      port: config.PORT,
-    },
-    (info) => {
-      logger.info(`Server OK — http://${info.address}:${info.port}/`);
-    },
-  );
+  startHttpServer();
 }
 
 main().catch((err) => {

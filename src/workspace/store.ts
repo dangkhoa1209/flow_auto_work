@@ -284,7 +284,21 @@ export async function createUserProject(opts: {
   const id = projectIdForUser(userId, projectName);
   const now = new Date().toISOString();
   const existing = await getProject(id);
-  if (existing) throw new Error(`Project already exists: ${projectName}`);
+  if (existing) throw new Error(`Project name already exists: ${projectName}`);
+
+  // Case-insensitive + folder-segment clash (path …/{name}/source)
+  const nameKey = projectFolderSegment(projectName).toLowerCase();
+  const siblings = await (await projectsCol()).find({ userId }).toArray();
+  const clash = siblings.find(
+    (p) =>
+      p.projectName.trim().toLowerCase() === projectName.toLowerCase() ||
+      projectFolderSegment(p.projectName).toLowerCase() === nameKey,
+  );
+  if (clash) {
+    throw new Error(
+      `Project name already exists (folder path): ${projectName}`,
+    );
+  }
 
   const localPath =
     opts.localPath?.trim() || defaultLocalPath(userId, projectName);
@@ -292,7 +306,7 @@ export async function createUserProject(opts: {
     id,
     userId,
     projectName,
-    displayName: opts.displayName?.trim() || projectName,
+    displayName: projectName,
     gitlabHost: normalizeGitlabHost(opts.gitlabHost),
     gitlabPath,
     localPath,
@@ -396,13 +410,20 @@ export async function updateProjectFields(
     const nextName = patch.projectName.trim();
     if (!nextName) throw new Error("projectName required");
     if (nextName !== existing.projectName) {
-      const clash = await (await projectsCol()).findOne({
-        userId: existing.userId,
-        projectName: nextName,
-        id: { $ne: projectId },
-      });
+      const nameKey = projectFolderSegment(nextName).toLowerCase();
+      const siblings = await (await projectsCol())
+        .find({ userId: existing.userId, id: { $ne: projectId } })
+        .toArray();
+      const clash = siblings.find(
+        (p) =>
+          p.projectName.trim().toLowerCase() === nextName.toLowerCase() ||
+          projectFolderSegment(p.projectName).toLowerCase() === nameKey ||
+          p.id === projectIdForUser(existing.userId, nextName),
+      );
       if (clash) {
-        throw new Error(`Project name already exists: ${nextName}`);
+        throw new Error(
+          `Project name already exists (folder path): ${nextName}`,
+        );
       }
       existing.projectName = nextName;
       if (patch.displayName === undefined) {

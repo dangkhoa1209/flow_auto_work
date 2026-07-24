@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 60" width="100%" height="100%">
+  <defs>
+    <linearGradient id="flow-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2563EB" />
+      <stop offset="50%" stop-color="#7C3AED" />
+      <stop offset="100%" stop-color="#F97316" />
+    </linearGradient>
+  </defs>
+  <g transform="translate(10, 10)">
+    <path d="M10 10 H30 C35 10 38 14 38 18 C38 22 35 26 30 26 H18 V38"
+          fill="none" stroke="url(#flow-grad)" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M18 18 H28" fill="none" stroke="url(#flow-grad)" stroke-width="4.5" stroke-linecap="round"/>
+    <circle cx="10" cy="10" r="3.5" fill="#2563EB" />
+    <circle cx="38" cy="18" r="3.5" fill="#7C3AED" />
+    <circle cx="18" cy="38" r="3.5" fill="#F97316" />
+  </g>
+  <text x="62" y="32" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="20" fill="#0F172A" letter-spacing="-0.5">
+    FLOW<tspan fill="url(#flow-grad)">.AUTO</tspan>
+  </text>
+  <text x="62" y="44" font-family="JetBrains Mono, monospace" font-weight="600" font-size="9" fill="#64748B" letter-spacing="1.5">
+    WORKBENCH
+  </text>
+</svg>

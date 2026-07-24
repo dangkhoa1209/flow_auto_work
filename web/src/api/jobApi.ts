@@ -1,0 +1,151 @@
+import { API } from "./endpoints";
+import { request } from "./http";
+
+export const jobApi = {
+  list(opts?: { limit?: number }) {
+    const limit = opts?.limit ?? 40;
+    return request<{ jobs: unknown[] }>({
+      url: `${API.jobs.list}?limit=${limit}`,
+      method: "GET",
+    });
+  },
+
+  get(id: string) {
+    return request<{ job: unknown }>({
+      url: API.jobs.one(id),
+      method: "GET",
+    });
+  },
+
+  start(body: Record<string, unknown>) {
+    return request({
+      url: API.jobs.start,
+      method: "POST",
+      data: body,
+    });
+  },
+
+  ensure(body: Record<string, unknown>) {
+    return request<{ job: unknown }>({
+      url: API.jobs.ensure,
+      method: "POST",
+      data: body,
+    });
+  },
+
+  kill(id: string) {
+    return request({
+      url: API.jobs.kill(id),
+      method: "POST",
+      data: {},
+    });
+  },
+
+  approveDocs(id: string) {
+    return request<{ ok: boolean; job?: unknown }>({
+      url: API.jobs.approveDocs(id),
+      method: "POST",
+      data: {},
+    });
+  },
+
+  merge(id: string, body?: { targetBranch?: string }) {
+    return request({
+      url: API.jobs.merge(id),
+      method: "POST",
+      data: body || {},
+    });
+  },
+
+  continue(id: string, message: string) {
+    return request({
+      url: API.jobs.continue(id),
+      method: "POST",
+      data: { message },
+    });
+  },
+
+  ask(id: string, message: string) {
+    return request({
+      url: API.jobs.ask(id),
+      method: "POST",
+      data: { message },
+    });
+  },
+
+  clarify(id: string, answer: string) {
+    return request({
+      url: API.jobs.clarify(id),
+      method: "POST",
+      data: { answer },
+    });
+  },
+
+  resetWindow(id: string) {
+    return request<{
+      ok: boolean;
+      killed: boolean;
+      previousAgentId?: string | null;
+      job: unknown;
+    }>({
+      url: API.jobs.resetWindow(id),
+      method: "POST",
+      data: {},
+    });
+  },
+
+  setStatus(id: string, status: string, opts?: { force?: boolean }) {
+    return request<{ job: unknown }>({
+      url: API.jobs.status(id),
+      method: "POST",
+      data: { status, force: opts?.force },
+    });
+  },
+
+  remove(id: string, opts?: { force?: boolean }) {
+    const q = opts?.force ? "?force=1" : "";
+    return request({
+      url: `${API.jobs.one(id)}${q}`,
+      method: "DELETE",
+    });
+  },
+
+  progress(id: string, afterId?: number) {
+    const q =
+      afterId != null && afterId > 0 ? `?afterId=${afterId}` : "";
+    return request({
+      url: `${API.jobs.progress(id)}${q}`,
+      method: "GET",
+    });
+  },
+
+  commits(id: string) {
+    return request({
+      url: API.jobs.commits(id),
+      method: "GET",
+    });
+  },
+
+  diff(id: string, commit: string) {
+    return request({
+      url: `${API.jobs.diff(id)}?commit=${encodeURIComponent(commit)}`,
+      method: "GET",
+    });
+  },
+
+  revertCommit(id: string, sha: string, body?: { message?: string }) {
+    return request({
+      url: API.jobs.revertCommit(id, sha),
+      method: "POST",
+      data: body || {},
+    });
+  },
+
+  completionActions(id: string, body: Record<string, unknown>) {
+    return request({
+      url: API.jobs.completionActions(id),
+      method: "POST",
+      data: body,
+    });
+  },
+};

@@ -2,7 +2,7 @@
 
 | File | Nội dung |
 |------|----------|
-| [NOTES.md](./NOTES.md) | Kiến trúc, agent context, **SSE realtime**, Force Stop / Reset window, API |
+| [NOTES.md](./NOTES.md) | Kiến trúc, agent context, **SSE**, ảnh GitLab `/uploads/`, Force Stop / Reset, API |
 | [DEPLOY.md](./DEPLOY.md) | Chạy production: env, build, reverse proxy SSE, tunnel · PAT + GitLab Commits API |
 | [ROADMAP.md](./ROADMAP.md) | Đã ship + ưu tiên sprint tiếp |
 

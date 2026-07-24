@@ -87,54 +87,18 @@ export function createApiRoutes() {
   });
 
   /**
-   * Realtime channel (SSE). UI listens instead of polling /status + /jobs.
-   * EventSource cannot set custom headers → optional ?u=&p= for future filter.
+   * Realtime SSE moved to Express (`eventsController` + `sseHelper`).
+   * Kept stub so old Hono mounts do not register a competing stream.
    */
-  api.get("/events", async (c) => {
-    const { streamSSE } = await import("hono/streaming");
-    const { subscribeRealtime } = await import("../realtime/hub.js");
-    return streamSSE(c, async (stream) => {
-      let closed = false;
-      const send = async (event: string, data: unknown) => {
-        if (closed) return;
-        try {
-          await stream.writeSSE({
-            event,
-            data: JSON.stringify(data),
-          });
-        } catch {
-          closed = true;
-        }
-      };
-
-      // Hello + current queue snapshot
-      const snap = jobQueue.snapshot();
-      await send("status", {
-        type: "status",
-        currentJobId: snap.currentJobId,
-        queueLength: snap.queued,
-        running: snap.running,
-      });
-      await send("hello", { ok: true, at: new Date().toISOString() });
-
-      const unsub = subscribeRealtime((ev) => {
-        void send(ev.type, ev);
-      });
-
-      const heartbeat = setInterval(() => {
-        void send("ping", { at: new Date().toISOString() });
-      }, 20_000);
-
-      await new Promise<void>((resolve) => {
-        stream.onAbort(() => {
-          closed = true;
-          clearInterval(heartbeat);
-          unsub();
-          resolve();
-        });
-      });
-    });
-  });
+  api.get("/events", (c) =>
+    c.json(
+      {
+        error: "SSE is served by Express transport — use GET /api/events",
+        code: "moved",
+      },
+      410,
+    ),
+  );
 
   /**
    * Proxy GitLab /uploads/… images (browser <img> cannot send PAT).
@@ -151,20 +115,15 @@ export function createApiRoutes() {
       return c.text("invalid u", 400);
     }
 
-    const config = getConfig();
-    const gitlabRoot = config.GITLAB_BASE_URL.replace(/\/$/, "");
-    let gitlabHost: string;
-    try {
-      gitlabHost = new URL(gitlabRoot).host;
-    } catch {
-      return c.text("bad GITLAB_BASE_URL", 500);
+    const {
+      assertGitlabUploadHost,
+      fetchGitlabUpload,
+    } = await import("../gitlab/uploads.js");
+    const hostErr = assertGitlabUploadHost(target);
+    if (hostErr === "bad GITLAB_BASE_URL") {
+      return c.text(hostErr, 500);
     }
-    if (target.host !== gitlabHost) {
-      return c.text("host not allowed", 403);
-    }
-    if (!/\/uploads\//i.test(target.pathname)) {
-      return c.text("only /uploads/ paths allowed", 403);
-    }
+    if (hostErr) return c.text(hostErr, 403);
 
     const username =
       headerUser(c) ||
@@ -193,21 +152,19 @@ export function createApiRoutes() {
       return await withWorkspaceContext(username, projectId, async () => {
         const { resolveGitlabToken } = await import("../workspace/creds.js");
         const token = resolveGitlabToken();
-        const upstream = await fetch(target.toString(), {
-          headers: {
-            "PRIVATE-TOKEN": token,
-            Accept: "*/*",
-          },
-        });
-        if (!upstream.ok) {
-          const detail = await upstream.text().catch(() => "");
+        const result = await fetchGitlabUpload(target, token);
+        if (!result.ok) {
           logger.warn("GitLab upload proxy failed", {
-            status: upstream.status,
+            status: result.status,
             path: target.pathname,
-            detail: detail.slice(0, 200),
+            detail: result.detail.slice(0, 200),
           });
-          return c.text(`gitlab ${upstream.status}`, upstream.status as 404);
+          return c.text(
+            result.detail.slice(0, 180) || `gitlab ${result.status}`,
+            result.status as 404,
+          );
         }
+        const upstream = result.response;
         const contentType =
           upstream.headers.get("content-type") || "application/octet-stream";
         const buf = await upstream.arrayBuffer();

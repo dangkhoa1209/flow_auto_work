@@ -62,7 +62,8 @@ const tableRows = computed(() =>
     return {
       key: m.projectId,
       id: m.projectId,
-      name: p.displayName || p.projectName || p.gitlabPath,
+      // Flow name (= folder) — not GitLab slug
+      name: p.projectName || p.displayName || p.gitlabPath,
       gitlabPath: p.gitlabPath,
       mainBranch: p.mainBranch || m.baseBranch || "—",
       workBranch: p.workingBranch || m.workBranch || "—",
@@ -312,11 +313,30 @@ async function saveWizard() {
       ? previewDefaultPath.value
       : form.localPath.trim();
 
+    // Flow name drives list label + local folder …/{name}/source
+    const flowName = form.projectName.trim();
+    form.displayName = flowName;
+
     if (editId.value) {
-      const flowName =
-        form.projectName.trim() || form.displayName.trim() || undefined;
+      if (!flowName) {
+        message.warning("Nhập Tên project (Flow)");
+        loading.value = false;
+        return;
+      }
+      const dup = session.memberships.find(
+        (m) =>
+          m.projectId !== editId.value &&
+          (m.project?.projectName || "").trim().toLowerCase() ===
+            flowName.toLowerCase(),
+      );
+      if (dup) {
+        message.error(
+          `Tên "${flowName}" đã dùng — trùng path save source. Chọn tên khác.`,
+        );
+        loading.value = false;
+        return;
+      }
       const renaming =
-        Boolean(flowName) &&
         Boolean(editOriginalName.value) &&
         flowName !== editOriginalName.value;
       const res = await api<{
@@ -327,7 +347,6 @@ async function saveWizard() {
         body: JSON.stringify({
           baseBranch: form.mainBranch || "",
           workBranch: form.workingBranch || "",
-          // When renaming, server moves folder + sets path
           localPath: renaming ? undefined : resolvedPath || undefined,
           gitlabToken: form.gitlabToken || undefined,
           gitlabHost: form.gitlabHost || undefined,
@@ -361,8 +380,19 @@ async function saveWizard() {
       message.warning("Cần GitLab PAT");
       return;
     }
-    if (!form.gitlabPath.trim() || !form.projectName.trim()) {
+    if (!form.gitlabPath.trim() || !flowName) {
       message.warning("Thiếu dự án / tên project");
+      return;
+    }
+    const dupCreate = session.memberships.find(
+      (m) =>
+        (m.project?.projectName || "").trim().toLowerCase() ===
+        flowName.toLowerCase(),
+    );
+    if (dupCreate) {
+      message.error(
+        `Tên "${flowName}" đã dùng — trùng path save source. Chọn tên khác.`,
+      );
       return;
     }
 
@@ -374,14 +404,14 @@ async function saveWizard() {
     }>("/api/projects", {
       method: "POST",
       body: JSON.stringify({
-        projectName: form.projectName.trim(),
+        projectName: flowName,
         gitlabPath: form.gitlabPath.trim(),
         gitlabHost: form.gitlabHost || "https://gitlab.com",
         gitlabToken: form.gitlabToken,
         localPath: pathEmpty ? undefined : form.localPath.trim(),
         mainBranch: form.mainBranch || undefined,
         workingBranch: form.workingBranch || undefined,
-        displayName: form.displayName || form.projectName,
+        displayName: flowName,
         activate: true,
       }),
     });
@@ -604,10 +634,15 @@ onMounted(async () => {
             v-model:value="form.projectName"
             class="mt-1"
             placeholder="ykk"
+            @update:value="(v: string) => { form.displayName = v; }"
           />
-          <p v-if="editId" class="text-xs text-ink-muted m-0 mt-1">
-            Đổi tên sẽ rename folder
-            <code>…/tên/source</code> (nếu đang dùng path mặc định).
+          <p class="text-xs text-ink-muted m-0 mt-1">
+            Tên này hiện trong list, phải
+            <strong>không trùng</strong>, và là folder
+            <code>…/tên/source</code>.
+            <template v-if="editId">
+              Đổi tên sẽ rename folder nếu đang dùng path mặc định.
+            </template>
           </p>
         </div>
         <div class="flex justify-between gap-2 pt-2">

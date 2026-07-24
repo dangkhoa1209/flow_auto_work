@@ -1,6 +1,8 @@
 import { defineStore } from "pinia";
 import { computed, ref } from "vue";
+import { API } from "@/api/endpoints";
 import { api } from "@/api/client";
+import { jobApi } from "@/api/jobApi";
 import { useSettingsStore } from "./settings";
 
 export type Task = {
@@ -22,6 +24,7 @@ export type Job = {
     url?: string;
     action?: string;
     labels?: string[];
+    milestone?: { title?: string } | null;
   };
   runCount?: number;
   agentId?: string;
@@ -121,14 +124,14 @@ export const useWorkStore = defineStore("work", () => {
   );
 
   async function loadTasks() {
-    const data = await api<{ tasks: Task[] }>("/api/tasks");
+    const data = await api<{ tasks: Task[] }>(API.tasks.list);
     tasks.value = data.tasks || [];
   }
 
   async function loadJobs() {
     const prevStatus = currentJob.value?.status;
-    const data = await api<{ jobs: Job[] }>("/api/jobs?limit=40");
-    jobs.value = data.jobs || [];
+    const data = await jobApi.list({ limit: 40 });
+    jobs.value = (data.jobs || []) as Job[];
     // Keep currentJob.status in sync so Progress polling knows job is live
     if (selectedJobId.value) {
       const j = jobs.value.find((x) => x.id === selectedJobId.value);
@@ -536,12 +539,19 @@ export const useWorkStore = defineStore("work", () => {
   }
 
   async function killJob(jobId: string) {
-    await api(`/api/jobs/${jobId}/kill`, {
-      method: "POST",
-      body: JSON.stringify({}),
-    });
+    await jobApi.kill(jobId);
     agentTyping.value = false;
     await loadJobs();
+  }
+
+  /** PM approves docs-first phase → enqueue code. */
+  async function approveDocs(jobId: string) {
+    const res = await jobApi.approveDocs(jobId);
+    if (selectedJobId.value === jobId && res.job) {
+      currentJob.value = { ...currentJob.value, ...(res.job as Job) };
+    }
+    await loadJobs();
+    return res;
   }
 
   /** Stop if busy + clear agentId → next Run/chat opens a fresh Cursor window. */
@@ -680,6 +690,7 @@ export const useWorkStore = defineStore("work", () => {
     sendAsk,
     sendClarify,
     killJob,
+    approveDocs,
     resetAgentWindow,
     setJobStatus,
     deleteJob,

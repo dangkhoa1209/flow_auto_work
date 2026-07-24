@@ -1,46 +1,30 @@
-import { existsSync } from "node:fs";
-import { join } from "node:path";
-import { Hono } from "hono";
-import { serveStatic } from "@hono/node-server/serve-static";
-import { createApiRoutes } from "./api/routes.js";
+/**
+ * HTTP server entry — listen only.
+ * Bootstrapping (config, mongo, indexes) stays in `index.ts`.
+ */
+import type { Server } from "node:http";
+import { createApp } from "./app.js";
 import { getConfig } from "./config.js";
+import { logger } from "./logger.js";
 
-export function createApp() {
-  const app = new Hono();
+export type ListenResult = {
+  server: Server;
+  host: string;
+  port: number;
+};
 
-  app.get("/health", (c) =>
-    c.json({
-      ok: true,
-      teamsEnabled: getConfig().teamsEnabled,
-      ui: "/",
-    }),
-  );
+export function startHttpServer(): ListenResult {
+  const config = getConfig();
+  const app = createApp();
+  const host = config.HOST;
+  const port = config.PORT;
 
-  app.route("/api", createApiRoutes());
+  const server = app.listen(port, host, () => {
+    logger.info(`Server OK — http://${host}:${port}/ (Express)`);
+  });
 
-  const vueDist = join(process.cwd(), "web", "dist");
-  const useVue = existsSync(join(vueDist, "index.html"));
-  const staticRoot = useVue ? "./web/dist" : "./public";
-
-  app.use(
-    "/*",
-    serveStatic({
-      root: staticRoot,
-      index: "index.html",
-    }),
-  );
-
-  if (useVue) {
-    app.get("*", async (c) => {
-      const { readFile } = await import("node:fs/promises");
-      try {
-        const html = await readFile(join(vueDist, "index.html"), "utf8");
-        return c.html(html);
-      } catch {
-        return c.text("UI not built — run npm run build:web", 503);
-      }
-    });
-  }
-
-  return app;
+  return { server, host, port };
 }
+
+/** @deprecated Use createApp from ./app.js — kept for transitional imports */
+export { createApp } from "./app.js";

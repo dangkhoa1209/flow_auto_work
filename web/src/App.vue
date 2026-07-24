@@ -29,7 +29,7 @@ const themeConfig = computed(() => ({
 
 <template>
   <ConfigProvider :theme="themeConfig">
-    <div class="h-full max-h-full overflow-hidden text-ink">
+    <div class="h-[100dvh] max-h-[100dvh] overflow-hidden text-ink">
       <RouterView />
     </div>
   </ConfigProvider>

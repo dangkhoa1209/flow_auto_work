@@ -19,5 +19,27 @@ export default defineConfig({
   build: {
     outDir: "dist",
     emptyOutDir: true,
+    // ant-design-vue full import (~1.2MB); split further needs on-demand components
+    chunkSizeWarningLimit: 1400,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes("node_modules")) return;
+          if (
+            id.includes("ant-design-vue") ||
+            id.includes("@ant-design/icons-vue")
+          ) {
+            return "antd";
+          }
+          if (/[/\\]node_modules[/\\](vue|vue-router|pinia)[/\\]/.test(id)) {
+            return "vue-vendor";
+          }
+          if (id.includes("axios") || id.includes("marked")) {
+            return "utils";
+          }
+          return "vendor";
+        },
+      },
+    },
   },
 });

@@ -1,14 +1,15 @@
 import { defineStore } from "pinia";
 import { computed, ref } from "vue";
+import { API } from "@/api/endpoints";
+import { api } from "@/api/client";
+import { useAuthStore } from "@/stores/auth";
 import {
-  api,
-  applyAuthTokens,
-  clearSession,
-  loadSession,
-  refreshAccessToken,
-  saveSession,
-  type Session,
-} from "@/api/client";
+  getAccessExpiresAt,
+  getAccessToken,
+  getRefreshToken,
+  loadPersistedAuth,
+  savePersistedAuth,
+} from "@/api/tokenStorage";
 
 export type Membership = {
   projectId: string;
@@ -40,35 +41,75 @@ export type UserPublic = {
   cursorModel?: string;
 };
 
+/** Workspace / project session — tokens live in useAuthStore. */
 export const useSessionStore = defineStore("session", () => {
-  const session = ref<Session>(loadSession());
+  const auth = useAuthStore();
+
+  const projectId = ref<string | null>(loadPersistedAuth().projectId);
   const me = ref<UserPublic | null>(null);
   const memberships = ref<Membership[]>([]);
   const loading = ref(false);
   const bootstrapped = ref(false);
 
-  /** Có refresh token = còn phiên (project có thể chọn sau ở Settings). */
-  const isLoggedIn = computed(
-    () =>
-      Boolean(
-        (session.value.accessToken || session.value.refreshToken) &&
-          session.value.username,
-      ),
-  );
+  /** Legacy shape for components still reading session.session */
+  const session = computed({
+    get: () => ({
+      username: auth.username,
+      projectId: projectId.value,
+      accessToken: auth.accessToken,
+      refreshToken: auth.refreshToken,
+      accessExpiresAt: auth.accessExpiresAt,
+    }),
+    set: (next: {
+      username?: string | null;
+      projectId?: string | null;
+      accessToken?: string | null;
+      refreshToken?: string | null;
+      accessExpiresAt?: number | null;
+    }) => {
+      if (next.username !== undefined) auth.setUsername(next.username);
+      if (next.projectId !== undefined) {
+        projectId.value = next.projectId;
+        auth.setProjectId(next.projectId);
+      }
+      if (
+        next.accessToken != null &&
+        next.refreshToken != null
+      ) {
+        auth.setTokens({
+          accessToken: next.accessToken,
+          refreshToken: next.refreshToken,
+          accessExpiresAt: next.accessExpiresAt ?? undefined,
+          username: next.username ?? auth.username,
+          projectId: next.projectId ?? projectId.value,
+        });
+      }
+    },
+  });
+
+  const isLoggedIn = computed(() => auth.isAuthenticated);
 
   const currentMembership = computed(() =>
-    memberships.value.find((m) => m.projectId === session.value.projectId),
+    memberships.value.find((m) => m.projectId === projectId.value),
   );
 
   function persist() {
-    saveSession(session.value);
+    savePersistedAuth({
+      username: auth.username,
+      projectId: projectId.value,
+      refreshToken: auth.refreshToken,
+    });
   }
 
   function syncFromStorage() {
-    session.value = loadSession();
+    auth.hydrate();
+    auth.syncFromBridge();
+    projectId.value = loadPersistedAuth().projectId;
   }
 
-  function normalizeMemberships(list: Membership[] | undefined | null): Membership[] {
+  function normalizeMemberships(
+    list: Membership[] | undefined | null,
+  ): Membership[] {
     return (list || [])
       .map((m) => ({
         ...m,
@@ -82,12 +123,14 @@ export const useSessionStore = defineStore("session", () => {
     memberships.value = normalizeMemberships(list);
   }
 
-  /** Không bao giờ xóa projectId đang chọn — chỉ đổi khi list có project khác. */
   function reconcileProjectId() {
-    const pid = session.value.projectId;
+    const pid = projectId.value;
     if (!pid) {
       const first = memberships.value[0]?.projectId;
-      if (first) session.value.projectId = first;
+      if (first) {
+        projectId.value = first;
+        auth.setProjectId(first);
+      }
       return;
     }
     if (memberships.value.length === 0) return;
@@ -95,26 +138,15 @@ export const useSessionStore = defineStore("session", () => {
       (m) => m.projectId === pid || m.project?.id === pid,
     );
     if (!ok) {
-      session.value.projectId = memberships.value[0]?.projectId ?? pid;
+      const next = memberships.value[0]?.projectId ?? pid;
+      projectId.value = next;
+      auth.setProjectId(next);
     }
   }
 
   async function refreshMe() {
-    // Giữ bản in-memory (vừa set sau login/join), chỉ backfill token từ storage
-    const memory = { ...session.value };
-    const stored = loadSession();
-    session.value = {
-      ...stored,
-      ...memory,
-      accessToken: memory.accessToken || stored.accessToken,
-      refreshToken: memory.refreshToken || stored.refreshToken,
-      accessExpiresAt: memory.accessExpiresAt || stored.accessExpiresAt,
-      username: memory.username || stored.username,
-      projectId: memory.projectId || stored.projectId,
-    };
-    persist();
-
-    if (!session.value.username && !session.value.accessToken) {
+    auth.syncFromBridge();
+    if (!auth.username && !getAccessToken() && !getRefreshToken()) {
       me.value = null;
       memberships.value = [];
       return;
@@ -122,11 +154,11 @@ export const useSessionStore = defineStore("session", () => {
     const data = await api<{
       user?: UserPublic;
       memberships?: Membership[];
-    }>("/api/me", { session: session.value });
+    }>(API.me.root);
     me.value = data.user ?? null;
     setMemberships(data.memberships);
     if (data.user?.gitlabUsername) {
-      session.value.username = data.user.gitlabUsername;
+      auth.setUsername(data.user.gitlabUsername);
     }
     reconcileProjectId();
     persist();
@@ -136,29 +168,26 @@ export const useSessionStore = defineStore("session", () => {
     loading.value = true;
     try {
       syncFromStorage();
-      if (!session.value.refreshToken && !session.value.accessToken) {
+      if (!auth.refreshToken && !auth.accessToken) {
         return;
       }
-      // Access hết hạn → refresh trước
       if (
-        session.value.refreshToken &&
-        (!session.value.accessToken ||
-          (session.value.accessExpiresAt &&
-            session.value.accessExpiresAt < Date.now() + 5_000))
+        auth.refreshToken &&
+        (!auth.accessToken ||
+          (auth.accessExpiresAt &&
+            auth.accessExpiresAt < Date.now() + 5_000) ||
+          (!getAccessToken() && getRefreshToken()))
       ) {
-        const ok = await refreshAccessToken();
-        syncFromStorage();
+        const ok = await auth.refresh();
         if (!ok) {
-          logout();
+          await logout();
           return;
         }
       }
       await refreshMe();
       syncFromStorage();
     } catch {
-      // Thử refresh 1 lần rồi mới logout
-      const ok = await refreshAccessToken();
-      syncFromStorage();
+      const ok = await auth.refresh();
       if (ok) {
         try {
           await refreshMe();
@@ -167,15 +196,34 @@ export const useSessionStore = defineStore("session", () => {
           /* fallthrough */
         }
       }
-      logout();
+      await logout();
     } finally {
       bootstrapped.value = true;
       loading.value = false;
     }
   }
 
-  function setSession(next: Partial<Session>) {
-    session.value = { ...session.value, ...next };
+  function setSession(next: {
+    username?: string | null;
+    projectId?: string | null;
+    accessToken?: string | null;
+    refreshToken?: string | null;
+    accessExpiresAt?: number | null;
+  }) {
+    if (next.username !== undefined) auth.setUsername(next.username);
+    if (next.projectId !== undefined) {
+      projectId.value = next.projectId;
+      auth.setProjectId(next.projectId);
+    }
+    if (next.accessToken && next.refreshToken) {
+      auth.setTokens({
+        accessToken: next.accessToken,
+        refreshToken: next.refreshToken,
+        accessExpiresAt: next.accessExpiresAt ?? getAccessExpiresAt() ?? undefined,
+        username: next.username ?? auth.username,
+        projectId: next.projectId ?? projectId.value,
+      });
+    }
     persist();
   }
 
@@ -186,59 +234,23 @@ export const useSessionStore = defineStore("session", () => {
     accessExpiresAt?: number;
     username?: string;
   }) {
-    applyAuthTokens(tokens);
-    session.value = loadSession();
-    if (tokens.username) {
-      session.value.username = tokens.username;
-      persist();
-    }
+    auth.setTokens({
+      ...tokens,
+      username: tokens.username ?? auth.username,
+      projectId: projectId.value,
+    });
   }
 
   async function logout() {
-    const prev = loadSession();
-    const refreshToken = prev.refreshToken;
-    if (prev.username) {
-      try {
-        localStorage.setItem(
-          "flow_auto_work_last_login",
-          JSON.stringify({
-            username: prev.username,
-            projectId: prev.projectId,
-          }),
-        );
-      } catch {
-        /* ignore */
-      }
-    }
-    clearSession();
-    session.value = {
-      username: null,
-      projectId: null,
-      accessToken: null,
-      refreshToken: null,
-      accessExpiresAt: null,
-    };
+    await auth.logout();
+    projectId.value = null;
     me.value = null;
     memberships.value = [];
-
-    if (refreshToken) {
-      void api("/api/auth/logout", {
-        method: "POST",
-        body: JSON.stringify({ refreshToken }),
-        skipRefresh: true,
-      }).catch(() => undefined);
-    }
   }
 
-  /** Sync Pinia after localStorage was cleared by api client */
   function handleSessionExpired() {
-    session.value = {
-      username: null,
-      projectId: null,
-      accessToken: null,
-      refreshToken: null,
-      accessExpiresAt: null,
-    };
+    auth.clearLocal();
+    projectId.value = null;
     me.value = null;
     memberships.value = [];
   }
@@ -247,12 +259,11 @@ export const useSessionStore = defineStore("session", () => {
     window.addEventListener("flow:session-expired", handleSessionExpired);
   }
 
-  /** Activate project on server + update session.projectId */
-  async function activateProject(projectId: string): Promise<void> {
-    const id = projectId.trim();
+  async function activateProject(idRaw: string): Promise<void> {
+    const id = idRaw.trim();
     if (!id) throw new Error("projectId required");
     const res = await api<{ memberships?: Membership[] }>(
-      `/api/projects/${encodeURIComponent(id)}/activate`,
+      API.projects.activate(id),
       { method: "POST", body: "{}" },
     );
     if (res.memberships) setMemberships(res.memberships);
@@ -262,6 +273,7 @@ export const useSessionStore = defineStore("session", () => {
 
   return {
     session,
+    projectId,
     me,
     memberships,
     loading,

@@ -33,6 +33,45 @@ export function statusLabel(status: string | null | undefined): string {
     .join(" ");
 }
 
+/**
+ * Ant Design tag color — semantic map for workbench.
+ * draft→gray, running→blue, clarify→orange, handoff→teal, success→green, danger→red
+ */
+export function statusColor(status: string | null | undefined): string {
+  const st = status || "";
+  if (st === "succeeded") return "success";
+  if (st === "failed") return "error";
+  if (st === "running" || st === "queued") return "processing";
+  if (st === "awaiting_clarification") return "orange";
+  if (st === "awaiting_handoff") return "cyan";
+  if (st === "awaiting_docs_approval" || st === "awaiting_diff_approval") {
+    return "purple";
+  }
+  if (st === "draft") return "default";
+  if (st.startsWith("awaiting")) return "warning";
+  return "default";
+}
+
+/** Tailwind classes for semantic status chips (non-Ant) */
+export function statusToneClass(status: string | null | undefined): string {
+  const st = status || "";
+  if (st === "succeeded") return "bg-green-50 text-green-700 border-green-200";
+  if (st === "failed") return "bg-red-50 text-red-700 border-red-200";
+  if (st === "running" || st === "queued") {
+    return "bg-blue-50 text-blue-700 border-blue-200";
+  }
+  if (st === "awaiting_clarification") {
+    return "bg-orange-50 text-orange-700 border-orange-200";
+  }
+  if (st === "awaiting_handoff") {
+    return "bg-teal-50 text-teal-700 border-teal-200";
+  }
+  if (st === "awaiting_docs_approval" || st === "awaiting_diff_approval") {
+    return "bg-violet-50 text-violet-700 border-violet-200";
+  }
+  return "bg-gray-50 text-gray-600 border-gray-200";
+}
+
 export type ContextQualityLevel = "good" | "searchable" | "bad";
 
 const CONTEXT_QUALITY_LABELS: Record<ContextQualityLevel, string> = {
