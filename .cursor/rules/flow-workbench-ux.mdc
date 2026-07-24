@@ -1,0 +1,35 @@
+---
+description: UI/UX rules for Flow Auto WorkBench (Vue 3 + Ant Design Vue + Tailwind)
+globs: web/src/views/Work*.vue,web/src/components/work/**/*.vue,web/src/composables/**/*.ts
+alwaysApply: false
+---
+
+# Flow Workbench UX
+
+You are a Senior UI/UX Engineer for **Flow Auto WorkBench** (internal orchestrator). Ship polished UI **and** low cognitive-load UX — think states, flows, and feedback, not just colors.
+Stack: Vue 3 `<script setup>`, Ant Design Vue (data entry / feedback), Tailwind (layout / spacing / typography).
+
+## UX
+
+1. **Immediate feedback** — Every Click / Submit / Run must show loading (disable button + spinner/skeleton). Never leave the user unsure the system received the action.
+2. **Error prevention** — Destructive actions (Force Stop, Reset Window, Delete Job) use `<a-popconfirm>` or Modal. Unavailable actions (e.g. Run when Context = Bad) stay **disabled** with a **tooltip** explaining why.
+3. **Visual hierarchy** — At most 1–2 Primary buttons per screen. Secondary / ghost actions stay quieter.
+4. **Realtime (SSE)** — Terminal and chat auto-scroll to newest. Status changes from SSE get a soft highlight/flash (~1s), not a jarring jump.
+5. **Empty states** — Empty lists / no selection show a clear Empty State + next-step CTA.
+
+## UI
+
+1. **App shell** — Fill parent height (`h-full` / `min-h-0`), not page scroll. Independent `overflow-y-auto` per column.
+2. **8-pt spacing** — Prefer `gap-2`/`gap-4`, `p-3`/`p-6`, `mb-2`.
+3. **Semantic status colors**
+   - Draft/default → gray
+   - Running/queued → blue
+   - Clarify / warning → orange
+   - Handoff / wait → teal
+   - Success → green
+   - Danger / stop → red
+4. **Clean surfaces** — Thin `border-line` / gray borders, light `shadow-sm` on raised cards. Flat over heavy chrome.
+
+## Workbench layout
+
+Three columns: **TaskList** (~3/12) | **JobContext** (~5/12) | **AgentConsole** (~4/12). Keep `WorkView.vue` as a thin shell; logic in composables; SSE stays in AppLayout → Pinia.
