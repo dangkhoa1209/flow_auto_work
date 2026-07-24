@@ -21,6 +21,7 @@ import {
   getUserSecrets,
   listMembershipsForUser,
   updateProjectFields,
+  renameProjectLocalFolder,
   upsertProject,
   upsertUserLogin,
   clearCursorApiKey,
@@ -927,7 +928,7 @@ export function createWorkspaceRoutes() {
     });
   });
 
-  /** Update branches / path / token for owned project */
+  /** Update branches / path / token / Flow name (+ rename folder) for owned project */
   ws.put("/me/projects/:projectId", async (c) => {
     const username = headerUser(c);
     if (!username) return c.json({ error: "X-Flow-User required" }, 401);
@@ -941,39 +942,77 @@ export function createWorkspaceRoutes() {
       gitlabToken?: string;
       gitlabHost?: string;
       gitlabPath?: string;
+      displayName?: string;
+      /** UI “Tên project (Flow)” — also renames local folder when possible */
+      projectName?: string;
     };
-    const existing = await getMembership(username, projectId);
-    if (!existing) {
+    const membership = await getMembership(username, projectId);
+    if (!membership) {
       return c.json({ error: "Not a member of this project" }, 404);
     }
-    const localPath = body.localPath?.trim() || body.repoPath?.trim();
-    if (localPath) {
-      try {
-        await access(localPath, constants.R_OK);
-      } catch {
-        // allow setting path before clone
-      }
+    const existingProject = await getProject(projectId);
+    if (!existingProject) {
+      return c.json({ error: "Project not found" }, 404);
     }
-    const project = await updateProjectFields(projectId, {
-      ...(localPath ? { localPath } : {}),
-      ...(Object.prototype.hasOwnProperty.call(body, "baseBranch")
-        ? { mainBranch: body.baseBranch ?? "" }
-        : {}),
-      ...(Object.prototype.hasOwnProperty.call(body, "workBranch")
-        ? { workingBranch: body.workBranch ?? "" }
-        : {}),
-      ...(body.gitlabToken?.trim()
-        ? { gitlabToken: body.gitlabToken.trim() }
-        : {}),
-      ...(body.gitlabHost?.trim() ? { gitlabHost: body.gitlabHost } : {}),
-      ...(body.gitlabPath?.trim() ? { gitlabPath: body.gitlabPath } : {}),
-    });
-    const memberships = await listPublicMemberships(username);
-    return c.json({
-      membership: memberships.find((m) => m.projectId === projectId),
-      project: publicProject(project),
-      memberships,
-    });
+
+    const requestedName =
+      body.projectName?.trim() || body.displayName?.trim() || undefined;
+
+    let localPath = body.localPath?.trim() || body.repoPath?.trim();
+    let folderRenamed = false;
+
+    try {
+      if (requestedName && requestedName !== existingProject.projectName) {
+        const moved = await renameProjectLocalFolder({
+          username,
+          oldProjectName: existingProject.projectName,
+          newProjectName: requestedName,
+          currentLocalPath:
+            existingProject.localPath || existingProject.repoPath || "",
+        });
+        localPath = moved.localPath;
+        folderRenamed = moved.renamed;
+      } else if (localPath) {
+        try {
+          await access(localPath, constants.R_OK);
+        } catch {
+          // allow setting path before clone
+        }
+      }
+
+      const project = await updateProjectFields(projectId, {
+        ...(localPath ? { localPath } : {}),
+        ...(Object.prototype.hasOwnProperty.call(body, "baseBranch")
+          ? { mainBranch: body.baseBranch ?? "" }
+          : {}),
+        ...(Object.prototype.hasOwnProperty.call(body, "workBranch")
+          ? { workingBranch: body.workBranch ?? "" }
+          : {}),
+        ...(body.gitlabToken?.trim()
+          ? { gitlabToken: body.gitlabToken.trim() }
+          : {}),
+        ...(body.gitlabHost?.trim() ? { gitlabHost: body.gitlabHost } : {}),
+        ...(body.gitlabPath?.trim() ? { gitlabPath: body.gitlabPath } : {}),
+        ...(requestedName
+          ? {
+              projectName: requestedName,
+              displayName: body.displayName?.trim() || requestedName,
+            }
+          : {}),
+      });
+      const memberships = await listPublicMemberships(username);
+      return c.json({
+        membership: memberships.find((m) => m.projectId === projectId),
+        project: publicProject(project),
+        memberships,
+        folderRenamed,
+      });
+    } catch (err) {
+      return c.json(
+        { error: err instanceof Error ? err.message : String(err) },
+        400,
+      );
+    }
   });
 
   /**

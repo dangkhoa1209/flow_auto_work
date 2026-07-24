@@ -19,7 +19,17 @@ const addLabels = ref<string[]>([...settings.local.addLabels]);
 const comment = ref(settings.local.comment);
 
 const handoffJobs = computed(() =>
-  jobs.value.filter((j) => j.status === "awaiting_handoff"),
+  jobs.value
+    .filter((j) => j.status === "awaiting_handoff")
+    .slice()
+    .sort((a, b) => {
+      const ub = Date.parse(b.updatedAt || "") || 0;
+      const ua = Date.parse(a.updatedAt || "") || 0;
+      if (ub !== ua) return ub - ua;
+      const cb = Date.parse(b.createdAt || "") || 0;
+      const ca = Date.parse(a.createdAt || "") || 0;
+      return cb - ca;
+    }),
 );
 
 const selected = computed(

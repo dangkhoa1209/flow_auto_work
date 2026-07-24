@@ -270,15 +270,22 @@ export async function createIssue(opts: {
   };
 }
 
+function projectApiKey(projectIdOrPath: number | string): string {
+  return typeof projectIdOrPath === "string"
+    ? encodeURIComponent(projectIdOrPath)
+    : String(projectIdOrPath);
+}
+
 export async function createMergeRequest(opts: {
-  projectId: number;
+  projectId: number | string;
   sourceBranch: string;
   targetBranch: string;
   title: string;
   description: string;
-  issueIid: number;
+  issueIid?: number;
 }): Promise<{ webUrl: string; iid: number }> {
   const config = getConfig();
+  const project = projectApiKey(opts.projectId);
   const payload: Record<string, unknown> = {
     source_branch: opts.sourceBranch,
     target_branch: opts.targetBranch,
@@ -289,7 +296,7 @@ export async function createMergeRequest(opts: {
 
   const res = await gitlabFetch(
     "POST",
-    `/projects/${opts.projectId}/merge_requests`,
+    `/projects/${project}/merge_requests`,
     payload,
   );
   if (!res.ok) {
@@ -302,7 +309,7 @@ export async function createMergeRequest(opts: {
     try {
       await gitlabFetch(
         "PUT",
-        `/projects/${opts.projectId}/merge_requests/${data.iid}`,
+        `/projects/${project}/merge_requests/${data.iid}`,
         { reviewer_ids: await resolveUserIds(config.mrReviewerUsernames) },
       );
     } catch (err) {
@@ -311,6 +318,258 @@ export async function createMergeRequest(opts: {
   }
 
   return { webUrl: data.web_url, iid: data.iid };
+}
+
+/** Find an open MR for source → target (if any). */
+export async function findOpenMergeRequest(opts: {
+  projectId: number | string;
+  sourceBranch: string;
+  targetBranch: string;
+}): Promise<{ webUrl: string; iid: number; mergeStatus?: string } | null> {
+  const project = projectApiKey(opts.projectId);
+  const q = new URLSearchParams({
+    state: "opened",
+    source_branch: opts.sourceBranch,
+    target_branch: opts.targetBranch,
+    per_page: "5",
+  });
+  const res = await gitlabFetch(
+    "GET",
+    `/projects/${project}/merge_requests?${q.toString()}`,
+  );
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`GitLab list MR failed (${res.status}): ${text}`);
+  }
+  const batch = (await res.json()) as Array<{
+    iid: number;
+    web_url: string;
+    merge_status?: string;
+    detailed_merge_status?: string;
+  }>;
+  const first = batch[0];
+  if (!first) return null;
+  return {
+    iid: first.iid,
+    webUrl: first.web_url,
+    mergeStatus: first.detailed_merge_status || first.merge_status,
+  };
+}
+
+type GitlabMrDetail = {
+  iid: number;
+  state?: string;
+  web_url?: string;
+  merge_commit_sha?: string | null;
+  merge_status?: string;
+  detailed_merge_status?: string;
+  has_conflicts?: boolean;
+  merge_error?: string | null;
+};
+
+const MR_STATUS_TRANSIENT = new Set([
+  "unchecked",
+  "checking",
+  "preparing",
+  "approximating",
+  "cannot_be_merged_recheck",
+]);
+
+const MR_STATUS_CI_WAIT = new Set([
+  "ci_still_running",
+  "pipeline_running",
+]);
+
+async function getMergeRequest(
+  projectId: number | string,
+  mergeRequestIid: number,
+): Promise<GitlabMrDetail> {
+  const project = projectApiKey(projectId);
+  const res = await gitlabFetch(
+    "GET",
+    `/projects/${project}/merge_requests/${mergeRequestIid}`,
+  );
+  if (!res.ok) {
+    throw new Error(
+      `GitLab get MR !${mergeRequestIid} failed (${res.status}): ${await res.text()}`,
+    );
+  }
+  return (await res.json()) as GitlabMrDetail;
+}
+
+function mrStatusOf(mr: GitlabMrDetail): string {
+  return (mr.detailed_merge_status || mr.merge_status || "").toLowerCase();
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+/**
+ * Poll until GitLab finishes mergeability check (not preparing/checking).
+ */
+export async function waitUntilMrReady(opts: {
+  projectId: number | string;
+  mergeRequestIid: number;
+  timeoutMs?: number;
+  intervalMs?: number;
+}): Promise<GitlabMrDetail> {
+  const timeoutMs = opts.timeoutMs ?? 90_000;
+  const intervalMs = opts.intervalMs ?? 2_000;
+  const started = Date.now();
+  let last: GitlabMrDetail | null = null;
+
+  while (Date.now() - started < timeoutMs) {
+    last = await getMergeRequest(opts.projectId, opts.mergeRequestIid);
+    if (last.state === "merged") return last;
+
+    const status = mrStatusOf(last);
+    if (!status || MR_STATUS_TRANSIENT.has(status)) {
+      logger.info("Waiting for MR mergeability", {
+        iid: opts.mergeRequestIid,
+        status: status || "(empty)",
+      });
+      await sleep(intervalMs);
+      continue;
+    }
+    // Ready enough to attempt merge (or terminal failure)
+    return last;
+  }
+
+  const status = last ? mrStatusOf(last) : "unknown";
+  throw new Error(
+    `GitLab MR !${opts.mergeRequestIid} vẫn ${status} sau ${Math.round(timeoutMs / 1000)}s — thử lại sau`,
+  );
+}
+
+/**
+ * Accept/merge an MR via GitLab API (PAT identity — no local git user).
+ * Waits out transient statuses like `preparing` / `checking` first.
+ */
+export async function acceptMergeRequest(opts: {
+  projectId: number | string;
+  mergeRequestIid: number;
+  mergeCommitMessage?: string;
+  shouldRemoveSourceBranch?: boolean;
+  sha?: string;
+}): Promise<{
+  state: string;
+  mergeCommitSha: string | null;
+  webUrl?: string;
+  alreadyMerged?: boolean;
+}> {
+  const project = projectApiKey(opts.projectId);
+  const ready = await waitUntilMrReady({
+    projectId: opts.projectId,
+    mergeRequestIid: opts.mergeRequestIid,
+  });
+
+  if (ready.state === "merged") {
+    return {
+      state: "merged",
+      mergeCommitSha: ready.merge_commit_sha ?? null,
+      webUrl: ready.web_url,
+      alreadyMerged: true,
+    };
+  }
+
+  const status = mrStatusOf(ready);
+  if (ready.has_conflicts || status === "cannot_be_merged") {
+    throw new Error(
+      `GitLab không merge được MR !${opts.mergeRequestIid}: ${status || "conflicts"}` +
+        (ready.merge_error ? ` (${ready.merge_error})` : ""),
+    );
+  }
+
+  const payload: Record<string, unknown> = {
+    should_remove_source_branch: opts.shouldRemoveSourceBranch ?? false,
+  };
+  if (opts.mergeCommitMessage?.trim()) {
+    payload.merge_commit_message = opts.mergeCommitMessage.trim();
+  }
+  if (opts.sha?.trim()) {
+    payload.sha = opts.sha.trim();
+  }
+  // Pipeline still running → schedule merge when green (PAT merge)
+  if (MR_STATUS_CI_WAIT.has(status) || status === "ci_must_pass") {
+    payload.merge_when_pipeline_succeeds = true;
+  }
+
+  const maxAttempts = 5;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const res = await gitlabFetch(
+      "PUT",
+      `/projects/${project}/merge_requests/${opts.mergeRequestIid}/merge`,
+      payload,
+    );
+
+    if (res.ok) {
+      const data = (await res.json()) as {
+        state?: string;
+        merge_commit_sha?: string | null;
+        web_url?: string;
+      };
+      return {
+        state: data.state || "merged",
+        mergeCommitSha: data.merge_commit_sha ?? null,
+        webUrl: data.web_url,
+      };
+    }
+
+    const text = await res.text();
+    const mr = await getMergeRequest(opts.projectId, opts.mergeRequestIid).catch(
+      () => null,
+    );
+    if (mr?.state === "merged") {
+      return {
+        state: "merged",
+        mergeCommitSha: mr.merge_commit_sha ?? null,
+        webUrl: mr.web_url,
+        alreadyMerged: true,
+      };
+    }
+
+    const why = (mr ? mrStatusOf(mr) : "") || text;
+    const transient =
+      MR_STATUS_TRANSIENT.has(why.toLowerCase()) ||
+      /preparing|checking|unchecked/i.test(why) ||
+      res.status === 405 ||
+      res.status === 409;
+
+    if (transient && attempt < maxAttempts) {
+      logger.info("Retry MR merge after transient status", {
+        iid: opts.mergeRequestIid,
+        attempt,
+        status: why,
+        http: res.status,
+      });
+      await sleep(2_000 * attempt);
+      continue;
+    }
+
+    // CI must pass — enable auto-merge once
+    if (
+      attempt < maxAttempts &&
+      /ci_|pipeline/i.test(why) &&
+      !payload.merge_when_pipeline_succeeds
+    ) {
+      payload.merge_when_pipeline_succeeds = true;
+      logger.info("MR blocked by CI — enabling merge_when_pipeline_succeeds", {
+        iid: opts.mergeRequestIid,
+        status: why,
+      });
+      await sleep(1_000);
+      continue;
+    }
+
+    throw new Error(
+      `GitLab không merge được MR !${opts.mergeRequestIid}: ${why}`,
+    );
+  }
+
+  throw new Error(
+    `GitLab không merge được MR !${opts.mergeRequestIid}: exhausted retries`,
+  );
 }
 
 async function resolveUserIds(usernames: string[]): Promise<number[]> {
@@ -485,9 +744,10 @@ export async function listProjectMembers(): Promise<
 }
 
 export async function getProjectDefaultBranch(
-  projectId: number,
+  projectIdOrPath: number | string,
 ): Promise<string> {
-  const res = await gitlabFetch("GET", `/projects/${projectId}`);
+  const project = projectApiKey(projectIdOrPath);
+  const res = await gitlabFetch("GET", `/projects/${project}`);
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`GitLab project fetch failed (${res.status}): ${text}`);

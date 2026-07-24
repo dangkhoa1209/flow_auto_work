@@ -1,7 +1,11 @@
 import { type Collection } from "mongodb";
+import { rename as fsRename } from "node:fs/promises";
+import path from "node:path";
 import { connectMongo } from "../db/mongo.js";
 import { decryptSecret, encryptSecret } from "../crypto/secrets.js";
 import { hashPassword } from "../auth/password.js";
+import { logger } from "../logger.js";
+import { pathExists } from "./clone.js";
 import {
   defaultLocalPath,
   membershipId,
@@ -18,6 +22,14 @@ import {
   type WorkspaceUserPublic,
   type CloneStatus,
 } from "./types.js";
+
+/** Segment under PROJECT_ROOT/{user}/ — same rules as defaultLocalPath */
+export function projectFolderSegment(projectName: string): string {
+  return (
+    projectName.trim().replace(/[/\\]+/g, "-").replace(/^\.+|\.+$/g, "") ||
+    "project"
+  );
+}
 
 async function usersCol(): Promise<Collection<WorkspaceUser>> {
   const db = await connectMongo();
@@ -366,6 +378,7 @@ export async function updateProjectFields(
     mainBranch: string;
     workingBranch: string;
     displayName: string;
+    projectName: string;
     gitlabHost: string;
     gitlabPath: string;
     gitlabToken: string;
@@ -378,6 +391,26 @@ export async function updateProjectFields(
   const existing = await getProject(projectId);
   if (!existing) throw new Error(`Project not found: ${projectId}`);
   const now = new Date().toISOString();
+
+  if (patch.projectName !== undefined) {
+    const nextName = patch.projectName.trim();
+    if (!nextName) throw new Error("projectName required");
+    if (nextName !== existing.projectName) {
+      const clash = await (await projectsCol()).findOne({
+        userId: existing.userId,
+        projectName: nextName,
+        id: { $ne: projectId },
+      });
+      if (clash) {
+        throw new Error(`Project name already exists: ${nextName}`);
+      }
+      existing.projectName = nextName;
+      if (patch.displayName === undefined) {
+        existing.displayName = nextName;
+      }
+    }
+  }
+
   if (patch.localPath !== undefined) {
     existing.localPath = patch.localPath.trim();
     existing.repoPath = existing.localPath;
@@ -423,6 +456,70 @@ export async function updateProjectFields(
   existing.updatedAt = now;
   await (await projectsCol()).updateOne({ id: projectId }, { $set: existing });
   return syncRepoPath(existing);
+}
+
+/**
+ * Rename Flow project folder on disk when path follows
+ * `…/{username}/{projectName}/source`. Returns new localPath if renamed.
+ */
+export async function renameProjectLocalFolder(opts: {
+  username: string;
+  oldProjectName: string;
+  newProjectName: string;
+  currentLocalPath: string;
+}): Promise<{ localPath: string; renamed: boolean }> {
+  const oldSeg = projectFolderSegment(opts.oldProjectName);
+  const newSeg = projectFolderSegment(opts.newProjectName);
+  const current = path.resolve(opts.currentLocalPath.trim());
+  if (!opts.currentLocalPath.trim() || oldSeg === newSeg) {
+    return { localPath: current, renamed: false };
+  }
+
+  const oldDefault = path.resolve(
+    defaultLocalPath(opts.username, opts.oldProjectName),
+  );
+  const newDefault = path.resolve(
+    defaultLocalPath(opts.username, opts.newProjectName),
+  );
+
+  let oldParent: string | null = null;
+  let newParent: string | null = null;
+  let newLocal: string | null = null;
+
+  if (current === oldDefault) {
+    oldParent = path.dirname(oldDefault);
+    newParent = path.dirname(newDefault);
+    newLocal = newDefault;
+  } else {
+    const parts = current.split(path.sep);
+    const srcIdx = parts.lastIndexOf("source");
+    if (srcIdx > 0 && parts[srcIdx - 1] === oldSeg) {
+      parts[srcIdx - 1] = newSeg;
+      newLocal = parts.join(path.sep);
+      oldParent = path.dirname(current);
+      newParent = path.dirname(newLocal);
+    }
+  }
+
+  if (!oldParent || !newParent || !newLocal) {
+    return { localPath: current, renamed: false };
+  }
+
+  if (await pathExists(newParent)) {
+    throw new Error(`Thư mục đích đã tồn tại: ${newParent}`);
+  }
+
+  if (await pathExists(oldParent)) {
+    await fsRename(oldParent, newParent);
+    logger.info("Renamed project folder", {
+      from: oldParent,
+      to: newParent,
+    });
+    return { localPath: newLocal, renamed: true };
+  }
+
+  // No folder yet — just point metadata at the new default path
+  return { localPath: newLocal, renamed: false };
 }
 
 export async function activateProject(

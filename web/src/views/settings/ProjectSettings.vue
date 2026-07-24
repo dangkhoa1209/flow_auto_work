@@ -12,6 +12,8 @@ const pollTimer = ref<ReturnType<typeof setInterval> | null>(null);
 const wizardOpen = ref(false);
 const wizardStep = ref(0);
 const editId = ref<string | null>(null);
+/** projectName when edit opened — detect rename vs other field updates */
+const editOriginalName = ref<string | null>(null);
 
 type ProjectPublic = {
   id: string;
@@ -109,6 +111,7 @@ watch(
 function resetWizard() {
   wizardStep.value = 0;
   editId.value = null;
+  editOriginalName.value = null;
   form.gitlabHost = "https://gitlab.com";
   form.gitlabToken = "";
   form.gitlabPath = "";
@@ -134,7 +137,8 @@ function openEdit(row: (typeof tableRows.value)[0]) {
   form.gitlabHost = p?.gitlabHost || "https://gitlab.com";
   form.gitlabPath = p?.gitlabPath || row.gitlabPath;
   form.projectName = p?.projectName || row.name;
-  form.displayName = p?.displayName || row.name;
+  form.displayName = p?.displayName || form.projectName;
+  editOriginalName.value = form.projectName;
   form.mainBranch =
     (p?.mainBranch || m?.baseBranch || "main") as string;
   form.workingBranch =
@@ -309,29 +313,46 @@ async function saveWizard() {
       : form.localPath.trim();
 
     if (editId.value) {
-      await api(`/api/me/projects/${encodeURIComponent(editId.value)}`, {
+      const flowName =
+        form.projectName.trim() || form.displayName.trim() || undefined;
+      const renaming =
+        Boolean(flowName) &&
+        Boolean(editOriginalName.value) &&
+        flowName !== editOriginalName.value;
+      const res = await api<{
+        folderRenamed?: boolean;
+        project?: ProjectPublic;
+      }>(`/api/me/projects/${encodeURIComponent(editId.value)}`, {
         method: "PUT",
         body: JSON.stringify({
           baseBranch: form.mainBranch || "",
           workBranch: form.workingBranch || "",
-          localPath: resolvedPath || undefined,
+          // When renaming, server moves folder + sets path
+          localPath: renaming ? undefined : resolvedPath || undefined,
           gitlabToken: form.gitlabToken || undefined,
           gitlabHost: form.gitlabHost || undefined,
           gitlabPath: form.gitlabPath || undefined,
+          projectName: flowName,
+          displayName: flowName,
         }),
       });
       await session.refreshMe();
       wizardOpen.value = false;
-      if (pathEmpty && resolvedPath) {
+      const newPath = res.project?.localPath || resolvedPath;
+      if (res.folderRenamed) {
+        message.success(`Đã đổi tên + rename folder:\n${newPath}`);
+      } else if (pathEmpty && newPath && !renaming) {
         message.success(
-          `Đã lưu. Path trống → dùng thư mục mặc định:\n${resolvedPath}`,
+          `Đã lưu. Path trống → dùng thư mục mặc định:\n${newPath}`,
         );
         await startClone(editId.value, {
-          localPath: resolvedPath,
+          localPath: newPath,
           silentConfirm: true,
         });
       } else {
-        message.success("Đã cập nhật project");
+        message.success(
+          newPath ? `Đã cập nhật project\n${newPath}` : "Đã cập nhật project",
+        );
       }
       return;
     }
@@ -583,8 +604,11 @@ onMounted(async () => {
             v-model:value="form.projectName"
             class="mt-1"
             placeholder="ykk"
-            :disabled="Boolean(editId)"
           />
+          <p v-if="editId" class="text-xs text-ink-muted m-0 mt-1">
+            Đổi tên sẽ rename folder
+            <code>…/tên/source</code> (nếu đang dùng path mặc định).
+          </p>
         </div>
         <div class="flex justify-between gap-2 pt-2">
           <a-button @click="wizardStep = 0">Quay lại</a-button>

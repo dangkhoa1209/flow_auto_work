@@ -150,12 +150,14 @@ export const useWorkStore = defineStore("work", () => {
       api<{ members: Array<{ username: string; name?: string }> }>(
         "/api/meta/members",
       ).catch(() => ({ members: [] })),
-      api<{ labels: string[] }>("/api/meta/labels").catch(() => ({
-        labels: [],
-      })),
+      api<{ labels: Array<string | { name?: string }> }>("/api/meta/labels").catch(
+        () => ({ labels: [] }),
+      ),
     ]);
     members.value = m.members || [];
-    labels.value = l.labels || [];
+    labels.value = (l.labels || [])
+      .map((x) => (typeof x === "string" ? x : x?.name)?.trim())
+      .filter((n): n is string => Boolean(n));
   }
 
   async function loadStatus() {

@@ -90,15 +90,15 @@ const filteredTasks = computed(() => {
   });
 });
 
-/** Newest job first — prefer createdAt so ownership migrate can't reverse the list. */
+/** Newest activity first — updatedAt, then createdAt. */
 const sortedJobs = computed(() => {
   return [...jobs.value].sort((a, b) => {
-    const cb = Date.parse(b.createdAt || "") || 0;
-    const ca = Date.parse(a.createdAt || "") || 0;
-    if (cb !== ca) return cb - ca;
     const ub = Date.parse(b.updatedAt || "") || 0;
     const ua = Date.parse(a.updatedAt || "") || 0;
     if (ub !== ua) return ub - ua;
+    const cb = Date.parse(b.createdAt || "") || 0;
+    const ca = Date.parse(a.createdAt || "") || 0;
+    if (cb !== ca) return cb - ca;
     return (b.issue?.issueIid || 0) - (a.issue?.issueIid || 0);
   });
 });
