@@ -1,5 +1,5 @@
-import { computed, nextTick, ref, watch } from "vue";
-import { message } from "ant-design-vue";
+import { computed, h, nextTick, ref, watch } from "vue";
+import { message, Modal } from "ant-design-vue";
 import { storeToRefs } from "pinia";
 import { useRouter } from "vue-router";
 import { api } from "@/api/client";
@@ -328,32 +328,63 @@ export function useWorkbench() {
     return false;
   }
 
-  async function runSelected() {
+  /** IIDs not in Open (assigned-to-you) list — confirm before Run only. */
+  function confirmRunIfNotAssigned(iids: number[]): Promise<boolean> {
+    const openSet = new Set(tasks.value.map((t) => t.issueIid));
+    const foreign = iids.filter((id) => id > 0 && !openSet.has(id));
+    if (!foreign.length) return Promise.resolve(true);
+
+    const list = foreign.map((id) => `#${id}`).join(", ");
+    const plural = foreign.length > 1;
+    return new Promise((resolve) => {
+      Modal.confirm({
+        title: plural
+          ? "These issues are not on your plate"
+          : "This issue is not on your plate",
+        content: plural
+          ? `${list} are not in your assigned open issues (another assignee, closed, or opened via Related). Run the agent anyway?`
+          : `${list} is not in your assigned open issues (another assignee, closed, or opened via Related). Run the agent anyway?`,
+        okText: "Run anyway",
+        cancelText: "Cancel",
+        centered: true,
+        onOk: () => resolve(true),
+        onCancel: () => resolve(false),
+      });
+    });
+  }
+
+  /** Issue panel Run — always the current job (issue or Hotfix). */
+  async function runCurrentJob() {
     if (runBlockedReason.value && contextIsBad.value) {
       message.warning(runBlockedReason.value);
       return;
     }
     if (!(await ensureCursorKey())) return;
-    const iids =
-      selectedIids.value.length > 0
-        ? selectedIids.value
-        : selectedTaskIid.value
-          ? [selectedTaskIid.value]
-          : [];
-    if (!iids.length) {
-      message.warning("Select a task");
+    if (!selectedJobId.value) {
+      message.warning("Select a job first");
       return;
     }
+
+    const iid = currentJob.value?.issue?.issueIid;
+    if (iid && iid > 0 && !(await confirmRunIfNotAssigned([iid]))) return;
+
     busy.value = true;
     try {
-      await work.startJobs({
+      const res = await work.startJobs({
         mode: "selected",
-        issueIids: iids,
+        jobIds: [selectedJobId.value],
         devNotes: notesDraft.value.trim() || undefined,
         requireDocsFirst: requireDocsFirst.value,
       });
       mobilePane.value = "chat";
-      message.success("Task queued for agent run");
+      const n = res.enqueued ?? 0;
+      if (n > 0) message.success("Job queued for agent run");
+      else {
+        const why = res.skipReasons?.[0]?.reason
+          ? ` (${res.skipReasons[0].reason})`
+          : "";
+        message.warning(`Nothing queued${why}`);
+      }
     } catch (e) {
       message.error(e instanceof Error ? e.message : String(e));
     } finally {
@@ -361,12 +392,107 @@ export function useWorkbench() {
     }
   }
 
-  async function runAll() {
+  /** Tasks column Run — checked Open tasks only (no job / Hotfix). */
+  async function runCheckedTasks() {
+    if (runBlockedReason.value && contextIsBad.value) {
+      message.warning(runBlockedReason.value);
+      return;
+    }
     if (!(await ensureCursorKey())) return;
+    const iids = selectedIids.value.filter((id) => id > 0);
+    if (!iids.length) {
+      message.warning("Select a task");
+      return;
+    }
+    if (!(await confirmRunIfNotAssigned(iids))) return;
+
     busy.value = true;
     try {
-      await work.startJobs({ mode: "all" });
-      message.success("All tasks queued");
+      const res = await work.startJobs({
+        mode: "selected",
+        issueIids: iids,
+        devNotes: notesDraft.value.trim() || undefined,
+        requireDocsFirst: requireDocsFirst.value,
+      });
+      mobilePane.value = "chat";
+      const n = res.enqueued ?? 0;
+      if (n > 0) {
+        message.success(
+          n === 1
+            ? "Task queued for agent run"
+            : `${n} tasks queued for agent run`,
+        );
+      } else {
+        const miss = res.missing?.length
+          ? ` (#${res.missing.join(", #")} not found)`
+          : "";
+        const why = res.skipReasons?.[0]?.reason
+          ? ` (${res.skipReasons[0].reason})`
+          : "";
+        message.warning(`Nothing queued${miss || why}`);
+      }
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : String(e));
+    } finally {
+      busy.value = false;
+    }
+  }
+
+  /** Confirm Run all — list every assigned open task. */
+  function confirmRunAllTasks(): Promise<boolean> {
+    const list = tasks.value;
+    if (!list.length) {
+      message.warning("No open tasks");
+      return Promise.resolve(false);
+    }
+    return new Promise((resolve) => {
+      Modal.confirm({
+        title: `Run all open tasks (${list.length})?`,
+        width: 520,
+        centered: true,
+        okText: `Run all (${list.length})`,
+        cancelText: "Cancel",
+        content: h("div", { class: "faw-run-all-confirm" }, [
+          h(
+            "p",
+            { class: "faw-run-all-confirm__hint" },
+            "These assigned open tasks will be queued for the agent:",
+          ),
+          h(
+            "ul",
+            { class: "faw-run-all-confirm__list" },
+            list.map((t) =>
+              h("li", { key: t.issueIid }, [
+                h(
+                  "code",
+                  { class: "faw-run-all-confirm__iid" },
+                  `#${t.issueIid}`,
+                ),
+                h(
+                  "span",
+                  { class: "faw-run-all-confirm__title", title: t.title },
+                  t.title,
+                ),
+              ]),
+            ),
+          ),
+        ]),
+        onOk: () => resolve(true),
+        onCancel: () => resolve(false),
+      });
+    });
+  }
+
+  /** Tasks column Run all — assigned open tasks only. */
+  async function runAll() {
+    if (!(await ensureCursorKey())) return;
+    if (!(await confirmRunAllTasks())) return;
+    busy.value = true;
+    try {
+      const res = await work.startJobs({ mode: "all" });
+      const n = res.enqueued ?? 0;
+      if (n > 0) message.success(`${n} task(s) queued`);
+      else message.warning("Nothing queued — all skipped or already busy");
     } catch (e) {
       message.error(e instanceof Error ? e.message : String(e));
     } finally {
@@ -693,7 +819,9 @@ export function useWorkbench() {
     onDeleteJob,
     saveNotes,
     scheduleNotesAutosave,
-    runSelected,
+    runSelected: runCheckedTasks,
+    runCheckedTasks,
+    runCurrentJob,
     runAll,
     sendChat,
     forceStop,

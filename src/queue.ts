@@ -112,9 +112,11 @@ export class JobQueue {
   ): Promise<{ enqueued: boolean; reason?: string; jobId?: string }> {
     const key = `${issue.projectId}:${issue.issueIid}`;
     if (this.activeIssueKeys.has(key)) {
+      logger.warn("enqueue rejected — activeIssueKeys", { key, iid: issue.issueIid });
       return { enqueued: false, reason: "Issue already queued or running" };
     }
     if (this.queue.some((q) => `${q.job.issue.projectId}:${q.job.issue.issueIid}` === key)) {
+      logger.warn("enqueue rejected — already in memory queue", { key, iid: issue.issueIid });
       return { enqueued: false, reason: "Issue already queued or running" };
     }
 
@@ -138,6 +140,12 @@ export class JobQueue {
     if (isJobBusy(job.status) && job.id !== this.currentJobId) {
       const fresh = await loadJob(job.id);
       if (fresh && isJobBusy(fresh.status)) {
+        logger.warn("enqueue rejected — busy in DB", {
+          key,
+          jobId: job.id,
+          status: fresh.status,
+          currentJobId: this.currentJobId,
+        });
         return { enqueued: false, reason: "Issue already queued or running" };
       }
     }
@@ -167,13 +175,20 @@ export class JobQueue {
     });
     await saveJob(job, { source: opts?.source });
     this.publishStatus("enqueue");
+    const snap = this.snapshot();
     logger.info("Enqueued job", {
       jobId: job.id,
       key,
+      iid: job.issue.issueIid,
       source: opts?.source,
       runCount: job.runCount,
       requireDocsFirst: job.requireDocsFirst,
       forceCodePhase: opts?.forceCodePhase,
+      ownerUsername: job.ownerUsername,
+      workspaceProjectId: job.workspaceProjectId,
+      queueLength: snap.queued,
+      pumpRunning: snap.running,
+      currentJobId: snap.currentJobId,
     });
     void this.pump();
     return { enqueued: true, jobId: job.id };
@@ -606,15 +621,20 @@ export class JobQueue {
     }
 
     if (this.currentJobId === jobId) {
+      // Clear immediately so UI Idle / status SSE don't stay "Running …"
+      // while Cursor cancel / executeJob.finally still unwind.
+      this.currentJobId = null;
+      this.publishStatus("kill-running");
       logger.warn("Kill signal sent to running job", {
         jobId,
         agentCancelled,
         reason,
       });
-      this.publishStatus("kill-running");
       return { ok: true, phase: "running", agentCancelled };
     }
 
+    // Stale "Running" in UI: job not current but still busy in DB — status already updated above
+    this.publishStatus("kill");
     if (doc) {
       return {
         ok: true,
@@ -734,15 +754,64 @@ export class JobQueue {
   }
 
   private async pump() {
-    if (this.running) return;
+    if (this.running) {
+      logger.debug("pump skip — already running", {
+        queueLength: this.queue.length,
+        currentJobId: this.currentJobId,
+        queuedIds: this.queue.map((q) => q.job.id),
+      });
+      return;
+    }
     this.running = true;
+    logger.info("pump start", {
+      queueLength: this.queue.length,
+      queuedIds: this.queue.map((q) => q.job.id),
+    });
     try {
       while (this.queue.length > 0) {
         const item = this.queue.shift()!;
-        await this.runJob(item.job, { forceCodePhase: item.forceCodePhase });
+        logger.info("pump dequeue", {
+          jobId: item.job.id,
+          iid: item.job.issue.issueIid,
+          remaining: this.queue.length,
+          forceCodePhase: Boolean(item.forceCodePhase),
+          source: item.source,
+        });
+        try {
+          await this.runJob(item.job, { forceCodePhase: item.forceCodePhase });
+          logger.info("pump job finished", {
+            jobId: item.job.id,
+            status: item.job.status,
+            remaining: this.queue.length,
+          });
+        } catch (err) {
+          // runJob/executeJob should catch; this is a last resort so the pump continues
+          logger.error("pump job threw (unexpected)", {
+            jobId: item.job.id,
+            err: err instanceof Error ? err.message : String(err),
+            remaining: this.queue.length,
+          });
+          const key = `${item.job.issue.projectId}:${item.job.issue.issueIid}`;
+          this.activeIssueKeys.delete(key);
+          if (this.currentJobId === item.job.id) this.currentJobId = null;
+        }
       }
     } finally {
       this.running = false;
+      const leftover = this.queue.length;
+      logger.info("pump idle", {
+        leftover,
+        queuedIds: this.queue.map((q) => q.job.id),
+      });
+      // Race: a job may have been enqueued while we were exiting (void pump
+      // saw running=true and returned). Re-kick if anything remains.
+      if (leftover > 0) {
+        logger.warn("pump re-kick — jobs arrived during shutdown", {
+          leftover,
+          queuedIds: this.queue.map((q) => q.job.id),
+        });
+        void this.pump();
+      }
     }
   }
 
@@ -936,13 +1005,31 @@ export class JobQueue {
   ) {
     const execute = () => this.executeJob(job, opts);
     if (job.ownerUsername && job.workspaceProjectId) {
-      await withWorkspaceContext(
-        job.ownerUsername,
-        job.workspaceProjectId,
-        execute,
-      );
+      logger.info("runJob bind workspace", {
+        jobId: job.id,
+        ownerUsername: job.ownerUsername,
+        workspaceProjectId: job.workspaceProjectId,
+      });
+      try {
+        await withWorkspaceContext(
+          job.ownerUsername,
+          job.workspaceProjectId,
+          execute,
+        );
+      } catch (err) {
+        logger.error("runJob workspace bind failed", {
+          jobId: job.id,
+          err: err instanceof Error ? err.message : String(err),
+        });
+        throw err;
+      }
       return;
     }
+    logger.warn("runJob without workspace bind", {
+      jobId: job.id,
+      ownerUsername: job.ownerUsername,
+      workspaceProjectId: job.workspaceProjectId,
+    });
     await execute();
   }
 
@@ -956,8 +1043,23 @@ export class JobQueue {
     this.publishStatus();
 
     const rt = getRuntimeContext();
+    logger.info("executeJob start", {
+      jobId: job.id,
+      key,
+      iid: job.issue.issueIid,
+      status: job.status,
+      forceCodePhase: Boolean(opts?.forceCodePhase),
+      requireDocsFirst: Boolean(job.requireDocsFirst),
+      ownerUsername: job.ownerUsername,
+      workspaceProjectId: job.workspaceProjectId,
+      hasRuntime: Boolean(rt),
+      repoPath: rt?.repoPath ? "(set)" : "(missing)",
+      agentId: job.agentId ? `${job.agentId.slice(0, 8)}…` : null,
+    });
+
     const repoPath = rt?.repoPath?.trim();
     if (!repoPath) {
+      logger.warn("executeJob abort — no repo path", { jobId: job.id, key });
       job.status = "failed";
       job.error = "No repo path in workspace context";
       await saveJob(job);
@@ -1006,6 +1108,12 @@ export class JobQueue {
     });
 
     if (quality.level === "bad") {
+      logger.warn("executeJob abort — bad context", {
+        jobId: job.id,
+        iid: job.issue.issueIid,
+        reason: quality.reason?.slice(0, 200),
+        wordCount: quality.signals.wordCount,
+      });
       const msg = formatBadContextChatMessage(quality, job.issue.issueIid);
       // draft (not awaiting_clarification) so job is not isJobBusy — user adds context then Run again
       job.status = "draft";
@@ -1057,6 +1165,12 @@ export class JobQueue {
         );
         const ready = await assertProjectCloneReady(job.workspaceProjectId);
         if (!ready.ok || ready.level === "bad") {
+          logger.warn("executeJob abort — project clone not ready", {
+            jobId: job.id,
+            workspaceProjectId: job.workspaceProjectId,
+            level: ready.level,
+            message: ready.message,
+          });
           job.status = "draft";
           job.error =
             ready.message ||
@@ -1116,6 +1230,13 @@ export class JobQueue {
 
       const contextQualityBlock = formatContextQualityForPrompt(quality);
 
+      logger.info("executeJob calling Cursor agent", {
+        jobId: job.id,
+        phase: runDocsPhase ? "docs" : "code",
+        existingAgentId: job.agentId ? `${job.agentId.slice(0, 8)}…` : null,
+        branch: job.branch,
+      });
+
       let result = await runNewAgent(job.issue, undefined, {
         jobId: job.id,
         devNotes: notes || undefined,
@@ -1131,6 +1252,11 @@ export class JobQueue {
                 ? [job.docsPath]
                 : undefined
             : undefined,
+      });
+      logger.info("executeJob agent returned", {
+        jobId: job.id,
+        kind: result.kind,
+        agentId: result.agentId ? `${result.agentId.slice(0, 8)}…` : null,
       });
       job.agentId = result.agentId;
       applyTokenUsageToJob(job, result.usage);

@@ -67,7 +67,19 @@ router.beforeEach(async (to) => {
   if (!session.bootstrapped) await session.bootstrap();
 
   if (to.meta.public) {
-    if (session.isLoggedIn && to.name === "login") return { name: "work" };
+    if (session.isLoggedIn && to.name === "login") {
+      const raw = to.query.redirect;
+      const path = Array.isArray(raw) ? raw[0] : raw;
+      if (
+        typeof path === "string" &&
+        path.startsWith("/") &&
+        !path.startsWith("//") &&
+        !path.startsWith("/login")
+      ) {
+        return path;
+      }
+      return { name: "work" };
+    }
     return true;
   }
   if (!session.isLoggedIn) {

@@ -1,17 +1,19 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref, watch, TransitionGroup } from "vue";
+import {
+  computed,
+  onMounted,
+  onUnmounted,
+  ref,
+  watch,
+  TransitionGroup,
+} from "vue";
 import {
   PlusOutlined,
   ReloadOutlined,
   DownOutlined,
 } from "@ant-design/icons-vue";
 import IssueIidLink from "@/components/IssueIidLink.vue";
-import {
-  statusLabel,
-  statusColor,
-  MANUAL_JOB_STATUSES,
-  contextQualityColor,
-} from "@/utils/status";
+import { statusLabel, MANUAL_JOB_STATUSES } from "@/utils/status";
 import type { Job, Task } from "@/stores/work";
 
 const JOBS_OPEN_KEY = "flow.tasklist.jobsOpen";
@@ -105,6 +107,7 @@ function toggleJobs() {
 
 function onJobsRailPointerDown(e: PointerEvent) {
   if (e.button !== 0) return;
+  e.preventDefault();
   if (!jobsOpen.value) {
     jobsOpen.value = true;
     return;
@@ -147,6 +150,29 @@ onUnmounted(() => {
   window.removeEventListener("pointercancel", onJobsRailPointerUp);
 });
 
+const taskSearch = ref("");
+
+const visibleTasks = computed(() => {
+  const q = taskSearch.value.trim().toLowerCase();
+  if (!q) return props.filteredTasks;
+  const qBare = q.startsWith("#") ? q.slice(1) : q;
+  return props.filteredTasks.filter((t) => {
+    if (t.title.toLowerCase().includes(q)) return true;
+    if (String(t.issueIid).includes(qBare)) return true;
+    const labels = (t.labels || []).join(" ").toLowerCase();
+    if (labels.includes(q)) return true;
+    return false;
+  });
+});
+
+function statusDotClass(status: string) {
+  if (status === "succeeded") return "done";
+  if (status === "failed") return "bug";
+  if (status === "running" || status === "queued") return "wip";
+  if (status.startsWith("awaiting_")) return "wip";
+  return "idle";
+}
+
 function jobDisplayIid(j: Job) {
   const iid = j.issue?.issueIid;
   if (!iid || iid <= 0 || j.kind === "adhoc") return "Hotfix";
@@ -168,9 +194,31 @@ function jobLabels(j: Job) {
   if (fromIssue.length) return fromIssue;
   const iid = j.issue?.issueIid;
   if (!iid || iid <= 0) return [];
-  return (props.filteredTasks.find((t) => t.issueIid === iid)?.labels || []).filter(
-    Boolean,
-  );
+  return (
+    props.filteredTasks.find((t) => t.issueIid === iid)?.labels || []
+  ).filter(Boolean);
+}
+
+function contextQualityShort(level?: string) {
+  if (level === "good") return "Good";
+  if (level === "searchable") return "Search";
+  if (level === "bad") return "Bad";
+  return "";
+}
+
+function jobSecondaryChip(j: Job): { label: string; title?: string } | null {
+  const cq = j.contextQuality?.level;
+  if (cq) {
+    return {
+      label: contextQualityShort(cq),
+      title: j.contextQuality?.reason || undefined,
+    };
+  }
+  const labels = jobLabels(j);
+  if (labels.length) return { label: labels[0], title: labels[0] };
+  const ms = jobMilestone(j);
+  if (ms) return { label: ms, title: ms };
+  return null;
 }
 
 const flashIds = ref<Set<string>>(new Set());
@@ -200,112 +248,118 @@ watch(
 <template>
   <aside
     ref="rootEl"
-    class="flex flex-col min-h-0 overflow-hidden rounded-2xl panel-glass shadow-panel h-full"
+    class="faw-col flex flex-col min-h-0 overflow-hidden h-full"
     :class="{ 'select-none': jobsDragging }"
   >
-    <div class="shrink-0 p-3 border-b border-line space-y-2">
-      <div class="flex items-center justify-between gap-2">
-        <div class="flex items-center gap-1 min-w-0">
-          <span class="text-sm font-semibold text-ink">Tasks</span>
-          <a-button
-            type="text"
-            size="small"
-            :loading="busy || loading"
-            title="Refresh tasks"
-            @click="emit('refresh')"
-          >
-            <template #icon><ReloadOutlined /></template>
-          </a-button>
-        </div>
-        <div class="flex gap-1 flex-wrap justify-end">
-          <a-button size="small" @click="emit('openAdhoc')">
-            <template #icon><PlusOutlined /></template>
-            <span class="hidden sm:inline">Hotfix</span>
-          </a-button>
-          <a-tooltip v-if="runBlockedReason" :title="runBlockedReason">
-            <a-button
-              size="small"
-              type="primary"
-              :loading="busy"
-              disabled
-              >Run</a-button
-            >
-          </a-tooltip>
-          <a-button
-            v-else
-            size="small"
-            type="primary"
-            :loading="busy"
-            title="⌘/Ctrl+Enter"
-            @click="emit('runSelected')"
-            >Run</a-button
-          >
-          <a-button size="small" :loading="busy" @click="emit('runAll')"
-            >All</a-button
-          >
-        </div>
-      </div>
-      <a-select
-        :value="milestoneFilter"
-        size="small"
-        class="w-full"
-        :options="
-          milestones.map((m) => ({
-            value: m,
-            label:
-              m === 'all'
-                ? 'All milestones'
-                : m === '__none__'
-                  ? 'No milestone'
-                  : m,
-          }))
-        "
-        @update:value="(v: string) => emit('update:milestoneFilter', v)"
-      />
-      <label class="flex items-center gap-1.5 text-[11px] text-ink-faint">
-        <span class="shrink-0">#iid</span>
-        <a-input
-          :value="openIidDraft"
-          size="small"
-          class="flex-1 !text-xs"
-          placeholder="Enter…"
-          allow-clear
-          @update:value="(v: string) => emit('update:openIidDraft', v)"
-          @pressEnter="emit('openByIid')"
-        />
-      </label>
+    <div class="faw-col-head">
+      <h2>Tasks</h2>
+      <span class="faw-count">{{ sortedJobs.length }} jobs</span>
+      <button
+        type="button"
+        class="faw-icon-btn"
+        title="Refresh tasks"
+        :disabled="busy || loading"
+        @click="emit('refresh')"
+      >
+        <ReloadOutlined />
+      </button>
     </div>
 
-    <div class="flex-1 min-h-0 overflow-y-auto p-2 relative">
-      <div v-if="loading" class="space-y-2 p-1" aria-hidden="true">
-        <div
-          v-for="n in 5"
-          :key="n"
-          class="rounded-xl border border-line/60 p-2.5 space-y-2"
-        >
-          <div class="skel h-3 w-12" />
-          <div class="skel h-3.5 w-[88%]" />
-          <div class="skel h-2.5 w-2/3" />
+    <div class="faw-filters">
+      <div class="faw-filters__row">
+        <div class="faw-field">
+          <a-select
+            :value="milestoneFilter"
+            size="small"
+            class="w-full faw-select-ghost"
+            :bordered="false"
+            :options="
+              milestones.map((m) => ({
+                value: m,
+                label:
+                  m === 'all'
+                    ? 'All milestones'
+                    : m === '__none__'
+                      ? 'No milestone'
+                      : m,
+              }))
+            "
+            @update:value="(v: string) => emit('update:milestoneFilter', v)"
+          />
         </div>
       </div>
-      <TransitionGroup
-        v-else
-        name="list-slide"
-        tag="div"
-        class="space-y-1 relative"
-      >
-        <div
-          v-for="t in filteredTasks"
-          :key="t.issueIid"
-          class="rounded-xl px-2.5 py-2 cursor-pointer hover:bg-surface-muted border border-transparent fx-colors active:bg-surface-muted"
-          :class="
-            selectedTaskIid === t.issueIid
-              ? '!border-accent/40 !bg-accent-soft'
-              : ''
-          "
-          @click="emit('selectTask', t.issueIid)"
+      <div class="faw-filters__row">
+        <div class="faw-field faw-field--iid">
+          <a-input
+            :value="openIidDraft"
+            size="small"
+            class="faw-input-ghost font-mono"
+            placeholder="#iid"
+            :bordered="false"
+            @update:value="(v: string) => emit('update:openIidDraft', v)"
+            @pressEnter="emit('openByIid')"
+          />
+        </div>
+        <div class="faw-field faw-field--grow">
+          <a-input
+            v-model:value="taskSearch"
+            size="small"
+            class="faw-input-ghost"
+            placeholder="Search title, tag…"
+            :bordered="false"
+            allow-clear
+          />
+        </div>
+        <button type="button" class="faw-btn" title="New hotfix" @click="emit('openAdhoc')">
+          <PlusOutlined /> Hotfix
+        </button>
+      </div>
+      <div class="faw-filters__row">
+        <a-tooltip v-if="runBlockedReason" :title="runBlockedReason">
+          <button type="button" class="faw-btn faw-btn--run" disabled>▶ Run</button>
+        </a-tooltip>
+        <button
+          v-else
+          type="button"
+          class="faw-btn faw-btn--run"
+          :disabled="busy"
+          title="Checked Open tasks · ⌘/Ctrl+Enter"
+          @click="emit('runSelected')"
         >
-          <div class="flex items-start gap-2">
+          ▶ Run
+        </button>
+        <button
+          type="button"
+          class="faw-btn"
+          :disabled="busy"
+          style="flex: 1"
+          title="All assigned open tasks"
+          @click="emit('runAll')"
+        >
+          Run all
+        </button>
+      </div>
+    </div>
+
+    <!-- Open tasks (flex scroll) -->
+    <div class="faw-list-scroll flex-1 min-h-0">
+      <div v-if="loading" class="space-y-1.5 p-2" aria-hidden="true">
+        <div v-for="n in 5" :key="n" class="skel h-10 w-full" />
+      </div>
+
+      <template v-else>
+        <div class="faw-group-label">
+          Open <span class="n">{{ visibleTasks.length }}</span>
+        </div>
+
+        <TransitionGroup name="list-slide" tag="div" class="relative">
+          <div
+            v-for="t in visibleTasks"
+            :key="t.issueIid"
+            class="faw-task-row"
+            :class="{ active: selectedTaskIid === t.issueIid }"
+            @click="emit('selectTask', t.issueIid)"
+          >
             <a-checkbox
               :checked="selectedIids.includes(t.issueIid)"
               @click.stop
@@ -315,45 +369,48 @@ watch(
               "
             />
             <div class="min-w-0">
-              <div class="text-xs">
-                <IssueIidLink :iid="t.issueIid" :url="t.url" link-class="!text-xs" />
+              <div class="faw-task-row__id">
+                <IssueIidLink
+                  :iid="t.issueIid"
+                  :url="t.url"
+                  link-class="!text-[10.5px] !font-mono"
+                />
               </div>
-              <div class="text-sm text-ink-soft line-clamp-2">{{ t.title }}</div>
+              <div class="faw-task-row__title">{{ t.title }}</div>
               <div
                 v-if="t.milestone?.title || (t.labels && t.labels.length)"
-                class="flex flex-wrap items-center gap-1 mt-1 min-w-0"
+                class="faw-chips"
               >
+                <span v-if="t.milestone?.title" class="faw-chip" :title="t.milestone.title">{{
+                  t.milestone.title
+                }}</span>
                 <span
-                  v-if="t.milestone?.title"
-                  class="text-[10px] text-ink-faint truncate max-w-full"
-                  :title="t.milestone.title"
-                  >{{ t.milestone.title }}</span
-                >
-                <a-tag
                   v-for="l in t.labels || []"
                   :key="l"
-                  class="m-0 !text-[10px] !leading-4 !px-1 !py-0 max-w-[7rem] truncate"
+                  class="faw-chip"
                   :title="l"
-                  >{{ l }}</a-tag
+                  >{{ l }}</span
                 >
               </div>
             </div>
           </div>
-        </div>
-      </TransitionGroup>
-      <a-empty
-        v-if="!loading && !filteredTasks.length"
-        class="py-6"
-        description="No tasks"
-      >
-        <a-button size="small" type="primary" @click="emit('refresh')"
-          >Refresh</a-button
+        </TransitionGroup>
+
+        <a-empty
+          v-if="!visibleTasks.length"
+          class="py-6"
+          description="No tasks"
         >
-      </a-empty>
+          <a-button size="small" type="primary" @click="emit('refresh')"
+            >Refresh</a-button
+          >
+        </a-empty>
+      </template>
     </div>
 
+    <!-- Jobs — resizable / collapsible -->
     <div
-      class="jobs-panel shrink-0 flex flex-col overflow-hidden border-t border-line bg-surface-soft/80"
+      class="jobs-panel shrink-0 flex flex-col overflow-hidden border-t border-line"
       :class="{ 'is-dragging': jobsDragging, 'is-collapsed': !jobsOpen }"
       :style="jobsOpen ? { height: `${jobsHeight}px` } : undefined"
     >
@@ -384,142 +441,122 @@ watch(
 
       <div
         v-show="jobsOpen"
-        class="flex-1 min-h-0 overflow-y-auto overscroll-contain p-2"
+        class="flex-1 min-h-0 overflow-y-auto overscroll-contain"
       >
         <TransitionGroup
           name="list-slide"
           tag="div"
-          class="space-y-1 relative"
+          class="relative"
         >
           <div
             v-for="j in sortedJobs"
             :key="j.id"
-            class="rounded-lg px-2 py-1.5 cursor-pointer hover:bg-surface-raised text-sm border border-transparent relative group/job active:bg-surface-raised fx-colors"
-            :class="[
-              selectedJobId === j.id
-                ? '!bg-surface-raised !border-line shadow-sm'
-                : '',
-              flashIds.has(j.id) ? 'ring-2 ring-blue-400/70 shadow-sm' : '',
-            ]"
+            class="faw-job-row group/job"
+            :class="{
+              active: selectedJobId === j.id,
+              flash: flashIds.has(j.id),
+            }"
             @click="emit('selectJob', j.id)"
           >
-            <div class="flex items-center gap-1.5 min-w-0">
-              <div @click.stop>
-                <a-dropdown
-                  :trigger="['click']"
-                  :disabled="jobStatusBusy === j.id"
-                >
-                  <a-tag
-                    :color="statusColor(j.status)"
-                    class="m-0 !text-[10px] !leading-4 !px-1.5 !py-0 cursor-pointer max-w-[7.5rem] truncate fx-colors"
-                  >
-                    {{ statusLabel(j.status) }}
-                    <span class="opacity-60 ml-0.5">▾</span>
-                  </a-tag>
-                  <template #overlay>
-                    <a-menu
-                      :selected-keys="[j.status]"
-                      @click="
-                        ({ key }: { key: string }) =>
-                          emit('statusChange', j.id, key)
-                      "
-                    >
-                      <a-menu-item
-                        v-if="
-                          !(MANUAL_JOB_STATUSES as readonly string[]).includes(
-                            j.status,
-                          )
-                        "
-                        :key="j.status"
-                        disabled
-                      >
-                        {{ statusLabel(j.status) }}
-                      </a-menu-item>
-                      <a-menu-item v-for="s in MANUAL_JOB_STATUSES" :key="s">
-                        {{ statusLabel(s) }}
-                      </a-menu-item>
-                    </a-menu>
-                  </template>
-                </a-dropdown>
-              </div>
-              <a-tag
-                v-if="j.contextQuality?.level"
-                :color="contextQualityColor(j.contextQuality.level)"
-                class="m-0 !text-[10px] !leading-4 !px-1 !py-0 shrink-0 fx-colors"
-                :title="j.contextQuality.reason || ''"
-              >
-                {{
-                  j.contextQuality.level === "good"
-                    ? "Good"
-                    : j.contextQuality.level === "searchable"
-                      ? "Search"
-                      : "Bad"
-                }}
-              </a-tag>
-              <span
-                v-if="jobDisplayIid(j) === 'Hotfix'"
-                class="text-accent text-xs font-semibold shrink-0"
-                >Hotfix</span
-              >
-              <IssueIidLink
-                v-else
-                :iid="j.issue?.issueIid"
-                :url="j.issue?.url"
-                link-class="!text-xs shrink-0"
-              />
-              <a-spin
-                v-if="jobLoading && selectedJobId === j.id"
-                size="small"
-                class="ml-auto"
-              />
-              <a-popconfirm
-                v-else
-                title="Delete this job?"
-                ok-text="Delete"
-                cancel-text="Cancel"
-                ok-type="danger"
-                @confirm="emit('deleteJob', j.id)"
+            <div @click.stop>
+              <a-dropdown
+                :trigger="['click']"
+                :disabled="jobStatusBusy === j.id"
               >
                 <button
                   type="button"
-                  class="ml-auto shrink-0 text-[11px] leading-none text-ink-faint hover:text-red-500 opacity-100 sm:opacity-0 sm:group-hover/job:opacity-100 fx-colors px-0.5"
-                  :disabled="jobStatusBusy === j.id"
-                  @click.stop
-                  title="Delete job"
+                  class="faw-job-dot-btn"
+                  :title="statusLabel(j.status)"
                 >
-                  ×
+                  <span
+                    class="faw-job-dot"
+                    :class="statusDotClass(j.status)"
+                  />
                 </button>
-              </a-popconfirm>
+                <template #overlay>
+                  <a-menu
+                    :selected-keys="[j.status]"
+                    @click="
+                      ({ key }: { key: string }) =>
+                        emit('statusChange', j.id, key)
+                    "
+                  >
+                    <a-menu-item
+                      v-if="
+                        !(MANUAL_JOB_STATUSES as readonly string[]).includes(
+                          j.status,
+                        )
+                      "
+                      :key="j.status"
+                      disabled
+                    >
+                      {{ statusLabel(j.status) }}
+                    </a-menu-item>
+                    <a-menu-item v-for="s in MANUAL_JOB_STATUSES" :key="s">
+                      {{ statusLabel(s) }}
+                    </a-menu-item>
+                  </a-menu>
+                </template>
+              </a-dropdown>
             </div>
-            <div class="truncate text-ink-muted text-xs mt-0.5">
-              {{ j.issue?.title }}
-            </div>
-            <div
-              v-if="jobMilestone(j) || jobLabels(j).length"
-              class="flex flex-wrap items-center gap-1 mt-1 min-w-0"
+
+            <span
+              v-if="jobDisplayIid(j) === 'Hotfix'"
+              class="faw-job-id"
+              >Hotfix</span
             >
-              <span
-                v-if="jobMilestone(j)"
-                class="text-[10px] text-ink-faint truncate max-w-full"
-                :title="jobMilestone(j)"
-                >{{ jobMilestone(j) }}</span
+            <IssueIidLink
+              v-else
+              :iid="j.issue?.issueIid"
+              :url="j.issue?.url"
+              link-class="faw-job-id !no-underline"
+            />
+
+            <span class="faw-job-t" :title="j.issue?.title">{{
+              j.issue?.title
+            }}</span>
+
+            <span
+              v-if="jobSecondaryChip(j)"
+              class="faw-job-tag"
+              :title="jobSecondaryChip(j)?.title"
+              >{{ jobSecondaryChip(j)?.label }}</span
+            >
+
+            <a-spin
+              v-if="jobLoading && selectedJobId === j.id"
+              size="small"
+              class="shrink-0"
+            />
+            <a-popconfirm
+              v-else
+              title="Delete this job?"
+              ok-text="Delete"
+              cancel-text="Cancel"
+              ok-type="danger"
+              @confirm="emit('deleteJob', j.id)"
+            >
+              <button
+                type="button"
+                class="faw-job-del"
+                :disabled="jobStatusBusy === j.id"
+                title="Delete job"
+                @click.stop
               >
-              <a-tag
-                v-for="l in jobLabels(j)"
-                :key="l"
-                class="m-0 !text-[10px] !leading-4 !px-1 !py-0 max-w-[7rem] truncate"
-                :title="l"
-                >{{ l }}</a-tag
-              >
-            </div>
+                ×
+              </button>
+            </a-popconfirm>
           </div>
         </TransitionGroup>
+
         <a-empty
           v-if="!sortedJobs.length"
           class="py-4"
           description="No jobs yet"
         >
-          <span class="text-xs text-ink-faint">Select a task and click Run</span>
+          <span class="text-[11px] text-ink-faint"
+            >Select a task and click Run</span
+          >
         </a-empty>
       </div>
     </div>

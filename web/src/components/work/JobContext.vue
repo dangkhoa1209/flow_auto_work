@@ -62,36 +62,39 @@ const emit = defineEmits<{
 
 <template>
   <section
-    class="flex flex-col min-h-0 overflow-hidden rounded-2xl panel-glass shadow-panel relative h-full"
+    class="flex flex-col min-h-0 overflow-hidden relative h-full faw-mid-col"
   >
     <div
       v-if="jobLoading"
-      class="absolute inset-0 z-20 rounded-2xl bg-surface-raised p-4 space-y-3 border border-line"
+      class="absolute inset-0 z-20 bg-surface p-4 space-y-2"
       aria-busy="true"
     >
-      <div class="skel h-5 w-40" />
+      <div class="skel h-5 w-48" />
       <div class="skel h-3 w-full" />
       <div class="skel h-3 w-[92%]" />
-      <div class="skel h-28 w-full mt-4" />
+      <div class="skel h-24 w-full mt-2" />
       <div class="skel h-3 w-3/4" />
       <div class="skel h-3 w-2/3" />
-      <div class="skel h-20 w-full mt-2" />
+      <div class="skel h-16 w-full mt-1.5" />
     </div>
 
     <a-tabs
       v-show="!jobLoading"
       :activeKey="midTab"
-      class="work-tabs flex-1 min-h-0 px-3 pt-1"
+      class="work-tabs flex-1 min-h-0"
       @update:activeKey="(k: string) => emit('update:midTab', k as MidTab)"
     >
       <a-tab-pane key="detail" tab="Issue">
-        <div class="h-full min-h-0 overflow-y-auto pr-2 space-y-4" :class="hideStickyActions ? 'pb-3' : 'pb-24'">
+        <div
+          class="faw-issue-scroll"
+          :class="hideStickyActions ? '' : 'pb-4'"
+        >
           <template v-if="taskDetail || currentJob">
             <a-alert
               v-if="isCurrentAdhoc"
               type="info"
               show-icon
-              class="mt-2"
+              class="mb-3"
               message="Hotfix session — no GitLab issue yet"
             >
               <template #action>
@@ -109,14 +112,13 @@ const emit = defineEmits<{
               v-if="awaitingDocsApproval"
               type="success"
               show-icon
-              class="mt-2"
+              class="mb-3"
               message="Docs phase complete — approve to run code"
             >
               <template #action>
                 <a-button
                   size="small"
                   type="primary"
-                  class="!bg-violet-600 hover:!bg-violet-500"
                   :loading="approveDocsBusy"
                   @click="emit('approveDocs')"
                   >Approve Docs</a-button
@@ -124,13 +126,13 @@ const emit = defineEmits<{
               </template>
             </a-alert>
 
-            <div>
-              <h2 class="text-base font-semibold text-ink mt-2 mb-1">
-                <template v-if="isCurrentAdhoc">
-                  <span class="text-accent">Hotfix</span>
-                  {{ detailTitle }}
-                </template>
-                <template v-else>
+            <div class="faw-issue-head">
+              <template v-if="isCurrentAdhoc">
+                <span class="faw-issue-head__num">Hotfix</span>
+                <h1 class="faw-issue-head__title">{{ detailTitle }}</h1>
+              </template>
+              <template v-else>
+                <span class="faw-issue-head__num">
                   <IssueIidLink
                     :iid="
                       taskDetail?.issueIid ||
@@ -138,158 +140,164 @@ const emit = defineEmits<{
                       selectedTaskIid
                     "
                     :url="taskDetail?.url || currentJob?.issue?.url"
+                    link-class="!text-[14px] !font-mono !text-ink-faint"
                   />
-                  {{ detailTitle }}
-                </template>
-              </h2>
-              <p
-                v-if="currentJob && jobBranch(currentJob)"
-                class="text-xs text-ink-faint m-0 mb-1 font-mono flex items-center gap-1.5 flex-wrap"
+                </span>
+                <h1 class="faw-issue-head__title">{{ detailTitle }}</h1>
+              </template>
+            </div>
+
+            <div
+              v-if="
+                (currentJob && jobBranch(currentJob)) ||
+                currentJob?.commitSha ||
+                detailMeta
+              "
+              class="meta-line"
+            >
+              <template v-if="currentJob && jobBranch(currentJob)">
+                <span class="meta-line__branch font-mono">
+                  <span class="truncate max-w-[16rem]">{{
+                    jobBranch(currentJob)
+                  }}</span>
+                  <button
+                    type="button"
+                    class="meta-line__copy"
+                    title="Copy branch"
+                    @click="emit('copyBranch', jobBranch(currentJob))"
+                  >
+                    <CopyOutlined class="text-[10px]" />
+                  </button>
+                </span>
+              </template>
+              <code v-if="currentJob?.commitSha">{{
+                currentJob.commitSha.slice(0, 8)
+              }}</code>
+              <template v-if="detailMeta">
+                <span class="meta-line__sep">·</span>
+                <span class="meta-line__detail">{{ detailMeta }}</span>
+              </template>
+            </div>
+
+            <div class="faw-ctx-tags">
+              <span
+                v-if="contextQuality?.level === 'good'"
+                class="faw-pill faw-pill--good"
+                :title="contextQuality.reason || ''"
+                >✓ {{ contextQualityLabel(contextQuality.level) }}</span
               >
-                <span class="truncate">{{ jobBranch(currentJob) }}</span>
-                <button
-                  type="button"
-                  class="text-ink-faint hover:text-accent"
-                  title="Copy branch"
-                  @click="emit('copyBranch', jobBranch(currentJob))"
+              <a-tag
+                v-else-if="contextQuality?.level"
+                :color="contextQualityColor(contextQuality.level)"
+                class="m-0 !text-[10px] !leading-none !px-1.5 !py-0.5"
+                :title="contextQuality.reason || ''"
+                >{{ contextQualityLabel(contextQuality.level) }}</a-tag
+              >
+              <button
+                type="button"
+                class="faw-pill faw-pill--link"
+                @click="emit('openStandards')"
+              >
+                View standards
+              </button>
+              <template v-if="!isCurrentAdhoc && taskDetail?.labels?.length">
+                <span
+                  v-for="l in taskDetail.labels"
+                  :key="l"
+                  class="faw-chip"
+                  >{{ l }}</span
                 >
-                  <CopyOutlined class="text-[11px]" />
-                </button>
-                <span v-if="currentJob.commitSha" class="text-ink-faint">
-                  · {{ currentJob.commitSha.slice(0, 8) }}</span
-                >
-              </p>
-              <p v-if="detailMeta" class="text-xs text-ink-faint m-0 mb-2">
-                {{ detailMeta }}
-              </p>
+              </template>
+            </div>
 
-              <div class="mb-3 flex items-center gap-2 flex-wrap text-xs">
-                <template v-if="contextQuality?.level">
-                  <span
-                    class="text-[11px] uppercase tracking-wide text-ink-faint"
-                    >Context</span
-                  >
-                  <a-tag
-                    :color="contextQualityColor(contextQuality.level)"
-                    class="m-0"
-                    :title="contextQuality.reason || ''"
-                    >{{ contextQualityLabel(contextQuality.level) }}</a-tag
-                  >
-                </template>
-                <a-button
-                  size="small"
-                  type="link"
-                  class="!px-0 !h-auto"
-                  @click="emit('openStandards')"
-                  >View standards</a-button
-                >
-              </div>
+            <a-alert
+              v-if="contextIsBad"
+              type="error"
+              show-icon
+              class="mb-3"
+              message="Bad Context — Run blocked"
+              :description="
+                currentJob?.lastQuestion ||
+                'Add Dev Notes or technical details, then Run again.'
+              "
+            />
 
-              <a-alert
-                v-if="contextIsBad"
-                type="error"
-                show-icon
-                class="mb-3"
-                message="Bad Context — Run blocked"
-                :description="
-                  currentJob?.lastQuestion ||
-                  'Add Dev Notes or technical details, then Run again.'
+            <div class="faw-issue-body">
+              <ChatMessageBody
+                v-if="isCurrentAdhoc"
+                role="agent"
+                :markdown="true"
+                :body="
+                  currentJob?.summary?.trim() ||
+                  'No summary yet — chat with the agent or describe the work.'
                 "
               />
-
-              <div
-                v-if="!isCurrentAdhoc && taskDetail?.labels?.length"
-                class="flex flex-wrap gap-1 mb-3"
-              >
-                <a-tag v-for="l in taskDetail.labels" :key="l" class="m-0">{{
-                  l
-                }}</a-tag>
-              </div>
-              <div
-                class="text-sm text-ink-soft rounded-xl bg-surface-soft border border-line p-3"
-              >
-                <ChatMessageBody
-                  v-if="isCurrentAdhoc"
-                  role="agent"
-                  :markdown="true"
-                  :body="
-                    currentJob?.summary?.trim() ||
-                    'No summary yet — chat with the agent or describe the work.'
-                  "
-                />
-                <ChatMessageBody
-                  v-else
-                  role="agent"
-                  :markdown="true"
-                  :issue-url="taskDetail?.url || currentJob?.issue?.url"
-                  :body="taskDetail?.description || ''"
-                  empty="(no description)"
-                />
-              </div>
+              <ChatMessageBody
+                v-else
+                role="agent"
+                :markdown="true"
+                :issue-url="taskDetail?.url || currentJob?.issue?.url"
+                :body="taskDetail?.description || ''"
+                empty="(no description)"
+              />
             </div>
 
             <template v-if="!isCurrentAdhoc">
               <div>
-                <div
-                  class="text-xs font-semibold uppercase tracking-wide text-ink-faint mb-2"
-                >
+                <h3 class="faw-sec">
                   Related / child
                   <span v-if="relatedIssues.length"
                     >({{ relatedIssues.length }})</span
                   >
-                </div>
-                <div v-if="relatedIssues.length" class="space-y-1.5">
-                  <button
+                </h3>
+                <ul v-if="relatedIssues.length" class="m-0 mb-2.5 pl-[18px] text-[12.5px] text-ink-muted leading-[1.7]">
+                  <li
                     v-for="r in relatedIssues"
                     :key="r.iid"
-                    type="button"
-                    class="w-full text-left rounded-xl border border-line bg-surface-raised/70 px-3 py-2 hover:border-accent/40 hover:bg-accent-soft/40 transition"
-                    @click="
-                      emit('openRelated', {
-                        iid: r.iid,
-                        title: r.title,
-                        url: r.url,
-                      })
-                    "
+                    class="mb-1"
                   >
-                    <div class="text-sm text-ink-soft">
+                    <button
+                      type="button"
+                      class="text-left text-accent hover:underline bg-transparent border-0 p-0 cursor-pointer font-[inherit] text-[12.5px]"
+                      @click="
+                        emit('openRelated', {
+                          iid: r.iid,
+                          title: r.title,
+                          url: r.url,
+                        })
+                      "
+                    >
                       <IssueIidLink :iid="r.iid" :url="r.url" />
                       — {{ r.title }}
-                    </div>
-                    <div class="text-xs text-ink-faint mt-0.5">
+                    </button>
+                    <div class="text-[11px] text-ink-faint">
                       {{ r.state }} · {{ r.source
                       }}{{ r.linkType ? ` · ${r.linkType}` : "" }}
                     </div>
-                  </button>
-                </div>
-                <div v-else class="text-xs text-ink-faint">
+                  </li>
+                </ul>
+                <div v-else class="text-[11px] text-ink-faint mb-2">
                   No related / child issues
                 </div>
               </div>
 
               <div>
-                <div
-                  class="text-xs font-semibold uppercase tracking-wide text-ink-faint mb-2"
-                >
+                <h3 class="faw-sec">
                   Comments
                   <span v-if="humanComments.length"
                     >({{ humanComments.length }})</span
                   >
-                </div>
-                <div v-if="humanComments.length" class="space-y-2">
-                  <div
-                    v-for="n in humanComments"
-                    :key="n.id"
-                    class="rounded-xl border border-line bg-surface-raised/60 px-3 py-2"
-                  >
-                    <div class="text-xs text-ink-faint mb-1">
+                </h3>
+                <div v-if="humanComments.length" class="space-y-3">
+                  <div v-for="n in humanComments" :key="n.id">
+                    <div class="text-[11px] text-ink-faint mb-1">
                       @{{ n.author }}
                       <span v-if="n.createdAt">
                         · {{ new Date(n.createdAt).toLocaleString() }}</span
                       >
                     </div>
                     <ChatMessageBody
-                      class="text-sm text-ink-soft"
+                      class="faw-issue-body"
                       role="agent"
                       :markdown="true"
                       :issue-url="taskDetail?.url || currentJob?.issue?.url"
@@ -297,31 +305,26 @@ const emit = defineEmits<{
                     />
                   </div>
                 </div>
-                <div v-else class="text-xs text-ink-faint">No comments yet</div>
+                <div v-else class="text-[11px] text-ink-faint">No comments yet</div>
               </div>
             </template>
 
-            <div class="rounded-xl border border-line bg-accent-soft/30 p-3">
-              <div class="flex items-center justify-between gap-2 mb-2">
-                <div class="flex items-center gap-2 min-w-0">
-                  <div
-                    class="text-xs font-semibold uppercase tracking-wide text-accent"
-                  >
-                    Dev Notes
-                  </div>
-                  <a-button
-                    size="small"
-                    type="link"
-                    class="!px-0 !h-auto !text-[11px]"
-                    @click="emit('openStandards')"
-                    >standards</a-button
-                  >
-                  <span
-                    v-if="notesSaving"
-                    class="text-[10px] text-ink-faint"
-                    >saving…</span
-                  >
-                </div>
+            <div>
+              <h3 class="faw-sec">
+                Dev Notes
+                <a-button
+                  size="small"
+                  type="link"
+                  class="!px-0 !h-auto !text-[10px] !ml-1"
+                  @click="emit('openStandards')"
+                  >standards</a-button
+                >
+                <span
+                  v-if="notesSaving"
+                  class="text-[10px] text-ink-faint font-normal normal-case tracking-normal"
+                  >saving…</span
+                >
+                <span class="flex-1" />
                 <a-button
                   size="small"
                   type="primary"
@@ -330,7 +333,7 @@ const emit = defineEmits<{
                   @click="emit('saveNotes')"
                   >Save</a-button
                 >
-              </div>
+              </h3>
               <a-textarea
                 :value="notesDraft"
                 :rows="4"
@@ -342,7 +345,7 @@ const emit = defineEmits<{
                   }
                 "
               />
-              <div class="mt-2 flex items-center gap-2">
+              <div class="mt-2 flex items-center gap-1.5">
                 <a-switch
                   :checked="requireDocsFirst"
                   size="small"
@@ -350,14 +353,14 @@ const emit = defineEmits<{
                     (v: boolean) => emit('update:requireDocsFirst', v)
                   "
                 />
-                <span class="text-xs text-ink-muted"
+                <span class="text-[11px] text-ink-muted"
                   >Docs-first (read docs before coding)</span
                 >
               </div>
             </div>
           </template>
           <a-empty v-else description="Select a task or job">
-            <span class="text-xs text-ink-faint"
+            <span class="text-[11px] text-ink-faint"
               >Select on the left column to view context and Run</span
             >
           </a-empty>
@@ -365,7 +368,7 @@ const emit = defineEmits<{
       </a-tab-pane>
 
       <a-tab-pane key="diff" tab="Diff" :disabled="!selectedJobId">
-        <div class="h-full min-h-0 flex flex-col overflow-hidden" :class="hideStickyActions ? 'pb-1' : 'pb-16'">
+        <div class="h-full min-h-0 flex flex-col overflow-hidden p-3">
           <JobDiffPanel
             class="flex-1 min-h-0"
             :job-id="selectedJobId"
@@ -375,31 +378,33 @@ const emit = defineEmits<{
       </a-tab-pane>
     </a-tabs>
 
-    <!-- Sticky action bar (Issue) — desktop / non-dock mobile -->
+    <!-- Bottom bar — mockup bottombar -->
     <div
-      v-show="!jobLoading && !hideStickyActions"
-      class="absolute bottom-0 inset-x-0 z-[5] border-t border-line bg-surface-raised/95 backdrop-blur-sm px-3 py-2.5 flex items-center flex-wrap shadow-sm"
-      :class="mobileTouch ? 'gap-4' : 'gap-2'"
+      v-show="!jobLoading && !hideStickyActions && midTab === 'detail'"
+      class="faw-bottombar"
+      :class="mobileTouch ? '!gap-3' : ''"
     >
       <a-tooltip :title="runBlockedReason || 'Run agent on selected task'">
-        <a-button
-          type="primary"
-          :class="mobileTouch ? 'min-w-[6.5rem] !min-h-[44px]' : 'min-w-[6.5rem]'"
-          :loading="busy"
-          :disabled="Boolean(runBlockedReason)"
+        <button
+          type="button"
+          class="faw-btn faw-btn--run"
+          :class="mobileTouch ? '!min-h-[44px]' : ''"
+          :disabled="busy || Boolean(runBlockedReason)"
           @click="emit('runSelected')"
-          >Run</a-button
         >
+          ▶ Run
+        </button>
       </a-tooltip>
-      <a-button
+      <button
         v-if="awaitingDocsApproval"
-        type="primary"
-        class="!bg-violet-600"
+        type="button"
+        class="faw-btn faw-btn--run"
         :class="mobileTouch ? '!min-h-[44px]' : ''"
-        :loading="approveDocsBusy"
+        :disabled="approveDocsBusy"
         @click="emit('approveDocs')"
-        >Approve Docs</a-button
       >
+        Approve Docs
+      </button>
       <a-popconfirm
         title="Merge work branch → base?"
         ok-text="Merge"
@@ -414,12 +419,14 @@ const emit = defineEmits<{
               : 'Only when job is Awaiting handoff'
           "
         >
-          <a-button
+          <button
+            type="button"
+            class="faw-btn"
             :class="mobileTouch ? '!min-h-[44px]' : ''"
-            :loading="mergeBusy"
             :disabled="!canQuickMerge || mergeBusy || handoffBusy"
-            >Merge</a-button
           >
+            Merge
+          </button>
         </a-tooltip>
       </a-popconfirm>
       <a-popconfirm
@@ -436,20 +443,16 @@ const emit = defineEmits<{
               : 'Only when job is Awaiting handoff'
           "
         >
-          <a-button
-            type="primary"
-            ghost
-            class="!border-cyan-600 !text-cyan-700"
+          <button
+            type="button"
+            class="faw-btn"
             :class="mobileTouch ? '!min-h-[44px]' : ''"
-            :loading="handoffBusy"
             :disabled="!canQuickHandoff || handoffBusy || mergeBusy"
-            >Handoff</a-button
           >
+            Handoff
+          </button>
         </a-tooltip>
       </a-popconfirm>
-      <span v-if="contextIsBad" class="text-xs text-red-600 truncate">{{
-        runBlockedReason
-      }}</span>
     </div>
   </section>
 </template>

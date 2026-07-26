@@ -451,30 +451,36 @@ export const useWorkStore = defineStore("work", () => {
     mode: "selected" | "all" | "auto";
     issueIids?: number[];
     issueIid?: number;
+    jobIds?: string[];
     devNotes?: string;
     requireDocsFirst?: boolean;
   }) {
     const settings = useSettingsStore();
     watchProgress();
-    const res = await api<{ jobId?: string; enqueued?: number }>(
-      "/api/jobs/start",
-      {
-        method: "POST",
-        body: JSON.stringify({
-          ...opts,
-          completion: settings.completionPayload(),
-        }),
-      },
-    );
+    const res = await api<{
+      jobId?: string;
+      jobIds?: string[];
+      enqueued?: number;
+      skipped?: number;
+      missing?: number[];
+      skipReasons?: Array<{ iid?: number; jobId?: string; reason: string }>;
+    }>("/api/jobs/start", {
+      method: "POST",
+      body: JSON.stringify({
+        ...opts,
+        completion: settings.completionPayload(),
+      }),
+    });
     await loadJobs();
-    if (res.jobId) {
-      if (selectedJobId.value === res.jobId) {
+    const pickId = res.jobId || res.jobIds?.[0];
+    if (pickId) {
+      if (selectedJobId.value === pickId) {
         progressAfterId.value = 0;
         progressLines.value = [];
-        await refreshJobChat(res.jobId);
+        await refreshJobChat(pickId);
         await pollProgress(true);
       } else {
-        await selectJob(res.jobId);
+        await selectJob(pickId);
       }
     }
     return res;
@@ -532,7 +538,10 @@ export const useWorkStore = defineStore("work", () => {
   async function killJob(jobId: string) {
     await jobApi.kill(jobId);
     agentTyping.value = false;
+    // Force Idle in header even if SSE is delayed / kill was for stuck run
+    applyStatusSnapshot({ currentJobId: null, queueLength: 0 });
     await loadJobs();
+    await loadStatus().catch(() => undefined);
   }
 
   /** PM approves docs-first phase → enqueue code. */

@@ -22,7 +22,7 @@ const wb = reactive(useWorkbench());
 const panes = reactive(usePaneLayout());
 
 useWorkbenchShortcuts({
-  run: () => wb.runSelected(),
+  run: () => wb.runCheckedTasks(),
   saveNotes: () => wb.saveNotes({ silent: false }),
   closeModal: () => {
     if (wb.relatedPreviewOpen) {
@@ -55,17 +55,15 @@ function onPaneResize(event: { panes: Array<{ size: number }> }) {
 </script>
 
 <template>
-  <div
-    class="h-full max-h-full flex flex-col gap-1.5 sm:gap-3 p-1.5 sm:p-3 min-h-0 overflow-hidden relative"
-  >
-    <!-- Desktop: resizable IDE panes -->
+  <div class="faw-work h-full max-h-full flex flex-col min-h-0 overflow-hidden relative">
+    <!-- Desktop: resizable IDE panes — flush like mockup -->
     <div class="hidden lg:flex flex-1 min-h-0 relative">
       <Splitpanes
-        class="work-split default-theme flex-1 min-h-0"
+        class="work-split faw-split default-theme flex-1 min-h-0"
         @resized="onPaneResize"
       >
         <Pane :size="panes.leftSize" :min-size="16" :max-size="40">
-          <div class="h-full min-h-0 pr-0.5">
+          <div class="h-full min-h-0">
             <TaskList
               class="w-full h-full"
               :filtered-tasks="wb.filteredTasks"
@@ -86,7 +84,7 @@ function onPaneResize(event: { panes: Array<{ size: number }> }) {
               @update:open-iid-draft="wb.openIidDraft = $event"
               @refresh="wb.refreshTasks"
               @open-adhoc="wb.openAdhocModal"
-              @run-selected="wb.runSelected"
+              @run-selected="wb.runCheckedTasks"
               @run-all="wb.runAll"
               @open-by-iid="wb.openTaskByIid"
               @select-task="wb.onSelectTask"
@@ -99,7 +97,7 @@ function onPaneResize(event: { panes: Array<{ size: number }> }) {
         </Pane>
 
         <Pane :size="panes.midSize" :min-size="28">
-          <div class="h-full min-h-0 px-0.5">
+          <div class="h-full min-h-0">
             <JobContext
               class="w-full h-full"
               :mid-tab="wb.midTab"
@@ -138,7 +136,7 @@ function onPaneResize(event: { panes: Array<{ size: number }> }) {
               @save-notes="() => wb.saveNotes()"
               @notes-input="wb.scheduleNotesAutosave"
               @approve-docs="wb.approveDocs"
-              @run-selected="wb.runSelected"
+              @run-selected="wb.runCurrentJob"
               @quick-merge="wb.quickMerge"
               @quick-handoff="wb.quickHandoff"
             />
@@ -146,7 +144,7 @@ function onPaneResize(event: { panes: Array<{ size: number }> }) {
         </Pane>
 
         <Pane :size="panes.rightSize" :min-size="22">
-          <div class="h-full min-h-0 pl-0.5">
+          <div class="h-full min-h-0">
             <AgentConsole
               class="w-full h-full"
               :job-loading="wb.jobLoading"
@@ -195,7 +193,7 @@ function onPaneResize(event: { panes: Array<{ size: number }> }) {
         @update:open-iid-draft="wb.openIidDraft = $event"
         @refresh="wb.refreshTasks"
         @open-adhoc="wb.openAdhocModal"
-        @run-selected="wb.runSelected"
+        @run-selected="wb.runCheckedTasks"
         @run-all="wb.runAll"
         @open-by-iid="wb.openTaskByIid"
         @select-task="wb.onSelectTask"
@@ -314,7 +312,7 @@ function onPaneResize(event: { panes: Array<{ size: number }> }) {
           @save-notes="() => wb.saveNotes()"
           @notes-input="wb.scheduleNotesAutosave"
           @approve-docs="wb.approveDocs"
-          @run-selected="wb.runSelected"
+          @run-selected="wb.runCurrentJob"
           @quick-merge="wb.quickMerge"
           @quick-handoff="wb.quickHandoff"
         />
@@ -356,7 +354,7 @@ function onPaneResize(event: { panes: Array<{ size: number }> }) {
           class="!h-8 !px-3"
           :loading="wb.busy"
           :disabled="Boolean(wb.runBlockedReason)"
-          @click="wb.runSelected()"
+          @click="wb.runCurrentJob()"
           >Run</a-button
         >
       </a-tooltip>

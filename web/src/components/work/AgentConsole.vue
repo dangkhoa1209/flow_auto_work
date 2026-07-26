@@ -1,17 +1,11 @@
 <script setup lang="ts">
 import { nextTick, onMounted, onUnmounted, ref, watch } from "vue";
-import {
-  ClearOutlined,
-  PauseCircleOutlined,
-  DownOutlined,
-} from "@ant-design/icons-vue";
+import { DownOutlined } from "@ant-design/icons-vue";
 import ChatMessageBody from "@/components/ChatMessageBody.vue";
 import { useAutoScroll } from "@/composables/useAutoScroll";
 import {
   statusLabel,
-  statusColor,
   contextQualityLabel,
-  contextQualityColor,
 } from "@/utils/status";
 import type { Job } from "@/stores/work";
 
@@ -19,7 +13,7 @@ const PROGRESS_OPEN_KEY = "flow.console.progressOpen";
 const PROGRESS_H_KEY = "flow.console.progressHeight";
 const PROGRESS_H_MIN = 120;
 const PROGRESS_H_DEFAULT = 240;
-/** Keep chat (messages strip + composer) usable when Process is expanded. */
+/** Keep chat messages usable when Process is expanded. */
 const CHAT_RESERVE_MIN = 200;
 const HEADER_FALLBACK = 48;
 
@@ -61,7 +55,7 @@ const headerEl = ref<HTMLElement | null>(null);
 const chatBox = ref<HTMLElement | null>(null);
 const progressBox = ref<HTMLElement | null>(null);
 const mobileConsoleTab = ref<"chat" | "logs">("chat");
-const progressOpen = ref(true);
+const progressOpen = ref(false);
 const progressHeight = ref(PROGRESS_H_DEFAULT);
 const progressMaxPx = ref(PROGRESS_H_DEFAULT);
 const progressDragging = ref(false);
@@ -75,8 +69,7 @@ let rootResizeObserver: ResizeObserver | null = null;
 onMounted(() => {
   try {
     const raw = localStorage.getItem(PROGRESS_OPEN_KEY);
-    if (raw === "0" || raw === "false") progressOpen.value = false;
-    else if (raw === "1" || raw === "true") progressOpen.value = true;
+    if (raw === "1" || raw === "true") progressOpen.value = true;
     const h = Number(localStorage.getItem(PROGRESS_H_KEY));
     if (Number.isFinite(h) && h >= PROGRESS_H_MIN) {
       progressHeight.value = Math.round(h);
@@ -115,7 +108,6 @@ function persistProgressHeight() {
 function maxProgressHeight() {
   const rootH = rootEl.value?.clientHeight ?? 640;
   const headerH = headerEl.value?.offsetHeight ?? HEADER_FALLBACK;
-  // Never let Process eat into chat — leave header + min chat room.
   const available = rootH - headerH - CHAT_RESERVE_MIN;
   return Math.max(PROGRESS_H_MIN, Math.floor(available));
 }
@@ -195,41 +187,38 @@ const progressScroll = useAutoScroll(progressBox, () => props.progressLines.leng
 <template>
   <aside
     ref="rootEl"
-    class="flex flex-col min-h-0 overflow-hidden rounded-2xl panel-glass shadow-panel relative h-full"
+    class="flex flex-col min-h-0 overflow-hidden relative h-full faw-console"
     :class="{ 'select-none': progressDragging }"
   >
     <div
       v-if="jobLoading"
-      class="absolute inset-0 z-20 rounded-2xl bg-surface-raised p-3 space-y-2.5 border border-line"
+      class="absolute inset-0 z-20 bg-surface p-3 space-y-2"
       aria-busy="true"
     >
-      <div class="skel h-4 w-36" />
-      <div class="skel h-14 w-full" />
-      <div class="skel h-10 w-[90%]" />
-      <div class="skel h-10 w-[80%]" />
-      <div class="skel h-10 w-[70%]" />
-      <div class="skel h-28 w-full mt-3" />
-      <div class="skel h-8 w-full mt-auto" />
+      <div class="skel h-4 w-32" />
+      <div class="skel h-12 w-full" />
+      <div class="skel h-8 w-[90%]" />
+      <div class="skel h-8 w-[80%]" />
+      <div class="skel h-8 w-[70%]" />
+      <div class="skel h-24 w-full mt-2" />
+      <div class="skel h-7 w-full mt-auto" />
     </div>
 
     <template v-if="!jobLoading">
-      <!-- Header / toolbar -->
-      <div
-        ref="headerEl"
-        class="shrink-0 px-3 py-2.5 border-b border-line flex items-center justify-between gap-2 bg-gradient-to-r from-accent-soft/60 to-transparent"
-      >
-        <div class="min-w-0">
-          <div class="font-semibold text-sm text-ink">Agent console</div>
+      <!-- Header / toolbar — mockup console-head -->
+      <div ref="headerEl" class="faw-console-head">
+        <div class="faw-console-head__title">
+          <h2>Agent console</h2>
           <div
             v-if="agentWindowShort"
-            class="text-[10px] font-mono text-ink-faint truncate"
+            class="faw-console-head__win"
             :title="currentJob?.agentId || ''"
           >
             window {{ agentWindowShort }}
           </div>
-          <div v-else class="text-[10px] text-ink-faint">No window linked</div>
+          <div v-else class="faw-console-head__win">No window linked</div>
         </div>
-        <div class="flex items-center gap-1.5 flex-wrap justify-end shrink-0">
+        <div class="faw-console-actions">
           <a-popconfirm
             v-if="canForceStop"
             title="Force Stop agent?"
@@ -238,15 +227,9 @@ const progressScroll = useAutoScroll(progressBox, () => props.progressLines.leng
             ok-type="danger"
             @confirm="emit('forceStop')"
           >
-            <a-button
-              size="small"
-              danger
-              :loading="stopBusy"
-              :disabled="stopBusy"
-            >
-              <template #icon><PauseCircleOutlined /></template>
+            <button type="button" class="faw-btn" :disabled="stopBusy">
               Stop
-            </a-button>
+            </button>
           </a-popconfirm>
           <a-popconfirm
             v-if="canResetWindow"
@@ -257,22 +240,38 @@ const progressScroll = useAutoScroll(progressBox, () => props.progressLines.leng
             @confirm="emit('resetWindow')"
           >
             <template #description>
-              Stop the run if active and unlink the old Cursor window. Chat history
-              is preserved.
+              Stop the run if active and unlink the old Cursor window. Chat
+              history is preserved.
             </template>
-            <a-button size="small" :loading="busy" :disabled="!currentJob">
-              <template #icon><ClearOutlined /></template>
-              Reset
-            </a-button>
+            <button type="button" class="faw-btn" :disabled="busy || !currentJob">
+              ⟲ Reset
+            </button>
           </a-popconfirm>
-          <a-tag v-if="currentJob" :color="statusColor(currentJob.status)">{{
-            statusLabel(currentJob.status)
-          }}</a-tag>
-          <a-tag
-            v-if="contextQuality?.level"
-            :color="contextQualityColor(contextQuality.level)"
+          <span
+            v-if="currentJob"
+            class="faw-chip"
+            :class="{
+              'faw-chip--good': currentJob.status === 'succeeded',
+              'faw-chip--wip':
+                currentJob.status === 'running' ||
+                currentJob.status === 'queued' ||
+                currentJob.status.startsWith('awaiting_'),
+              'faw-chip--bug': currentJob.status === 'failed',
+            }"
+            >{{ statusLabel(currentJob.status) }}</span
+          >
+          <span
+            v-if="contextQuality?.level === 'good'"
+            class="faw-btn faw-btn--run"
+            style="flex: none; padding: 4px 8px; cursor: default"
             :title="contextQuality.reason || ''"
-            >{{ contextQualityLabel(contextQuality.level) }}</a-tag
+            >Good context</span
+          >
+          <span
+            v-else-if="contextQuality?.level"
+            class="faw-chip"
+            :title="contextQuality.reason || ''"
+            >{{ contextQualityLabel(contextQuality.level) }}</span
           >
         </div>
       </div>
@@ -280,11 +279,11 @@ const progressScroll = useAutoScroll(progressBox, () => props.progressLines.leng
       <!-- Mobile: Chat | Logs switcher -->
       <div
         v-if="mobileTabs"
-        class="shrink-0 flex gap-0.5 p-1 border-b border-line bg-surface-soft/80"
+        class="shrink-0 flex gap-0.5 p-0.5 border-b border-line bg-surface-soft/80"
       >
         <button
           type="button"
-          class="flex-1 h-8 rounded-md text-xs font-medium fx-colors touch-manipulation"
+          class="flex-1 h-7 rounded-md text-[11px] font-medium fx-colors touch-manipulation"
           :class="
             mobileConsoleTab === 'chat'
               ? 'bg-surface-raised text-accent shadow-sm'
@@ -296,7 +295,7 @@ const progressScroll = useAutoScroll(progressBox, () => props.progressLines.leng
         </button>
         <button
           type="button"
-          class="flex-1 h-8 rounded-md text-xs font-medium fx-colors touch-manipulation"
+          class="flex-1 h-7 rounded-md text-[11px] font-medium fx-colors touch-manipulation"
           :class="
             mobileConsoleTab === 'logs'
               ? 'bg-surface-raised text-accent shadow-sm'
@@ -308,10 +307,10 @@ const progressScroll = useAutoScroll(progressBox, () => props.progressLines.leng
         </button>
       </div>
 
-      <!-- Chat panel -->
+      <!-- Chat messages (scroll) -->
       <div
         v-show="!mobileTabs || mobileConsoleTab === 'chat'"
-        class="flex flex-col min-h-0 border-b border-line flex-1"
+        class="flex flex-col min-h-0 flex-1"
         :style="
           !mobileTabs && progressOpen
             ? { minHeight: `${CHAT_RESERVE_MIN}px` }
@@ -320,42 +319,29 @@ const progressScroll = useAutoScroll(progressBox, () => props.progressLines.leng
       >
         <div
           ref="chatBox"
-          class="flex-1 min-h-0 overflow-y-auto p-3 space-y-2"
+          class="faw-console-scroll flex-1 min-h-0 overflow-y-auto"
           @scroll="chatScroll.onScroll"
         >
           <div
             v-for="(m, i) in chat"
             :key="i"
-            class="rounded-xl px-3 py-2 border transition break-words"
-            :class="[
-              mobileTabs ? 'text-xs' : 'text-sm',
-              m.role === 'user'
-                ? 'bg-accent-soft border-accent/20 ml-4 text-ink'
-                : m.role === 'agent'
-                  ? 'bg-surface-raised border-line mr-2 text-ink-soft'
-                  : 'bg-surface-muted border-transparent text-ink-muted',
-            ]"
+            class="faw-msg"
+            :class="m.role === 'user' ? 'user' : m.role === 'agent' ? 'agent' : 'system'"
           >
-            <div
-              class="text-[10px] uppercase tracking-wide text-ink-faint font-semibold mb-1"
-            >
-              {{ m.role }}
+            <div class="faw-msg__who">{{ m.role === 'user' ? 'You' : m.role }}</div>
+            <div class="faw-msg__bubble">
+              <ChatMessageBody :role="m.role" :body="m.body" />
             </div>
-            <ChatMessageBody :role="m.role" :body="m.body" />
           </div>
 
-          <div
-            v-if="agentTyping"
-            class="rounded-xl px-3 py-2.5 text-sm border border-line bg-surface-raised mr-2 inline-flex items-center gap-2"
-          >
-            <span
-              class="text-[10px] uppercase tracking-wide text-ink-faint font-semibold"
-              >agent</span
-            >
-            <span class="chat-typing" aria-label="Đang suy nghĩ">
-              <span /><span /><span />
-            </span>
-            <span class="text-xs text-ink-faint">đang suy nghĩ…</span>
+          <div v-if="agentTyping" class="faw-msg agent">
+            <div class="faw-msg__who">agent</div>
+            <div class="faw-msg__bubble faw-msg__bubble--typing">
+              <span class="chat-typing" aria-label="Đang suy nghĩ">
+                <span /><span /><span />
+              </span>
+              <span class="text-[11px] text-ink-faint ml-1.5">đang suy nghĩ…</span>
+            </div>
           </div>
 
           <a-empty
@@ -363,53 +349,21 @@ const progressScroll = useAutoScroll(progressBox, () => props.progressLines.leng
             description="Chat trống — Run hoặc Gửi"
           />
         </div>
+      </div>
 
-        <div
-          v-if="currentJob?.status === 'awaiting_clarification'"
-          class="shrink-0 px-3 pb-2"
-        >
-          <a-alert
-            type="warning"
-            show-icon
-            message="Agent đang hỏi — trả lời ở ô chat bên dưới để tiếp tục"
-          />
-        </div>
-
-        <div
-          class="shrink-0 p-2 sm:p-3 border-t border-line space-y-2 bg-surface-soft/70"
-        >
-          <a-textarea
-            :value="chatInput"
-            :rows="2"
-            :autofocus="false"
-            :disabled="busy || agentTyping"
-            :placeholder="
-              currentJob?.status === 'awaiting_clarification'
-                ? 'Trả lời agent / xác nhận…'
-                : 'Hỏi / sửa / làm thêm (IDE follow-up)…'
-            "
-            @update:value="(v: string) => emit('update:chatInput', v)"
-            @keydown.meta.enter="emit('sendChat', 'continue')"
-          />
-          <div class="flex gap-2">
-            <a-button
-              type="primary"
-              size="small"
-              class="flex-1"
-              :loading="busy || agentTyping"
-              :disabled="busy || agentTyping"
-              @click="emit('sendChat', 'continue')"
-              >Send</a-button
-            >
-            <a-button
-              size="small"
-              :loading="busy || agentTyping"
-              :disabled="busy || agentTyping"
-              @click="emit('sendChat', 'ask')"
-              >Ask only</a-button
-            >
-          </div>
-        </div>
+      <!-- Clarification alert -->
+      <div
+        v-if="
+          (!mobileTabs || mobileConsoleTab === 'chat') &&
+          currentJob?.status === 'awaiting_clarification'
+        "
+        class="shrink-0 px-2 pb-1"
+      >
+        <a-alert
+          type="warning"
+          show-icon
+          message="Agent đang hỏi — trả lời ở ô chat bên dưới để tiếp tục"
+        />
       </div>
 
       <!-- Progress / Logs — collapse + drag-resize (desktop) -->
@@ -475,50 +429,73 @@ const progressScroll = useAutoScroll(progressBox, () => props.progressLines.leng
         <div
           v-show="mobileTabs || progressOpen"
           ref="progressBox"
-          class="console-progress__body flex-1 min-h-0 overflow-y-auto p-2.5 space-y-1 font-mono text-gray-100 leading-snug"
+          class="console-progress__body flex-1 min-h-0 overflow-y-auto space-y-0"
           :class="mobileTabs ? 'text-xs' : ''"
           @scroll="progressScroll.onScroll"
         >
           <div
             v-for="l in progressLines"
             :key="l.id"
-            class="rounded border border-gray-700/60 bg-gray-800/50 px-2 py-1"
+            class="mb-1.5 last:mb-0"
           >
-            <div class="flex items-center gap-2 mb-0.5">
-              <span
-                class="text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded"
-                :class="{
-                  'bg-violet-900/80 text-violet-200': l.kind === 'thinking',
-                  'bg-sky-900/80 text-sky-200': l.kind === 'assistant',
-                  'bg-amber-900/80 text-amber-200': l.kind === 'tool',
-                  'bg-emerald-900/80 text-emerald-200':
-                    l.kind === 'status' || l.kind === 'usage',
-                  'bg-gray-700 text-gray-300':
-                    l.kind !== 'thinking' &&
-                    l.kind !== 'assistant' &&
-                    l.kind !== 'tool' &&
-                    l.kind !== 'status' &&
-                    l.kind !== 'usage',
-                }"
+            <div class="flex items-center gap-1.5 mb-0.5 opacity-70">
+              <span class="text-[9px] font-semibold uppercase tracking-wide"
                 >{{ l.kind }}</span
               >
-              <span class="text-[10px] text-gray-500">{{
+              <span class="text-[9px]">{{
                 new Date(l.at).toLocaleTimeString()
               }}</span>
             </div>
             <div
-              class="leading-snug text-gray-200/90 break-words whitespace-pre-wrap max-h-40 overflow-y-auto"
-              :class="mobileTabs ? 'text-xs' : 'text-[11px]'"
+              class="leading-snug break-words whitespace-pre-wrap max-h-36 overflow-y-auto text-[10.5px]"
             >
               {{ l.text }}
             </div>
           </div>
           <div
             v-if="!progressLines.length"
-            class="text-gray-500 text-center py-8 text-sm font-sans"
+            class="text-center py-4 text-[11px] font-sans opacity-60"
           >
             {{ progressLive ? "Waiting for Cursor stream…" : "No progress yet" }}
           </div>
+        </div>
+      </div>
+
+      <!-- Composer — sticky bottom -->
+      <div
+        v-show="!mobileTabs || mobileConsoleTab === 'chat'"
+        class="faw-console-input"
+      >
+        <a-textarea
+          :value="chatInput"
+          :rows="2"
+          :autofocus="false"
+          :disabled="busy || agentTyping"
+          :placeholder="
+            currentJob?.status === 'awaiting_clarification'
+              ? 'Trả lời agent / xác nhận…'
+              : 'Hỏi / sửa / làm thêm (IDE follow-up)…'
+          "
+          @update:value="(v: string) => emit('update:chatInput', v)"
+          @keydown.meta.enter="emit('sendChat', 'continue')"
+        />
+        <div class="faw-console-input__row">
+          <button
+            type="button"
+            class="faw-btn faw-btn--run faw-btn--send"
+            :disabled="busy || agentTyping"
+            @click="emit('sendChat', 'continue')"
+          >
+            Send
+          </button>
+          <button
+            type="button"
+            class="faw-btn"
+            :disabled="busy || agentTyping"
+            @click="emit('sendChat', 'ask')"
+          >
+            Ask only
+          </button>
         </div>
       </div>
     </template>

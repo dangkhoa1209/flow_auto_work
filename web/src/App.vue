@@ -4,32 +4,35 @@ import { theme as antTheme, ConfigProvider } from "ant-design-vue";
 import { RouterView } from "vue-router";
 
 const themeConfig = computed(() => ({
-  algorithm: antTheme.defaultAlgorithm,
+  algorithm: antTheme.darkAlgorithm,
   token: {
-    colorPrimary: "#0f766e",
-    colorInfo: "#0891b2",
-    colorSuccess: "#059669",
-    colorWarning: "#d97706",
-    colorError: "#dc2626",
-    colorText: "#0f172a",
-    colorTextSecondary: "#475569",
-    colorTextTertiary: "#64748b",
-    colorBgBase: "#eef3f9",
-    colorBgContainer: "#ffffff",
-    colorBgElevated: "#ffffff",
-    colorBgLayout: "#eef3f9",
-    colorBorder: "#d7e0ec",
-    colorBorderSecondary: "#e8eef6",
-    borderRadius: 10,
-    fontFamily: 'Sora, Outfit, system-ui, sans-serif',
-    controlHeight: 36,
+    colorPrimary: "#5B8DEF",
+    colorInfo: "#5B8DEF",
+    colorSuccess: "#34D399",
+    colorWarning: "#F0B429",
+    colorError: "#F0576B",
+    colorText: "#E7E9EE",
+    colorTextSecondary: "#9AA2B1",
+    colorTextTertiary: "#5E6576",
+    colorBgBase: "#0D0F14",
+    colorBgContainer: "#12151C",
+    colorBgElevated: "#171B24",
+    colorBgLayout: "#0D0F14",
+    colorBorder: "#232833",
+    colorBorderSecondary: "#232833",
+    borderRadius: 6,
+    fontFamily:
+      '"IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif',
+    fontSize: 13,
+    controlHeight: 28,
+    controlHeightSM: 24,
   },
 }));
 </script>
 
 <template>
   <ConfigProvider :theme="themeConfig">
-    <div class="h-[100dvh] max-h-[100dvh] overflow-hidden text-ink">
+    <div class="h-[100dvh] max-h-[100dvh] overflow-hidden text-ink text-[13px] leading-[1.45]">
       <RouterView />
     </div>
   </ConfigProvider>

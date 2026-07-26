@@ -4,14 +4,24 @@
  */
 import { listJobDocs } from "../../db/mongo.js";
 import { getConfig } from "../../config.js";
-import { listAssignedOpenIssues } from "../../plugins/gitlab/client.js";
+import {
+  fetchIssueAsJob,
+  listAssignedOpenIssues,
+} from "../../plugins/gitlab/client.js";
 import { scanExistingAssignedIssues } from "../../plugins/gitlab/startup-scan.js";
 import { jobQueue } from "../../queue.js";
 import { listPendingDiffApprovals } from "../../plugins/review/diff-wait.js";
-import { isJobBusy, resolveDevNotes, type CompletionActions, type JobStatus } from "../../types.js";
+import {
+  isJobBusy,
+  resolveDevNotes,
+  type CompletionActions,
+  type IssueJob,
+  type JobStatus,
+} from "../../types.js";
 import { getRuntimeContext } from "../../workspace/runtime.js";
 import { listJobs } from "../../job-store.js";
 import { AppError } from "../../utils/AppError.js";
+import { logger } from "../../logger.js";
 
 export * from "./lifecycle.js";
 export * from "./docs.js";
@@ -43,6 +53,8 @@ export type StartJobsInput = {
   mode?: string;
   issueIid?: number;
   issueIids?: number[];
+  /** Re-run existing jobs by id (Hotfix / adhoc, drafts). */
+  jobIds?: string[];
   runDrafts?: boolean;
   runAll?: boolean;
   devNotes?: string;
@@ -93,6 +105,51 @@ export async function startJobs(body: StartJobsInput) {
       ? Boolean(body.requireDocsFirst)
       : undefined;
   const completion = normalizeCompletion(body);
+
+  const explicitJobIds = Array.isArray(body.jobIds)
+    ? body.jobIds.map((id) => String(id).trim()).filter(Boolean)
+    : [];
+  if (explicitJobIds.length > 0) {
+    let enqueued = 0;
+    let skipped = 0;
+    const jobIds: string[] = [];
+    const skipReasons: Array<{ jobId: string; reason: string }> = [];
+    const existingList = await listJobs();
+    const byId = new Map(existingList.map((j) => [j.id, j] as const));
+    for (const id of explicitJobIds) {
+      const existing = byId.get(id);
+      const result = await jobQueue.enqueueExisting(id, {
+        source: "ui_job_ids",
+        completion: completion ?? existing?.completion,
+      });
+      if (result.enqueued && result.jobId) {
+        enqueued += 1;
+        jobIds.push(result.jobId);
+      } else {
+        skipped += 1;
+        skipReasons.push({
+          jobId: id,
+          reason: result.reason || "enqueue_failed",
+        });
+      }
+    }
+    logger.info("startJobs by jobIds", {
+      requested: explicitJobIds,
+      enqueued,
+      skipped,
+      jobIds,
+      skipReasons,
+    });
+    return {
+      mode: "jobIds" as const,
+      found: explicitJobIds.length,
+      enqueued,
+      skipped,
+      jobIds,
+      jobId: jobIds[0],
+      skipReasons,
+    };
+  }
 
   if (mode === "all") {
     const config = getConfig();
@@ -148,6 +205,7 @@ export async function startJobs(body: StartJobsInput) {
       skippedBusy,
       created,
       jobIds,
+      jobId: jobIds[0],
     };
   }
 
@@ -187,6 +245,7 @@ export async function startJobs(body: StartJobsInput) {
       enqueued,
       skipped,
       jobIds,
+      jobId: jobIds[0],
     };
   }
 
@@ -206,37 +265,104 @@ export async function startJobs(body: StartJobsInput) {
 
   const all = await listAssignedOpenIssues();
   const config = getConfig();
-  const selected = all.filter((i) => iids.includes(i.issueIid));
+  const byIid = new Map(all.map((i) => [i.issueIid, i] as const));
+  const existingJobs = await listJobs();
+  const jobByIid = new Map(
+    existingJobs
+      .filter((j) => j.issue?.issueIid > 0)
+      .map((j) => [j.issue.issueIid, j] as const),
+  );
+
   let enqueued = 0;
   let skipped = 0;
   const jobIds: string[] = [];
+  const skipReasons: Array<{ iid: number; reason: string }> = [];
+  const resolvedFrom: Array<{ iid: number; via: string }> = [];
+  const missing: number[] = [];
 
-  for (const issue of selected) {
-    if (issue.labels.some((l) => config.skipLabels.includes(l.toLowerCase()))) {
+  for (const iid of iids) {
+    let issue: IssueJob | null = byIid.get(iid) ?? null;
+    let via = "assigned_open";
+
+    if (!issue) {
+      const existing = jobByIid.get(iid);
+      if (existing?.issue) {
+        issue = existing.issue;
+        via = "existing_job";
+      }
+    }
+
+    if (!issue) {
+      try {
+        issue = await fetchIssueAsJob(iid);
+        if (issue) via = "gitlab_fetch";
+      } catch (err) {
+        logger.warn("fetchIssueAsJob failed for startJobs", {
+          iid,
+          err: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
+    if (!issue) {
       skipped += 1;
+      missing.push(iid);
+      skipReasons.push({ iid, reason: "issue_not_found" });
       continue;
     }
+
+    resolvedFrom.push({ iid, via });
+
+    if (issue.labels.some((l) => config.skipLabels.includes(l.toLowerCase()))) {
+      skipped += 1;
+      skipReasons.push({ iid, reason: "skip_label" });
+      continue;
+    }
+
+    const existing = jobByIid.get(iid);
     const result = await jobQueue.enqueue(issue, {
       source: "ui_selected",
-      completion,
-      devNotes: iids.length === 1 ? devNotes : undefined,
-      requireDocsFirst: iids.length === 1 ? requireDocsFirst : undefined,
+      completion: completion ?? existing?.completion,
+      devNotes:
+        iids.length === 1
+          ? devNotes
+          : resolveDevNotes(existing ?? { devNotes: undefined }) || undefined,
+      requireDocsFirst:
+        iids.length === 1
+          ? requireDocsFirst
+          : existing?.requireDocsFirst,
     });
     if (result.enqueued && result.jobId) {
       enqueued += 1;
       jobIds.push(result.jobId);
     } else {
       skipped += 1;
+      skipReasons.push({
+        iid,
+        reason: result.reason || "enqueue_failed",
+      });
     }
   }
 
-  const missing = iids.filter((id) => !selected.some((s) => s.issueIid === id));
-  return {
-    mode,
-    found: selected.length,
+  logger.info("startJobs selected", {
+    requested: iids,
+    found: iids.length - missing.length,
     enqueued,
     skipped,
     missing,
     jobIds,
+    skipReasons,
+    resolvedFrom,
+  });
+
+  return {
+    mode,
+    found: iids.length - missing.length,
+    enqueued,
+    skipped,
+    missing,
+    jobIds,
+    jobId: jobIds[0],
+    skipReasons,
   };
 }

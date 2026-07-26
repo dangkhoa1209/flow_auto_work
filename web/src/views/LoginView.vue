@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from "vue";
-import { useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import { message } from "ant-design-vue";
 import type { AuthTokensResponse } from "@/api/authApi";
 import { LAST_LOGIN_KEY } from "@/api/tokenStorage";
@@ -8,12 +8,19 @@ import { useAuthStore } from "@/stores/auth";
 import { useSessionStore, type Membership } from "@/stores/session";
 
 const router = useRouter();
+const route = useRoute();
 const auth = useAuthStore();
 const session = useSessionStore();
 
 const mode = ref<"login" | "register">("login");
 const loading = ref(false);
 const errorText = ref("");
+
+/** Glow follows pointer (%, relative to login root). */
+const glowX = ref(50);
+const glowY = ref(28);
+const glowActive = ref(false);
+const reduceMotion = ref(false);
 
 const form = reactive({
   username: "",
@@ -22,7 +29,44 @@ const form = reactive({
   displayName: "",
 });
 
+/** Only allow same-origin relative paths (block open redirects). */
+function safeRedirectTarget(): string | null {
+  const raw = route.query.redirect;
+  const path = Array.isArray(raw) ? raw[0] : raw;
+  if (typeof path !== "string" || !path.startsWith("/") || path.startsWith("//")) {
+    return null;
+  }
+  if (path.startsWith("/login")) return null;
+  return path;
+}
+
+function postAuthPath(projectId: string | null): string {
+  return safeRedirectTarget() || (projectId ? "/work" : "/settings/project");
+}
+
+function onPointerMove(e: PointerEvent) {
+  if (reduceMotion.value) return;
+  const el = e.currentTarget as HTMLElement | null;
+  if (!el) return;
+  const rect = el.getBoundingClientRect();
+  if (rect.width <= 0 || rect.height <= 0) return;
+  glowX.value = ((e.clientX - rect.left) / rect.width) * 100;
+  glowY.value = ((e.clientY - rect.top) / rect.height) * 100;
+  glowActive.value = true;
+}
+
+function onPointerLeave() {
+  glowActive.value = false;
+}
+
 onMounted(() => {
+  try {
+    reduceMotion.value = window.matchMedia(
+      "(prefers-reduced-motion: reduce)",
+    ).matches;
+  } catch {
+    /* ignore */
+  }
   try {
     const raw = localStorage.getItem(LAST_LOGIN_KEY);
     if (!raw) return;
@@ -40,10 +84,14 @@ function switchMode(next: "login" | "register") {
   form.password2 = "";
 }
 
+function normalizeUsername(raw: string) {
+  return raw.trim().replace(/^@+/, "");
+}
+
 async function applyAuthAndGo(res: AuthTokensResponse) {
-  const username = (
-    res.user?.gitlabUsername || form.username.trim()
-  ).replace(/^@/, "");
+  const username = normalizeUsername(
+    res.user?.gitlabUsername || form.username,
+  );
 
   const projectId =
     res.activeProjectId || res.memberships?.[0]?.projectId || null;
@@ -75,9 +123,7 @@ async function applyAuthAndGo(res: AuthTokensResponse) {
     }),
   );
 
-  await router.push(
-    session.session.projectId ? "/work" : "/settings/project",
-  );
+  await router.replace(postAuthPath(session.session.projectId));
 }
 
 async function onLogin(e?: Event) {
@@ -85,15 +131,17 @@ async function onLogin(e?: Event) {
   if (loading.value) return;
 
   errorText.value = "";
-  if (!form.username.trim() || !form.password) {
+  const username = normalizeUsername(form.username);
+  if (!username || !form.password) {
     errorText.value = "Enter username and password";
     message.warning(errorText.value);
     return;
   }
+  form.username = username;
 
   loading.value = true;
   try {
-    const res = await auth.login(form.username.trim(), form.password);
+    const res = await auth.login(username, form.password);
     message.success("Signed in");
     await applyAuthAndGo(res);
   } catch (err) {
@@ -110,7 +158,8 @@ async function onRegister(e?: Event) {
   if (loading.value) return;
 
   errorText.value = "";
-  if (!form.username.trim() || !form.password) {
+  const username = normalizeUsername(form.username);
+  if (!username || !form.password) {
     errorText.value = "Enter username and password";
     message.warning(errorText.value);
     return;
@@ -125,11 +174,12 @@ async function onRegister(e?: Event) {
     message.warning(errorText.value);
     return;
   }
+  form.username = username;
 
   loading.value = true;
   try {
     const res = await auth.register({
-      username: form.username.trim(),
+      username,
       password: form.password,
       displayName: form.displayName.trim() || undefined,
     });
@@ -146,123 +196,147 @@ async function onRegister(e?: Event) {
 </script>
 
 <template>
-  <div class="min-h-screen flex items-center justify-center px-4 bg-slate-50">
-    <div class="w-full max-w-md bg-white border border-slate-200 rounded-lg p-6 shadow-sm">
-      <div class="mb-5 flex justify-center">
+  <div
+    class="faw-login"
+    @pointermove="onPointerMove"
+    @pointerleave="onPointerLeave"
+  >
+    <div class="faw-login__grid" aria-hidden="true" />
+    <div
+      class="faw-login__glow"
+      :class="{ 'is-follow': glowActive && !reduceMotion }"
+      aria-hidden="true"
+      :style="{
+        left: `${glowX}%`,
+        top: `${glowY}%`,
+      }"
+    />
+
+    <div class="faw-login__shell">
+      <header class="faw-login__brand">
         <img
+          class="faw-login__logo"
           src="/logo.svg"
           alt="Flow Auto WorkBench"
-          class="h-12 w-auto max-w-full object-contain"
-          width="240"
-          height="60"
+          width="248"
+          height="56"
+          draggable="false"
         />
+      </header>
+
+      <p class="faw-login__tagline">
+        GitLab issues → Cursor agent → commit &amp; handoff
+      </p>
+
+      <div class="faw-login__panel">
+        <div class="faw-seg faw-login__seg" role="tablist">
+          <button
+            type="button"
+            class="faw-seg__btn"
+            :class="{ active: mode === 'login' }"
+            role="tab"
+            :aria-selected="mode === 'login'"
+            @click="switchMode('login')"
+          >
+            Sign in
+          </button>
+          <button
+            type="button"
+            class="faw-seg__btn"
+            :class="{ active: mode === 'register' }"
+            role="tab"
+            :aria-selected="mode === 'register'"
+            @click="switchMode('register')"
+          >
+            Register
+          </button>
+        </div>
+
+        <form
+          v-if="mode === 'login'"
+          class="faw-login__form"
+          @submit.prevent="onLogin"
+        >
+          <label class="faw-login__field">
+            <span>Username</span>
+            <a-input
+              v-model:value="form.username"
+              autocomplete="username"
+              placeholder="@username"
+            />
+          </label>
+          <label class="faw-login__field">
+            <span>Password</span>
+            <a-input-password
+              v-model:value="form.password"
+              autocomplete="current-password"
+              placeholder="Password"
+            />
+          </label>
+          <p v-if="errorText" class="faw-login__error" role="alert">
+            {{ errorText }}
+          </p>
+          <button
+            type="submit"
+            class="faw-btn faw-btn--run faw-login__submit"
+            :disabled="loading"
+          >
+            {{ loading ? "Signing in…" : "Sign in" }}
+          </button>
+        </form>
+
+        <form
+          v-else
+          class="faw-login__form"
+          @submit.prevent="onRegister"
+        >
+          <label class="faw-login__field">
+            <span>Username</span>
+            <a-input
+              v-model:value="form.username"
+              autocomplete="username"
+              placeholder="3–32 characters"
+            />
+          </label>
+          <label class="faw-login__field">
+            <span>Display name <em>(optional)</em></span>
+            <a-input
+              v-model:value="form.displayName"
+              placeholder="How you appear in the bench"
+            />
+          </label>
+          <label class="faw-login__field">
+            <span>Password</span>
+            <a-input-password
+              v-model:value="form.password"
+              autocomplete="new-password"
+              placeholder="At least 6 characters"
+            />
+          </label>
+          <label class="faw-login__field">
+            <span>Confirm password</span>
+            <a-input-password
+              v-model:value="form.password2"
+              autocomplete="new-password"
+              placeholder="Re-enter password"
+            />
+          </label>
+          <p v-if="errorText" class="faw-login__error" role="alert">
+            {{ errorText }}
+          </p>
+          <button
+            type="submit"
+            class="faw-btn faw-btn--run faw-login__submit"
+            :disabled="loading"
+          >
+            {{ loading ? "Creating…" : "Create account" }}
+          </button>
+        </form>
       </div>
 
-      <div class="flex gap-2 mb-5">
-        <a-button
-          block
-          :type="mode === 'login' ? 'primary' : 'default'"
-          @click="switchMode('login')"
-        >
-          Sign in
-        </a-button>
-        <a-button
-          block
-          :type="mode === 'register' ? 'primary' : 'default'"
-          @click="switchMode('register')"
-        >
-          Register
-        </a-button>
-      </div>
-
-      <form
-        v-if="mode === 'login'"
-        class="space-y-4"
-        @submit="onLogin"
-      >
-        <div>
-          <label class="block text-sm text-slate-600 mb-1">Username</label>
-          <a-input
-            v-model:value="form.username"
-            size="large"
-            autocomplete="username"
-            placeholder="Username"
-          />
-        </div>
-        <div>
-          <label class="block text-sm text-slate-600 mb-1">Password</label>
-          <a-input-password
-            v-model:value="form.password"
-            size="large"
-            autocomplete="current-password"
-            placeholder="Password"
-          />
-        </div>
-        <p v-if="errorText" class="text-sm text-red-600 m-0">{{ errorText }}</p>
-        <a-button
-          type="primary"
-          block
-          size="large"
-          html-type="submit"
-          :loading="loading"
-          @click="onLogin"
-        >
-          Sign in
-        </a-button>
-      </form>
-
-      <form v-else class="space-y-4" @submit="onRegister">
-        <div>
-          <label class="block text-sm text-slate-600 mb-1">Username</label>
-          <a-input
-            v-model:value="form.username"
-            size="large"
-            autocomplete="username"
-            placeholder="3–32 characters"
-          />
-        </div>
-        <div>
-          <label class="block text-sm text-slate-600 mb-1"
-            >Display name (optional)</label
-          >
-          <a-input
-            v-model:value="form.displayName"
-            size="large"
-            placeholder="Display name"
-          />
-        </div>
-        <div>
-          <label class="block text-sm text-slate-600 mb-1">Password</label>
-          <a-input-password
-            v-model:value="form.password"
-            size="large"
-            autocomplete="new-password"
-            placeholder="At least 6 characters"
-          />
-        </div>
-        <div>
-          <label class="block text-sm text-slate-600 mb-1"
-            >Confirm password</label
-          >
-          <a-input-password
-            v-model:value="form.password2"
-            size="large"
-            autocomplete="new-password"
-            placeholder="Re-enter password"
-          />
-        </div>
-        <p v-if="errorText" class="text-sm text-red-600 m-0">{{ errorText }}</p>
-        <a-button
-          type="primary"
-          block
-          size="large"
-          html-type="submit"
-          :loading="loading"
-          @click="onRegister"
-        >
-          Create account
-        </a-button>
-      </form>
+      <p class="faw-login__foot">
+        Same account as your Flow Auto workspace
+      </p>
     </div>
   </div>
 </template>

@@ -2,10 +2,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter, RouterLink, RouterView } from "vue-router";
 import { message } from "ant-design-vue";
-import {
-  ProjectOutlined,
-  PlusOutlined,
-} from "@ant-design/icons-vue";
+import { SettingOutlined } from "@ant-design/icons-vue";
 import { useSessionStore } from "@/stores/session";
 import { useWorkStore } from "@/stores/work";
 import { connectRealtime } from "@/realtime/client";
@@ -49,6 +46,17 @@ const projectOptions = computed(() =>
     };
   }),
 );
+
+const activeProject = computed(() => {
+  const id = selectedProjectId.value || session.session.projectId;
+  return projectOptions.value.find((o) => o.value === id) || null;
+});
+
+const idleDot = computed(() => {
+  const t = (work.statusText || "").toLowerCase();
+  if (t.startsWith("running") || t.startsWith("queue")) return "wip";
+  return "idle";
+});
 
 let disconnectRealtime: (() => void) | undefined;
 
@@ -98,101 +106,86 @@ function goManageProjects() {
 </script>
 
 <template>
-  <div class="h-[100dvh] max-h-[100dvh] flex flex-col overflow-hidden overflow-x-hidden">
-    <!-- Compact top bar: logo + project (nav tabs → bottom on mobile) -->
-    <header
-      class="shrink-0 border-b border-line bg-surface-raised/95 backdrop-blur-md px-2.5 sm:px-4 py-2 sm:py-2.5 flex items-center gap-2 sm:gap-3 shadow-sm"
-    >
-      <RouterLink
-        to="/work"
-        class="flex items-center gap-2 min-w-0 shrink-0 hover:opacity-90 transition-opacity"
-        title="Flow Auto WorkBench"
-      >
+  <div class="h-[100dvh] max-h-[100dvh] flex flex-col overflow-hidden overflow-x-hidden bg-[var(--app-bg)]">
+    <header class="faw-topbar">
+      <RouterLink to="/work" class="faw-brand" title="Flow Auto WorkBench">
         <img
+          class="faw-brand__logo"
           src="/logo.svg"
           alt="Flow Auto WorkBench"
-          class="h-6 sm:h-8 w-auto max-w-[min(120px,32vw)] lg:max-w-[min(200px,42vw)] object-contain object-left"
-          width="200"
-          height="50"
+          width="148"
+          height="33"
+          draggable="false"
         />
       </RouterLink>
 
-      <div
-        class="flex items-center gap-1 sm:gap-1.5 min-w-0 flex-1 max-w-none sm:max-w-md lg:max-w-lg"
-      >
-        <ProjectOutlined class="text-ink-faint shrink-0 hidden sm:inline" />
+      <div class="faw-crumb">
         <a-select
           v-model:value="selectedProjectId"
-          class="w-full min-w-0 project-select"
-          placeholder="GitLab > Flow project"
+          class="faw-crumb-select"
+          :bordered="false"
           :loading="switching"
           :disabled="switching || !projectOptions.length"
           show-search
           option-filter-prop="label"
           option-label-prop="label"
+          placeholder="Select project"
           @change="(v: string) => onSwitchProject(v)"
         >
           <a-select-option
             v-for="o in projectOptions"
             :key="o.value"
             :value="o.value"
-            :label="o.label"
+            :label="`${o.gitlabPath} › ${o.flowName}`"
           >
-            <div class="flex flex-col gap-0.5 min-w-0 py-0.5 leading-tight">
-              <span
-                class="text-[11px] font-mono text-ink-faint truncate"
-                :title="o.gitlabPath"
-                >{{ o.gitlabPath }}</span
-              >
-              <span class="text-sm text-ink truncate" :title="o.flowName">{{
-                o.flowName
-              }}</span>
-            </div>
+            <span class="font-mono text-[11px] text-ink-faint">{{
+              o.gitlabPath
+            }}</span>
+            <span class="text-ink-faint mx-1">›</span>
+            <b class="text-ink font-semibold">{{ o.flowName }}</b>
           </a-select-option>
         </a-select>
-        <a-tooltip title="Create project">
-          <a-button
-            type="text"
-            size="small"
-            class="shrink-0"
-            @click="goManageProjects"
-          >
-            <template #icon><PlusOutlined /></template>
-          </a-button>
-        </a-tooltip>
       </div>
 
-      <!-- Desktop top nav -->
-      <nav
-        class="hidden lg:flex items-center gap-1 p-1 rounded-xl bg-surface-muted/80 shrink-0"
-      >
+      <nav class="faw-seg hidden lg:flex">
         <RouterLink
           v-for="item in nav"
           :key="item.to"
           :to="item.to"
-          class="px-3 py-1.5 rounded-lg text-sm text-ink-muted hover:text-ink hover:bg-surface-raised transition whitespace-nowrap"
-          :class="
-            route.path.startsWith(item.to)
-              ? '!text-accent !bg-surface-raised font-semibold shadow-sm'
-              : ''
-          "
+          class="faw-seg__btn"
+          :class="{ active: route.path.startsWith(item.to) }"
         >
           {{ item.label }}
         </RouterLink>
       </nav>
 
-      <div class="ml-auto hidden lg:flex items-center gap-2 shrink-0">
-        <span
-          class="text-xs text-ink-faint hidden xl:inline max-w-[180px] truncate"
-          >{{ work.statusText }}</span
+      <div class="faw-topbar__spacer" />
+
+      <div class="faw-topbar__right hidden lg:flex">
+        <span class="faw-idle">
+          <span class="faw-idle__dot" :class="idleDot" />
+          {{ work.statusText || "Idle" }}
+        </span>
+        <div class="faw-user-chip">
+          <span class="faw-avatar" />
+          @{{ session.session.username }}
+        </div>
+        <button
+          type="button"
+          class="faw-icon-btn"
+          title="Settings"
+          @click="router.push('/settings')"
         >
-        <span
-          class="text-xs font-medium text-ink-soft px-2 py-1 rounded-lg bg-accent-soft truncate"
-          >@{{ session.session.username }}</span
+          <SettingOutlined />
+        </button>
+        <button
+          type="button"
+          class="faw-icon-btn"
+          title="Manage projects"
+          @click="goManageProjects"
         >
-        <a-button type="text" size="small" @click="router.push('/settings')">
-          Settings
-        </a-button>
+          +
+        </button>
       </div>
     </header>
 
