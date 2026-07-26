@@ -1243,6 +1243,10 @@ export class JobQueue {
         chatContext: chatContext || undefined,
         contextQualityBlock,
         existingAgentId: job.agentId,
+        clarifyRoundsLeft: Math.max(
+          0,
+          config.MAX_CLARIFY_ROUNDS - (job.clarifyRound ?? 0),
+        ),
         phase: runDocsPhase ? "docs" : "code",
         approvedDocsPaths:
           !runDocsPhase && job.docsApprovedAt

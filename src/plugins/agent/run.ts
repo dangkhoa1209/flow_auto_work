@@ -414,6 +414,8 @@ type RunOpts = {
   existingAgentId?: string;
   /** Injected CONTEXT QUALITY block (good / searchable). */
   contextQualityBlock?: string;
+  /** Remaining NEED_CLARIFICATION rounds before the job hard-fails. */
+  clarifyRoundsLeft?: number;
 };
 
 async function buildMissionPrompt(
@@ -440,6 +442,7 @@ async function buildMissionPrompt(
           approvedDocsPaths: opts.approvedDocsPaths,
           chatContext: opts.chatContext,
           contextQualityBlock: opts.contextQualityBlock,
+          clarifyRoundsLeft: opts.clarifyRoundsLeft,
         });
   if (!resumed) return body;
   return `You are CONTINUING the **same agent window** for GitLab issue #${issue.issueIid}.
@@ -553,7 +556,7 @@ export async function resumeAgent(
   agentId: string,
   answer: string,
   issue: IssueJob,
-  opts?: { jobId?: string },
+  opts?: { jobId?: string; clarifyRoundsLeft?: number },
 ): Promise<AgentRunResult> {
   const modelId = resolveCursorModel();
   await using agent = await Agent.resume(agentId, {
@@ -566,7 +569,9 @@ export async function resumeAgent(
     agentId: agent.agentId,
     model: modelId,
   });
-  const prompt = buildResumePrompt(answer, issue);
+  const prompt = buildResumePrompt(answer, issue, {
+    clarifyRoundsLeft: opts?.clarifyRoundsLeft,
+  });
   if (opts?.jobId) {
     appendPromptSending(opts.jobId, prompt);
   }

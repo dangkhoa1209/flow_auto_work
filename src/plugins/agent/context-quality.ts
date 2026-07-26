@@ -389,6 +389,7 @@ Open / edit the files and symbols named in the requirements first:
 ${files}
 ${anchors ? `\nKnown anchors:\n${anchors}\n` : ""}
 Go straight to implementation after reading those targets. Only search if a named path is missing.
+Reality check: these hints come from the ticket and may be stale. If a named file/symbol does not exist or clearly does not match the described behavior, do a targeted search for the right place instead of forcing the edit into the named file — and if you end up somewhere else, mention it under ASSUMPTIONS in the DONE block.
 `;
   }
 
@@ -402,6 +403,7 @@ Context has technical anchors but not exact file paths.
 ${anchors}
 
 Do not guess file locations. Cap exploration to a few targeted searches (1–2 rounds), then code.
+If after ~2 rounds the anchors do NOT lead to the code the ticket describes (no match, or several equally plausible places), do NOT guess-edit. Use NEED_CLARIFICATION and include: the keywords/paths you searched, the candidates you found, and a numbered question with options so the human can point to the right place in one reply.
 `;
 }
 

@@ -160,6 +160,18 @@ List every \`docs/**/*.{md,mdc}\` file you created or substantially updated unde
 ${gitlabCommentInstructions(issue)}`;
 }
 
+/** Clarify-budget hint so the agent batches questions instead of ping-ponging. */
+function clarifyBudgetLine(roundsLeft?: number): string {
+  if (roundsLeft == null) return "";
+  if (roundsLeft <= 0) {
+    return "You have NO clarification rounds left — do NOT use NEED_CLARIFICATION. Proceed with the safest reasonable interpretation and record every assumption under ASSUMPTIONS in the DONE block.";
+  }
+  if (roundsLeft === 1) {
+    return "This is your LAST clarification round — if you ask, batch EVERY open question into this one block. After the answer you must finish with best-effort assumptions.";
+  }
+  return `You have ${roundsLeft} clarification rounds left for this job — batch questions, don't spend a round on a single small question.`;
+}
+
 export function buildWorkPrompt(
   issue: IssueJob,
   extra?: string,
@@ -169,6 +181,8 @@ export function buildWorkPrompt(
     approvedDocsPaths?: string[];
     chatContext?: string;
     contextQualityBlock?: string;
+    /** How many NEED_CLARIFICATION rounds remain before the job hard-fails. */
+    clarifyRoundsLeft?: number;
   },
 ): string {
   const { notesBlock, description } = sharedPreamble(issue, devNotes);
@@ -229,30 +243,55 @@ ${linkedBlock}
 Use linked/mentioned issues and comments above as additional requirements/context. Prefer the primary issue (#${issue.issueIid}) scope; do not expand work into unrelated linked tickets unless required.
 Ignore image/file attachments — only use text. Do not try to download or open media.
 
+# HANDLING AMBIGUITY & MISSING INFO (resolve gaps in THIS order)
+Real tickets are often incomplete. When something is unclear or missing:
+1. **SELF-RESOLVE first.** Search the repo, feature docs, and the linked issues/comments above. Most "missing" info (file paths, existing patterns, field names, similar screens) is discoverable in the codebase — never ask the human for something the code can answer.
+2. **SAFE ASSUMPTION.** If the gap is minor and one interpretation is clearly standard for this codebase (naming, placement, UI copy, default sort/validation style), proceed — but record it and report it under \`ASSUMPTIONS:\` in the DONE block.
+   NEVER assume on: deleting/migrating data, permissions/security, money/payroll/attendance formulas, external API contracts, or anything irreversible → those go to tier 3.
+3. **ASK (last resort).** Only when the gap genuinely blocks a correct implementation. The human answers in the **Flow Auto Work UI**. End your reply with EXACTLY this block (nothing after it):
+
+<<<NEED_CLARIFICATION>>>
+Your question(s) for the human here (in Vietnamese).
+<<<END_NEED_CLARIFICATION>>>
+
+Question quality rules (strict):
+- ${clarifyBudgetLine(opts?.clarifyRoundsLeft) || "Clarification rounds are limited — batch ALL open questions into ONE block."}
+- Number each question; each must be answerable in one short sentence.
+- Where possible give concrete options with your recommended default, e.g. \`1. Sắp xếp theo? (A) created_at mới nhất — đề xuất (B) tên A→Z\` so the human can reply "1A, 2B".
+- Say briefly what you already checked (files/docs/keywords searched) so the human doesn't repeat known info.
+- Do NOT ask about things you can decide via tier 1/2.
+
+# HARD / LARGE TASKS
+If the task spans multiple modules, touches shared logic, or is risky:
+- Write a short bullet plan BEFORE editing; follow it in small verifiable steps.
+- If mid-way you find the requirement contradicts codebase reality (screen/field/API named in the ticket doesn't exist or behaves differently), STOP and use NEED_CLARIFICATION **with evidence** (file + what you found) instead of forcing a wrong change.
+- Do not silently drop scope; anything skipped goes under \`RISKS:\` in the DONE block.
+
 # EXECUTION PLAN
 1. Analyze the requirements but execute them EXACTLY as demanded in UI CHAT REQUESTS and DEV NOTES when present (those override conflicting business wording). Latest Human chat messages win for this run.
 2. Investigate via docs (and the approved feature docs if listed above), then write a short plan.
 3. Implement on the CURRENT git branch only (do not checkout/create other branches). Keep the change scoped to this issue.
 4. Leave changes as modified files in the working tree — do NOT \`git commit\` or \`git push\`. The orchestrator commits to GitLab when you are done.
-5. If requirements are ambiguous or you are not confident which approach to take, do NOT guess.
-   The human answers in the **Flow Auto Work UI** (not Teams).
-   End your final reply with EXACTLY this block (and nothing after it):
-
-<<<NEED_CLARIFICATION>>>
-Your specific question(s) for the human here.
-<<<END_NEED_CLARIFICATION>>>
-
-6. If you finished successfully, end with:
+5. VERIFY before finishing: re-read your diff against the requirements; run the cheapest relevant check (lint/typecheck/build of touched files, or targeted test) when the repo supports it. Report what you verified under \`TESTED:\`.
+6. When finished successfully, end with EXACTLY this block:
 
 <<<DONE>>>
-Tóm tắt ngắn bằng tiếng Việt: đã làm gì / thay đổi chính (1–3 câu).
+SUMMARY: Tóm tắt ngắn tiếng Việt (1–3 câu): đã làm gì / thay đổi chính.
+ASSUMPTIONS: (chỉ khi có) các giả định tự quyết ở tier 2 — mỗi giả định một gạch đầu dòng.
+RISKS: (chỉ khi có) rủi ro / phần bị cắt / điểm reviewer cần chú ý.
+TESTED: đã verify bằng gì (lint/build/test/manual) hoặc "chưa chạy được vì …".
 <<<END_DONE>>>
 
-The DONE summary MUST be written in Vietnamese (tiếng Việt).
+The DONE block MUST be written in Vietnamese (tiếng Việt). Omit ASSUMPTIONS/RISKS lines when empty.
 ${gitlabCommentInstructions(issue)}${extraBlock}`;
 }
 
-export function buildResumePrompt(answer: string, issue: IssueJob): string {
+export function buildResumePrompt(
+  answer: string,
+  issue: IssueJob,
+  opts?: { clarifyRoundsLeft?: number },
+): string {
+  const budget = clarifyBudgetLine(opts?.clarifyRoundsLeft);
   return `The human answered your clarification in the Flow Auto Work UI:
 
 ---
@@ -260,9 +299,10 @@ ${answer}
 ---
 
 Continue the same workflow on the CURRENT branch (do not switch branches).
-Implement if clear enough; otherwise ask again with the NEED_CLARIFICATION block (UI will collect the next answer).
+Implement now. If the answer only partially resolves your questions, fill the remaining small gaps yourself (repo search first, then safe assumptions recorded under ASSUMPTIONS) — do not bounce the same question back.
+${budget ? `${budget}\n` : ""}Only use NEED_CLARIFICATION again for a NEW blocking gap (batch all questions, numbered, with options + recommended default).
 Leave file changes uncommitted — do NOT \`git commit\` or \`git push\` (orchestrator commits to GitLab via API).
-Then use the DONE block. The DONE summary MUST be in Vietnamese (tiếng Việt).`;
+Then end with the DONE block (SUMMARY / ASSUMPTIONS / RISKS / TESTED) in Vietnamese (tiếng Việt).`;
 }
 
 /**
@@ -295,8 +335,9 @@ ${message.trim()}
 1. If they ask a question → answer clearly (Vietnamese if they wrote Vietnamese). You may briefly inspect the repo.
 2. If they ask to fix / add / change / re-test / seed data / run something → **do it** on the CURRENT branch (do not switch branches).
 3. Prefer small, correct changes. Stay scoped to this issue unless they explicitly expand scope.
-4. Do NOT \`git commit\`, \`git push\`, force-push, amend remote commits, or open/merge MRs. Flow Auto Work commits to GitLab via API after you finish.
-5. If you need more info, end with NEED_CLARIFICATION. If finished this follow-up, end with DONE (summary in Vietnamese).
+4. If the request is vague: search the repo/docs first; minor gaps → proceed with the standard interpretation and say so in your reply; only end with NEED_CLARIFICATION when truly blocked (batch ALL questions, numbered, with options + your recommended default).
+5. Do NOT \`git commit\`, \`git push\`, force-push, amend remote commits, or open/merge MRs. Flow Auto Work commits to GitLab via API after you finish.
+6. If finished this follow-up, end with DONE (summary in Vietnamese; note any assumptions you made).
 
 ## Chat reply style (UI is a narrow chat panel — keep it readable)
 - Vietnamese, short: **1–2 câu mở đầu** + bullet ngắn (≤ 8 dòng ý chính). Không dump bảng Markdown khổng lồ.
@@ -337,8 +378,9 @@ ${message.trim()}
 1. If they ask a question → answer clearly (Vietnamese if they wrote Vietnamese). You may briefly inspect the repo.
 2. If they ask to fix / add / change / re-test / seed data / run something → **do it** on the CURRENT branch (do not switch branches).
 3. Prefer small, correct changes. Stay scoped to the request.
-4. Do NOT \`git commit\`, \`git push\`, force-push, amend remote commits, or open/merge MRs. Flow Auto Work commits to GitLab via API after you finish.
-5. If you need more info, end with NEED_CLARIFICATION. If finished this follow-up, end with DONE (summary in Vietnamese — useful as issue description later).
+4. If the request is vague: search the repo first; minor gaps → proceed with the standard interpretation and say so in your reply; only end with NEED_CLARIFICATION when truly blocked (batch ALL questions, numbered, with options + your recommended default).
+5. Do NOT \`git commit\`, \`git push\`, force-push, amend remote commits, or open/merge MRs. Flow Auto Work commits to GitLab via API after you finish.
+6. If finished this follow-up, end with DONE (summary in Vietnamese — useful as issue description later; note any assumptions you made).
 
 ## Chat reply style (UI is a narrow chat panel — keep it readable)
 - Vietnamese, short: **1–2 câu mở đầu** + bullet ngắn (≤ 8 dòng ý chính). Không dump bảng Markdown khổng lồ.
