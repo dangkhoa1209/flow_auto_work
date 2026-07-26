@@ -472,9 +472,11 @@ const progressScroll = useAutoScroll(progressBox, () => props.progressLines.leng
           :autofocus="false"
           :disabled="busy || agentTyping"
           :placeholder="
-            currentJob?.status === 'awaiting_clarification'
-              ? 'Trả lời agent / xác nhận…'
-              : 'Hỏi / sửa / làm thêm (IDE follow-up)…'
+            agentTyping || busy
+              ? 'Agent đang suy nghĩ… đợi xong hoặc Force Stop'
+              : currentJob?.status === 'awaiting_clarification'
+                ? 'Trả lời agent / xác nhận…'
+                : 'Gửi lệnh (sửa / làm / phân tích) → xếp queue…'
           "
           @update:value="(v: string) => emit('update:chatInput', v)"
           @keydown.meta.enter="emit('sendChat', 'continue')"
@@ -484,6 +486,7 @@ const progressScroll = useAutoScroll(progressBox, () => props.progressLines.leng
             type="button"
             class="faw-btn faw-btn--run faw-btn--send"
             :disabled="busy || agentTyping"
+            title="Xếp lệnh vào queue — agent chạy nền (không chờ HTTP)"
             @click="emit('sendChat', 'continue')"
           >
             Send
@@ -492,6 +495,7 @@ const progressScroll = useAutoScroll(progressBox, () => props.progressLines.leng
             type="button"
             class="faw-btn"
             :disabled="busy || agentTyping"
+            title="Hỏi nhanh (Q&A, không sửa code) → xếp queue"
             @click="emit('sendChat', 'ask')"
           >
             Ask only

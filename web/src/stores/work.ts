@@ -139,9 +139,12 @@ export const useWorkStore = defineStore("work", () => {
         currentJob.value = currentJob.value
           ? { ...currentJob.value, ...j }
           : j;
-        // Job just finished → refresh chat only (no issue fetch / no spinner)
-        if (wasBusy && !isJobStatusBusy(j.status) && !agentTyping.value) {
-          void refreshJobChat(selectedJobId.value).catch(() => undefined);
+        // Job just finished → drop typing + refresh chat (SSE / poll)
+        if (wasBusy && !isJobStatusBusy(j.status)) {
+          onSelectedJobBecameIdle(selectedJobId.value);
+        } else if (isJobStatusBusy(j.status)) {
+          // Mid-run after reload — show thinking again
+          agentTyping.value = true;
         }
       }
     }
@@ -224,28 +227,33 @@ export const useWorkStore = defineStore("work", () => {
     const j = jobs.value.find((x) => x.id === ev.jobId);
     if (j) {
       const wasBusy = isJobStatusBusy(j.status);
+      const nowBusy = isJobStatusBusy(ev.status);
       j.status = ev.status;
       if (currentJob.value?.id === ev.jobId) {
         const prev = currentJob.value.status;
         currentJob.value = { ...currentJob.value, status: ev.status };
-        if (
-          isJobStatusBusy(prev) &&
-          !isJobStatusBusy(ev.status) &&
-          !agentTyping.value
-        ) {
-          void refreshJobChat(ev.jobId).catch(() => undefined);
+        if (isJobStatusBusy(prev) && !nowBusy) {
+          onSelectedJobBecameIdle(ev.jobId);
+        } else if (!isJobStatusBusy(prev) && nowBusy) {
+          agentTyping.value = true;
+          watchProgress();
         }
-      } else if (
-        wasBusy &&
-        !isJobStatusBusy(ev.status) &&
-        selectedJobId.value === ev.jobId &&
-        !agentTyping.value
-      ) {
-        void refreshJobChat(ev.jobId).catch(() => undefined);
+      } else if (wasBusy && !nowBusy && selectedJobId.value === ev.jobId) {
+        onSelectedJobBecameIdle(ev.jobId);
+      } else if (!wasBusy && nowBusy && selectedJobId.value === ev.jobId) {
+        agentTyping.value = true;
+        watchProgress();
       }
     } else {
       scheduleLoadJobs();
     }
+  }
+
+  /** Agent finished (Send/Ask/Run) — drop typing bubble and pull final chat via realtime path. */
+  function onSelectedJobBecameIdle(jobId: string) {
+    if (selectedJobId.value !== jobId) return;
+    agentTyping.value = false;
+    void refreshJobChat(jobId).catch(() => undefined);
   }
 
   /** Soft refresh: job + chat only — does not clear UI or re-fetch GitLab issue. */
@@ -317,6 +325,7 @@ export const useWorkStore = defineStore("work", () => {
       if (selectedJobId.value !== id) return;
       currentJob.value = detail.job;
       chat.value = detail.chat || [];
+      agentTyping.value = isJobStatusBusy(detail.job.status);
       await loadIssueForJob(detail.job);
       if (selectedJobId.value !== id) return;
       await pollProgress(switching || progressLines.value.length === 0);
@@ -422,8 +431,8 @@ export const useWorkStore = defineStore("work", () => {
     if (data.status && currentJob.value?.id === selectedJobId.value) {
       const wasBusy = isJobStatusBusy(currentJob.value.status);
       currentJob.value = { ...currentJob.value, status: data.status };
-      if (wasBusy && !isJobStatusBusy(data.status) && !agentTyping.value) {
-        void refreshJobChat(selectedJobId.value).catch(() => undefined);
+      if (wasBusy && !isJobStatusBusy(data.status)) {
+        onSelectedJobBecameIdle(selectedJobId.value);
       }
     }
   }
@@ -436,6 +445,14 @@ export const useWorkStore = defineStore("work", () => {
 
   function isJobStatusBusy(st?: string) {
     return ["queued", "running"].includes(st || "");
+  }
+
+  /** Selected job agent is busy — Send/Ask locked until idle. */
+  function isSelectedJobAgentBusy() {
+    if (agentTyping.value) return true;
+    const j =
+      jobs.value.find((x) => x.id === selectedJobId.value) || currentJob.value;
+    return isJobStatusBusy(j?.status);
   }
 
   /** Whether UI should keep polling progress for the selected job */
@@ -505,33 +522,65 @@ export const useWorkStore = defineStore("work", () => {
 
   async function sendContinue(message: string) {
     if (!selectedJobId.value) throw new Error("No job selected");
+    if (isSelectedJobAgentBusy()) {
+      throw new Error("Agent đang bận — đợi xong hoặc Force Stop rồi gửi lại");
+    }
     appendLocalChat({ role: "user", body: message, kind: "qa" });
     agentTyping.value = true;
     watchProgress();
     try {
-      await api(`/api/jobs/${selectedJobId.value}/continue`, {
+      const res = await api<{
+        ok?: boolean;
+        queued?: boolean;
+        kind?: string;
+        question?: string;
+      }>(`/api/jobs/${selectedJobId.value}/continue`, {
         method: "POST",
         body: JSON.stringify({ message }),
       });
+      if (res?.kind === "bad_context") {
+        agentTyping.value = false;
+      } else if (currentJob.value?.id === selectedJobId.value) {
+        // Optimistic: composer locked + thinking until SSE idle
+        currentJob.value = { ...currentJob.value, status: "queued" };
+      }
       await refreshJobChat(selectedJobId.value);
-    } finally {
+      await loadJobs().catch(() => undefined);
+      await loadStatus().catch(() => undefined);
+      return res;
+    } catch (e) {
       agentTyping.value = false;
+      throw e;
     }
   }
 
   async function sendAsk(question: string) {
     if (!selectedJobId.value) throw new Error("No job selected");
+    if (isSelectedJobAgentBusy()) {
+      throw new Error("Agent đang bận — đợi xong hoặc Force Stop rồi gửi lại");
+    }
     appendLocalChat({ role: "user", body: question, kind: "qa" });
     agentTyping.value = true;
     watchProgress();
     try {
-      await api(`/api/jobs/${selectedJobId.value}/ask`, {
+      const res = await api<{
+        ok?: boolean;
+        queued?: boolean;
+        kind?: string;
+      }>(`/api/jobs/${selectedJobId.value}/ask`, {
         method: "POST",
         body: JSON.stringify({ question }),
       });
+      if (currentJob.value?.id === selectedJobId.value) {
+        currentJob.value = { ...currentJob.value, status: "queued" };
+      }
       await refreshJobChat(selectedJobId.value);
-    } finally {
+      await loadJobs().catch(() => undefined);
+      await loadStatus().catch(() => undefined);
+      return res;
+    } catch (e) {
       agentTyping.value = false;
+      throw e;
     }
   }
 
@@ -685,6 +734,7 @@ export const useWorkStore = defineStore("work", () => {
     pollProgress,
     watchProgress,
     shouldPollProgress,
+    isSelectedJobAgentBusy,
     startJobs,
     sendContinue,
     sendAsk,

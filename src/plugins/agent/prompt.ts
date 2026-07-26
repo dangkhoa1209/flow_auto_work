@@ -340,11 +340,11 @@ ${message.trim()}
 6. If finished this follow-up, end with DONE (summary in Vietnamese; note any assumptions you made).
 
 ## Chat reply style (UI is a narrow chat panel — keep it readable)
-- Vietnamese, short: **1–2 câu mở đầu** + bullet ngắn (≤ 8 dòng ý chính). Không dump bảng Markdown khổng lồ.
-- Không nhét toàn bộ checklist QC / env / API table vào chat — chỉ kết luận + 1–3 bước cần làm.
-- Không hiện thẻ máy kiểu \`<<<DONE>>>\` trong phần người đọc; DONE chỉ ở cuối block riêng nếu cần.
+- Put the **full answer the human asked for in the readable body** (above any machine tags). Flow shows that body in chat — NOT the DONE line alone.
+- When they ask to **phân tích / analyze / review / giải thích / plan**: write a structured analysis in Vietnamese (mục tiêu, phạm vi, neo code/API, rủi ro, đề xuất bước tiếp). Prefer bullets; skip giant Markdown tables.
+- When they ask a short status / yes-no: **1–2 câu** + vài bullet là đủ.
+- Không hiện thẻ máy kiểu \`<<<DONE>>>\` trong phần người đọc; DONE chỉ ở cuối, **1 câu status** (vd. "Đã phân tích #…; chưa code.").
 - Tránh lặp lại "Muốn sửa code thêm → Bật Run" trừ khi họ hỏi tiếp.
-- Nếu cần chi tiết dài (bảng config, chuỗi issue): nói ngắn "chi tiết nằm ở issue / Progress" thay vì paste cả khối.
 
 ${gitlabCommentInstructions(issue)}<<<NEED_CLARIFICATION>>> / <<<DONE>>> blocks same as usual when applicable.`;
 }
@@ -383,9 +383,10 @@ ${message.trim()}
 6. If finished this follow-up, end with DONE (summary in Vietnamese — useful as issue description later; note any assumptions you made).
 
 ## Chat reply style (UI is a narrow chat panel — keep it readable)
-- Vietnamese, short: **1–2 câu mở đầu** + bullet ngắn (≤ 8 dòng ý chính). Không dump bảng Markdown khổng lồ.
-- Không nhét toàn bộ checklist QC / env / API table vào chat — chỉ kết luận + 1–3 bước cần làm.
-- Không hiện thẻ máy kiểu \`<<<DONE>>>\` trong phần người đọc; DONE chỉ ở cuối block riêng nếu cần.
+- Put the **full answer the human asked for in the readable body** (above any machine tags). Flow shows that body in chat — NOT the DONE line alone.
+- When they ask to **phân tích / analyze / review / giải thích / plan**: write a structured analysis in Vietnamese (mục tiêu, phạm vi, neo code, rủi ro, bước tiếp). Prefer bullets; skip giant Markdown tables.
+- When they ask a short status / yes-no: **1–2 câu** + vài bullet là đủ.
+- Không hiện thẻ máy kiểu \`<<<DONE>>>\` trong phần người đọc; DONE chỉ ở cuối, **1 câu status**.
 - Tránh lặp lại "Muốn sửa code thêm → Bật Run" trừ khi họ hỏi tiếp.
 
 <<<NEED_CLARIFICATION>>> / <<<DONE>>> blocks same as usual when applicable.`;
@@ -421,4 +422,47 @@ export function parseAgentOutcome(text: string): {
   }
 
   return { kind: "unknown", summary: text.trim().slice(-2000) };
+}
+
+/**
+ * Human-readable chat body from agent output.
+ * Prefer the prose BEFORE machine tags (DONE / NEED_CLARIFICATION / …) —
+ * that is where analysis / answers live. Fall back to summary/question only
+ * when the prose is empty (legacy one-liner DONE-only replies).
+ */
+export function extractChatBodyFromAgentText(
+  text: string,
+  opts?: { summary?: string; question?: string; maxChars?: number },
+): string {
+  const max = opts?.maxChars ?? 12_000;
+  let body = (text || "")
+    .replace(
+      /<<<GITLAB_COMMENT>>>\s*[\s\S]*?\s*<<<END_GITLAB_COMMENT>>>/gi,
+      "",
+    )
+    .replace(
+      /<<<NEED_CLARIFICATION>>>\s*[\s\S]*?\s*<<<END_NEED_CLARIFICATION>>>/gi,
+      "",
+    )
+    .replace(/<<<DOCS_READY>>>\s*[\s\S]*?\s*<<<END_DOCS_READY>>>/gi, "")
+    .replace(/<<<DONE>>>\s*[\s\S]*?\s*<<<END_DONE>>>/gi, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+
+  // Drop trailing "DONE:" / "SUMMARY:" leftovers if agent forgot the tags
+  body = body
+    .replace(/\n*(?:<<<)?(?:END_)?DONE(?:>{3})?\s*$/i, "")
+    .trim();
+
+  const summary = opts?.summary?.trim() || "";
+  const question = opts?.question?.trim() || "";
+
+  // Prefer full prose when it is substantially more than the short DONE line
+  if (body.length >= 80 || (body && body.length > summary.length + 20)) {
+    return body.slice(0, max);
+  }
+  if (summary) return summary.slice(0, max);
+  if (question) return question.slice(0, max);
+  if (body) return body.slice(0, max);
+  return "(no reply)";
 }

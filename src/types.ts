@@ -153,8 +153,7 @@ export type JobRecord = {
   completion?: CompletionActions;
   /** Dev notes — highest priority in agent prompt (Mongo only) */
   devNotes?: string;
-  /**
-   * Sticky context-quality mark for coding Runs / follow-ups.
+  /** Sticky context-quality mark for coding Runs / follow-ups.
    * level === "good" → skip re-assessment on later agent calls.
    */
   contextQuality?: {
@@ -164,6 +163,13 @@ export type JobRecord = {
     anchors?: string[];
     fileHints?: string[];
   };
+  /**
+   * Chat "Send" command waiting in the job queue (not a full Run).
+   * Cleared when the follow-up starts executing.
+   */
+  pendingFollowUpMessage?: string;
+  /** Status to restore if a queued follow-up is cancelled / fails soft. */
+  followUpRestoreStatus?: JobStatus;
   /** Hard gate: read/update AiHR feature docs before any app code */
   requireDocsFirst?: boolean;
   /** Feature doc paths from docs phase (.md / .mdc under docs/), for PM review */

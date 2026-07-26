@@ -21,7 +21,6 @@ import {
 } from "./plugins/gitlab/commits.js";
 import {
   postAgentGitlabComments,
-  stripGitlabCommentBlocks,
   withAiGeneratedMarker,
 } from "./plugins/gitlab/agent-comment.js";
 import { ensureJob, loadJob, saveJob } from "./job-store.js";
@@ -33,6 +32,7 @@ import {
   isStartupError,
   runNewAgent,
 } from "./plugins/agent/run.js";
+import { answerTaskQuestion } from "./plugins/agent/qa.js";
 import { appendJobProgress, getJobTokenUsage } from "./plugins/agent/progress.js";
 import { cancelDiffApproval } from "./plugins/review/diff-wait.js";
 import { addChatMessage, listChatMessages } from "./db/mongo.js";
@@ -40,6 +40,7 @@ import { publishRealtime } from "./plugins/realtime/hub.js";
 import {
   commitMessageForIssue,
   docsCommitMessageForIssue,
+  extractChatBodyFromAgentText,
   formatChatContextForRun,
 } from "./plugins/agent/prompt.js";
 import {
@@ -52,7 +53,7 @@ import {
   docsReadySummaryText,
   parseDocsReadyPaths,
 } from "./plugins/docs/analysis.js";
-import type { CompletionActions, IssueJob, JobRecord } from "./types.js";
+import type { CompletionActions, IssueJob, JobRecord, JobStatus } from "./types.js";
 import { isJobBusy, resolveDevNotes } from "./types.js";
 import { getRuntimeContext } from "./workspace/runtime.js";
 import { withWorkspaceContext } from "./workspace/context.js";
@@ -62,6 +63,12 @@ type QueueItem = {
   source?: string;
   /** After PM approves docs — force code phase even if requireDocsFirst */
   forceCodePhase?: boolean;
+  /** Chat Send command — run IDE follow-up (may edit code) */
+  followUpMessage?: string;
+  /** Chat Ask only — Q&A / review, no coding Run */
+  askOnlyMessage?: string;
+  /** Status before this follow-up/ask was queued (restore if no code change) */
+  followUpRestoreStatus?: JobStatus;
 };
 
 export class JobQueue {
@@ -233,23 +240,19 @@ export class JobQueue {
   }
 
   /**
-   * Cursor-IDE-style follow-up on the same agent window (ask / fix / do more).
-   * Keeps context; commits if code changed.
-   * If the job was already done (awaiting_handoff / succeeded) and this
-   * follow-up has no code change — or errors — restore the previous status
-   * (do not flip to failed / re-open handoff).
+   * Enqueue an IDE follow-up command from chat **Send**.
+   * Returns immediately after queuing so the HTTP client does not wait
+   * for Cursor (avoids the 120s axios timeout). The pump runs the agent.
    */
   async followUpChat(
     jobId: string,
     message: string,
   ): Promise<{
     ok: boolean;
+    queued?: boolean;
     job: JobRecord;
     kind: string;
-    summary?: string;
     question?: string;
-    resumed?: boolean;
-    hasChange?: boolean;
   }> {
     const msg = message.trim();
     if (!msg) throw new Error("message required");
@@ -258,15 +261,14 @@ export class JobQueue {
     if (!loaded) throw new Error("Job not found");
     let job: JobRecord = loaded;
 
-    // Orphaned busy (no in-memory Cursor run) — reclaim so user can retry after hang/restart
+    // Orphaned busy (no in-memory Cursor run) — reclaim so user can retry
     if (isJobBusy(job.status) && !hasActiveAgentRun(jobId)) {
-      const reclaimTo =
-        job.handedOffAt
-          ? "succeeded"
-          : job.completedAt
-            ? "awaiting_handoff"
-            : "draft";
-      logger.warn("Reclaiming orphaned busy job before follow-up", {
+      const reclaimTo: JobStatus = job.handedOffAt
+        ? "succeeded"
+        : job.completedAt
+          ? "awaiting_handoff"
+          : "draft";
+      logger.warn("Reclaiming orphaned busy job before follow-up enqueue", {
         jobId,
         from: job.status,
         to: reclaimTo,
@@ -276,6 +278,7 @@ export class JobQueue {
       job.error =
         job.error ||
         "Previous agent run was stuck / interrupted — reclaimed for retry";
+      job.pendingFollowUpMessage = undefined;
       await saveJob(job);
       if (this.currentJobId === jobId) {
         this.currentJobId = null;
@@ -289,12 +292,13 @@ export class JobQueue {
       );
     }
 
-    const prevStatus = job.status;
-    const wasDone =
-      prevStatus === "awaiting_handoff" || prevStatus === "succeeded";
     const key = `${job.issue.projectId}:${job.issue.issueIid}`;
+    if (this.activeIssueKeys.has(key) || this.queue.some((q) => q.job.id === job.id)) {
+      throw new Error(
+        "Agent is running on this job — wait for it to finish or Force Stop, then send again",
+      );
+    }
 
-    // Context gate for coding follow-up (skip assess if already marked good)
     const notes = resolveDevNotes(job);
     let priorChat: Awaited<ReturnType<typeof listChatMessages>> = [];
     try {
@@ -310,7 +314,7 @@ export class JobQueue {
       extraHuman: msg,
     });
 
-    // Save user message immediately — before quality/status SSE (avoid UI refresh dropping it)
+    // Save user message immediately — UI shows it before the agent starts
     await addChatMessage({
       jobId: job.id,
       issueIid: job.issue.issueIid,
@@ -323,7 +327,7 @@ export class JobQueue {
       job.contextQuality = toContextQualityMark(quality);
       await saveJob(job);
     }
-    logger.info("Context quality for follow-up", {
+    logger.info("Context quality for follow-up enqueue", {
       jobId,
       level: quality.level,
       cached: Boolean(quality.cached),
@@ -335,7 +339,7 @@ export class JobQueue {
         issueIid: job.issue.issueIid,
         role: "agent",
         kind: "clarify",
-        body: body,
+        body,
       });
       job.lastQuestion = body;
       job.error = "Bad Context — add more information before agent coding";
@@ -346,14 +350,161 @@ export class JobQueue {
         "status",
         "Bad Context — không gọi Cursor Agent (follow-up)",
       );
-      return {
-        ok: false,
-        job,
-        kind: "bad_context",
-        question: body,
-      };
+      return { ok: false, job, kind: "bad_context", question: body };
     }
 
+    const restoreStatus = job.status;
+    job.pendingFollowUpMessage = msg;
+    job.followUpRestoreStatus = restoreStatus;
+    job.status = "queued";
+    job.error = undefined;
+    await saveJob(job);
+
+    this.activeIssueKeys.add(key);
+    this.sources.set(job.id, "chat_followup");
+    this.queue.push({
+      job,
+      source: "chat_followup",
+      followUpMessage: msg,
+      followUpRestoreStatus: restoreStatus,
+    });
+    this.publishStatus("enqueue-followup");
+
+    appendJobProgress(job.id, "status", "Follow-up queued (chat Send)");
+
+    logger.info("Enqueued chat follow-up", {
+      jobId: job.id,
+      iid: job.issue.issueIid,
+      queueLength: this.queue.length,
+      msgPreview: msg.slice(0, 120),
+    });
+    void this.pump();
+    return { ok: true, queued: true, job, kind: "queued" };
+  }
+
+  /**
+   * Enqueue Ask only (Q&A / review — no coding). Same async queue as Send/Run
+   * so HTTP does not wait for Cursor.
+   */
+  async askOnlyChat(
+    jobId: string,
+    question: string,
+  ): Promise<{
+    ok: boolean;
+    queued?: boolean;
+    job: JobRecord;
+    kind: string;
+  }> {
+    const msg = question.trim();
+    if (!msg) throw new Error("question required");
+
+    const loaded = await loadJob(jobId);
+    if (!loaded) throw new Error("Job not found");
+    let job: JobRecord = loaded;
+
+    if (isJobBusy(job.status) && !hasActiveAgentRun(jobId)) {
+      const reclaimTo: JobStatus = job.handedOffAt
+        ? "succeeded"
+        : job.completedAt
+          ? "awaiting_handoff"
+          : "draft";
+      logger.warn("Reclaiming orphaned busy job before ask enqueue", {
+        jobId,
+        from: job.status,
+        to: reclaimTo,
+      });
+      job.status = reclaimTo;
+      job.error =
+        job.error ||
+        "Previous agent run was stuck / interrupted — reclaimed for retry";
+      job.pendingFollowUpMessage = undefined;
+      await saveJob(job);
+      if (this.currentJobId === jobId) {
+        this.currentJobId = null;
+        this.publishStatus();
+      }
+    }
+
+    if (hasActiveAgentRun(jobId) || isJobBusy(job.status)) {
+      throw new Error(
+        "Agent is running on this job — wait for it to finish or Force Stop, then ask again",
+      );
+    }
+
+    const key = `${job.issue.projectId}:${job.issue.issueIid}`;
+    if (
+      this.activeIssueKeys.has(key) ||
+      this.queue.some((q) => q.job.id === job.id)
+    ) {
+      throw new Error(
+        "Agent is running on this job — wait for it to finish or Force Stop, then ask again",
+      );
+    }
+
+    await addChatMessage({
+      jobId: job.id,
+      issueIid: job.issue.issueIid,
+      role: "user",
+      kind: "qa",
+      body: msg,
+    });
+
+    const restoreStatus = job.status;
+    job.pendingFollowUpMessage = msg;
+    job.followUpRestoreStatus = restoreStatus;
+    job.status = "queued";
+    job.error = undefined;
+    await saveJob(job);
+
+    this.activeIssueKeys.add(key);
+    this.sources.set(job.id, "chat_ask");
+    this.queue.push({
+      job,
+      source: "chat_ask",
+      askOnlyMessage: msg,
+      followUpRestoreStatus: restoreStatus,
+    });
+    this.publishStatus("enqueue-ask");
+
+    appendJobProgress(job.id, "status", "Ask only queued");
+
+    logger.info("Enqueued chat ask-only", {
+      jobId: job.id,
+      iid: job.issue.issueIid,
+      queueLength: this.queue.length,
+      msgPreview: msg.slice(0, 120),
+    });
+    void this.pump();
+    return { ok: true, queued: true, job, kind: "queued" };
+  }
+
+  /**
+   * Run a queued chat follow-up (called from pump — not from HTTP).
+   */
+  private async executeFollowUpChat(
+    jobIn: JobRecord,
+    message: string,
+    opts?: { restoreStatus?: JobStatus },
+  ): Promise<void> {
+    const msg = message.trim();
+    const loaded = await loadJob(jobIn.id);
+    if (!loaded) throw new Error("Job not found");
+    let job: JobRecord = loaded;
+
+    const prevStatus: JobStatus =
+      opts?.restoreStatus ||
+      job.followUpRestoreStatus ||
+      (job.handedOffAt
+        ? "succeeded"
+        : job.completedAt
+          ? "awaiting_handoff"
+          : "draft");
+    const wasDone =
+      prevStatus === "awaiting_handoff" || prevStatus === "succeeded";
+    const key = `${job.issue.projectId}:${job.issue.issueIid}`;
+
+    job.pendingFollowUpMessage = undefined;
+    job.followUpRestoreStatus = undefined;
     this.activeIssueKeys.add(key);
     this.currentJobId = job.id;
     this.publishStatus();
@@ -361,28 +512,36 @@ export class JobQueue {
     job.error = undefined;
     await saveJob(job);
 
+    const notes = resolveDevNotes(job);
+    let priorChat: Awaited<ReturnType<typeof listChatMessages>> = [];
+    try {
+      priorChat = await listChatMessages({ jobId: job.id, limit: 40 });
+    } catch {
+      /* ignore */
+    }
+    const quality = resolveContextQualityForCoding(job, {
+      devNotes: notes || undefined,
+      chatHuman: priorChat
+        .filter((m) => m.role === "user" && m.body?.trim())
+        .map((m) => m.body),
+      extraHuman: msg,
+    });
+    if (!quality.cached) {
+      job.contextQuality = toContextQualityMark(quality);
+      await saveJob(job);
+    }
     const contextQualityBlock = formatContextQualityForPrompt(quality);
 
-    const runFollowUp = async (): Promise<{
-      ok: boolean;
-      job: JobRecord;
-      kind: string;
-      summary?: string;
-      question?: string;
-      resumed?: boolean;
-      hasChange?: boolean;
-    }> => {
+    const runFollowUp = async (): Promise<void> => {
       const rt = getRuntimeContext();
       const repoPath = rt?.repoPath?.trim();
       if (!repoPath) throw new Error("No repo path in workspace context");
 
-      // Prefer fixed workBranch; only auto-create feat/hotfix when none configured
       const fixedWork = (job.workBranch || rt?.workBranch || "").trim();
       const prepared = await prepareRepoForIssue({
         issueIid: Math.max(job.issue.issueIid, 0),
         title: job.issue.title,
         baseBranch: job.baseBranch || rt?.baseBranch,
-        // Configured work branch OR adhoc hotfix name (create only if not configured work)
         workBranch: fixedWork || (job.kind === "adhoc" ? job.branch : undefined),
         createWorkBranchIfMissing: !fixedWork,
         repoPath,
@@ -403,7 +562,7 @@ export class JobQueue {
         .slice(0, 24_000);
 
       const headBefore = await getHeadSha(repoPath);
-      let result = await continueAgentWindow(job.issue, msg, {
+      const result = await continueAgentWindow(job.issue, msg, {
         jobId: job.id,
         chatHistory: chatHistory || undefined,
         contextQualityBlock,
@@ -412,17 +571,12 @@ export class JobQueue {
       applyTokenUsageToJob(job, result.usage);
       await saveJob(job);
 
-      // Post GITLAB_COMMENT immediately — do not wait for clarify (avoid hang + lost comment)
       await this.deliverAgentGitlabComments(job, result.text);
 
-      const chatBody =
-        stripGitlabCommentBlocks(
-          result.summary?.trim() ||
-            result.text.trim().slice(0, 8000) ||
-            "(no reply)",
-        ) ||
-        result.question?.trim() ||
-        "(no reply)";
+      const chatBody = extractChatBodyFromAgentText(result.text, {
+        summary: result.summary,
+        question: result.question,
+      });
       await addChatMessage({
         jobId: job.id,
         issueIid: job.issue.issueIid,
@@ -431,21 +585,13 @@ export class JobQueue {
         body: chatBody,
       });
 
-      // Agent asked a question — park for chat reply (no blocking waiter)
       if (result.kind === "need_clarification") {
         job.status = "awaiting_clarification";
         job.lastQuestion = result.question ?? chatBody;
         job.error = undefined;
         job.clarifyRound = (job.clarifyRound ?? 0) + 1;
         await saveJob(job);
-        return {
-          ok: true,
-          job,
-          kind: result.kind,
-          question: result.question,
-          summary: result.summary,
-          resumed: result.resumed,
-        };
+        return;
       }
 
       const { hasChange } = await this.finalizeGitlabCommit(
@@ -457,7 +603,6 @@ export class JobQueue {
 
       if (result.summary) job.summary = result.summary;
 
-      // Already-done job + no new code → keep prior status (Q&A / chat only)
       if (wasDone && !hasChange) {
         job.status = prevStatus;
       } else {
@@ -476,36 +621,26 @@ export class JobQueue {
         prevStatus,
         status: job.status,
       });
-
-      return {
-        ok: true,
-        job,
-        kind: result.kind,
-        summary: result.summary,
-        question: result.question,
-        resumed: result.resumed,
-        hasChange,
-      };
     };
 
     try {
       if (job.ownerUsername && job.workspaceProjectId) {
-        return await withWorkspaceContext(
+        await withWorkspaceContext(
           job.ownerUsername,
           job.workspaceProjectId,
           runFollowUp,
         );
+      } else {
+        await runFollowUp();
       }
-      return await runFollowUp();
     } catch (err) {
-      const message = isStartupError(err)
+      const errMsg = isStartupError(err)
         ? `Cursor SDK startup error: ${err.message}`
         : err instanceof Error
           ? err.message
           : String(err);
 
-      // Force Stop during chat — keep killJob status, don't flip to failed wrongly
-      if (/Force-stopped|force stop|cancelled \(force/i.test(message)) {
+      if (/Force-stopped|force stop|cancelled \(force/i.test(errMsg)) {
         const fresh = await loadJob(job.id);
         if (fresh && !isJobBusy(fresh.status)) {
           job = fresh;
@@ -516,10 +651,9 @@ export class JobQueue {
           await saveJob(job);
         }
         await this.notifyJobChat(job, "Đã Force Stop — agent dừng giữa chừng.");
-        throw new Error("Force-stopped from UI");
+        return;
       }
 
-      // Done tasks: never demote to failed on follow-up errors
       if (wasDone) {
         job.status = prevStatus;
         job.agentId = undefined;
@@ -534,11 +668,13 @@ export class JobQueue {
           job.status = "failed";
         }
       }
-      job.error = message;
+      job.error = errMsg;
       await saveJob(job);
-      await this.notifyJobChat(job, `Chat lỗi:\n${message}`);
-      throw err instanceof Error ? err : new Error(message);
+      await this.notifyJobChat(job, `Chat lỗi:\n${errMsg}`);
+      logger.error("IDE follow-up failed", { jobId: job.id, err: errMsg });
     } finally {
+      job.pendingFollowUpMessage = undefined;
+      job.followUpRestoreStatus = undefined;
       this.activeIssueKeys.delete(key);
       if (this.currentJobId === job.id) {
         this.currentJobId = null;
@@ -547,6 +683,126 @@ export class JobQueue {
       this.killedJobs.delete(job.id);
       const { clearJobKillRequested } = await import("./plugins/agent/run.js");
       clearJobKillRequested(job.id);
+      publishRealtime({ type: "jobs", reason: "followup-done" });
+    }
+  }
+
+  /** Run queued Ask only (Q&A) from pump. */
+  private async executeAskOnlyChat(
+    jobIn: JobRecord,
+    question: string,
+    opts?: { restoreStatus?: JobStatus },
+  ): Promise<void> {
+    const msg = question.trim();
+    const loaded = await loadJob(jobIn.id);
+    if (!loaded) throw new Error("Job not found");
+    let job: JobRecord = loaded;
+
+    const prevStatus: JobStatus =
+      opts?.restoreStatus ||
+      job.followUpRestoreStatus ||
+      (job.handedOffAt
+        ? "succeeded"
+        : job.completedAt
+          ? "awaiting_handoff"
+          : "draft");
+    const key = `${job.issue.projectId}:${job.issue.issueIid}`;
+
+    job.pendingFollowUpMessage = undefined;
+    job.followUpRestoreStatus = undefined;
+    this.activeIssueKeys.add(key);
+    this.currentJobId = job.id;
+    this.publishStatus();
+    job.status = "running";
+    job.error = undefined;
+    await saveJob(job);
+
+    let priorChat: Awaited<ReturnType<typeof listChatMessages>> = [];
+    try {
+      priorChat = await listChatMessages({ jobId: job.id, limit: 40 });
+    } catch {
+      /* ignore */
+    }
+
+    const runAsk = async (): Promise<void> => {
+      const qa = await answerTaskQuestion({
+        issue: job.issue,
+        question: msg,
+        jobId: job.id,
+        existingAgentId: job.agentId,
+        history: priorChat.map((m) => ({
+          role: m.role,
+          kind: m.kind,
+          body: m.body,
+        })),
+      });
+      job.agentId = qa.agentId;
+      applyTokenUsageToJob(job, qa.usage);
+      job.status = prevStatus;
+      job.error = undefined;
+      await saveJob(job);
+      await addChatMessage({
+        jobId: job.id,
+        issueIid: job.issue.issueIid,
+        role: "agent",
+        kind: "qa",
+        body: qa.answer,
+      });
+      logger.info("Ask only finished", {
+        jobId: job.id,
+        resumed: qa.resumed,
+        status: job.status,
+      });
+    };
+
+    try {
+      if (job.ownerUsername && job.workspaceProjectId) {
+        await withWorkspaceContext(
+          job.ownerUsername,
+          job.workspaceProjectId,
+          runAsk,
+        );
+      } else {
+        await runAsk();
+      }
+    } catch (err) {
+      const errMsg = isStartupError(err)
+        ? `Cursor SDK startup error: ${err.message}`
+        : err instanceof Error
+          ? err.message
+          : String(err);
+
+      if (/Force-stopped|force stop|cancelled \(force/i.test(errMsg)) {
+        const fresh = await loadJob(job.id);
+        if (fresh && !isJobBusy(fresh.status)) {
+          job = fresh;
+        } else {
+          job.status = prevStatus;
+          job.agentId = undefined;
+          job.error = "Force-stopped from UI";
+          await saveJob(job);
+        }
+        await this.notifyJobChat(job, "Đã Force Stop — Ask only dừng giữa chừng.");
+        return;
+      }
+
+      job.status = prevStatus;
+      job.error = errMsg;
+      await saveJob(job);
+      await this.notifyJobChat(job, `Ask only lỗi:\n${errMsg}`);
+      logger.error("Ask only failed", { jobId: job.id, err: errMsg });
+    } finally {
+      job.pendingFollowUpMessage = undefined;
+      job.followUpRestoreStatus = undefined;
+      this.activeIssueKeys.delete(key);
+      if (this.currentJobId === job.id) {
+        this.currentJobId = null;
+        this.publishStatus();
+      }
+      this.killedJobs.delete(job.id);
+      const { clearJobKillRequested } = await import("./plugins/agent/run.js");
+      clearJobKillRequested(job.id);
+      publishRealtime({ type: "jobs", reason: "ask-done" });
     }
   }
 
@@ -571,19 +827,36 @@ export class JobQueue {
     if (queuedIdx >= 0) {
       const [item] = this.queue.splice(queuedIdx, 1);
       const key = `${item.job.issue.projectId}:${item.job.issue.issueIid}`;
-      item.job.status = "failed";
-      item.job.error = reason;
+      const restore =
+        item.followUpRestoreStatus || item.job.followUpRestoreStatus;
+      if ((item.followUpMessage || item.askOnlyMessage) && restore) {
+        item.job.status = restore;
+        item.job.error = reason;
+      } else {
+        item.job.status = "failed";
+        item.job.error = reason;
+      }
       item.job.agentId = undefined;
+      item.job.pendingFollowUpMessage = undefined;
+      item.job.followUpRestoreStatus = undefined;
       await saveJob(item.job);
       await this.notifyJobChat(
         item.job,
-        `Đã hủy job trong hàng chờ:\n${reason}`,
+        item.askOnlyMessage
+          ? `Đã hủy Ask only trong hàng chờ:\n${reason}`
+          : item.followUpMessage
+            ? `Đã hủy lệnh chat trong hàng chờ:\n${reason}`
+            : `Đã hủy job trong hàng chờ:\n${reason}`,
       );
       this.activeIssueKeys.delete(key);
       this.killedJobs.delete(jobId);
       clearJobKillRequested(jobId);
       this.publishStatus("kill-queued");
-      logger.warn("Killed queued job", { jobId, reason });
+      logger.warn("Killed queued job", {
+        jobId,
+        reason,
+        followUp: Boolean(item.followUpMessage),
+      });
       return { ok: true, phase: "queued" };
     }
 
@@ -775,10 +1048,22 @@ export class JobQueue {
           iid: item.job.issue.issueIid,
           remaining: this.queue.length,
           forceCodePhase: Boolean(item.forceCodePhase),
+          followUp: Boolean(item.followUpMessage),
+          askOnly: Boolean(item.askOnlyMessage),
           source: item.source,
         });
         try {
-          await this.runJob(item.job, { forceCodePhase: item.forceCodePhase });
+          if (item.followUpMessage) {
+            await this.executeFollowUpChat(item.job, item.followUpMessage, {
+              restoreStatus: item.followUpRestoreStatus,
+            });
+          } else if (item.askOnlyMessage) {
+            await this.executeAskOnlyChat(item.job, item.askOnlyMessage, {
+              restoreStatus: item.followUpRestoreStatus,
+            });
+          } else {
+            await this.runJob(item.job, { forceCodePhase: item.forceCodePhase });
+          }
           logger.info("pump job finished", {
             jobId: item.job.id,
             status: item.job.status,
@@ -869,6 +1154,10 @@ export class JobQueue {
     }
 
     const question = result.question?.trim() || "(no question text)";
+    const chatBody = extractChatBodyFromAgentText(result.text, {
+      question,
+      summary: result.summary,
+    });
     job.status = "awaiting_clarification";
     job.lastQuestion = question;
     job.error = undefined;
@@ -879,7 +1168,7 @@ export class JobQueue {
       issueIid: job.issue.issueIid,
       role: "agent",
       kind: "qa",
-      body: question,
+      body: chatBody,
     });
 
     appendJobProgress(
@@ -1331,13 +1620,21 @@ export class JobQueue {
 
       if (result.summary) {
         job.summary = result.summary;
-        await addChatMessage({
-          jobId: job.id,
-          issueIid: job.issue.issueIid,
-          role: "agent",
-          kind: "qa",
-          body: `DONE summary:\n${result.summary}`,
+      }
+      {
+        const chatBody = extractChatBodyFromAgentText(result.text, {
+          summary: result.summary,
+          question: result.question,
         });
+        if (chatBody && chatBody !== "(no reply)") {
+          await addChatMessage({
+            jobId: job.id,
+            issueIid: job.issue.issueIid,
+            role: "agent",
+            kind: "qa",
+            body: chatBody,
+          });
+        }
       }
 
       const { commitSha, hasChange } = await this.finalizeGitlabCommit(

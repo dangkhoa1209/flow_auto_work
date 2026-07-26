@@ -133,6 +133,16 @@ export function useWorkbench() {
     return parts.join(" · ");
   });
 
+  const agentJobBusy = computed(() => {
+    const st = currentJob.value?.status;
+    return st === "queued" || st === "running";
+  });
+
+  /** Send / Ask locked while agent is thinking or job is queued/running */
+  const chatLocked = computed(
+    () => busy.value || agentTyping.value || agentJobBusy.value,
+  );
+
   const canForceStop = computed(() => {
     if (!currentJob.value) return false;
     if (progressLive.value) return true;
@@ -507,6 +517,10 @@ export function useWorkbench() {
       message.warning("Select a job first");
       return;
     }
+    if (chatLocked.value) {
+      message.warning("Agent đang bận — đợi xong hoặc Force Stop rồi gửi lại");
+      return;
+    }
     if (!(await ensureCursorKey())) return;
     chatInput.value = "";
     busy.value = true;
@@ -517,8 +531,15 @@ export function useWorkbench() {
       const useContinue =
         mode === "continue" ||
         currentJob.value?.status === "awaiting_clarification";
-      if (useContinue) await work.sendContinue(msg);
-      else await work.sendAsk(msg);
+      if (useContinue) {
+        const res = await work.sendContinue(msg);
+        if (res?.kind === "bad_context") {
+          message.warning("Bad Context — bổ sung Dev Notes / chat rồi Send lại");
+        }
+        // queued → agentTyping + SSE; no blocking wait
+      } else {
+        await work.sendAsk(msg);
+      }
     } catch (e) {
       const msgText = e instanceof Error ? e.message : String(e);
       if (/Force-stopped/i.test(msgText)) {
@@ -763,6 +784,7 @@ export function useWorkbench() {
     jobLoading,
     labels,
     agentTyping,
+    chatLocked,
     midTab,
     selectedIids,
     chatInput,
