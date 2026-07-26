@@ -42,7 +42,7 @@ async function saveModel() {
       body: JSON.stringify({ cursorModel: model.value }),
     });
     await session.refreshMe();
-    message.success("Đã lưu model");
+    message.success("Model saved");
   } catch (e) {
     message.error(e instanceof Error ? e.message : String(e));
   } finally {
@@ -52,7 +52,7 @@ async function saveModel() {
 
 async function saveKey() {
   if (!cursorKey.value.trim()) {
-    message.warning("Dán Cursor API key");
+    message.warning("Paste Cursor API key");
     return;
   }
   loading.value = true;
@@ -63,7 +63,7 @@ async function saveKey() {
     });
     cursorKey.value = "";
     await session.refreshMe();
-    message.success("Đã lưu key (encrypted)");
+    message.success("Key saved (encrypted)");
   } catch (e) {
     message.error(e instanceof Error ? e.message : String(e));
   } finally {
@@ -76,7 +76,7 @@ async function clearKey() {
   try {
     await api("/api/me/cursor-key", { method: "DELETE" });
     await session.refreshMe();
-    message.success("Đã xóa key");
+    message.success("Key removed");
   } catch (e) {
     message.error(e instanceof Error ? e.message : String(e));
   } finally {
@@ -93,20 +93,20 @@ async function clearKey() {
       show-icon
       :message="
         session.me?.hasCursorApiKey
-          ? `Key đã mã hóa · model: ${session.me?.cursorModel || 'auto'}`
-          : 'Chưa có Cursor API key — cần trước khi Run'
+          ? `Key encrypted · model: ${session.me?.cursorModel || 'auto'}`
+          : 'No Cursor API key — required before Run'
       "
     />
     <a-form layout="vertical">
-      <a-form-item label="Model agent">
+      <a-form-item label="Agent model">
         <a-select v-model:value="model" :options="models" class="w-full" />
       </a-form-item>
-      <a-button :loading="loading" @click="saveModel">Lưu model</a-button>
+      <a-button :loading="loading" @click="saveModel">Save model</a-button>
 
-      <a-form-item label="Key mới" class="mt-4">
+      <a-form-item label="New key" class="mt-4">
         <a-input-password
           v-model:value="cursorKey"
-          placeholder="Dán key từ cursor.com…"
+          placeholder="Paste key from cursor.com…"
           autocomplete="off"
         />
         <div class="text-xs text-ink-faint mt-1">
@@ -121,9 +121,9 @@ async function clearKey() {
       </a-form-item>
       <div class="flex gap-2">
         <a-button type="primary" :loading="loading" @click="saveKey"
-          >Lưu key</a-button
+          >Save key</a-button
         >
-        <a-button danger :loading="loading" @click="clearKey">Xóa key</a-button>
+        <a-button danger :loading="loading" @click="clearKey">Remove key</a-button>
       </div>
     </a-form>
   </div>

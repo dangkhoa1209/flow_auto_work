@@ -344,7 +344,7 @@ watch(
       <a-empty
         v-if="!loading && !filteredTasks.length"
         class="py-6"
-        description="Không có task"
+        description="No tasks"
       >
         <a-button size="small" type="primary" @click="emit('refresh')"
           >Refresh</a-button
@@ -362,8 +362,8 @@ watch(
         class="jobs-panel__rail"
         :title="
           jobsOpen
-            ? 'Kéo để đổi chiều cao · click để thu gọn'
-            : 'Mở Jobs'
+            ? 'Drag to resize · click to collapse'
+            : 'Open Jobs'
         "
         :aria-expanded="jobsOpen"
         @pointerdown="onJobsRailPointerDown"
@@ -474,9 +474,9 @@ watch(
               />
               <a-popconfirm
                 v-else
-                title="Xóa job này?"
-                ok-text="Xóa"
-                cancel-text="Huỷ"
+                title="Delete this job?"
+                ok-text="Delete"
+                cancel-text="Cancel"
                 ok-type="danger"
                 @confirm="emit('deleteJob', j.id)"
               >
@@ -485,7 +485,7 @@ watch(
                   class="ml-auto shrink-0 text-[11px] leading-none text-ink-faint hover:text-red-500 opacity-100 sm:opacity-0 sm:group-hover/job:opacity-100 fx-colors px-0.5"
                   :disabled="jobStatusBusy === j.id"
                   @click.stop
-                  title="Xóa job"
+                  title="Delete job"
                 >
                   ×
                 </button>
@@ -517,9 +517,9 @@ watch(
         <a-empty
           v-if="!sortedJobs.length"
           class="py-4"
-          description="Chưa có job"
+          description="No jobs yet"
         >
-          <span class="text-xs text-ink-faint">Chọn task rồi bấm Run</span>
+          <span class="text-xs text-ink-faint">Select a task and click Run</span>
         </a-empty>
       </div>
     </div>

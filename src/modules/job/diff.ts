@@ -50,12 +50,12 @@ export async function revertJobCommit(
   if (!commitSha) throw new AppError("sha required", 400);
   const branch = (job.branch || job.workBranch || "").trim();
   if (!branch) {
-    throw new AppError("Job chưa có branch để revert", 400);
+    throw new AppError("Job has no branch to revert", 400);
   }
   const rt = getRuntimeContext();
   const repoPath = rt?.repoPath;
   if (!repoPath) {
-    throw new AppError("No local repo path — clone project trước", 400);
+    throw new AppError("No local repo path — clone the project first", 400);
   }
   const projectIdOrPath =
     rt?.gitlabProjectId ?? rt?.gitlabPath ?? job.issue.projectId;

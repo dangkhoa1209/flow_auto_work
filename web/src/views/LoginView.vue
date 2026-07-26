@@ -86,7 +86,7 @@ async function onLogin(e?: Event) {
 
   errorText.value = "";
   if (!form.username.trim() || !form.password) {
-    errorText.value = "Nhập username và password";
+    errorText.value = "Enter username and password";
     message.warning(errorText.value);
     return;
   }
@@ -94,7 +94,7 @@ async function onLogin(e?: Event) {
   loading.value = true;
   try {
     const res = await auth.login(form.username.trim(), form.password);
-    message.success("Đăng nhập thành công");
+    message.success("Signed in");
     await applyAuthAndGo(res);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -111,17 +111,17 @@ async function onRegister(e?: Event) {
 
   errorText.value = "";
   if (!form.username.trim() || !form.password) {
-    errorText.value = "Nhập username và password";
+    errorText.value = "Enter username and password";
     message.warning(errorText.value);
     return;
   }
   if (form.password.length < 6) {
-    errorText.value = "Password tối thiểu 6 ký tự";
+    errorText.value = "Password must be at least 6 characters";
     message.warning(errorText.value);
     return;
   }
   if (form.password !== form.password2) {
-    errorText.value = "Password xác nhận không khớp";
+    errorText.value = "Passwords do not match";
     message.warning(errorText.value);
     return;
   }
@@ -133,7 +133,7 @@ async function onRegister(e?: Event) {
       password: form.password,
       displayName: form.displayName.trim() || undefined,
     });
-    message.success("Đăng ký thành công");
+    message.success("Account created");
     await applyAuthAndGo(res);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -164,14 +164,14 @@ async function onRegister(e?: Event) {
           :type="mode === 'login' ? 'primary' : 'default'"
           @click="switchMode('login')"
         >
-          Đăng nhập
+          Sign in
         </a-button>
         <a-button
           block
           :type="mode === 'register' ? 'primary' : 'default'"
           @click="switchMode('register')"
         >
-          Đăng ký
+          Register
         </a-button>
       </div>
 
@@ -207,7 +207,7 @@ async function onRegister(e?: Event) {
           :loading="loading"
           @click="onLogin"
         >
-          Đăng nhập
+          Sign in
         </a-button>
       </form>
 
@@ -218,7 +218,7 @@ async function onRegister(e?: Event) {
             v-model:value="form.username"
             size="large"
             autocomplete="username"
-            placeholder="3–32 ký tự"
+            placeholder="3–32 characters"
           />
         </div>
         <div>
@@ -228,7 +228,7 @@ async function onRegister(e?: Event) {
           <a-input
             v-model:value="form.displayName"
             size="large"
-            placeholder="Tên hiển thị"
+            placeholder="Display name"
           />
         </div>
         <div>
@@ -237,7 +237,7 @@ async function onRegister(e?: Event) {
             v-model:value="form.password"
             size="large"
             autocomplete="new-password"
-            placeholder="Tối thiểu 6 ký tự"
+            placeholder="At least 6 characters"
           />
         </div>
         <div>
@@ -248,7 +248,7 @@ async function onRegister(e?: Event) {
             v-model:value="form.password2"
             size="large"
             autocomplete="new-password"
-            placeholder="Nhập lại password"
+            placeholder="Re-enter password"
           />
         </div>
         <p v-if="errorText" class="text-sm text-red-600 m-0">{{ errorText }}</p>
@@ -260,7 +260,7 @@ async function onRegister(e?: Event) {
           :loading="loading"
           @click="onRegister"
         >
-          Tạo tài khoản
+          Create account
         </a-button>
       </form>
     </div>

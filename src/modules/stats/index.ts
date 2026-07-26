@@ -50,13 +50,13 @@ export async function getDailyStats(daysRaw?: number) {
       isoYear,
       weekStart: ws,
       weekEnd: we,
-      weekLabel: `Tuần ${week} · ${ws.slice(5).replace("-", "/")}–${we.slice(5).replace("-", "/")}`,
+      weekLabel: `Week ${week} · ${ws.slice(5).replace("-", "/")}–${we.slice(5).replace("-", "/")}`,
     };
   };
 
   const monthLabel = (ym: string) => {
     const [y, m] = ym.split("-").map(Number);
-    return `Tháng ${m}/${y}`;
+    return `${new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric" }).format(new Date(y, m - 1, 1))}`;
   };
 
   type DayItem = {

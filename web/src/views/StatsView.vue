@@ -40,14 +40,14 @@ onMounted(async () => {
   <div class="h-full max-h-full min-h-0 overflow-y-auto p-4">
     <div class="rounded-2xl panel-glass shadow-panel p-5 max-w-4xl">
       <h2 class="text-lg font-semibold text-ink mt-0 mb-4">
-        Thống kê theo ngày
+        Daily stats
       </h2>
       <a-spin :spinning="loading">
         <a-collapse v-if="daily.length" accordion>
           <a-collapse-panel
             v-for="d in daily"
             :key="d.date"
-            :header="`${d.date} · ${d.items?.length || 0} task · ✓${d.succeeded || 0} · ✗${d.failed || 0} · chờ ${d.awaitingHandoff || 0}`"
+            :header="`${d.date} · ${d.items?.length || 0} task · ✓${d.succeeded || 0} · ✗${d.failed || 0} · pending ${d.awaitingHandoff || 0}`"
           >
             <div
               v-for="(it, idx) in d.items || []"
@@ -60,7 +60,7 @@ onMounted(async () => {
             </div>
           </a-collapse-panel>
         </a-collapse>
-        <a-empty v-else description="Chưa có dữ liệu" />
+        <a-empty v-else description="No data yet" />
       </a-spin>
     </div>
   </div>

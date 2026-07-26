@@ -117,7 +117,7 @@ export async function mergeJobBranch(
   }
   if (!target) {
     throw new AppError(
-      "Không xác định được target branch (base/default)",
+      "Could not determine target branch (base/default)",
       400,
     );
   }

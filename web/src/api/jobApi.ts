@@ -73,14 +73,6 @@ export const jobApi = {
     });
   },
 
-  clarify(id: string, answer: string) {
-    return request({
-      url: API.jobs.clarify(id),
-      method: "POST",
-      data: { answer },
-    });
-  },
-
   resetWindow(id: string) {
     return request<{
       ok: boolean;

@@ -30,7 +30,6 @@ import {
   revertJobCommit,
   setJobStatus,
   startJobs,
-  submitClarification,
   updateDevNotes,
   writeJobFile,
   type AdhocJobInput,
@@ -255,13 +254,6 @@ export const jobController = {
     res.json(await getLinkedIssueContext(jobId(req)));
   }),
 
-  /** POST /api/jobs/:id/clarify */
-  clarify: asyncHandler(async (req: Request, res: Response) => {
-    res.json(
-      await submitClarification(jobId(req), body<{ answer?: string }>(req)),
-    );
-  }),
-
   /** POST /api/jobs/:id/continue */
   continueChat: asyncHandler(async (req: Request, res: Response) => {
     res.json(
@@ -286,7 +278,7 @@ export const jobController = {
     res.json(
       await appendJobChat(
         jobId(req),
-        body<{ body?: string; kind?: "qa" | "clarify" | "note" }>(req),
+        body<{ body?: string; kind?: "qa" | "note" }>(req),
       ),
     );
   }),

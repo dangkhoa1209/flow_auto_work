@@ -43,8 +43,6 @@ export const API = {
     continue: (id: string) =>
       `/api/jobs/${encodeURIComponent(id)}/continue`,
     ask: (id: string) => `/api/jobs/${encodeURIComponent(id)}/ask`,
-    clarify: (id: string) =>
-      `/api/jobs/${encodeURIComponent(id)}/clarify`,
     kill: (id: string) => `/api/jobs/${encodeURIComponent(id)}/kill`,
     resetWindow: (id: string) =>
       `/api/jobs/${encodeURIComponent(id)}/reset-window`,

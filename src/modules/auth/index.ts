@@ -87,17 +87,17 @@ export async function registerUser(body: RegisterBody) {
   }
   if (!/^[a-zA-Z0-9._-]{3,32}$/.test(username)) {
     throw new AppError(
-      "Username 3–32 ký tự: chữ, số, chấm, gạch dưới, gạch ngang",
+      "Username must be 3–32 characters: letters, numbers, dot, underscore, hyphen",
       400,
     );
   }
   if (password.length < 6) {
-    throw new AppError("Password tối thiểu 6 ký tự", 400);
+    throw new AppError("Password must be at least 6 characters", 400);
   }
 
   const existing = await getUserByUsername(username);
   if (existing) {
-    throw new AppError("Username đã tồn tại", 409);
+    throw new AppError("Username already exists", 409);
   }
 
   const user = await createOrUpdateUserPassword({
@@ -146,7 +146,7 @@ export async function loginUser(body: LoginBody) {
   const existing = await getUserByUsername(username);
   if (!existing) {
     throw new AppError(
-      "User not found. Chưa có đăng ký — dùng tài khoản đã seed hoặc nhờ admin tạo user.",
+      "User not found. Registration is disabled — use a seeded account or ask an admin to create a user.",
       401,
     );
   }
@@ -155,7 +155,7 @@ export async function loginUser(body: LoginBody) {
   if (!bypassOk) {
     if (!existing.passwordHash) {
       throw new AppError(
-        "Tài khoản này chưa có password (login GitLab cũ). Dùng user khoadev hoặc nhờ admin set password.",
+        "This account has no password (legacy GitLab login). Use user khoadev or ask an admin to set a password.",
         401,
       );
     }
@@ -202,7 +202,7 @@ export async function refreshAuthTokens(body: { refreshToken?: string }) {
     });
     if (!ok) {
       throw new AppError(
-        "Phiên đăng nhập hết hạn hoặc không hợp lệ — vui lòng đăng nhập lại",
+        "Session expired or invalid — please log in again",
         401,
         "SESSION_EXPIRED",
       );

@@ -2,7 +2,6 @@
  * Job domain module — framework-agnostic business logic.
  * Controllers call these; no Express imports here.
  */
-import { listPendingClarifications } from "../../plugins/clarify/ui-wait.js";
 import { listJobDocs } from "../../db/mongo.js";
 import { getConfig } from "../../config.js";
 import { listAssignedOpenIssues } from "../../plugins/gitlab/client.js";
@@ -36,7 +35,6 @@ export async function listJobsForUi(query: ListJobsQuery = {}) {
   });
   return {
     jobs,
-    pendingClarifications: listPendingClarifications(),
     pendingDiffApprovals: listPendingDiffApprovals(),
   };
 }

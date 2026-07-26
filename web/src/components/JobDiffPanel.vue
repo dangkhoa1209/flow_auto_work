@@ -70,14 +70,14 @@ function fileStat(path: string): DiffFileStat | undefined {
   return files.value.find((x) => x.path === path);
 }
 
-async function copyText(text: string, ok = "Đã copy") {
+async function copyText(text: string, ok = "Copied") {
   const t = text?.trim();
   if (!t) return;
   try {
     await navigator.clipboard.writeText(t);
     message.success(ok);
   } catch {
-    message.error("Không copy được");
+    message.error("Could not copy");
   }
 }
 
@@ -173,11 +173,11 @@ function pickFile(path: string) {
 function confirmRevert(c: JobCommit, e?: Event) {
   e?.stopPropagation();
   Modal.confirm({
-    title: "Xác nhận Revert commit",
-    content: `Sẽ tạo commit mới hoàn tác thay đổi của ${c.shortSha}.\n\n「${c.subject}」\n\nHành động này đẩy lên GitLab branch hiện tại. Bạn chắc chứ?`,
+    title: "Confirm revert commit",
+    content: `This will create a new commit undoing changes from ${c.shortSha}.\n\n「${c.subject}」\n\nThis pushes to the current GitLab branch. Are you sure?`,
     okText: "Revert",
     okType: "danger",
-    cancelText: "Huỷ",
+    cancelText: "Cancel",
     centered: true,
     onOk: () => revertCommit(c),
   });
@@ -191,7 +191,7 @@ async function revertCommit(c: JobCommit) {
       `/api/jobs/${props.jobId}/commits/${encodeURIComponent(c.sha)}/revert`,
       { method: "POST", body: JSON.stringify({}) },
     );
-    message.success(`Đã revert → ${res.commitSha.slice(0, 8)}`);
+    message.success(`Reverted → ${res.commitSha.slice(0, 8)}`);
     if (modalOpen.value) closeModal();
     await loadCommits();
   } catch (err) {
@@ -247,7 +247,7 @@ onUnmounted(() => {
           size="small"
           class="!px-1 shrink-0"
           title="Copy branch"
-          @click="copyText(branch || '', 'Đã copy branch')"
+          @click="copyText(branch || '', 'Branch copied')"
         >
           <template #icon><CopyOutlined /></template>
         </a-button>
@@ -271,7 +271,7 @@ onUnmounted(() => {
       {{ listError }}
     </div>
 
-    <!-- Absolute scroll region — không bị ant-spin/flex cắt cuộn -->
+    <!-- Absolute scroll region — not clipped by ant-spin/flex overflow -->
     <div class="relative flex-1 min-h-0">
       <div
         v-if="loading"
@@ -313,7 +313,7 @@ onUnmounted(() => {
                 <span>{{ formatDate(c.date) }}</span>
               </div>
               <div class="mt-2 flex items-center gap-2 sm:hidden">
-                <span class="text-[11px] text-accent">Xem changes</span>
+                <span class="text-[11px] text-accent">View changes</span>
                 <a-button
                   type="default"
                   size="small"
@@ -347,12 +347,12 @@ onUnmounted(() => {
           v-if="!commits.length && !loading"
           class="rounded-xl border border-dashed border-line bg-surface-soft/60 px-4 py-10 text-center"
         >
-          <div class="text-sm text-ink-muted">Chưa có commit trên branch</div>
+          <div class="text-sm text-ink-muted">No commits on branch yet</div>
           <div
             class="text-xs text-ink-faint mt-1.5 max-w-sm mx-auto leading-relaxed"
           >
-            Sau Run/chat (khi agent sửa file), Flow commit qua GitLab API — bấm ↻
-            để tải lại.
+            After Run/chat (when the agent edits files), Flow commits via GitLab API — click ↻
+            to reload.
           </div>
         </div>
         <!-- bottom spacer for mobile safe area -->
@@ -384,7 +384,7 @@ onUnmounted(() => {
               <code
                 v-if="activeCommit"
                 class="font-mono text-accent bg-accent-soft px-1.5 py-0.5 rounded"
-                @click="copyText(activeCommit.sha, 'Đã copy SHA')"
+                @click="copyText(activeCommit.sha, 'SHA copied')"
                 >{{ activeCommit.shortSha }}</code
               >
               <span v-if="activeCommit" class="truncate max-w-[9rem]">{{
@@ -456,7 +456,7 @@ onUnmounted(() => {
                 v-if="!navFiles.length && !modalLoading"
                 class="p-4 text-[11px] text-ink-faint text-center"
               >
-                Không có file đổi
+                No changed files
               </div>
             </div>
           </aside>
@@ -515,7 +515,7 @@ onUnmounted(() => {
               v-if="!blocks.length && !modalLoading && !modalError"
               class="p-10 text-center text-sm text-ink-faint"
             >
-              Không có thay đổi trong commit này
+              No changes in this commit
             </div>
           </div>
         </div>

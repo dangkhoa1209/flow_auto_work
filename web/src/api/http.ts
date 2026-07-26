@@ -142,7 +142,7 @@ http.interceptors.response.use(
       clearAuthAndNotify();
       return Promise.reject(
         new ApiError(
-          "Phiên đăng nhập hết hạn — vui lòng đăng nhập lại",
+          "Session expired — please sign in again",
           401,
           "SESSION_EXPIRED",
         ),
@@ -169,7 +169,7 @@ http.interceptors.response.use(
     } catch {
       processQueue(
         new ApiError(
-          "Phiên đăng nhập hết hạn — vui lòng đăng nhập lại",
+          "Session expired — please sign in again",
           401,
           "SESSION_EXPIRED",
         ),
@@ -178,7 +178,7 @@ http.interceptors.response.use(
       clearAuthAndNotify();
       return Promise.reject(
         new ApiError(
-          "Phiên đăng nhập hết hạn — vui lòng đăng nhập lại",
+          "Session expired — please sign in again",
           401,
           "SESSION_EXPIRED",
         ),
@@ -193,7 +193,7 @@ function clearAuthAndNotify() {
   clearPersistedAuth();
   setAccessToken(null, null);
   try {
-    message.warning("Phiên đăng nhập hết hạn — vui lòng đăng nhập lại");
+    message.warning("Session expired — please sign in again");
   } catch {
     /* antd may not be ready */
   }

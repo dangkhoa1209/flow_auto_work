@@ -156,18 +156,14 @@ function onPaneResize(event: { panes: Array<{ size: number }> }) {
               :progress-lines="wb.progressLines"
               :progress-live="wb.progressLive"
               :chat-input="wb.chatInput"
-              :clarify-input="wb.clarifyInput"
               :busy="wb.busy"
               :stop-busy="wb.stopBusy"
               :can-force-stop="wb.canForceStop"
               :can-reset-window="wb.canResetWindow"
               :agent-window-short="wb.agentWindowShort"
-              :pending-clarify="wb.pendingClarify"
               :context-quality="wb.contextQuality"
               @update:chat-input="wb.chatInput = $event"
-              @update:clarify-input="wb.clarifyInput = $event"
               @send-chat="wb.sendChat"
-              @send-clarify="wb.sendClarify"
               @force-stop="wb.forceStop"
               @reset-window="wb.resetAgentWindow"
             />
@@ -333,18 +329,14 @@ function onPaneResize(event: { panes: Array<{ size: number }> }) {
           :progress-lines="wb.progressLines"
           :progress-live="wb.progressLive"
           :chat-input="wb.chatInput"
-          :clarify-input="wb.clarifyInput"
           :busy="wb.busy"
           :stop-busy="wb.stopBusy"
           :can-force-stop="wb.canForceStop"
           :can-reset-window="wb.canResetWindow"
           :agent-window-short="wb.agentWindowShort"
-          :pending-clarify="wb.pendingClarify"
           :context-quality="wb.contextQuality"
           @update:chat-input="wb.chatInput = $event"
-          @update:clarify-input="wb.clarifyInput = $event"
           @send-chat="wb.sendChat"
-          @send-clarify="wb.sendClarify"
           @force-stop="wb.forceStop"
           @reset-window="wb.resetAgentWindow"
         />
@@ -357,7 +349,7 @@ function onPaneResize(event: { panes: Array<{ size: number }> }) {
       class="lg:hidden fixed inset-x-0 z-[45] border-t border-line bg-surface-raised/95 backdrop-blur-sm px-2 py-1.5 flex items-center gap-2 shadow-[0_-2px_10px_rgba(15,23,42,0.08)]"
       style="bottom: calc(3.25rem + env(safe-area-inset-bottom, 0px))"
     >
-      <a-tooltip :title="wb.runBlockedReason || 'Chạy agent'">
+      <a-tooltip :title="wb.runBlockedReason || 'Run agent'">
         <a-button
           type="primary"
           size="small"
@@ -380,7 +372,7 @@ function onPaneResize(event: { panes: Array<{ size: number }> }) {
       <a-popconfirm
         title="Merge work → base?"
         ok-text="Merge"
-        cancel-text="Huỷ"
+        cancel-text="Cancel"
         :disabled="!wb.canQuickMerge || wb.mergeBusy"
         @confirm="wb.quickMerge()"
       >
@@ -393,9 +385,9 @@ function onPaneResize(event: { panes: Array<{ size: number }> }) {
         >
       </a-popconfirm>
       <a-popconfirm
-        title="Handoff với prefs Settings?"
+        title="Handoff with Settings prefs?"
         ok-text="Handoff"
-        cancel-text="Huỷ"
+        cancel-text="Cancel"
         :disabled="!wb.canQuickHandoff || wb.handoffBusy"
         @confirm="wb.quickHandoff()"
       >
@@ -414,8 +406,8 @@ function onPaneResize(event: { panes: Array<{ size: number }> }) {
     <a-modal
       v-model:open="wb.adhocOpen"
       title="New session / Hotfix"
-      ok-text="Bắt đầu"
-      cancel-text="Hủy"
+      ok-text="Start"
+      cancel-text="Cancel"
       :confirm-loading="wb.adhocBusy"
       class="shadow-xl"
       wrap-class-name="work-modal-sheet"
@@ -423,18 +415,18 @@ function onPaneResize(event: { panes: Array<{ size: number }> }) {
       @ok="wb.startAdhoc"
     >
       <a-form layout="vertical" class="mt-2">
-        <a-form-item label="Tiêu đề" required>
+        <a-form-item label="Title" required>
           <a-input
             v-model:value="wb.adhocTitle"
-            placeholder="vd. Hotfix crash login mobile"
+            placeholder="e.g. Hotfix crash login mobile"
             @pressEnter="wb.startAdhoc"
           />
         </a-form-item>
-        <a-form-item label="Yêu cầu đầu (optional)">
+        <a-form-item label="Initial request (optional)">
           <a-textarea
             v-model:value="wb.adhocMessage"
             :rows="4"
-            placeholder="Mô tả việc cần agent làm…"
+            placeholder="Describe what the agent should do…"
           />
         </a-form-item>
       </a-form>
@@ -442,9 +434,9 @@ function onPaneResize(event: { panes: Array<{ size: number }> }) {
 
     <a-modal
       v-model:open="wb.issueCreateOpen"
-      title="Tạo GitLab issue"
-      ok-text="Tạo issue"
-      cancel-text="Hủy"
+      title="Create GitLab issue"
+      ok-text="Create issue"
+      cancel-text="Cancel"
       :confirm-loading="wb.issueCreateBusy"
       :width="640"
       wrap-class-name="work-modal-sheet"
@@ -474,7 +466,7 @@ function onPaneResize(event: { panes: Array<{ size: number }> }) {
 
     <a-modal
       v-model:open="wb.standardsOpen"
-      title="Tiêu chuẩn Context Quality"
+      title="Context Quality Standards"
       :footer="null"
       :width="520"
       destroy-on-close
@@ -482,8 +474,8 @@ function onPaneResize(event: { panes: Array<{ size: number }> }) {
       :centered="false"
     >
       <p class="text-xs text-ink-muted m-0 mb-3 leading-relaxed">
-        Gate khi Run / chat follow-up. Dev Notes rõ ràng (đủ dài + tín hiệu kỹ
-        thuật) được coi là <strong>Good</strong>.
+        Gate on Run / chat follow-up. Clear Dev Notes (long enough + technical
+        signals) count as <strong>Good</strong>.
       </p>
       <div
         v-for="(std, key) in CONTEXT_QUALITY_STANDARDS"

@@ -3,7 +3,7 @@ const STATUS_LABELS: Record<string, string> = {
   draft: "Draft",
   queued: "Queued",
   running: "Running",
-  awaiting_clarification: "Awaiting clarification",
+  awaiting_clarification: "Awaiting chat reply",
   awaiting_docs_approval: "Awaiting docs approval",
   awaiting_diff_approval: "Awaiting diff approval",
   awaiting_handoff: "Awaiting handoff",
@@ -100,7 +100,7 @@ export function contextQualityColor(
   return "default";
 }
 
-/** Tiêu chuẩn 3 mức — hiện trong modal UI (không dump thẳng lên màn hình). */
+/** Three-tier standards — shown in modal UI (not dumped on screen). */
 export const CONTEXT_QUALITY_STANDARDS: Record<
   ContextQualityLevel,
   { title: string; items: string[] }
@@ -108,23 +108,23 @@ export const CONTEXT_QUALITY_STANDARDS: Record<
   good: {
     title: "Good",
     items: [
-      "Feature: route/URL + Input/Output + Model/Component (vd. EmployeeList.vue)",
+      "Feature: route/URL + Input/Output + Model/Component (e.g. EmployeeList.vue)",
       "Bug: Steps to reproduce + Current vs Expected + error log/stack trace",
-      "Hoặc Dev Notes rõ ràng (≥ ~25 từ + tín hiệu kỹ thuật: file/route/field/I/O/repro/docs)",
+      "Or clear Dev Notes (≥ ~25 words + technical signals: file/route/field/I/O/repro/docs)",
     ],
   },
   searchable: {
     title: "Searchable",
     items: [
-      "Có mỏ neo để search: UI text, field name, API path, hoặc route — nhưng chưa chỉ rõ file",
-      "Agent phải grep/search trước khi sửa",
+      "Has search anchors: UI text, field name, API path, or route — but file not specified",
+      "Agent must grep/search before editing",
     ],
   },
   bad: {
     title: "Bad",
     items: [
-      "Chỉ title mơ hồ / mô tả chung chung, thiếu route, file, bước tái hiện",
-      "Bổ sung Dev Notes hoặc chat rồi Run lại",
+      "Vague title / generic description only — missing route, file, or repro steps",
+      "Add Dev Notes or chat, then Run again",
     ],
   },
 };

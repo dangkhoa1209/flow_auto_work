@@ -92,7 +92,7 @@ async function mergeBranch() {
       <h2
         class="text-sm font-semibold text-ink mb-3 sticky top-0 bg-surface-raised/90 py-1 backdrop-blur"
       >
-        Done chờ (awaiting_handoff)
+        Done awaiting handoff
       </h2>
       <div
         v-for="j in handoffJobs"
@@ -115,7 +115,7 @@ async function mergeBranch() {
           {{ j.summary || j.branch || j.id }}
         </div>
       </div>
-      <a-empty v-if="!handoffJobs.length" description="Không có job chờ" />
+      <a-empty v-if="!handoffJobs.length" description="No jobs awaiting handoff" />
     </aside>
 
     <section
@@ -163,12 +163,12 @@ async function mergeBranch() {
               >Merge → project</a-button
             >
             <a-button type="primary" :loading="busy" @click="confirmHandoff"
-              >Xác nhận handoff</a-button
+              >Confirm handoff</a-button
             >
           </div>
         </a-form>
       </template>
-      <a-empty v-else description="Chọn job bên trái" />
+      <a-empty v-else description="Select a job on the left" />
     </section>
   </div>
 </template>

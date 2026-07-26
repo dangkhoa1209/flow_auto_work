@@ -50,7 +50,7 @@ function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
     const t = setTimeout(() => {
       reject(
         new Error(
-          `${label} timed out after ${Math.round(ms / 1000)}s — hỏi ngắn hơn, hoặc dùng Run nếu cần agent thực thi DB/queue`,
+          `${label} timed out after ${Math.round(ms / 1000)}s — ask a shorter question, or use Run if the agent needs to execute DB/queue work`,
         ),
       );
     }, ms);
@@ -106,7 +106,7 @@ export async function answerTaskQuestion(opts: {
 2. Prefer a clear Vietnamese answer with concrete file/paths/commands they can run.
 3. Do **NOT** execute long-running work: no DB mutations that take minutes, no queue workers left running, no seed scripts that hang.
 4. You may briefly grep/read files — then **stop and answer**.
-5. If they ask you to *do* the work, tell them to click **"Bật Run"** in the Clarify / Q&A panel.
+5. If they ask you to *do* the work, tell them to click **Run** or send a follow-up in chat (Gửi).
 6. Keep the final answer concise (roughly under ~25 lines).
 7. Chat UI is narrow: lead with 1–2 sentences + short bullets. No giant Markdown tables; no pasting full QC matrices. Skip machine tags like <<<DONE>>> in the human-readable body.
 

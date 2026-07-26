@@ -87,17 +87,17 @@ function confirm() {
 <template>
   <a-modal
     v-model:open="visible"
-    title="Chọn thư mục repo"
+    title="Choose repo folder"
     :width="560"
-    ok-text="Chọn thư mục này"
-    cancel-text="Hủy"
+    ok-text="Select this folder"
+    cancel-text="Cancel"
     @ok="confirm"
   >
     <div class="space-y-3">
       <div class="flex gap-2 items-center">
         <a-button size="small" :disabled="!parent" @click="goParent">
           <template #icon><ArrowUpOutlined /></template>
-          Lên
+          Up
         </a-button>
         <a-button size="small" @click="goHome">
           <template #icon><HomeOutlined /></template>
@@ -127,19 +127,19 @@ function confirm() {
             v-if="!entries.length && !loading"
             class="text-center text-ink-faint text-sm py-8"
           >
-            Thư mục trống
+            Empty folder
           </div>
         </div>
       </a-spin>
       <p class="text-xs text-ink-faint m-0">
-        Click vào thư mục để mở · bấm «Chọn thư mục này» khi đúng path repo.
+        Click a folder to open · click «Select this folder» when the repo path is correct.
       </p>
     </div>
     <template #footer>
-      <a-button @click="visible = false">Hủy</a-button>
+      <a-button @click="visible = false">Cancel</a-button>
       <a-button type="primary" @click="confirm">
         <template #icon><FolderOpenOutlined /></template>
-        Chọn thư mục này
+        Select this folder
       </a-button>
     </template>
   </a-modal>

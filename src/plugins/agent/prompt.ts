@@ -61,7 +61,7 @@ You MUST strictly follow these technical directions before referring to the busi
   return { notesBlock, description, notes };
 }
 
-/** Format UI Clarify/Q&A chat into a prompt block for Run. */
+/** Format UI chat into a prompt block for Run. */
 export function formatChatContextForRun(
   messages: Array<{ role: string; kind?: string; body: string; createdAt?: string }>,
   opts?: { limit?: number },
@@ -81,7 +81,7 @@ export function formatChatContextForRun(
   });
 
   return `# UI CHAT REQUESTS (HIGHEST PRIORITY FOR THIS RUN)
-The human already asked / clarified in the Flow Auto Work Clarify·Q&A chat.
+The human already asked / replied in the Flow Auto Work chat.
 Treat the **latest Human messages** as the active instructions for this run (e.g. connect DB, seed NV, run queue, verify).
 Do the work end-to-end when they asked you to execute — this is a full Run, not Q&A mode.
 

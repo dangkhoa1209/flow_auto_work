@@ -92,7 +92,7 @@ const emit = defineEmits<{
               type="info"
               show-icon
               class="mt-2"
-              message="Session Hotfix — chưa có GitLab issue"
+              message="Hotfix session — no GitLab issue yet"
             >
               <template #action>
                 <a-button
@@ -100,7 +100,7 @@ const emit = defineEmits<{
                   type="primary"
                   :loading="issueCreateBusy"
                   @click="emit('openCreateIssue')"
-                  >Tạo issue GitLab</a-button
+                  >Create GitLab issue</a-button
                 >
               </template>
             </a-alert>
@@ -110,7 +110,7 @@ const emit = defineEmits<{
               type="success"
               show-icon
               class="mt-2"
-              message="Docs phase xong — duyệt để chạy code"
+              message="Docs phase complete — approve to run code"
             >
               <template #action>
                 <a-button
@@ -181,7 +181,7 @@ const emit = defineEmits<{
                   type="link"
                   class="!px-0 !h-auto"
                   @click="emit('openStandards')"
-                  >Xem tiêu chuẩn</a-button
+                  >View standards</a-button
                 >
               </div>
 
@@ -190,10 +190,10 @@ const emit = defineEmits<{
                 type="error"
                 show-icon
                 class="mb-3"
-                message="Bad Context — Run bị chặn"
+                message="Bad Context — Run blocked"
                 :description="
                   currentJob?.lastQuestion ||
-                  'Bổ sung Dev Notes hoặc mô tả kỹ thuật rồi Run lại.'
+                  'Add Dev Notes or technical details, then Run again.'
                 "
               />
 
@@ -214,7 +214,7 @@ const emit = defineEmits<{
                   :markdown="true"
                   :body="
                     currentJob?.summary?.trim() ||
-                    'Chưa có summary — chat với agent hoặc mô tả việc cần làm.'
+                    'No summary yet — chat with the agent or describe the work.'
                   "
                 />
                 <ChatMessageBody
@@ -223,7 +223,7 @@ const emit = defineEmits<{
                   :markdown="true"
                   :issue-url="taskDetail?.url || currentJob?.issue?.url"
                   :body="taskDetail?.description || ''"
-                  empty="(không có description)"
+                  empty="(no description)"
                 />
               </div>
             </div>
@@ -263,7 +263,7 @@ const emit = defineEmits<{
                   </button>
                 </div>
                 <div v-else class="text-xs text-ink-faint">
-                  Không có related / child
+                  No related / child issues
                 </div>
               </div>
 
@@ -297,7 +297,7 @@ const emit = defineEmits<{
                     />
                   </div>
                 </div>
-                <div v-else class="text-xs text-ink-faint">Chưa có comment</div>
+                <div v-else class="text-xs text-ink-faint">No comments yet</div>
               </div>
             </template>
 
@@ -314,12 +314,12 @@ const emit = defineEmits<{
                     type="link"
                     class="!px-0 !h-auto !text-[11px]"
                     @click="emit('openStandards')"
-                    >tiêu chuẩn</a-button
+                    >standards</a-button
                   >
                   <span
                     v-if="notesSaving"
                     class="text-[10px] text-ink-faint"
-                    >đang lưu…</span
+                    >saving…</span
                   >
                 </div>
                 <a-button
@@ -328,13 +328,13 @@ const emit = defineEmits<{
                   :loading="notesSaving"
                   title="⌘/Ctrl+S"
                   @click="emit('saveNotes')"
-                  >Lưu</a-button
+                  >Save</a-button
                 >
               </div>
               <a-textarea
                 :value="notesDraft"
                 :rows="4"
-                placeholder="Chỉ dẫn kỹ thuật rõ ràng (≥ ~25 từ + file/route/field…) → Good Context"
+                placeholder="Clear technical guidance (≥ ~25 words + file/route/field…) → Good Context"
                 @update:value="
                   (v: string) => {
                     emit('update:notesDraft', v);
@@ -351,14 +351,14 @@ const emit = defineEmits<{
                   "
                 />
                 <span class="text-xs text-ink-muted"
-                  >Docs-first (đọc docs trước khi code)</span
+                  >Docs-first (read docs before coding)</span
                 >
               </div>
             </div>
           </template>
-          <a-empty v-else description="Chọn task hoặc job">
+          <a-empty v-else description="Select a task or job">
             <span class="text-xs text-ink-faint"
-              >Chọn ở cột trái để xem context và Run</span
+              >Select on the left column to view context and Run</span
             >
           </a-empty>
         </div>
@@ -381,7 +381,7 @@ const emit = defineEmits<{
       class="absolute bottom-0 inset-x-0 z-[5] border-t border-line bg-surface-raised/95 backdrop-blur-sm px-3 py-2.5 flex items-center flex-wrap shadow-sm"
       :class="mobileTouch ? 'gap-4' : 'gap-2'"
     >
-      <a-tooltip :title="runBlockedReason || 'Chạy agent trên task đã chọn'">
+      <a-tooltip :title="runBlockedReason || 'Run agent on selected task'">
         <a-button
           type="primary"
           :class="mobileTouch ? 'min-w-[6.5rem] !min-h-[44px]' : 'min-w-[6.5rem]'"
@@ -403,15 +403,15 @@ const emit = defineEmits<{
       <a-popconfirm
         title="Merge work branch → base?"
         ok-text="Merge"
-        cancel-text="Huỷ"
+        cancel-text="Cancel"
         :disabled="!canQuickMerge || mergeBusy"
         @confirm="emit('quickMerge')"
       >
         <a-tooltip
           :title="
             canQuickMerge
-              ? 'Merge nhanh (work → base)'
-              : 'Chỉ khi job ở Awaiting handoff'
+              ? 'Quick merge (work → base)'
+              : 'Only when job is Awaiting handoff'
           "
         >
           <a-button
@@ -423,17 +423,17 @@ const emit = defineEmits<{
         </a-tooltip>
       </a-popconfirm>
       <a-popconfirm
-        title="Handoff với prefs Settings (assignee / labels)?"
+        title="Handoff with Settings prefs (assignee / labels)?"
         ok-text="Handoff"
-        cancel-text="Huỷ"
+        cancel-text="Cancel"
         :disabled="!canQuickHandoff || handoffBusy"
         @confirm="emit('quickHandoff')"
       >
         <a-tooltip
           :title="
             canQuickHandoff
-              ? 'Handoff nhanh (Settings → Labels)'
-              : 'Chỉ khi job ở Awaiting handoff'
+              ? 'Quick handoff (Settings → Labels)'
+              : 'Only when job is Awaiting handoff'
           "
         >
           <a-button

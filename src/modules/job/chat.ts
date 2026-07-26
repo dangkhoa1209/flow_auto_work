@@ -1,9 +1,8 @@
 /**
- * Conversation surface: clarification answers, IDE-style continue, Q&A,
- * chat transcript and notes.
+ * Conversation surface: IDE-style continue, Q&A, chat transcript and notes.
+ * Clarification is chat-only — agent posts questions; user replies via continue.
  */
 import { answerTaskQuestion } from "../../plugins/agent/qa.js";
-import { submitUiClarification } from "../../plugins/clarify/ui-wait.js";
 import { addChatMessage, addNote, listChatMessages } from "../../db/mongo.js";
 import { saveJob } from "../../job-store.js";
 import { logger } from "../../logger.js";
@@ -11,28 +10,9 @@ import { jobQueue } from "../../queue.js";
 import { AppError } from "../../utils/AppError.js";
 import { requireJobDoc } from "./lifecycle.js";
 
-/** Answer agent clarification from UI (replaces Teams). */
-export async function submitClarification(
-  jobId: string,
-  input: { answer?: string },
-) {
-  await requireJobDoc(jobId);
-  if (!input.answer?.trim()) {
-    throw new AppError("answer required", 400);
-  }
-  const ok = submitUiClarification(jobId, input.answer);
-  if (!ok) {
-    throw new AppError(
-      "No pending clarification waiter for this job (already answered or not waiting)",
-      409,
-    );
-  }
-  return { ok: true };
-}
-
 /**
  * Cursor-IDE-style chat on the same agent window.
- * Ask / fix / do more after DONE — keeps conversation context.
+ * Ask / fix / do more after DONE — also answers agent clarification questions.
  */
 export async function continueJobChat(
   jobId: string,
@@ -47,7 +27,7 @@ export async function continueJobChat(
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     logger.error("IDE continue failed", { jobId: job.id, err: msg });
-    throw new AppError(msg, /đang chạy|Force Stop|clarify/i.test(msg) ? 409 : 500);
+    throw new AppError(msg, /running|Force Stop/i.test(msg) ? 409 : 500);
   }
 }
 
@@ -64,7 +44,7 @@ export async function askJobQuestion(
   const { hasActiveAgentRun } = await import("../../plugins/agent/run.js");
   if (hasActiveAgentRun(job.id)) {
     throw new AppError(
-      "Agent đang chạy trên job này — đợi xong hoặc Force Stop rồi hỏi Q&A lại",
+      "Agent is running on this job — wait for it to finish or Force Stop, then ask Q&A again",
       409,
     );
   }
@@ -136,17 +116,16 @@ export async function getJobChat(jobId: string) {
   return { chat };
 }
 
-/** Append a user chat line without calling the Q&A agent (e.g. before Bật Run). */
+/** Append a user chat line without calling the Q&A agent (e.g. before Run). */
 export async function appendJobChat(
   jobId: string,
-  input: { body?: string; kind?: "qa" | "clarify" | "note" },
+  input: { body?: string; kind?: "qa" | "note" },
 ) {
   const job = await requireJobDoc(jobId);
   if (!input.body?.trim()) {
     throw new AppError("body required", 400);
   }
-  const kind =
-    input.kind === "clarify" || input.kind === "note" ? input.kind : "qa";
+  const kind = input.kind === "note" ? "note" : "qa";
   const message = await addChatMessage({
     jobId: job.id,
     issueIid: job.issue.issueIid,

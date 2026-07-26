@@ -1,4 +1,3 @@
-import { listPendingClarifications } from "../../plugins/clarify/ui-wait.js";
 import { mongoPing } from "../../db/mongo.js";
 import { jobQueue } from "../../queue.js";
 import { getRuntimeContext } from "../../workspace/runtime.js";
@@ -17,6 +16,5 @@ export async function getStatusPayload() {
     queue,
     currentJobId: queue.currentJobId,
     queueLength: queue.queued,
-    pendingClarifications: listPendingClarifications(),
   };
 }

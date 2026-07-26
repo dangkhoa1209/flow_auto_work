@@ -163,7 +163,7 @@ export async function prepareRepoForIssue(opts: {
       autoCreated = true;
     } else {
       throw new Error(
-        `Work branch "${workBranch}" chưa có (local/origin). Tạo nhánh này trước, hoặc bỏ Work branch trong Settings → Project.`,
+        `Work branch "${workBranch}" does not exist (local/origin). Create this branch first, or clear Work branch in Settings → Project.`,
       );
     }
     branch = workBranch;

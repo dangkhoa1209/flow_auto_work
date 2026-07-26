@@ -213,7 +213,7 @@ export function assessContextQuality(
   }
   if (ERROR_LOG_RE.test(corpus)) goodSignals.push("error log / stack trace");
 
-  // Clear Dev Notes alone can qualify as Good (technical + đủ dài)
+  // Clear Dev Notes alone can qualify as Good (technical + long enough)
   const notesWc = wordCount(notes);
   const notesHasTech =
     matchAll(FILE_RE, notes).length > 0 ||
@@ -434,16 +434,16 @@ ${missing}
 /** Standards text for UI modal (kept in sync with classifier). */
 export const CONTEXT_QUALITY_STANDARDS = {
   good: [
-    "Feature: route/URL + Input/Output + Model/Component (vd. EmployeeList.vue)",
+    "Feature: route/URL + Input/Output + Model/Component (e.g. EmployeeList.vue)",
     "Bug: Steps to reproduce + Current vs Expected + error log/stack trace",
-    "Hoặc Dev Notes rõ ràng (≥ ~25 từ + tín hiệu kỹ thuật: file/route/field/I/O/repro/docs)",
+    "Or clear Dev Notes (≥ ~25 words + technical signals: file/route/field/I/O/repro/docs)",
   ],
   searchable: [
-    "Có mỏ neo để search: UI text, field name, API path, hoặc route — nhưng chưa chỉ rõ file",
-    "Agent phải grep/search trước khi code",
+    "Has search anchors: UI text, field name, API path, or route — but no exact file yet",
+    "Agent must grep/search before coding",
   ],
   bad: [
-    "Chỉ title mơ hồ / mô tả chung chung, thiếu route, file, bước tái hiện",
-    "Không chạy Cursor Agent — bổ sung Dev Notes hoặc chat rồi Run lại",
+    "Vague title / generic description only — missing route, file, or repro steps",
+    "Do not run Cursor Agent — add Dev Notes or chat, then Run again",
   ],
 } as const;

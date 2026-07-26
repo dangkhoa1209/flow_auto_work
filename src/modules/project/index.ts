@@ -362,7 +362,7 @@ export type UpdateProjectBody = {
   gitlabHost?: string;
   gitlabPath?: string;
   displayName?: string;
-  /** UI “Tên project (Flow)” — also renames local folder when possible */
+  /** UI “Flow project name” — also renames local folder when possible */
   projectName?: string;
 };
 

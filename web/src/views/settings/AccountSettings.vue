@@ -8,25 +8,25 @@ const router = useRouter();
 
 async function logout() {
   await session.logout();
-  message.success("Đã đăng xuất");
+  message.success("Signed out");
   await router.replace({ name: "login" });
 }
 </script>
 
 <template>
   <div class="space-y-4">
-    <h2 class="text-lg font-medium m-0">Tài khoản</h2>
+    <h2 class="text-lg font-medium m-0">Account</h2>
     <a-descriptions bordered size="small" :column="1">
       <a-descriptions-item label="GitLab user">
         @{{ session.me?.gitlabUsername || session.session.username }}
       </a-descriptions-item>
       <a-descriptions-item label="GitLab PAT">
-        {{ session.me?.hasGitlabToken ? "Đã lưu (encrypted)" : "Chưa có" }}
+        {{ session.me?.hasGitlabToken ? "Saved (encrypted)" : "Not set" }}
       </a-descriptions-item>
     </a-descriptions>
-    <a-button danger @click="logout">Đăng xuất</a-button>
+    <a-button danger @click="logout">Sign out</a-button>
     <p class="text-xs text-ink-faint m-0">
-      Đổi PAT: logout rồi login lại với token mới.
+      To change PAT: sign out, then sign in again with a new token.
     </p>
   </div>
 </template>

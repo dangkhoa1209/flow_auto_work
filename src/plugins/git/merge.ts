@@ -104,7 +104,7 @@ export async function restoreWipAfterMerge(
     logger.warn("WIP stash not found after merge", { marker });
     return {
       restored: false,
-      warning: `Không thấy stash WIP (${marker}) — kiểm tra git stash list`,
+      warning: `WIP stash not found (${marker}) — check git stash list`,
     };
   }
   try {
@@ -116,7 +116,7 @@ export async function restoreWipAfterMerge(
     logger.warn("stash pop had conflicts — stash kept", { ref, marker, err: msg });
     return {
       restored: false,
-      warning: `WIP vẫn trong ${ref} (pop conflict). Chạy: git stash pop ${ref}`,
+      warning: `WIP still in ${ref} (pop conflict). Run: git stash pop ${ref}`,
     };
   }
 }

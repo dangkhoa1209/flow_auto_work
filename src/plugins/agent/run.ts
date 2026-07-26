@@ -61,12 +61,12 @@ export function formatCursorAgentFailure(err: unknown, fallback: string): string
     (/ConnectError/i.test(msg) && /fetch failed/i.test(msg))
   ) {
     return (
-      "Cursor API unreachable (API key exchange / fetch failed). " +
+      "Không kết nối được Cursor API (API key exchange / fetch failed). " +
       "Kiểm tra mạng, VPN, hoặc Cursor API key trong Settings → Cursor, rồi thử lại."
     );
   }
   if (/ENHANCE_YOUR_CALM|ERR_HTTP2/i.test(msg)) {
-    return "Cursor rate-limit / HTTP2 closed — đợi vài giây rồi Gửi lại.";
+    return "Cursor giới hạn tốc độ / HTTP2 đóng — đợi vài giây rồi Gửi lại.";
   }
   return fallback;
 }

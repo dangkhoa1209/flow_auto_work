@@ -1,5 +1,5 @@
 export type CompletionActions = {
-  /** GitLab usernames to assign when done (UI: 1 người) */
+  /** GitLab usernames to assign when done (UI: single assignee) */
   assignees?: string[];
   /** Labels to add when done */
   labels?: string[];
@@ -31,7 +31,7 @@ export type IssueJob = {
   labels: string[];
   url: string;
   action: string;
-  /** GitLab milestone (null/undefined = chưa gán) */
+  /** GitLab milestone (null/undefined = not assigned) */
   milestone?: IssueMilestone | null;
 };
 
@@ -79,26 +79,23 @@ export function slugifyBranchPart(title: string, max = 40): string {
 }
 
 export type JobStatus =
-  /** Job shell — đã gắn issue, có thể đang viết Dev Notes, chưa (re)run */
+  /** Job shell — issue linked, Dev Notes in progress, not yet (re)run */
   | "draft"
   | "queued"
   | "running"
   | "awaiting_clarification"
-  /** Docs phase xong — chờ PM duyệt analysis trong UI */
+  /** Docs phase done — awaiting PM analysis approval in UI */
   | "awaiting_docs_approval"
   /** @deprecated legacy — migrated to succeeded on boot (push/MR gate removed) */
   | "awaiting_diff_approval"
-  /** Code done (GitLab API commit) — chờ user assign / labels thủ công */
+  /** Code done (GitLab API commit) — awaiting manual assign / labels */
   | "awaiting_handoff"
   | "succeeded"
   | "failed";
 
 export function isJobBusy(status: JobStatus): boolean {
-  return (
-    status === "queued" ||
-    status === "running" ||
-    status === "awaiting_clarification"
-  );
+  // awaiting_clarification is idle — user replies via chat (not a blocked waiter)
+  return status === "queued" || status === "running";
 }
 
 export type JobRecord = {

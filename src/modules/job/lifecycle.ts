@@ -129,7 +129,7 @@ export async function createAdhocSession(input: AdhocJobInput) {
   }
 }
 
-/** Prefill suggestion for «Tạo issue GitLab» modal. */
+/** Prefill suggestion for the «Create GitLab issue» modal. */
 export async function buildIssueDraft(jobId: string) {
   const job = await requireJobDoc(jobId);
   if (!isAdhocJob(job)) {
@@ -190,7 +190,7 @@ export async function createIssueFromAdhoc(
     throw new AppError("Only adhoc sessions can create a new issue", 400);
   }
   if (isJobBusy(loaded.status)) {
-    throw new AppError("Agent đang chạy — đợi xong rồi tạo issue", 409);
+    throw new AppError("Agent is running — wait for it to finish before creating an issue", 409);
   }
   const title = input.title?.trim() || loaded.issue.title?.trim();
   if (!title) throw new AppError("title required", 400);
@@ -317,7 +317,7 @@ export async function getJobProgressForUi(jobId: string, after: number) {
   const { hasActiveAgentRun } = await import("../../plugins/agent/run.js");
   const live =
     hasActiveAgentRun(jobId) ||
-    ["queued", "running", "awaiting_clarification"].includes(job.status);
+    ["queued", "running"].includes(job.status);
   const liveUsage = getJobTokenUsage(jobId);
   const tokenUsage = liveUsage
     ? {

@@ -48,7 +48,7 @@ const label = computed(() => {
     rel="noopener noreferrer"
     class="issue-iid-link text-accent font-semibold hover:underline"
     :class="linkClass"
-    :title="`Mở GitLab ${label}`"
+    :title="`Open GitLab ${label}`"
     @click.stop
   >
     {{ label }}

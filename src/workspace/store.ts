@@ -527,7 +527,7 @@ export async function renameProjectLocalFolder(opts: {
   }
 
   if (await pathExists(newParent)) {
-    throw new Error(`Thư mục đích đã tồn tại: ${newParent}`);
+    throw new Error(`Destination folder already exists: ${newParent}`);
   }
 
   if (await pathExists(oldParent)) {

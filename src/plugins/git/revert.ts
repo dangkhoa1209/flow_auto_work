@@ -47,7 +47,7 @@ export async function revertCommitViaGitlab(opts: {
 
   if (await hasUncommittedChanges(opts.repoPath)) {
     throw new Error(
-      "Working tree dirty — commit/stash local changes trước khi revert",
+      "Working tree dirty — commit or stash local changes before reverting",
     );
   }
 
@@ -85,7 +85,7 @@ export async function revertCommitViaGitlab(opts: {
     await gitOk(opts.repoPath, ["revert", "--abort"]);
     await gitOk(opts.repoPath, ["reset", "--hard", tip]);
     throw new Error(
-      `Revert conflict hoặc thất bại cho ${fullSha.slice(0, 8)}: ${
+      `Revert conflict or failed for ${fullSha.slice(0, 8)}: ${
         err instanceof Error ? err.message : String(err)
       }`,
     );
@@ -95,7 +95,7 @@ export async function revertCommitViaGitlab(opts: {
   if (!actions.length) {
     await gitOk(opts.repoPath, ["revert", "--abort"]);
     await gitOk(opts.repoPath, ["reset", "--hard", tip]);
-    throw new Error("Revert không tạo thay đổi (có thể đã revert rồi)");
+    throw new Error("Revert produced no changes (may already be reverted)");
   }
 
   const message =

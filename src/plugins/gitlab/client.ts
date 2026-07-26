@@ -437,7 +437,7 @@ export async function waitUntilMrReady(opts: {
 
   const status = last ? mrStatusOf(last) : "unknown";
   throw new Error(
-    `GitLab MR !${opts.mergeRequestIid} vẫn ${status} sau ${Math.round(timeoutMs / 1000)}s — thử lại sau`,
+    `GitLab MR !${opts.mergeRequestIid} still ${status} after ${Math.round(timeoutMs / 1000)}s — try again later`,
   );
 }
 
@@ -475,7 +475,7 @@ export async function acceptMergeRequest(opts: {
   const status = mrStatusOf(ready);
   if (ready.has_conflicts || status === "cannot_be_merged") {
     throw new Error(
-      `GitLab không merge được MR !${opts.mergeRequestIid}: ${status || "conflicts"}` +
+      `GitLab could not merge MR !${opts.mergeRequestIid}: ${status || "conflicts"}` +
         (ready.merge_error ? ` (${ready.merge_error})` : ""),
     );
   }
@@ -562,12 +562,12 @@ export async function acceptMergeRequest(opts: {
     }
 
     throw new Error(
-      `GitLab không merge được MR !${opts.mergeRequestIid}: ${why}`,
+      `GitLab could not merge MR !${opts.mergeRequestIid}: ${why}`,
     );
   }
 
   throw new Error(
-    `GitLab không merge được MR !${opts.mergeRequestIid}: exhausted retries`,
+    `GitLab could not merge MR !${opts.mergeRequestIid}: exhausted retries`,
   );
 }
 

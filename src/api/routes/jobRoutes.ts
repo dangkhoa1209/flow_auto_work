@@ -45,7 +45,6 @@ export function createJobRoutes(): Router {
   router.post("/:id/reset-window", jobController.resetWindow);
   router.patch("/:id/status", jobController.setStatus);
 
-  router.post("/:id/clarify", jobController.clarify);
   router.post("/:id/continue", jobController.continueChat);
   router.post("/:id/ask", jobController.ask);
   router.get("/:id/chat", jobController.chat);

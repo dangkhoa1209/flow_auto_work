@@ -5,7 +5,7 @@ export function resolveCursorApiKey(): string {
   const key = requireRuntimeContext().cursorApiKey?.trim();
   if (key) return key;
   throw new Error(
-    "Chưa có Cursor API key — nhập khi Run (sẽ được mã hóa và lưu)",
+    "No Cursor API key — enter one when you Run (it will be encrypted and saved)",
   );
 }
 

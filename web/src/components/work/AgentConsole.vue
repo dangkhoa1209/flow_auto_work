@@ -37,13 +37,11 @@ const props = withDefaults(
     }>;
     progressLive: boolean;
     chatInput: string;
-    clarifyInput: string;
     busy: boolean;
     stopBusy: boolean;
     canForceStop: boolean;
     canResetWindow: boolean;
     agentWindowShort: string | null;
-    pendingClarify: string | null;
     contextQuality: Job["contextQuality"] | null;
     /** Mobile: Chat | Logs tabs instead of split panes */
     mobileTabs?: boolean;
@@ -53,9 +51,7 @@ const props = withDefaults(
 
 const emit = defineEmits<{
   "update:chatInput": [string];
-  "update:clarifyInput": [string];
   sendChat: ["continue" | "ask"];
-  sendClarify: [];
   forceStop: [];
   resetWindow: [];
 }>();
@@ -231,14 +227,14 @@ const progressScroll = useAutoScroll(progressBox, () => props.progressLines.leng
           >
             window {{ agentWindowShort }}
           </div>
-          <div v-else class="text-[10px] text-ink-faint">chưa gắn window</div>
+          <div v-else class="text-[10px] text-ink-faint">No window linked</div>
         </div>
         <div class="flex items-center gap-1.5 flex-wrap justify-end shrink-0">
           <a-popconfirm
             v-if="canForceStop"
             title="Force Stop agent?"
             ok-text="Stop"
-            cancel-text="Huỷ"
+            cancel-text="Cancel"
             ok-type="danger"
             @confirm="emit('forceStop')"
           >
@@ -256,13 +252,13 @@ const progressScroll = useAutoScroll(progressBox, () => props.progressLines.leng
             v-if="canResetWindow"
             title="Reset agent window?"
             ok-text="Reset"
-            cancel-text="Huỷ"
+            cancel-text="Cancel"
             ok-type="danger"
             @confirm="emit('resetWindow')"
           >
             <template #description>
-              Dừng run nếu đang chạy, xóa liên kết cửa sổ Cursor cũ. Chat lịch sử
-              vẫn giữ.
+              Stop the run if active and unlink the old Cursor window. Chat history
+              is preserved.
             </template>
             <a-button size="small" :loading="busy" :disabled="!currentJob">
               <template #icon><ClearOutlined /></template>
@@ -368,24 +364,15 @@ const progressScroll = useAutoScroll(progressBox, () => props.progressLines.leng
           />
         </div>
 
-        <div v-if="pendingClarify" class="shrink-0 px-3 pb-2">
-          <a-alert type="warning" show-icon :message="pendingClarify" />
-          <a-textarea
-            :value="clarifyInput"
-            class="mt-2"
-            :rows="2"
-            :autofocus="false"
-            placeholder="Trả lời clarify…"
-            @update:value="(v: string) => emit('update:clarifyInput', v)"
+        <div
+          v-if="currentJob?.status === 'awaiting_clarification'"
+          class="shrink-0 px-3 pb-2"
+        >
+          <a-alert
+            type="warning"
+            show-icon
+            message="Agent đang hỏi — trả lời ở ô chat bên dưới để tiếp tục"
           />
-          <a-button
-            type="primary"
-            size="small"
-            class="mt-1"
-            :loading="busy"
-            @click="emit('sendClarify')"
-            >Gửi clarify</a-button
-          >
         </div>
 
         <div
@@ -396,7 +383,11 @@ const progressScroll = useAutoScroll(progressBox, () => props.progressLines.leng
             :rows="2"
             :autofocus="false"
             :disabled="busy || agentTyping"
-            placeholder="Hỏi / sửa / làm thêm (IDE follow-up)…"
+            :placeholder="
+              currentJob?.status === 'awaiting_clarification'
+                ? 'Trả lời agent / xác nhận…'
+                : 'Hỏi / sửa / làm thêm (IDE follow-up)…'
+            "
             @update:value="(v: string) => emit('update:chatInput', v)"
             @keydown.meta.enter="emit('sendChat', 'continue')"
           />
@@ -408,14 +399,14 @@ const progressScroll = useAutoScroll(progressBox, () => props.progressLines.leng
               :loading="busy || agentTyping"
               :disabled="busy || agentTyping"
               @click="emit('sendChat', 'continue')"
-              >Gửi</a-button
+              >Send</a-button
             >
             <a-button
               size="small"
               :loading="busy || agentTyping"
               :disabled="busy || agentTyping"
               @click="emit('sendChat', 'ask')"
-              >Chỉ hỏi</a-button
+              >Ask only</a-button
             >
           </div>
         </div>
@@ -451,8 +442,8 @@ const progressScroll = useAutoScroll(progressBox, () => props.progressLines.leng
             mobileTabs
               ? undefined
               : progressOpen
-                ? 'Kéo để đổi chiều cao · click để thu gọn'
-                : 'Mở Progress'
+                ? 'Drag to resize · click to collapse'
+                : 'Open Progress'
           "
           :aria-expanded="mobileTabs ? undefined : progressOpen"
           @pointerdown="onProgressRailPointerDown"
@@ -526,7 +517,7 @@ const progressScroll = useAutoScroll(progressBox, () => props.progressLines.leng
             v-if="!progressLines.length"
             class="text-gray-500 text-center py-8 text-sm font-sans"
           >
-            {{ progressLive ? "Đang chờ Cursor stream…" : "Chưa có progress" }}
+            {{ progressLive ? "Waiting for Cursor stream…" : "No progress yet" }}
           </div>
         </div>
       </div>

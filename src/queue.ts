@@ -31,14 +31,9 @@ import {
   continueAgentWindow,
   hasActiveAgentRun,
   isStartupError,
-  resumeAgent,
   runNewAgent,
 } from "./plugins/agent/run.js";
 import { appendJobProgress, getJobTokenUsage } from "./plugins/agent/progress.js";
-import {
-  cancelUiClarification,
-  waitForUiClarification,
-} from "./plugins/clarify/ui-wait.js";
 import { cancelDiffApproval } from "./plugins/review/diff-wait.js";
 import { addChatMessage, listChatMessages } from "./db/mongo.js";
 import { publishRealtime } from "./plugins/realtime/hub.js";
@@ -248,10 +243,6 @@ export class JobQueue {
     if (!loaded) throw new Error("Job not found");
     let job: JobRecord = loaded;
 
-    if (job.status === "awaiting_clarification") {
-      throw new Error("Đang chờ clarify — trả lời ở ô Clarify");
-    }
-
     // Orphaned busy (no in-memory Cursor run) — reclaim so user can retry after hang/restart
     if (isJobBusy(job.status) && !hasActiveAgentRun(jobId)) {
       const reclaimTo =
@@ -279,7 +270,7 @@ export class JobQueue {
 
     if (hasActiveAgentRun(jobId) || isJobBusy(job.status)) {
       throw new Error(
-        "Agent đang chạy trên job này — đợi xong hoặc bấm Force Stop rồi Gửi lại",
+        "Agent is running on this job — wait for it to finish or Force Stop, then send again",
       );
     }
 
@@ -304,7 +295,7 @@ export class JobQueue {
       extraHuman: msg,
     });
 
-    // Lưu tin user ngay — trước quality/status SSE (tránh UI refresh mất tin)
+    // Save user message immediately — before quality/status SSE (avoid UI refresh dropping it)
     await addChatMessage({
       jobId: job.id,
       issueIid: job.issue.issueIid,
@@ -332,7 +323,7 @@ export class JobQueue {
         body: body,
       });
       job.lastQuestion = body;
-      job.error = "Bad Context — cần bổ sung thông tin trước khi agent code";
+      job.error = "Bad Context — add more information before agent coding";
       job.contextQuality = toContextQualityMark(quality);
       await saveJob(job);
       appendJobProgress(
@@ -406,7 +397,7 @@ export class JobQueue {
       applyTokenUsageToJob(job, result.usage);
       await saveJob(job);
 
-      // Đăng GITLAB_COMMENT ngay — không chờ clarify (tránh treo + mất comment)
+      // Post GITLAB_COMMENT immediately — do not wait for clarify (avoid hang + lost comment)
       await this.deliverAgentGitlabComments(job, result.text);
 
       const chatBody =
@@ -421,16 +412,16 @@ export class JobQueue {
         jobId: job.id,
         issueIid: job.issue.issueIid,
         role: "agent",
-        kind: result.kind === "need_clarification" ? "clarify" : "qa",
+        kind: "qa",
         body: chatBody,
       });
 
-      // IDE follow-up: KHÔNG runClarifyLoop (sẽ block HTTP /continue mãi).
-      // Trả về UI ngay — user trả lời ở ô Clarify.
+      // Agent asked a question — park for chat reply (no blocking waiter)
       if (result.kind === "need_clarification") {
         job.status = "awaiting_clarification";
         job.lastQuestion = result.question ?? chatBody;
         job.error = undefined;
+        job.clarifyRound = (job.clarifyRound ?? 0) + 1;
         await saveJob(job);
         return {
           ok: true,
@@ -509,6 +500,7 @@ export class JobQueue {
           job.error = "Force-stopped from UI";
           await saveJob(job);
         }
+        await this.notifyJobChat(job, "Đã Force Stop — agent dừng giữa chừng.");
         throw new Error("Force-stopped from UI");
       }
 
@@ -529,6 +521,7 @@ export class JobQueue {
       }
       job.error = message;
       await saveJob(job);
+      await this.notifyJobChat(job, `Chat lỗi:\n${message}`);
       throw err instanceof Error ? err : new Error(message);
     } finally {
       this.activeIssueKeys.delete(key);
@@ -567,6 +560,10 @@ export class JobQueue {
       item.job.error = reason;
       item.job.agentId = undefined;
       await saveJob(item.job);
+      await this.notifyJobChat(
+        item.job,
+        `Đã hủy job trong hàng chờ:\n${reason}`,
+      );
       this.activeIssueKeys.delete(key);
       this.killedJobs.delete(jobId);
       clearJobKillRequested(jobId);
@@ -575,7 +572,6 @@ export class JobQueue {
       return { ok: true, phase: "queued" };
     }
 
-    cancelUiClarification(jobId, reason);
     cancelDiffApproval(jobId, reason);
     const agentCancelled = await cancelActiveAgentRun(jobId);
 
@@ -587,6 +583,7 @@ export class JobQueue {
       delete job.source;
       if (
         isJobBusy(job.status) ||
+        job.status === "awaiting_clarification" ||
         job.status === "awaiting_diff_approval" ||
         job.status === "awaiting_docs_approval"
       ) {
@@ -713,6 +710,29 @@ export class JobQueue {
     }
   }
 
+  /** Surface Run / chat problems in the Agent console so the user always sees them. */
+  private async notifyJobChat(
+    job: Pick<JobRecord, "id" | "issue">,
+    body: string,
+  ): Promise<void> {
+    const text = body.trim();
+    if (!text) return;
+    try {
+      await addChatMessage({
+        jobId: job.id,
+        issueIid: job.issue.issueIid,
+        role: "system",
+        kind: "note",
+        body: text,
+      });
+    } catch (err) {
+      logger.warn("Could not post issue to job chat", {
+        jobId: job.id,
+        err: String(err),
+      });
+    }
+  }
+
   private async pump() {
     if (this.running) return;
     this.running = true;
@@ -761,58 +781,48 @@ export class JobQueue {
     }
   }
 
-  private async runClarifyLoop(
+  /**
+   * Agent asked for clarification — post to chat and pause.
+   * User answers via normal chat (/continue); no blocking waiter.
+   */
+  private async pauseForChatClarification(
     job: JobRecord,
-    initial: Awaited<ReturnType<typeof runNewAgent>>,
-  ): Promise<Awaited<ReturnType<typeof runNewAgent>>> {
+    result: Awaited<ReturnType<typeof runNewAgent>>,
+  ): Promise<void> {
     const config = getConfig();
-    let result = initial;
-    while (result.kind === "need_clarification") {
-      // Comment trước khi chờ UI — tránh mất GITLAB_COMMENT khi treo clarify
-      await this.deliverAgentGitlabComments(job, result.text);
+    await this.deliverAgentGitlabComments(job, result.text);
 
-      job.clarifyRound += 1;
-      if (job.clarifyRound > config.MAX_CLARIFY_ROUNDS) {
-        throw new Error(
-          `Exceeded MAX_CLARIFY_ROUNDS (${config.MAX_CLARIFY_ROUNDS})`,
-        );
-      }
-      const question = result.question ?? "(no question text)";
-      job.status = "awaiting_clarification";
-      job.lastQuestion = question;
-      await saveJob(job);
-
-      await addChatMessage({
-        jobId: job.id,
-        issueIid: job.issue.issueIid,
-        role: "agent",
-        kind: "clarify",
-        body: question,
-      });
-
-      const answer = await waitForUiClarification({
-        jobId: job.id,
-        question,
-      });
-
-      await addChatMessage({
-        jobId: job.id,
-        issueIid: job.issue.issueIid,
-        role: "user",
-        kind: "clarify",
-        body: answer,
-      });
-
-      job.status = "running";
-      await saveJob(job);
-      result = await resumeAgent(result.agentId, answer, job.issue, {
-        jobId: job.id,
-      });
-      job.agentId = result.agentId;
-      applyTokenUsageToJob(job, result.usage);
-      await saveJob(job);
+    job.clarifyRound = (job.clarifyRound ?? 0) + 1;
+    if (job.clarifyRound > config.MAX_CLARIFY_ROUNDS) {
+      throw new Error(
+        `Exceeded MAX_CLARIFY_ROUNDS (${config.MAX_CLARIFY_ROUNDS})`,
+      );
     }
-    return result;
+
+    const question = result.question?.trim() || "(no question text)";
+    job.status = "awaiting_clarification";
+    job.lastQuestion = question;
+    job.error = undefined;
+    await saveJob(job);
+
+    await addChatMessage({
+      jobId: job.id,
+      issueIid: job.issue.issueIid,
+      role: "agent",
+      kind: "qa",
+      body: question,
+    });
+
+    appendJobProgress(
+      job.id,
+      "status",
+      "Agent hỏi — trả lời trong chat để tiếp tục",
+    );
+    logger.info("Job paused for chat clarification", {
+      jobId: job.id,
+      round: job.clarifyRound,
+      preview: question.slice(0, 160),
+    });
   }
 
   /**
@@ -951,6 +961,10 @@ export class JobQueue {
       job.status = "failed";
       job.error = "No repo path in workspace context";
       await saveJob(job);
+      await this.notifyJobChat(
+        job,
+        "Run dừng: chưa có repo path trong workspace.\nVào Settings → Project để gắn PAT / Confirm clone.",
+      );
       this.activeIssueKeys.delete(key);
       this.currentJobId = null;
       this.publishStatus();
@@ -993,10 +1007,10 @@ export class JobQueue {
 
     if (quality.level === "bad") {
       const msg = formatBadContextChatMessage(quality, job.issue.issueIid);
-      // draft (not awaiting_clarification) so job không bị isJobBusy — user bổ sung rồi Run lại
+      // draft (not awaiting_clarification) so job is not isJobBusy — user adds context then Run again
       job.status = "draft";
       job.lastQuestion = msg;
-      job.error = "Bad Context — cần bổ sung thông tin trước khi Run";
+      job.error = "Bad Context — add more information before Run";
       job.runCount = (job.runCount ?? 0) + 1;
       job.contextQuality = toContextQualityMark(quality);
       await saveJob(job);
@@ -1046,14 +1060,14 @@ export class JobQueue {
           job.status = "draft";
           job.error =
             ready.message ||
-            "Bad project context — clone / local_path chưa sẵn sàng";
+            "Bad project context — clone / local_path not ready";
           await saveJob(job);
           await addChatMessage({
             jobId: job.id,
             issueIid: job.issue.issueIid,
             role: "agent",
-            kind: "clarify",
-            body: `BLOCKED (project context):\n${job.error}\n\nVào Settings → Project để gắn PAT và Confirm clone.`,
+            kind: "qa",
+            body: `⛔ Project context chưa sẵn sàng:\n${job.error}\n\nVào Settings → Project để gắn PAT và Confirm clone.`,
           });
           this.activeIssueKeys.delete(key);
           this.currentJobId = null;
@@ -1122,9 +1136,10 @@ export class JobQueue {
       applyTokenUsageToJob(job, result.usage);
       await saveJob(job);
 
-      result = await this.runClarifyLoop(job, result);
-      applyTokenUsageToJob(job, result.usage);
-      await saveJob(job);
+      if (result.kind === "need_clarification") {
+        await this.pauseForChatClarification(job, result);
+        return;
+      }
 
       if (runDocsPhase) {
         if (result.kind !== "docs_ready" && result.kind !== "unknown") {
@@ -1247,10 +1262,15 @@ export class JobQueue {
           });
         }
       } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
         logger.warn("Agent GITLAB_COMMENT post failed", {
           jobId: job.id,
-          err: String(err),
+          err: msg,
         });
+        await this.notifyJobChat(
+          job,
+          `Đăng comment GitLab thất bại:\n${msg}`,
+        );
       }
 
       logger.info("Job awaiting handoff (no auto assign/labels)", {
@@ -1269,6 +1289,13 @@ export class JobQueue {
       job.status = "failed";
       job.error = message;
       await saveJob(job);
+      const forceStopped = /Force-stopped|force stop|cancelled \(force/i.test(
+        message,
+      );
+      await this.notifyJobChat(
+        job,
+        forceStopped ? `Đã Force Stop:\n${message}` : `Run lỗi:\n${message}`,
+      );
       const { clearIssueProcessing } = await import(
         "./plugins/gitlab/processing-label.js"
       );

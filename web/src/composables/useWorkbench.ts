@@ -35,7 +35,6 @@ export function useWorkbench() {
   const midTab = ref<MidTab>("detail");
   const selectedIids = ref<number[]>([]);
   const chatInput = ref("");
-  const clarifyInput = ref("");
   const busy = ref(false);
   const stopBusy = ref(false);
   const notesSaving = ref(false);
@@ -154,14 +153,6 @@ export function useWorkbench() {
 
   const canResetWindow = computed(() => Boolean(currentJob.value));
 
-  const pendingClarify = computed(() => {
-    const j = currentJob.value;
-    if (j?.status === "awaiting_clarification" && j.lastQuestion) {
-      return j.lastQuestion;
-    }
-    return null;
-  });
-
   const awaitingDocsApproval = computed(
     () => currentJob.value?.status === "awaiting_docs_approval",
   );
@@ -177,7 +168,7 @@ export function useWorkbench() {
   });
 
   const runBlockedReason = computed(() => {
-    if (contextIsBad.value) return "Cần bổ sung Dev Notes (Bad Context)";
+    if (contextIsBad.value) return "Add Dev Notes (Bad Context)";
     return null;
   });
 
@@ -206,7 +197,7 @@ export function useWorkbench() {
     const raw = openIidDraft.value.trim().replace(/^#/, "");
     const iid = Number(raw);
     if (!Number.isFinite(iid) || iid <= 0) {
-      message.warning("Nhập #iid hợp lệ");
+      message.warning("Enter a valid #iid");
       return;
     }
     openIidDraft.value = "";
@@ -268,11 +259,11 @@ export function useWorkbench() {
     jobStatusBusy.value = jobId;
     try {
       const job = jobs.value.find((j) => j.id === jobId);
-      const isBusy = ["queued", "running", "awaiting_clarification"].includes(
+      const isBusy = ["queued", "running"].includes(
         job?.status || "",
       );
       await work.setJobStatus(jobId, status, { force: isBusy });
-      message.success(`Đã đổi status → ${statusLabel(status)}`);
+      message.success(`Status changed → ${statusLabel(status)}`);
     } catch (e) {
       message.error(e instanceof Error ? e.message : String(e));
       await work.loadJobs();
@@ -285,11 +276,11 @@ export function useWorkbench() {
     jobStatusBusy.value = jobId;
     try {
       const job = jobs.value.find((j) => j.id === jobId);
-      const isBusy = ["queued", "running", "awaiting_clarification"].includes(
+      const isBusy = ["queued", "running"].includes(
         job?.status || "",
       );
       await work.deleteJob(jobId, { force: isBusy });
-      message.success("Đã xóa job");
+      message.success("Job deleted");
     } catch (e) {
       message.error(e instanceof Error ? e.message : String(e));
     } finally {
@@ -316,7 +307,7 @@ export function useWorkbench() {
         devNotes: nextNotes,
         requireDocsFirst: requireDocsFirst.value,
       });
-      if (!opts?.silent) message.success("Đã lưu Dev Notes");
+      if (!opts?.silent) message.success("Dev Notes saved");
     } catch (e) {
       if (currentJob.value && prevJob?.id === currentJob.value.id) {
         currentJob.value = {
@@ -332,7 +323,7 @@ export function useWorkbench() {
 
   async function ensureCursorKey() {
     if (session.me?.hasCursorApiKey) return true;
-    message.warning("Cần Cursor API key — mở Settings → Cursor");
+    message.warning("Cursor API key required — open Settings → Cursor");
     router.push({ name: "settings-cursor" });
     return false;
   }
@@ -350,7 +341,7 @@ export function useWorkbench() {
           ? [selectedTaskIid.value]
           : [];
     if (!iids.length) {
-      message.warning("Chọn task");
+      message.warning("Select a task");
       return;
     }
     busy.value = true;
@@ -362,7 +353,7 @@ export function useWorkbench() {
         requireDocsFirst: requireDocsFirst.value,
       });
       mobilePane.value = "chat";
-      message.success("Đã đưa task vào hàng chờ chạy agent");
+      message.success("Task queued for agent run");
     } catch (e) {
       message.error(e instanceof Error ? e.message : String(e));
     } finally {
@@ -375,7 +366,7 @@ export function useWorkbench() {
     busy.value = true;
     try {
       await work.startJobs({ mode: "all" });
-      message.success("Đã đưa tất cả task vào hàng chờ");
+      message.success("All tasks queued");
     } catch (e) {
       message.error(e instanceof Error ? e.message : String(e));
     } finally {
@@ -387,7 +378,7 @@ export function useWorkbench() {
     const msg = chatInput.value.trim();
     if (!msg) return;
     if (!selectedJobId.value) {
-      message.warning("Chọn job trước");
+      message.warning("Select a job first");
       return;
     }
     if (!(await ensureCursorKey())) return;
@@ -396,12 +387,16 @@ export function useWorkbench() {
     work.watchProgress();
     await nextTick();
     try {
-      if (mode === "continue") await work.sendContinue(msg);
+      // Clarification replies always go through continue (same chat)
+      const useContinue =
+        mode === "continue" ||
+        currentJob.value?.status === "awaiting_clarification";
+      if (useContinue) await work.sendContinue(msg);
       else await work.sendAsk(msg);
     } catch (e) {
       const msgText = e instanceof Error ? e.message : String(e);
       if (/Force-stopped/i.test(msgText)) {
-        message.info("Đã dừng chat");
+        message.info("Chat stopped");
       } else {
         message.error(msgText);
       }
@@ -411,28 +406,12 @@ export function useWorkbench() {
     }
   }
 
-  async function sendClarify() {
-    const a = clarifyInput.value.trim();
-    if (!a || !selectedJobId.value) return;
-    busy.value = true;
-    try {
-      await work.sendClarify(a);
-      clarifyInput.value = "";
-      message.success("Đã gửi clarify");
-      await work.refreshJobChat(selectedJobId.value);
-    } catch (e) {
-      message.error(e instanceof Error ? e.message : String(e));
-    } finally {
-      busy.value = false;
-    }
-  }
-
   async function forceStop() {
     if (!selectedJobId.value) return;
     stopBusy.value = true;
     try {
       await work.killJob(selectedJobId.value);
-      message.success("Đã Force Stop");
+      message.success("Force Stop sent");
       await work.refreshJobChat(selectedJobId.value);
       await work.loadJobs();
     } catch (e) {
@@ -449,8 +428,8 @@ export function useWorkbench() {
       const res = await work.resetAgentWindow(selectedJobId.value);
       message.success(
         res.killed
-          ? "Đã dừng + reset window"
-          : "Đã reset window — sẵn sàng cửa sổ mới",
+          ? "Stopped + window reset"
+          : "Window reset — ready for a new window",
       );
     } catch (e) {
       message.error(e instanceof Error ? e.message : String(e));
@@ -464,7 +443,7 @@ export function useWorkbench() {
     approveDocsBusy.value = true;
     try {
       await work.approveDocs(selectedJobId.value);
-      message.success("Đã duyệt docs — enqueue code phase");
+      message.success("Docs approved — code phase enqueued");
       mobilePane.value = "chat";
     } catch (e) {
       message.error(e instanceof Error ? e.message : String(e));
@@ -528,7 +507,7 @@ export function useWorkbench() {
     busy.value = true;
     try {
       await Promise.all([work.loadTasks(), work.loadJobs()]);
-      message.success("Đã refresh tasks");
+      message.success("Tasks refreshed");
     } catch (e) {
       message.error(e instanceof Error ? e.message : String(e));
     } finally {
@@ -551,9 +530,9 @@ export function useWorkbench() {
     if (!t) return;
     try {
       await navigator.clipboard.writeText(t);
-      message.success("Đã copy branch");
+      message.success("Branch copied");
     } catch {
-      message.error("Không copy được");
+      message.error("Could not copy");
     }
   }
 
@@ -566,7 +545,7 @@ export function useWorkbench() {
   async function startAdhoc() {
     const title = adhocTitle.value.trim();
     if (!title) {
-      message.warning("Nhập tiêu đề session");
+      message.warning("Enter a session title");
       return;
     }
     if (!(await ensureCursorKey())) return;
@@ -580,7 +559,7 @@ export function useWorkbench() {
       mobilePane.value = res.started ? "chat" : "detail";
       if (res.started) work.watchProgress();
       message.success(
-        res.started ? "Đã mở Hotfix + gửi agent" : "Đã tạo session Hotfix",
+        res.started ? "Hotfix opened + agent started" : "Hotfix session created",
       );
     } catch (e) {
       message.error(e instanceof Error ? e.message : String(e));
@@ -610,7 +589,7 @@ export function useWorkbench() {
     if (!selectedJobId.value) return;
     const title = issueTitle.value.trim();
     if (!title) {
-      message.warning("Nhập title issue");
+      message.warning("Enter issue title");
       return;
     }
     issueCreateBusy.value = true;
@@ -623,8 +602,8 @@ export function useWorkbench() {
       issueCreateOpen.value = false;
       message.success(
         res.issueUrl
-          ? `Đã tạo issue — ${res.issueUrl}`
-          : "Đã tạo GitLab issue",
+          ? `Issue created — ${res.issueUrl}`
+          : "GitLab issue created",
       );
     } catch (e) {
       message.error(e instanceof Error ? e.message : String(e));
@@ -661,7 +640,6 @@ export function useWorkbench() {
     midTab,
     selectedIids,
     chatInput,
-    clarifyInput,
     busy,
     stopBusy,
     notesSaving,
@@ -703,7 +681,6 @@ export function useWorkbench() {
     canForceStop,
     agentWindowShort,
     canResetWindow,
-    pendingClarify,
     awaitingDocsApproval,
     canQuickMerge,
     canQuickHandoff,
@@ -719,7 +696,6 @@ export function useWorkbench() {
     runSelected,
     runAll,
     sendChat,
-    sendClarify,
     forceStop,
     resetAgentWindow,
     approveDocs,

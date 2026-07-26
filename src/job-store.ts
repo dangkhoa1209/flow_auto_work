@@ -189,7 +189,7 @@ export async function createAdhocJob(opts: {
 
   const id = newAdhocJobId();
   const fixedWork = rt.workBranch?.trim() || "";
-  // Có work branch workspace → dùng luôn, không tạo hotfix/...
+  // Workspace has a work branch → reuse it; do not create hotfix/...
   const branch = fixedWork
     ? fixedWork
     : `hotfix/${slugifyBranchPart(title)}-${id.slice(-6)}`;
@@ -320,8 +320,8 @@ export async function failInterruptedJobs(): Promise<void> {
 }
 
 /**
- * Legacy gate: agent đã code/commit xong, chờ Approve push/MR.
- * Flow mới coi commit = done → migrate sang succeeded.
+ * Legacy gate: agent finished code/commit, awaiting Approve push/MR.
+ * New flow treats commit as done → migrate to succeeded.
  */
 export async function resolveLegacyDiffApprovalJobs(): Promise<number> {
   const jobs = await listJobs();
@@ -345,8 +345,8 @@ export async function resolveLegacyDiffApprovalJobs(): Promise<number> {
 }
 
 /**
- * Boot: gắn mọi job hiện có vào user + project mặc định (khoadev / ykk)
- * và đảm bảo flowTaskId = job.id.
+ * Boot: attach all existing jobs to default user + project (khoadev / ykk)
+ * and ensure flowTaskId = job.id.
  */
 export async function assignJobsToDefaultWorkspace(): Promise<number> {
   const workspaceProjectId = seedWorkspaceProjectId();

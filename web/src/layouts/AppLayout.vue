@@ -83,7 +83,7 @@ async function onSwitchProject(projectId: string) {
     await session.activateProject(projectId);
     selectedProjectId.value = projectId;
     await work.refreshAll();
-    message.success("Đã chuyển project");
+    message.success("Project switched");
   } catch (e) {
     selectedProjectId.value = session.session.projectId || "";
     message.error(e instanceof Error ? e.message : String(e));
@@ -150,7 +150,7 @@ function goManageProjects() {
             </div>
           </a-select-option>
         </a-select>
-        <a-tooltip title="Tạo project">
+        <a-tooltip title="Create project">
           <a-button
             type="text"
             size="small"

@@ -105,7 +105,7 @@ export const useWorkStore = defineStore("work", () => {
       pending?: boolean;
     }>
   >([]);
-  /** Agent đang suy nghĩ — UI typing indicator */
+  /** Agent is thinking — UI typing indicator */
   const agentTyping = ref(false);
   const progressLines = ref<
     Array<{ id: number; at: string; kind: string; text: string }>
@@ -139,7 +139,7 @@ export const useWorkStore = defineStore("work", () => {
         currentJob.value = currentJob.value
           ? { ...currentJob.value, ...j }
           : j;
-        // Job vừa xong → chỉ refresh chat (không đụng issue / không spinner)
+        // Job just finished → refresh chat only (no issue fetch / no spinner)
         if (wasBusy && !isJobStatusBusy(j.status) && !agentTyping.value) {
           void refreshJobChat(selectedJobId.value).catch(() => undefined);
         }
@@ -248,7 +248,7 @@ export const useWorkStore = defineStore("work", () => {
     }
   }
 
-  /** Soft refresh: job + chat only — không clear UI, không gọi lại GitLab issue. */
+  /** Soft refresh: job + chat only — does not clear UI or re-fetch GitLab issue. */
   async function refreshJobChat(id?: string | null) {
     const jobId = id || selectedJobId.value;
     if (!jobId) return;
@@ -260,7 +260,7 @@ export const useWorkStore = defineStore("work", () => {
     currentJob.value = detail.job;
     const server = detail.chat || [];
     if (agentTyping.value) {
-      // Giữ tin user vừa gửi (optimistic) nếu server chưa kịp / bị race SSE
+      // Keep optimistic user message if server is slow / SSE race
       chat.value = mergePendingChat(server, chat.value);
     } else {
       chat.value = server;
@@ -285,7 +285,7 @@ export const useWorkStore = defineStore("work", () => {
     const iid = job?.issue?.issueIid;
     if (iid && iid > 0 && !isAdhocJob(job)) {
       selectedTaskIid.value = iid;
-      // Giữ issue đang xem nếu cùng iid — tránh GitLab fetch thừa
+      // Keep current issue if same iid — avoid redundant GitLab fetch
       if (taskDetail.value?.issueIid === iid) return;
       const res = await api<{ detail: TaskDetail }>(`/api/tasks/${iid}`);
       if (selectedTaskIid.value !== iid) return;
@@ -305,7 +305,7 @@ export const useWorkStore = defineStore("work", () => {
       chat.value = [];
       agentTyping.value = false;
     }
-    // Spinner chỉ khi đổi job — re-select / sau Run không flash issue+chat
+    // Spinner only when switching jobs — re-select / post-Run does not flash issue+chat
     jobLoading.value = switching;
     try {
       const detail = await api<{
@@ -387,7 +387,7 @@ export const useWorkStore = defineStore("work", () => {
       return res.job;
     }
     if (!selectedTaskIid.value) {
-      throw new Error("Chưa chọn task/job");
+      throw new Error("No task/job selected");
     }
     const res = await api<{ job: Job }>("/api/jobs/ensure", {
       method: "POST",
@@ -428,14 +428,14 @@ export const useWorkStore = defineStore("work", () => {
     }
   }
 
-  /** Call when starting Run / Gửi so Progress polls immediately */
+  /** Call when starting Run / Send so Progress polls immediately */
   function watchProgress() {
     progressLive.value = true;
-    // Không fake status=running — SSE status cũ sẽ bị hiểu nhầm busy→idle và xóa chat
+    // Do not fake status=running — stale SSE status can be misread as busy→idle and wipe chat
   }
 
   function isJobStatusBusy(st?: string) {
-    return ["queued", "running", "awaiting_clarification"].includes(st || "");
+    return ["queued", "running"].includes(st || "");
   }
 
   /** Whether UI should keep polling progress for the selected job */
@@ -498,7 +498,7 @@ export const useWorkStore = defineStore("work", () => {
   }
 
   async function sendContinue(message: string) {
-    if (!selectedJobId.value) throw new Error("Chưa chọn job");
+    if (!selectedJobId.value) throw new Error("No job selected");
     appendLocalChat({ role: "user", body: message, kind: "qa" });
     agentTyping.value = true;
     watchProgress();
@@ -514,7 +514,7 @@ export const useWorkStore = defineStore("work", () => {
   }
 
   async function sendAsk(question: string) {
-    if (!selectedJobId.value) throw new Error("Chưa chọn job");
+    if (!selectedJobId.value) throw new Error("No job selected");
     appendLocalChat({ role: "user", body: question, kind: "qa" });
     agentTyping.value = true;
     watchProgress();
@@ -527,14 +527,6 @@ export const useWorkStore = defineStore("work", () => {
     } finally {
       agentTyping.value = false;
     }
-  }
-
-  async function sendClarify(answer: string) {
-    if (!selectedJobId.value) throw new Error("Chưa chọn job");
-    await api(`/api/jobs/${selectedJobId.value}/clarify`, {
-      method: "POST",
-      body: JSON.stringify({ answer }),
-    });
   }
 
   async function killJob(jobId: string) {
@@ -687,7 +679,6 @@ export const useWorkStore = defineStore("work", () => {
     startJobs,
     sendContinue,
     sendAsk,
-    sendClarify,
     killJob,
     approveDocs,
     resetAgentWindow,

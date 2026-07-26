@@ -50,9 +50,9 @@ const previewDefaultPath = ref("");
 
 const steps = [
   "GitLab PAT",
-  "Dự án",
-  "Nhánh chính",
-  "Nhánh làm việc",
+  "Project",
+  "Main branch",
+  "Work branch",
   "Local path",
 ];
 
@@ -77,7 +77,7 @@ const tableRows = computed(() =>
 );
 
 const columns = [
-  { title: "Tên", dataIndex: "name", key: "name", ellipsis: true },
+  { title: "Name", dataIndex: "name", key: "name", ellipsis: true },
   { title: "GitLab", dataIndex: "gitlabPath", key: "gitlabPath", ellipsis: true },
   { title: "Main", dataIndex: "mainBranch", key: "mainBranch", width: 100 },
   { title: "Work", dataIndex: "workBranch", key: "workBranch", width: 120 },
@@ -152,7 +152,7 @@ function openEdit(row: (typeof tableRows.value)[0]) {
 
 async function loadPreviewProjects() {
   if (!form.gitlabToken.trim()) {
-    message.warning("Nhập GitLab PAT");
+    message.warning("Enter GitLab PAT");
     return;
   }
   loading.value = true;
@@ -169,7 +169,7 @@ async function loadPreviewProjects() {
     });
     gitlabProjects.value = res.projects || [];
     if (!gitlabProjects.value.length) {
-      message.warning("PAT không thấy project nào");
+      message.warning("PAT found no projects");
       return;
     }
     wizardStep.value = 1;
@@ -182,7 +182,7 @@ async function loadPreviewProjects() {
 
 async function loadBranchesForPath() {
   if (!form.gitlabPath.trim()) {
-    message.warning("Chọn dự án GitLab");
+    message.warning("Select a GitLab project");
     return;
   }
   if (!form.projectName.trim()) {
@@ -221,7 +221,7 @@ async function loadBranchesForPath() {
 
 function nextFromMain() {
   if (!form.mainBranch.trim()) {
-    message.warning("Chọn nhánh chính");
+    message.warning("Select main branch");
     return;
   }
   wizardStep.value = 3;
@@ -269,7 +269,7 @@ async function startClone(
     opts?.localPath || p?.localPath || p?.repoPath || previewDefaultPath.value;
   const gitlabPath = p?.gitlabPath || form.gitlabPath;
   if (!localPath || !gitlabPath) {
-    message.warning("Thiếu path hoặc gitlab path");
+    message.warning("Missing path or GitLab path");
     return;
   }
 
@@ -277,9 +277,9 @@ async function startClone(
     const ok = await new Promise<boolean>((resolve) => {
       Modal.confirm({
         title: "Clone source?",
-        content: `Sẽ clone vào:\n${localPath}`,
+        content: `Will clone to:\n${localPath}`,
         okText: "Clone",
-        cancelText: "Hủy",
+        cancelText: "Cancel",
         onOk: () => resolve(true),
         onCancel: () => resolve(false),
       });
@@ -297,7 +297,7 @@ async function startClone(
         localPath: opts?.localPath || undefined,
       }),
     });
-    message.info(`Đang clone source vào thư mục:\n${localPath}`);
+    message.info(`Cloning source to:\n${localPath}`);
     await pollClone(projectId);
   } catch (e) {
     cloningId.value = null;
@@ -319,7 +319,7 @@ async function saveWizard() {
 
     if (editId.value) {
       if (!flowName) {
-        message.warning("Nhập Tên project (Flow)");
+        message.warning("Enter Flow project name");
         loading.value = false;
         return;
       }
@@ -331,7 +331,7 @@ async function saveWizard() {
       );
       if (dup) {
         message.error(
-          `Tên "${flowName}" đã dùng — trùng path save source. Chọn tên khác.`,
+          `Name "${flowName}" is already used — conflicts with source save path. Choose another name.`,
         );
         loading.value = false;
         return;
@@ -359,10 +359,10 @@ async function saveWizard() {
       wizardOpen.value = false;
       const newPath = res.project?.localPath || resolvedPath;
       if (res.folderRenamed) {
-        message.success(`Đã đổi tên + rename folder:\n${newPath}`);
+        message.success(`Renamed + folder moved:\n${newPath}`);
       } else if (pathEmpty && newPath && !renaming) {
         message.success(
-          `Đã lưu. Path trống → dùng thư mục mặc định:\n${newPath}`,
+          `Saved. Empty path → using default folder:\n${newPath}`,
         );
         await startClone(editId.value, {
           localPath: newPath,
@@ -370,18 +370,18 @@ async function saveWizard() {
         });
       } else {
         message.success(
-          newPath ? `Đã cập nhật project\n${newPath}` : "Đã cập nhật project",
+          newPath ? `Project updated\n${newPath}` : "Project updated",
         );
       }
       return;
     }
 
     if (!form.gitlabToken.trim()) {
-      message.warning("Cần GitLab PAT");
+      message.warning("GitLab PAT required");
       return;
     }
     if (!form.gitlabPath.trim() || !flowName) {
-      message.warning("Thiếu dự án / tên project");
+      message.warning("Missing project / project name");
       return;
     }
     const dupCreate = session.memberships.find(
@@ -391,7 +391,7 @@ async function saveWizard() {
     );
     if (dupCreate) {
       message.error(
-        `Tên "${flowName}" đã dùng — trùng path save source. Chọn tên khác.`,
+        `Name "${flowName}" is already used — conflicts with source save path. Choose another name.`,
       );
       return;
     }
@@ -425,11 +425,11 @@ async function saveWizard() {
       res.project.localPath || res.defaultLocalPath || resolvedPath;
     if (res.usedDefaultPath || pathEmpty) {
       message.success(
-        `Đã tạo project. Path trống → clone vào thư mục mặc định:\n${clonePath}`,
+        `Project created. Empty path → cloning to default folder:\n${clonePath}`,
         6,
       );
     } else {
-      message.success(`Đã tạo project. Clone vào:\n${clonePath}`, 5);
+      message.success(`Project created. Cloning to:\n${clonePath}`, 5);
     }
 
     await startClone(res.project.id, {
@@ -447,7 +447,7 @@ async function activate(id: string) {
   loading.value = true;
   try {
     await session.activateProject(id);
-    message.success("Đã kích hoạt project");
+    message.success("Project activated");
   } catch (e) {
     message.error(e instanceof Error ? e.message : String(e));
   } finally {
@@ -457,8 +457,8 @@ async function activate(id: string) {
 
 async function remove(id: string) {
   Modal.confirm({
-    title: "Xóa project?",
-    content: "Chỉ xóa metadata trong Flow (không xóa folder local).",
+    title: "Delete project?",
+    content: "Removes Flow metadata only (does not delete local folder).",
     okType: "danger",
     onOk: async () => {
       await api(`/api/projects/${encodeURIComponent(id)}`, {
@@ -469,7 +469,7 @@ async function remove(id: string) {
         const next = session.memberships[0]?.projectId || null;
         session.setSession({ projectId: next });
       }
-      message.success("Đã xóa project");
+      message.success("Project deleted");
     },
   });
 }
@@ -483,14 +483,14 @@ onMounted(async () => {
   <div class="space-y-4">
     <div class="flex items-center justify-between gap-3">
       <div>
-        <h2 class="text-lg font-medium m-0">Quản lý project</h2>
+        <h2 class="text-lg font-medium m-0">Project management</h2>
         <p class="text-sm text-slate-500 m-0 mt-1">
-          CRUD project · wizard PAT → dự án → nhánh → path · path trống →
+          CRUD project · wizard PAT → project → branch → path · empty path →
           <code>project/username/projectName/source</code>
         </p>
       </div>
       <a-button type="primary" :loading="loading" @click="openCreate"
-        >Thêm project</a-button
+        >Add project</a-button
       >
     </div>
 
@@ -531,7 +531,7 @@ onMounted(async () => {
               @click="activate(record.id)"
               >Active</a-button
             >
-            <a-button size="small" @click="openEdit(record)">Sửa</a-button>
+            <a-button size="small" @click="openEdit(record)">Edit</a-button>
             <a-button
               size="small"
               :loading="cloningId === record.id"
@@ -539,7 +539,7 @@ onMounted(async () => {
               >Clone</a-button
             >
             <a-button size="small" danger @click="remove(record.id)"
-              >Xóa</a-button
+              >Delete</a-button
             >
           </div>
         </template>
@@ -548,7 +548,7 @@ onMounted(async () => {
 
     <a-modal
       v-model:open="wizardOpen"
-      :title="editId ? 'Sửa project' : 'Thêm project'"
+      :title="editId ? 'Edit project' : 'Add project'"
       :footer="null"
       width="640px"
       destroy-on-close
@@ -577,23 +577,23 @@ onMounted(async () => {
             v-model:value="form.gitlabToken"
             class="mt-1"
             :placeholder="
-              editId ? 'Để trống nếu giữ token cũ' : 'glpat-… (api + read_repository)'
+              editId ? 'Leave blank to keep existing token' : 'glpat-… (api + read_repository)'
             "
           />
         </div>
         <div class="flex justify-end gap-2 pt-2">
-          <a-button @click="wizardOpen = false">Hủy</a-button>
+          <a-button @click="wizardOpen = false">Cancel</a-button>
           <a-button
             v-if="editId && !form.gitlabToken"
             type="primary"
             @click="wizardStep = 1"
-            >Tiếp (giữ PAT cũ)</a-button
+            >Next (keep existing PAT)</a-button
           >
           <a-button
             type="primary"
             :loading="loading"
             @click="loadPreviewProjects"
-            >Tiếp · tải dự án</a-button
+            >Next · load projects</a-button
           >
         </div>
       </div>
@@ -601,7 +601,7 @@ onMounted(async () => {
       <!-- Step 1: Project -->
       <div v-else-if="wizardStep === 1" class="space-y-3">
         <div>
-          <label class="text-sm text-slate-600">Chọn dự án GitLab</label>
+          <label class="text-sm text-slate-600">Select GitLab project</label>
           <a-select
             v-if="gitlabProjects.length"
             v-model:value="form.gitlabPath"
@@ -629,7 +629,7 @@ onMounted(async () => {
           />
         </div>
         <div>
-          <label class="text-sm text-slate-600">Tên project (Flow)</label>
+          <label class="text-sm text-slate-600">Flow project name</label>
           <a-input
             v-model:value="form.projectName"
             class="mt-1"
@@ -637,21 +637,21 @@ onMounted(async () => {
             @update:value="(v: string) => { form.displayName = v; }"
           />
           <p class="text-xs text-ink-muted m-0 mt-1">
-            Tên này hiện trong list, phải
-            <strong>không trùng</strong>, và là folder
-            <code>…/tên/source</code>.
+            This name appears in the list, must be
+            <strong>unique</strong>, and is the folder
+            <code>…/name/source</code>.
             <template v-if="editId">
-              Đổi tên sẽ rename folder nếu đang dùng path mặc định.
+              Renaming will move the folder when using the default path.
             </template>
           </p>
         </div>
         <div class="flex justify-between gap-2 pt-2">
-          <a-button @click="wizardStep = 0">Quay lại</a-button>
+          <a-button @click="wizardStep = 0">Back</a-button>
           <a-button
             type="primary"
             :loading="loading"
             @click="loadBranchesForPath"
-            >Tiếp · nhánh chính</a-button
+            >Next · main branch</a-button
           >
         </div>
       </div>
@@ -659,7 +659,7 @@ onMounted(async () => {
       <!-- Step 2: Main branch -->
       <div v-else-if="wizardStep === 2" class="space-y-3">
         <div>
-          <label class="text-sm text-slate-600">Nhánh chính (base)</label>
+          <label class="text-sm text-slate-600">Main branch (base)</label>
           <a-select
             v-model:value="form.mainBranch"
             class="w-full mt-1"
@@ -673,9 +673,9 @@ onMounted(async () => {
           />
         </div>
         <div class="flex justify-between gap-2 pt-2">
-          <a-button @click="wizardStep = 1">Quay lại</a-button>
+          <a-button @click="wizardStep = 1">Back</a-button>
           <a-button type="primary" @click="nextFromMain"
-            >Tiếp · nhánh làm việc</a-button
+            >Next · work branch</a-button
           >
         </div>
       </div>
@@ -684,25 +684,25 @@ onMounted(async () => {
       <div v-else-if="wizardStep === 3" class="space-y-3">
         <div>
           <label class="text-sm text-slate-600"
-            >Nhánh làm việc (optional)</label
+            >Work branch (optional)</label
           >
           <a-select
             v-model:value="form.workingBranch"
             class="w-full mt-1"
             show-search
             allow-clear
-            placeholder="Để trống → auto feat/…"
+            placeholder="Leave blank → auto feat/…"
             :options="branches.map((b) => ({ value: b, label: b }))"
           />
           <a-input
             v-model:value="form.workingBranch"
             class="mt-2"
-            placeholder="Hoặc gõ tên nhánh mới"
+            placeholder="Or type a new branch name"
           />
         </div>
         <div class="flex justify-between gap-2 pt-2">
-          <a-button @click="wizardStep = 2">Quay lại</a-button>
-          <a-button type="primary" @click="nextFromWork">Tiếp · path</a-button>
+          <a-button @click="wizardStep = 2">Back</a-button>
+          <a-button type="primary" @click="nextFromWork">Next · path</a-button>
         </div>
       </div>
 
@@ -713,7 +713,7 @@ onMounted(async () => {
           <a-input
             v-model:value="form.localPath"
             class="mt-1"
-            placeholder="Để trống → project/user/name/source"
+            placeholder="Leave blank → project/user/name/source"
           />
         </div>
         <a-alert
@@ -721,14 +721,14 @@ onMounted(async () => {
           show-icon
           :message="
             form.localPath.trim()
-              ? `Sẽ dùng path: ${form.localPath.trim()}`
-              : `Path trống → clone vào: ${previewDefaultPath || '…'}`
+              ? `Will use path: ${form.localPath.trim()}`
+              : `Empty path → clone to: ${previewDefaultPath || '…'}`
           "
         />
         <div class="flex justify-between gap-2 pt-2">
-          <a-button @click="wizardStep = 3">Quay lại</a-button>
+          <a-button @click="wizardStep = 3">Back</a-button>
           <a-button type="primary" :loading="loading" @click="saveWizard">
-            Lưu &amp; clone
+            Save &amp; clone
           </a-button>
         </div>
       </div>

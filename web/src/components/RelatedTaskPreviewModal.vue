@@ -11,7 +11,7 @@ const props = defineProps<{
   loading?: boolean;
   detail: TaskDetail | null;
   error?: string | null;
-  /** Fallback when detail chưa load xong */
+  /** Fallback when detail has not loaded yet */
   fallback?: { iid: number; title?: string; url?: string } | null;
 }>();
 
@@ -124,7 +124,7 @@ const meta = computed(() => {
             :markdown="true"
             :issue-url="url || null"
             :body="detail?.description || ''"
-            empty="(không có description)"
+            empty="(no description)"
           />
         </div>
 
@@ -160,7 +160,7 @@ const meta = computed(() => {
               />
             </div>
           </div>
-          <div v-else class="text-xs text-ink-faint">Chưa có comment</div>
+          <div v-else class="text-xs text-ink-faint">No comments yet</div>
         </div>
       </template>
     </a-spin>

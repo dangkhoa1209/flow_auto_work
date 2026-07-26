@@ -31,7 +31,7 @@ function save() {
     removeLabels: removeLabels.value,
     comment: comment.value,
   });
-  message.success("Đã lưu labels / handoff prefs");
+  message.success("Labels / handoff prefs saved");
 }
 </script>
 
@@ -39,23 +39,23 @@ function save() {
   <div class="space-y-4">
     <h2 class="text-lg font-medium m-0">Labels & handoff</h2>
     <p class="text-sm text-ink-muted m-0">
-      Prefill khi Start / Done chờ — không auto assign.
+      Prefill on Start / Done awaiting handoff — does not auto-assign.
     </p>
     <a-form layout="vertical">
-      <a-form-item label="Label đang xử lý (Start + / handoff −)">
+      <a-form-item label="In-progress label (Start + / handoff −)">
         <a-input v-model:value="processingLabel" placeholder="On-processing" />
       </a-form-item>
-      <a-form-item label="Thêm labels khi Start">
+      <a-form-item label="Add labels on Start">
         <a-select
           v-model:value="onStartLabels"
           mode="multiple"
           class="w-full"
           :options="work.labels.map((l) => ({ value: l, label: l }))"
-          placeholder="Chọn labels…"
+          placeholder="Select labels…"
         />
       </a-form-item>
       <a-divider>Prefill handoff QC</a-divider>
-      <a-form-item label="Assign (1 người)">
+      <a-form-item label="Assign (1 person)">
         <a-select
           v-model:value="assignee"
           allow-clear
@@ -69,7 +69,7 @@ function save() {
           "
         />
       </a-form-item>
-      <a-form-item label="Thêm labels">
+      <a-form-item label="Add labels">
         <a-select
           v-model:value="addLabels"
           mode="multiple"
@@ -77,7 +77,7 @@ function save() {
           :options="work.labels.map((l) => ({ value: l, label: l }))"
         />
       </a-form-item>
-      <a-form-item label="Bỏ labels">
+      <a-form-item label="Remove labels">
         <a-select
           v-model:value="removeLabels"
           mode="multiple"
@@ -88,7 +88,7 @@ function save() {
       <a-form-item label="Comment (optional)">
         <a-textarea v-model:value="comment" :rows="2" />
       </a-form-item>
-      <a-button type="primary" @click="save">Lưu</a-button>
+      <a-button type="primary" @click="save">Save</a-button>
     </a-form>
   </div>
 </template>
