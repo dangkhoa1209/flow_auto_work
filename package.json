@@ -8,6 +8,7 @@
     "dev": "nodemon",
     "dev:web": "npm run dev --prefix web",
     "dev:all": "npm run dev & npm run dev:web",
+    "install:web": "npm install --prefix web",
     "build:web": "npm run build --prefix web",
     "start": "tsx src/index.ts",
     "seed": "tsx scripts/seed.ts",
