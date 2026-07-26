@@ -65,6 +65,7 @@ let dragStartH = 0;
 let dragMoved = false;
 let dragPointerId: number | null = null;
 let rootResizeObserver: ResizeObserver | null = null;
+let chatResizeObserver: ResizeObserver | null = null;
 
 onMounted(() => {
   try {
@@ -175,6 +176,8 @@ onUnmounted(() => {
   window.removeEventListener("pointercancel", onProgressRailPointerUp);
   rootResizeObserver?.disconnect();
   rootResizeObserver = null;
+  chatResizeObserver?.disconnect();
+  chatResizeObserver = null;
 });
 
 const chatScroll = useAutoScroll(chatBox, () => [
@@ -182,6 +185,47 @@ const chatScroll = useAutoScroll(chatBox, () => [
   props.agentTyping,
 ]);
 const progressScroll = useAutoScroll(progressBox, () => props.progressLines.length);
+
+/** Force bottom when opening console / switching job — chat may load while chatBox is unmounted (jobLoading). */
+async function jumpChatToLatest() {
+  await nextTick();
+  // Layout may still settle after v-show / skeleton swap
+  requestAnimationFrame(() => {
+    void chatScroll.scrollToBottom(true);
+  });
+}
+
+watch(
+  () => [props.jobLoading, props.currentJob?.id] as const,
+  ([loading]) => {
+    if (loading) return;
+    void jumpChatToLatest();
+  },
+  { immediate: true },
+);
+
+watch(mobileConsoleTab, (tab) => {
+  if (tab === "chat") void jumpChatToLatest();
+});
+
+// chatBox is inside v-if="!jobLoading" — attach observer when it mounts
+watch(chatBox, (el, prev) => {
+  if (prev && chatResizeObserver) {
+    chatResizeObserver.disconnect();
+    chatResizeObserver = null;
+  }
+  if (!el || typeof ResizeObserver === "undefined") return;
+  let lastH = el.clientHeight;
+  chatResizeObserver = new ResizeObserver(() => {
+    const box = chatBox.value;
+    if (!box) return;
+    const h = box.clientHeight;
+    if (lastH === 0 && h > 0) void jumpChatToLatest();
+    lastH = h;
+  });
+  chatResizeObserver.observe(el);
+  if (el.clientHeight > 0) void jumpChatToLatest();
+});
 </script>
 
 <template>
