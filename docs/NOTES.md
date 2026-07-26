@@ -33,8 +33,9 @@ UI (http://127.0.0.1:8787 — Vue web/dist)
 
 Express (:8787)
   ├─ Global MW: helmet · cors · morgan · rate-limit
-  ├─ Native: GET /api/events (SSE) · GET/POST /api/jobs (sample)
-  └─ Bridge: còn lại /api/* → Hono (auth, tasks, jobs…, gitlab/file)
+  ├─ GET /api/events (SSE)
+  └─ /api/* → routes → controllers → modules
+       (auth, me, projects, jobs, tasks, meta, stats, notes, gitlab, fs)
 
 JobQueue (serial)
   → on-start labels (optional)
@@ -79,14 +80,14 @@ Orchestrator **không** dump codebase vào prompt. Dựng một **MISSION prompt
 
 | Bước | Nguồn | Module |
 |------|--------|--------|
-| **Context quality gate** | issue + Dev Notes + chat Human | `src/agent/context-quality.ts` |
-| Git prep | checkout work / feat branch | `src/git/prep.ts` |
+| **Context quality gate** | issue + Dev Notes + chat Human | `src/plugins/agent/context-quality.ts` |
+| Git prep | checkout work / feat branch | `src/plugins/git/prep.ts` |
 | UI chat | Clarify / Q&A gần đây | `formatChatContextForRun` |
 | Linked | Issue links + `#mention` + comments | `collectLinkedIssueContext` |
 | Dev Notes | `job.devNotes` | Mongo |
 | Docs gate | paths đã Approve (code phase) | `job.docsPaths` |
 | Prompt | docs hoặc code + **CONTEXT QUALITY** block | `buildWorkPrompt` / `buildDocsPhasePrompt` |
-| Agent | create hoặc resume `job.agentId` | `src/agent/run.ts` |
+| Agent | create hoặc resume `job.agentId` | `src/plugins/agent/run.ts` |
 
 ```
 Run / follow-up chat (mọi chỗ gọi Cursor để code)
@@ -210,7 +211,7 @@ Markdown GitLab thường có `![…](/uploads/<secret>/image.png)`. Browser **k
 1. UI (`web/src/utils/chatFormat.ts`) rewrite mọi URL `/uploads/` →  
    `GET /api/gitlab/file?u=<absolute>&user=&project=&access_token=`  
    (`access_token` vì `<img>` không gửi `Authorization`).
-2. Backend (`src/gitlab/uploads.ts`) tải qua **REST API** (không dính CF web):  
+2. Backend (`src/plugins/gitlab/uploads.ts`) tải qua **REST API** (không dính CF web):  
    `GET /api/v4/projects/:id/uploads/:secret/:filename` + `PRIVATE-TOKEN` của workspace.
 3. Stream bytes về browser với `Content-Type` upstream; cache ngắn `private, max-age=300`.
 
@@ -220,7 +221,7 @@ Markdown GitLab thường có `![…](/uploads/<secret>/image.png)`. Browser **k
 | Server `fetch` web `/uploads/` | 403 Cloudflare |
 | Server `fetch` `/api/v4/…/uploads/:secret/:filename` | OK → proxy |
 
-**File liên quan:** `src/api/routes.ts` (`/gitlab/file`) · `src/gitlab/uploads.ts` · `web/src/utils/chatFormat.ts`.
+**File liên quan:** `src/api/routes/gitlabRoutes.ts` · `src/modules/gitlab` · `src/plugins/gitlab/uploads.ts` · `web/src/utils/chatFormat.ts`.
 
 ---
 
@@ -229,14 +230,18 @@ Markdown GitLab thường có `![…](/uploads/<secret>/image.png)`. Browser **k
 | Path | Vai trò |
 |------|---------|
 | `src/index.ts` | Boot |
-| `src/app.ts` / `src/server.ts` | Express transport (helmet/cors/morgan; SSE + sample jobs; Hono bridge `/api/*`) |
-| `src/api/routes.ts` | REST (Hono legacy + gitlab file proxy) |
-| `src/gitlab/uploads.ts` | Download markdown upload qua API v4 |
-| `src/queue.ts` | serial jobs; inject chat vào Run |
-| `src/agent/run.ts` | Cursor SDK + `buildMissionPrompt` |
-| `src/agent/prompt.ts` | MISSION prompts |
-| `src/agent/context-quality.ts` | Good / Searchable / Bad gate |
-| `src/realtime/hub.ts` | Pub/sub in-process → SSE |
+| `src/app.ts` / `src/server.ts` | Express transport (helmet/cors/morgan; static UI) |
+| `src/api/routes/` | Express routers (path + middleware only) |
+| `src/api/controllers/` | HTTP adapters |
+| `src/modules/` | Business logic (job, auth, project, …) |
+| `src/db/` + `job-store.ts` | Persistence (thay cho “models” Mongoose) |
+| `src/api/middleware/` | security, workspaceAuth, errorHandler |
+| `src/plugins/gitlab/uploads.ts` | Download markdown upload qua API v4 |
+| `src/queue.ts` | Serial in-process job queue |
+| `src/plugins/agent/run.ts` | Cursor SDK + `buildMissionPrompt` |
+| `src/plugins/agent/prompt.ts` | MISSION prompts |
+| `src/plugins/agent/context-quality.ts` | Good / Searchable / Bad gate |
+| `src/plugins/realtime/hub.ts` | Pub/sub in-process → SSE |
 | `web/src/realtime/` | EventSource client |
 | `web/` | Vue UI |
 

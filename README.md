@@ -60,7 +60,7 @@ UI: tag Context + link **Xem tiêu chuẩn** (modal). Chi tiết: [`docs/NOTES.m
 
 **Không gửi vào prompt:** media, toàn bộ codebase, secrets. Linked = issue links + `#mention` + excerpt comments.
 
-Code: `src/agent/context-quality.ts` · `src/queue.ts` · `src/agent/run.ts` · `src/agent/prompt.ts` · `src/gitlab/linked-context.ts`.
+Code: `src/plugins/agent/context-quality.ts` · `src/queue.ts` · `src/plugins/agent/run.ts` · `src/plugins/agent/prompt.ts` · `src/plugins/gitlab/linked-context.ts`.
 
 ## Chạy
 

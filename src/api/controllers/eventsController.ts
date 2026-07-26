@@ -2,7 +2,7 @@ import type { Request, Response } from "express";
 import { asyncHandler } from "../../utils/asyncHandler.js";
 import { setupSse } from "../sseHelper.js";
 import { jobQueue } from "../../queue.js";
-import { subscribeRealtime } from "../../realtime/hub.js";
+import { subscribeRealtime } from "../../plugins/realtime/hub.js";
 
 /**
  * GET /api/events — Server-Sent Events for UI realtime.

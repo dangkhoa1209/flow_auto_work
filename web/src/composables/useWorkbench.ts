@@ -184,7 +184,7 @@ export function useWorkbench() {
   watch(
     currentJob,
     (j) => {
-      notesDraft.value = (j?.devNotes || j?.techLeadNotes || "").trim();
+      notesDraft.value = (j?.devNotes || "").trim();
       requireDocsFirst.value = Boolean(j?.requireDocsFirst);
     },
     { immediate: true },
@@ -301,14 +301,13 @@ export function useWorkbench() {
     if (!selectedJobId.value && !selectedTaskIid.value) return;
     const nextNotes = notesDraft.value;
     const prevJob = currentJob.value;
-    const prevNotes = prevJob?.devNotes ?? prevJob?.techLeadNotes ?? "";
+    const prevNotes = prevJob?.devNotes ?? "";
 
     // Optimistic: reflect notes on the open job immediately
     if (currentJob.value) {
       currentJob.value = {
         ...currentJob.value,
         devNotes: nextNotes,
-        techLeadNotes: nextNotes,
       };
     }
     notesSaving.value = true;
@@ -323,7 +322,6 @@ export function useWorkbench() {
         currentJob.value = {
           ...currentJob.value,
           devNotes: prevNotes,
-          techLeadNotes: prevNotes,
         };
       }
       message.error(e instanceof Error ? e.message : String(e));

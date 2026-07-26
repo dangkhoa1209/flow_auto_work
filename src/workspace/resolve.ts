@@ -1,6 +1,5 @@
 import { access } from "node:fs/promises";
 import { constants } from "node:fs";
-import { getConfig } from "../config.js";
 import { isGitRepo } from "./clone.js";
 import {
   getMembership,
@@ -115,26 +114,4 @@ export async function assertProjectCloneReady(projectId: string): Promise<{
     };
   }
   return { ok: true, level: "good", localPath };
-}
-
-/** Fallback for scripts / legacy single-user .env (optional). */
-export function legacyRuntimeFromEnv(): RuntimeContext | null {
-  const c = getConfig();
-  if (
-    !c.GITLAB_TOKEN ||
-    !c.AIHR_REPO_PATH ||
-    !c.ALLOWED_PROJECT_PATH ||
-    !c.GITLAB_ASSIGNEE_USERNAME
-  ) {
-    return null;
-  }
-  return {
-    gitlabUsername: c.GITLAB_ASSIGNEE_USERNAME,
-    gitlabToken: c.GITLAB_TOKEN,
-    cursorApiKey: c.CURSOR_API_KEY,
-    cursorModel: "auto",
-    projectId: "legacy",
-    gitlabPath: c.ALLOWED_PROJECT_PATH,
-    repoPath: c.AIHR_REPO_PATH,
-  };
 }

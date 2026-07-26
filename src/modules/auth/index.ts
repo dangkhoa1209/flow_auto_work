@@ -1,0 +1,251 @@
+import { getConfig } from "../../config.js";
+import { verifyGitlabTokenUser } from "../../plugins/gitlab/client.js";
+import { verifyPassword } from "../../auth/password.js";
+import {
+  consumeRefreshSession,
+  revokeAllRefreshSessions,
+  revokeRefreshSession,
+  saveRefreshSession,
+} from "../../auth/sessions.js";
+import {
+  newTokenPair,
+  verifyRefreshToken,
+  REFRESH_TTL_SEC,
+} from "../../auth/tokens.js";
+import {
+  createOrUpdateUserPassword,
+  getUserByUsername,
+  upsertUserLogin,
+} from "../../workspace/store.js";
+import { toPublicUser } from "../../workspace/types.js";
+import { AppError } from "../../utils/AppError.js";
+import { listPublicMemberships } from "../project/index.js";
+
+/** Issue an access + refresh pair and persist the refresh session. */
+export async function issueAuthTokens(username: string) {
+  const pair = newTokenPair(username);
+  await saveRefreshSession({
+    jti: pair.refresh.jti,
+    username,
+    rawToken: pair.refresh.token,
+    expiresAt: pair.refresh.expiresAt,
+  });
+  return {
+    accessToken: pair.access.token,
+    refreshToken: pair.refresh.token,
+    expiresIn: pair.access.expiresIn,
+    accessExpiresAt: pair.access.expiresAt,
+    refreshExpiresIn: REFRESH_TTL_SEC,
+    tokenType: "Bearer" as const,
+  };
+}
+
+/** Public hints for the login UI (no secrets). */
+export function getAuthBootstrap() {
+  const config = getConfig();
+  const gitlabBaseUrl = config.GITLAB_BASE_URL.replace(/\/$/, "");
+  return {
+    gitlabBaseUrl,
+    gitlabPatUrl: `${gitlabBaseUrl}/-/user_settings/personal_access_tokens`,
+    cursorApiKeyUrl: "https://cursor.com/dashboard?tab=integrations",
+    defaultCursorModel: "auto",
+    authMode: "password",
+    bypassEnabled: Boolean(config.AUTH_BYPASS_PASSWORD?.trim()),
+  };
+}
+
+/** Resolve username from a pasted GitLab PAT (not stored). */
+export async function resolveTokenUser(body: { gitlabToken?: string }) {
+  const token = body.gitlabToken?.trim();
+  if (!token) throw new AppError("gitlabToken required", 400);
+  try {
+    const profile = await verifyGitlabTokenUser(token);
+    return {
+      username: profile.username,
+      name: profile.name ?? null,
+      id: profile.id,
+    };
+  } catch (err) {
+    throw new AppError(err instanceof Error ? err.message : String(err), 400);
+  }
+}
+
+export type RegisterBody = {
+  username?: string;
+  password?: string;
+  displayName?: string;
+};
+
+/** Register new username + password, then issue tokens (same shape as login). */
+export async function registerUser(body: RegisterBody) {
+  const username = (body.username || "").trim().replace(/^@/, "");
+  const password = body.password ?? "";
+  const displayName = body.displayName?.trim();
+
+  if (!username) {
+    throw new AppError("username required", 400);
+  }
+  if (!/^[a-zA-Z0-9._-]{3,32}$/.test(username)) {
+    throw new AppError(
+      "Username 3–32 ký tự: chữ, số, chấm, gạch dưới, gạch ngang",
+      400,
+    );
+  }
+  if (password.length < 6) {
+    throw new AppError("Password tối thiểu 6 ký tự", 400);
+  }
+
+  const existing = await getUserByUsername(username);
+  if (existing) {
+    throw new AppError("Username đã tồn tại", 409);
+  }
+
+  const user = await createOrUpdateUserPassword({
+    username,
+    password,
+    displayName: displayName || username,
+  });
+  const memberships = await listPublicMemberships(username);
+  const tokens = await issueAuthTokens(username);
+  return {
+    user,
+    memberships,
+    activeProjectId: memberships[0]?.projectId ?? null,
+    ...tokens,
+  };
+}
+
+export type LoginBody = {
+  username?: string;
+  password?: string;
+  gitlabUsername?: string;
+  /** Legacy fields ignored for auth; use project settings for PAT */
+  gitlabToken?: string;
+  cursorApiKey?: string;
+  displayName?: string;
+};
+
+/**
+ * Login with username + password.
+ * If AUTH_BYPASS_PASSWORD is set and matches, skip passwordHash check.
+ */
+export async function loginUser(body: LoginBody) {
+  const username = (body.username || body.gitlabUsername || "")
+    .trim()
+    .replace(/^@/, "");
+  const password = body.password ?? "";
+  if (!username) {
+    throw new AppError("username required", 400);
+  }
+  if (!password) {
+    throw new AppError("password required", 400);
+  }
+
+  const config = getConfig();
+  const bypass = config.AUTH_BYPASS_PASSWORD?.trim();
+  const existing = await getUserByUsername(username);
+  if (!existing) {
+    throw new AppError(
+      "User not found. Chưa có đăng ký — dùng tài khoản đã seed hoặc nhờ admin tạo user.",
+      401,
+    );
+  }
+
+  const bypassOk = Boolean(bypass && password === bypass);
+  if (!bypassOk) {
+    if (!existing.passwordHash) {
+      throw new AppError(
+        "Tài khoản này chưa có password (login GitLab cũ). Dùng user khoadev hoặc nhờ admin set password.",
+        401,
+      );
+    }
+    const ok = await verifyPassword(password, existing.passwordHash);
+    if (!ok) throw new AppError("Invalid username or password", 401);
+  }
+
+  if (body.cursorApiKey?.trim()) {
+    await upsertUserLogin({
+      gitlabUsername: username,
+      cursorApiKey: body.cursorApiKey,
+      displayName: body.displayName,
+    });
+  }
+
+  const user = toPublicUser((await getUserByUsername(username)) || existing);
+  const memberships = await listPublicMemberships(username);
+  const tokens = await issueAuthTokens(username);
+  const active =
+    memberships.find(
+      (m) => (m.project as { isActive?: boolean } | null)?.isActive,
+    )?.projectId ||
+    memberships[0]?.projectId ||
+    null;
+  return {
+    user,
+    memberships,
+    activeProjectId: active,
+    bypassUsed: bypassOk,
+    ...tokens,
+  };
+}
+
+/** Exchange refresh token → new access (+ rotated refresh). */
+export async function refreshAuthTokens(body: { refreshToken?: string }) {
+  const raw = body.refreshToken?.trim();
+  if (!raw) throw new AppError("refreshToken required", 400);
+  try {
+    const claims = verifyRefreshToken(raw);
+    const ok = await consumeRefreshSession({
+      jti: claims.jti,
+      username: claims.sub,
+      rawToken: raw,
+    });
+    if (!ok) {
+      throw new AppError(
+        "Phiên đăng nhập hết hạn hoặc không hợp lệ — vui lòng đăng nhập lại",
+        401,
+        "SESSION_EXPIRED",
+      );
+    }
+    const user = await getUserByUsername(claims.sub);
+    if (!user) {
+      await revokeRefreshSession(claims.jti);
+      throw new AppError("User not found", 401, "SESSION_EXPIRED");
+    }
+    // Issue new pair first, then revoke old (avoid locking user out if issue fails)
+    const tokens = await issueAuthTokens(claims.sub);
+    await revokeRefreshSession(claims.jti);
+    return {
+      user: toPublicUser(user),
+      ...tokens,
+    };
+  } catch (err) {
+    if (err instanceof AppError) throw err;
+    throw new AppError(
+      err instanceof Error ? err.message : "Invalid refresh token",
+      401,
+      "SESSION_EXPIRED",
+    );
+  }
+}
+
+/** Revoke refresh session(s). */
+export async function logoutUser(
+  username: string,
+  body: { refreshToken?: string; all?: boolean },
+) {
+  if (body.all && username) {
+    await revokeAllRefreshSessions(username);
+    return { ok: true, revoked: "all" };
+  }
+  const raw = body.refreshToken?.trim();
+  if (raw) {
+    try {
+      const claims = verifyRefreshToken(raw);
+      await revokeRefreshSession(claims.jti);
+    } catch {
+      /* already invalid */
+    }
+  }
+  return { ok: true };
+}

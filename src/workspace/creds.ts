@@ -1,20 +1,9 @@
-import { getConfig } from "../config.js";
-import { getRuntimeContext } from "../workspace/runtime.js";
+import { requireRuntimeContext } from "./runtime.js";
 
-/** GitLab PRIVATE-TOKEN: runtime user token, else legacy .env */
-export function resolveGitlabToken(): string {
-  const rt = getRuntimeContext();
-  if (rt?.gitlabToken) return rt.gitlabToken;
-  const t = getConfig().GITLAB_TOKEN?.trim();
-  if (t) return t;
-  throw new Error("No GitLab token — login and save your PAT (encrypted)");
-}
-
+/** Cursor API key: per-user runtime only (no .env fallback). */
 export function resolveCursorApiKey(): string {
-  const rt = getRuntimeContext();
-  if (rt?.cursorApiKey) return rt.cursorApiKey;
-  const t = getConfig().CURSOR_API_KEY?.trim();
-  if (t) return t;
+  const key = requireRuntimeContext().cursorApiKey?.trim();
+  if (key) return key;
   throw new Error(
     "Chưa có Cursor API key — nhập khi Run (sẽ được mã hóa và lưu)",
   );
@@ -22,32 +11,26 @@ export function resolveCursorApiKey(): string {
 
 /** Per-user model from UI, else auto. */
 export function resolveCursorModel(): string {
-  const rt = getRuntimeContext();
-  const fromUser = rt?.cursorModel?.trim();
-  if (fromUser) return fromUser;
-  return "auto";
+  return requireRuntimeContext().cursorModel?.trim() || "auto";
 }
 
+/** Local clone path from the selected project (user workspace). */
 export function resolveRepoPath(): string {
-  const rt = getRuntimeContext();
-  if (rt?.repoPath) return rt.repoPath;
-  const t = getConfig().AIHR_REPO_PATH?.trim();
-  if (t) return t;
+  const path = requireRuntimeContext().repoPath?.trim();
+  if (path) return path;
   throw new Error("No repo path — join a project with local repo path");
 }
 
+/** GitLab project path (group/repo) from the selected project. */
 export function resolveGitlabProjectPath(): string {
-  const rt = getRuntimeContext();
-  if (rt?.gitlabPath) return rt.gitlabPath;
-  const t = getConfig().ALLOWED_PROJECT_PATH?.trim();
-  if (t) return t;
+  const path = requireRuntimeContext().gitlabPath?.trim();
+  if (path) return path;
   throw new Error("No GitLab project — select a joined project");
 }
 
+/** GitLab username of the logged-in user. */
 export function resolveAssigneeUsername(): string {
-  const rt = getRuntimeContext();
-  if (rt?.gitlabUsername) return rt.gitlabUsername;
-  const t = getConfig().GITLAB_ASSIGNEE_USERNAME?.trim();
-  if (t) return t;
+  const u = requireRuntimeContext().gitlabUsername?.trim();
+  if (u) return u;
   throw new Error("No GitLab username — login first");
 }

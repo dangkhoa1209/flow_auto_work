@@ -156,8 +156,6 @@ export type JobRecord = {
   completion?: CompletionActions;
   /** Dev notes — highest priority in agent prompt (Mongo only) */
   devNotes?: string;
-  /** @deprecated use devNotes */
-  techLeadNotes?: string;
   /**
    * Sticky context-quality mark for coding Runs / follow-ups.
    * level === "good" → skip re-assessment on later agent calls.
@@ -196,9 +194,9 @@ export type JobRecord = {
   updatedAt: string;
 };
 
-/** Prefer devNotes; fall back to legacy techLeadNotes */
-export function resolveDevNotes(job: Pick<JobRecord, "devNotes" | "techLeadNotes">): string {
-  return (job.devNotes ?? job.techLeadNotes ?? "").trim();
+/** Trimmed Dev Notes from job (UI / Mongo). */
+export function resolveDevNotes(job: Pick<JobRecord, "devNotes">): string {
+  return (job.devNotes ?? "").trim();
 }
 
 export type ClarificationResult =

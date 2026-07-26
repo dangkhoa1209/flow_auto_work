@@ -38,7 +38,6 @@ export type Job = {
   requireDocsFirst?: boolean;
   lastQuestion?: string;
   devNotes?: string;
-  techLeadNotes?: string;
   contextQuality?: {
     level: "good" | "searchable" | "bad" | string;
     assessedAt?: string;

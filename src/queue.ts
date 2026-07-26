@@ -3,27 +3,27 @@ import {
   collectCommitActions,
   softResetTo,
   syncLocalToRemoteCommit,
-} from "./git/changes-for-api.js";
+} from "./plugins/git/changes-for-api.js";
 import {
   currentBranch,
   detectDefaultBranch,
   getHeadSha,
   hasUncommittedChanges,
   prepareRepoForIssue,
-} from "./git/prep.js";
+} from "./plugins/git/prep.js";
 import {
   commentOnIssue,
   getProjectDefaultBranch,
-} from "./gitlab/client.js";
+} from "./plugins/gitlab/client.js";
 import {
   createRepositoryCommit,
   gitlabBranchExists,
-} from "./gitlab/commits.js";
+} from "./plugins/gitlab/commits.js";
 import {
   postAgentGitlabComments,
   stripGitlabCommentBlocks,
   withAiGeneratedMarker,
-} from "./gitlab/agent-comment.js";
+} from "./plugins/gitlab/agent-comment.js";
 import { ensureJob, loadJob, saveJob } from "./job-store.js";
 import { logger } from "./logger.js";
 import {
@@ -33,34 +33,34 @@ import {
   isStartupError,
   resumeAgent,
   runNewAgent,
-} from "./agent/run.js";
-import { appendJobProgress, getJobTokenUsage } from "./agent/progress.js";
+} from "./plugins/agent/run.js";
+import { appendJobProgress, getJobTokenUsage } from "./plugins/agent/progress.js";
 import {
   cancelUiClarification,
   waitForUiClarification,
-} from "./clarify/ui-wait.js";
-import { cancelDiffApproval } from "./review/diff-wait.js";
+} from "./plugins/clarify/ui-wait.js";
+import { cancelDiffApproval } from "./plugins/review/diff-wait.js";
 import { addChatMessage, listChatMessages } from "./db/mongo.js";
-import { publishRealtime } from "./realtime/hub.js";
+import { publishRealtime } from "./plugins/realtime/hub.js";
 import {
   commitMessageForIssue,
   docsCommitMessageForIssue,
   formatChatContextForRun,
-} from "./agent/prompt.js";
+} from "./plugins/agent/prompt.js";
 import {
   formatBadContextChatMessage,
   formatContextQualityForPrompt,
   resolveContextQualityForCoding,
   toContextQualityMark,
-} from "./agent/context-quality.js";
+} from "./plugins/agent/context-quality.js";
 import {
   docsReadySummaryText,
   parseDocsReadyPaths,
-} from "./docs/analysis.js";
+} from "./plugins/docs/analysis.js";
 import type { CompletionActions, IssueJob, JobRecord } from "./types.js";
 import { isJobBusy, resolveDevNotes } from "./types.js";
 import { getRuntimeContext } from "./workspace/runtime.js";
-import { withWorkspaceContext } from "./workspace/routes.js";
+import { withWorkspaceContext } from "./workspace/context.js";
 
 type QueueItem = {
   job: JobRecord;
@@ -111,8 +111,6 @@ export class JobQueue {
       source?: string;
       completion?: CompletionActions;
       devNotes?: string;
-      /** @deprecated use devNotes */
-      techLeadNotes?: string;
       requireDocsFirst?: boolean;
       forceCodePhase?: boolean;
     },
@@ -125,10 +123,7 @@ export class JobQueue {
       return { enqueued: false, reason: "Issue already queued or running" };
     }
 
-    const notes =
-      opts?.devNotes?.trim() ||
-      opts?.techLeadNotes?.trim() ||
-      undefined;
+    const notes = opts?.devNotes?.trim() || undefined;
 
     const job = await ensureJob(issue, {
       source: opts?.source,
@@ -371,9 +366,8 @@ export class JobQueue {
       resumed?: boolean;
       hasChange?: boolean;
     }> => {
-      const config = getConfig();
       const rt = getRuntimeContext();
-      const repoPath = rt?.repoPath ?? config.AIHR_REPO_PATH;
+      const repoPath = rt?.repoPath?.trim();
       if (!repoPath) throw new Error("No repo path in workspace context");
 
       // Prefer fixed workBranch; only auto-create feat/hotfix when none configured
@@ -524,7 +518,7 @@ export class JobQueue {
         job.agentId = undefined;
       } else {
         const { isTransientCursorTransportError } = await import(
-          "./agent/run.js"
+          "./plugins/agent/run.js"
         );
         if (isTransientCursorTransportError(err)) {
           job.status = prevStatus;
@@ -543,7 +537,7 @@ export class JobQueue {
         this.publishStatus();
       }
       this.killedJobs.delete(job.id);
-      const { clearJobKillRequested } = await import("./agent/run.js");
+      const { clearJobKillRequested } = await import("./plugins/agent/run.js");
       clearJobKillRequested(job.id);
     }
   }
@@ -561,7 +555,7 @@ export class JobQueue {
   }> {
     this.killedJobs.add(jobId);
     const { markJobKillRequested, clearJobKillRequested } = await import(
-      "./agent/run.js"
+      "./plugins/agent/run.js"
     );
     markJobKillRequested(jobId);
 
@@ -952,7 +946,7 @@ export class JobQueue {
     this.publishStatus();
 
     const rt = getRuntimeContext();
-    const repoPath = rt?.repoPath ?? config.AIHR_REPO_PATH;
+    const repoPath = rt?.repoPath?.trim();
     if (!repoPath) {
       job.status = "failed";
       job.error = "No repo path in workspace context";
@@ -1019,7 +1013,7 @@ export class JobQueue {
         "Bad Context — đã dừng, không gọi Cursor Agent",
       );
       try {
-        const { applyIssueActions } = await import("./gitlab/client.js");
+        const { applyIssueActions } = await import("./plugins/gitlab/client.js");
         await applyIssueActions({
           projectId: job.issue.projectId,
           issueIid: job.issue.issueIid,
@@ -1071,7 +1065,7 @@ export class JobQueue {
         .map((s) => s.trim())
         .filter(Boolean);
       const { markIssueProcessing } = await import(
-        "./gitlab/processing-label.js"
+        "./plugins/gitlab/processing-label.js"
       );
       await markIssueProcessing({
         projectId: job.issue.projectId,
@@ -1110,7 +1104,6 @@ export class JobQueue {
 
       let result = await runNewAgent(job.issue, undefined, {
         jobId: job.id,
-        techLeadNotes: notes || undefined,
         devNotes: notes || undefined,
         chatContext: chatContext || undefined,
         contextQualityBlock,
@@ -1277,7 +1270,7 @@ export class JobQueue {
       job.error = message;
       await saveJob(job);
       const { clearIssueProcessing } = await import(
-        "./gitlab/processing-label.js"
+        "./plugins/gitlab/processing-label.js"
       );
       await clearIssueProcessing({
         projectId: job.issue.projectId,
@@ -1292,7 +1285,7 @@ export class JobQueue {
         this.publishStatus();
       }
       this.killedJobs.delete(job.id);
-      const { clearJobKillRequested } = await import("./agent/run.js");
+      const { clearJobKillRequested } = await import("./plugins/agent/run.js");
       clearJobKillRequested(job.id);
     }
   }

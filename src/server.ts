@@ -13,9 +13,9 @@ export type ListenResult = {
   port: number;
 };
 
-export function startHttpServer(): ListenResult {
+export async function startHttpServer(): Promise<ListenResult> {
   const config = getConfig();
-  const app = createApp();
+  const app = await createApp();
   const host = config.HOST;
   const port = config.PORT;
 

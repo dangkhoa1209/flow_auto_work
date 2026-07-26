@@ -1,5 +1,5 @@
 import { setMaxListeners } from "node:events";
-import { isTransientCursorTransportError } from "./agent/run.js";
+import { isTransientCursorTransportError } from "./plugins/agent/run.js";
 import { getConfig } from "./config.js";
 import { connectMongo } from "./db/mongo.js";
 import {
@@ -9,7 +9,6 @@ import {
 import { logger } from "./logger.js";
 import { startHttpServer } from "./server.js";
 import { ensureWorkspaceIndexes } from "./workspace/store.js";
-import { applyGitlabAssigneeFromEnvToken } from "./gitlab/identity.js";
 import { ensureAuthIndexes } from "./auth/sessions.js";
 
 setMaxListeners(100);
@@ -40,7 +39,6 @@ async function main() {
   const config = getConfig();
   logger.info("Config OK");
 
-  await applyGitlabAssigneeFromEnvToken();
   await connectMongo();
   logger.info("Database OK");
 
@@ -55,7 +53,7 @@ async function main() {
   }
   logger.info("Job store OK");
 
-  startHttpServer();
+  await startHttpServer();
 }
 
 main().catch((err) => {

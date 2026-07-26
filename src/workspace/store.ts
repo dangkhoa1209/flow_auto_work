@@ -2,7 +2,7 @@ import { type Collection } from "mongodb";
 import { rename as fsRename } from "node:fs/promises";
 import path from "node:path";
 import { connectMongo } from "../db/mongo.js";
-import { decryptSecret, encryptSecret } from "../crypto/secrets.js";
+import { decryptSecret, encryptSecret } from "../plugins/crypto/secrets.js";
 import { hashPassword } from "../auth/password.js";
 import { logger } from "../logger.js";
 import { pathExists } from "./clone.js";

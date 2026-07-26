@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { extractIssueIids, stripMediaAndAttachments } from "../src/gitlab/linked-context.js";
-import { buildWorkPrompt, parseAgentOutcome } from "../src/agent/prompt.js";
+import { extractIssueIids, stripMediaAndAttachments } from "../src/plugins/gitlab/linked-context.js";
+import { buildWorkPrompt, parseAgentOutcome } from "../src/plugins/agent/prompt.js";
 
 {
   const iids = extractIssueIids(

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref, watch } from "vue";
+import { nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import {
   ClearOutlined,
   PauseCircleOutlined,
@@ -19,6 +19,9 @@ const PROGRESS_OPEN_KEY = "flow.console.progressOpen";
 const PROGRESS_H_KEY = "flow.console.progressHeight";
 const PROGRESS_H_MIN = 120;
 const PROGRESS_H_DEFAULT = 240;
+/** Keep chat (messages strip + composer) usable when Process is expanded. */
+const CHAT_RESERVE_MIN = 200;
+const HEADER_FALLBACK = 48;
 
 const props = withDefaults(
   defineProps<{
@@ -58,17 +61,20 @@ const emit = defineEmits<{
 }>();
 
 const rootEl = ref<HTMLElement | null>(null);
+const headerEl = ref<HTMLElement | null>(null);
 const chatBox = ref<HTMLElement | null>(null);
 const progressBox = ref<HTMLElement | null>(null);
 const mobileConsoleTab = ref<"chat" | "logs">("chat");
 const progressOpen = ref(true);
 const progressHeight = ref(PROGRESS_H_DEFAULT);
+const progressMaxPx = ref(PROGRESS_H_DEFAULT);
 const progressDragging = ref(false);
 
 let dragStartY = 0;
 let dragStartH = 0;
 let dragMoved = false;
 let dragPointerId: number | null = null;
+let rootResizeObserver: ResizeObserver | null = null;
 
 onMounted(() => {
   try {
@@ -82,6 +88,15 @@ onMounted(() => {
   } catch {
     /* ignore */
   }
+  void nextTick(() => {
+    reclampProgressHeight();
+    if (rootEl.value && typeof ResizeObserver !== "undefined") {
+      rootResizeObserver = new ResizeObserver(() => {
+        reclampProgressHeight();
+      });
+      rootResizeObserver.observe(rootEl.value);
+    }
+  });
 });
 
 watch(progressOpen, (open) => {
@@ -90,6 +105,7 @@ watch(progressOpen, (open) => {
   } catch {
     /* ignore */
   }
+  if (open) void nextTick(() => reclampProgressHeight());
 });
 
 function persistProgressHeight() {
@@ -102,11 +118,24 @@ function persistProgressHeight() {
 
 function maxProgressHeight() {
   const rootH = rootEl.value?.clientHeight ?? 640;
-  return Math.max(PROGRESS_H_MIN, Math.floor(rootH * 0.72));
+  const headerH = headerEl.value?.offsetHeight ?? HEADER_FALLBACK;
+  // Never let Process eat into chat — leave header + min chat room.
+  const available = rootH - headerH - CHAT_RESERVE_MIN;
+  return Math.max(PROGRESS_H_MIN, Math.floor(available));
 }
 
 function clampProgressHeight(h: number) {
   return Math.min(maxProgressHeight(), Math.max(PROGRESS_H_MIN, Math.round(h)));
+}
+
+function reclampProgressHeight() {
+  progressMaxPx.value = maxProgressHeight();
+  if (props.mobileTabs || !progressOpen.value) return;
+  const next = clampProgressHeight(progressHeight.value);
+  if (next !== progressHeight.value) {
+    progressHeight.value = next;
+    persistProgressHeight();
+  }
 }
 
 function toggleProgress() {
@@ -134,6 +163,7 @@ function onProgressRailPointerMove(e: PointerEvent) {
   if (!progressDragging.value) return;
   const dy = dragStartY - e.clientY;
   if (Math.abs(dy) > 4) dragMoved = true;
+  progressMaxPx.value = maxProgressHeight();
   progressHeight.value = clampProgressHeight(dragStartH + dy);
 }
 
@@ -155,6 +185,8 @@ onUnmounted(() => {
   window.removeEventListener("pointermove", onProgressRailPointerMove);
   window.removeEventListener("pointerup", onProgressRailPointerUp);
   window.removeEventListener("pointercancel", onProgressRailPointerUp);
+  rootResizeObserver?.disconnect();
+  rootResizeObserver = null;
 });
 
 const chatScroll = useAutoScroll(chatBox, () => [
@@ -187,6 +219,7 @@ const progressScroll = useAutoScroll(progressBox, () => props.progressLines.leng
     <template v-if="!jobLoading">
       <!-- Header / toolbar -->
       <div
+        ref="headerEl"
         class="shrink-0 px-3 py-2.5 border-b border-line flex items-center justify-between gap-2 bg-gradient-to-r from-accent-soft/60 to-transparent"
       >
         <div class="min-w-0">
@@ -283,6 +316,11 @@ const progressScroll = useAutoScroll(progressBox, () => props.progressLines.leng
       <div
         v-show="!mobileTabs || mobileConsoleTab === 'chat'"
         class="flex flex-col min-h-0 border-b border-line flex-1"
+        :style="
+          !mobileTabs && progressOpen
+            ? { minHeight: `${CHAT_RESERVE_MIN}px` }
+            : undefined
+        "
       >
         <div
           ref="chatBox"
@@ -386,7 +424,7 @@ const progressScroll = useAutoScroll(progressBox, () => props.progressLines.leng
       <!-- Progress / Logs — collapse + drag-resize (desktop) -->
       <div
         v-show="mobileTabs ? mobileConsoleTab === 'logs' : true"
-        class="console-progress flex flex-col min-h-0"
+        class="console-progress relative z-[1] flex flex-col min-h-0 overflow-hidden"
         :class="{
           'flex-1': mobileTabs,
           'shrink-0': !mobileTabs,
@@ -395,7 +433,10 @@ const progressScroll = useAutoScroll(progressBox, () => props.progressLines.leng
         }"
         :style="
           !mobileTabs && progressOpen
-            ? { height: `${progressHeight}px` }
+            ? {
+                height: `${progressHeight}px`,
+                maxHeight: `${progressMaxPx}px`,
+              }
             : undefined
         "
       >

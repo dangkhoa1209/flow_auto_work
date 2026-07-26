@@ -8,13 +8,18 @@ const envSchema = z.object({
   HOST: z.string().default("127.0.0.1"),
   /** Server master key to encrypt user GitLab/Cursor tokens at rest */
   FLOW_SECRETS_KEY: z.string().min(16),
-  /** Optional legacy defaults — prefer per-user tokens in Mongo (encrypted) */
+  /** @deprecated unused — tokens/paths come from per-user workspace */
   CURSOR_API_KEY: z.string().optional(),
+  /** @deprecated unused — use project.localPath from workspace */
   AIHR_REPO_PATH: z.string().optional(),
+  /** @deprecated unused — use project.gitlabPath from workspace */
   ALLOWED_PROJECT_PATH: z.string().optional(),
   GITLAB_BASE_URL: z.string().url().default("https://gitlab.com"),
+  /** @deprecated unused — use project GitLab PAT from workspace */
   GITLAB_TOKEN: z.string().optional(),
+  /** @deprecated unused — use logged-in user */
   GITLAB_ASSIGNEE_USERNAME: z.string().optional(),
+  /** @deprecated unused */
   GITLAB_ASSIGNEE_ID: z.string().optional(),
   MR_TARGET_BRANCH: z.string().optional(),
   MR_REVIEWER_USERNAMES: z.string().optional(),

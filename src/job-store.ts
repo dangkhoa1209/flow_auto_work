@@ -17,7 +17,7 @@ import {
   syntheticAdhocIssueIid,
 } from "./types.js";
 import { getRuntimeContext } from "./workspace/runtime.js";
-import { fetchGitlabProject } from "./gitlab/client.js";
+import { fetchGitlabProject } from "./plugins/gitlab/client.js";
 import {
   SEED_USERNAME,
   seedWorkspaceProjectId,
@@ -32,11 +32,9 @@ export async function saveJob(
   } else if (!job.updatedAt) {
     job.updatedAt = job.createdAt || new Date().toISOString();
   }
-  // Keep legacy field in sync for old readers
-  if (job.devNotes != null) job.techLeadNotes = job.devNotes;
   if (job.id && !job.flowTaskId) job.flowTaskId = job.id;
   await upsertJobDoc(job, extra);
-  const { publishRealtime } = await import("./realtime/hub.js");
+  const { publishRealtime } = await import("./plugins/realtime/hub.js");
   // Patch single job status on UI — avoid spamming full jobs list refresh
   publishRealtime({
     type: "job",

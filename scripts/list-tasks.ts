@@ -1,17 +1,15 @@
 /**
- * List (and optionally enqueue) open issues assigned to you.
+ * List (and optionally enqueue) open issues for a project.
  *
  *   npm run list-tasks          # print only
  *   npm run scan                # print + enqueue
  *
- * Needs in .env (real values, not placeholders):
- *   GITLAB_TOKEN, GITLAB_ASSIGNEE_USERNAME, ALLOWED_PROJECT_PATH
+ * Injects a temporary RuntimeContext from CLI args / .env scan settings —
+ * app code no longer reads GITLAB_TOKEN / project path from env directly.
  */
-import { getGitlabScanConfig } from "../src/gitlab/scan-config.js";
-import { listAssignedOpenIssues } from "../src/gitlab/client.js";
-import { scanExistingAssignedIssues } from "../src/gitlab/startup-scan.js";
+import { getGitlabScanConfig } from "../src/plugins/gitlab/scan-config.js";
+import { runWithRuntimeContext } from "../src/workspace/runtime.js";
 
-/** Allow listAssignedOpenIssues (uses getConfig) without full Cursor setup. */
 function ensureFullConfigForGitlabApi() {
   if (
     !process.env.CURSOR_API_KEY ||
@@ -25,60 +23,80 @@ function ensureFullConfigForGitlabApi() {
   ) {
     process.env.FLOW_SECRETS_KEY = "list-tasks-placeholder-ok-secret";
   }
-  process.env.AIHR_REPO_PATH ??=
-    "/Users/dangkhoa/Developer/Work/Jobtest/aihr_v3";
-  process.env.ALLOWED_PROJECT_PATH ??= "kiemnv/aihr_v3";
+}
+
+async function withCliRuntime<T>(fn: () => Promise<T>): Promise<T> {
+  const scanCfg = getGitlabScanConfig();
+  ensureFullConfigForGitlabApi();
+  const { getConfig } = await import("../src/config.js");
+  getConfig();
+
+  const repoPath =
+    process.env.AIHR_REPO_PATH?.trim() ||
+    "/tmp/flow-cli-placeholder-repo";
+
+  return runWithRuntimeContext(
+    {
+      gitlabUsername: scanCfg.GITLAB_ASSIGNEE_USERNAME,
+      gitlabToken: scanCfg.GITLAB_TOKEN,
+      projectId: "cli",
+      gitlabPath: scanCfg.ALLOWED_PROJECT_PATH,
+      repoPath,
+    },
+    fn,
+  );
 }
 
 async function listOnly() {
-  const scanCfg = getGitlabScanConfig();
-  ensureFullConfigForGitlabApi();
-
-  // Lazy import after env patched so getConfig cache sees real GITLAB_* + soft dummies
-  const { getConfig } = await import("../src/config.js");
-  getConfig();
-
-  console.log("Scanning GitLab…");
-  console.log(`  project : ${scanCfg.ALLOWED_PROJECT_PATH}`);
-  console.log(`  assignee: ${scanCfg.GITLAB_ASSIGNEE_USERNAME}`);
-  console.log("");
-
-  const issues = await listAssignedOpenIssues();
-  if (issues.length === 0) {
-    console.log("No open issues assigned to you in this project.");
-    console.log("Check:");
-    console.log("  - GITLAB_ASSIGNEE_USERNAME matches gitlab.com/<username>");
-    console.log("  - Issues are opened + assigned to you");
-    console.log("  - Token has `api` scope and can read the project");
-    return;
-  }
-
-  console.log(`Found ${issues.length} open assigned issue(s):\n`);
-  for (const issue of issues) {
-    const skip = issue.labels.some((l) =>
-      scanCfg.skipLabels.includes(l.toLowerCase()),
+  await withCliRuntime(async () => {
+    const scanCfg = getGitlabScanConfig();
+    const { listAssignedOpenIssues } = await import(
+      "../src/plugins/gitlab/client.js"
     );
-    const mark = skip ? "SKIP" : "OK  ";
-    console.log(
-      `[${mark}] #${issue.issueIid}  ${issue.title}\n` +
-        `         ${issue.url}\n` +
-        `         labels: ${issue.labels.join(", ") || "(none)"}\n`,
-    );
-  }
+
+    console.log("Scanning GitLab…");
+    console.log(`  project : ${scanCfg.ALLOWED_PROJECT_PATH}`);
+    console.log(`  assignee: ${scanCfg.GITLAB_ASSIGNEE_USERNAME}`);
+    console.log("");
+
+    const issues = await listAssignedOpenIssues();
+    if (issues.length === 0) {
+      console.log("No open issues assigned to you in this project.");
+      console.log("Check:");
+      console.log("  - GITLAB_ASSIGNEE_USERNAME matches gitlab.com/<username>");
+      console.log("  - Issues are opened + assigned to you");
+      console.log("  - Token has `api` scope and can read the project");
+      return;
+    }
+
+    console.log(`Found ${issues.length} open assigned issue(s):\n`);
+    for (const issue of issues) {
+      const skip = issue.labels.some((l) =>
+        scanCfg.skipLabels.includes(l.toLowerCase()),
+      );
+      const mark = skip ? "SKIP" : "OK  ";
+      console.log(
+        `[${mark}] #${issue.issueIid}  ${issue.title}\n` +
+          `         ${issue.url}\n` +
+          `         labels: ${issue.labels.join(", ") || "(none)"}\n`,
+      );
+    }
+  });
 }
 
 async function scanAndEnqueue() {
-  getGitlabScanConfig();
-  ensureFullConfigForGitlabApi();
-  const { getConfig } = await import("../src/config.js");
-  getConfig();
-  const result = await scanExistingAssignedIssues();
-  console.log(
-    `\nDone. found=${result.found} enqueued=${result.enqueued} skipped=${result.skipped}`,
-  );
-  console.log(
-    "Keep `npm run dev` running so enqueued jobs actually execute (needs real CURSOR_API_KEY).",
-  );
+  await withCliRuntime(async () => {
+    const { scanExistingAssignedIssues } = await import(
+      "../src/plugins/gitlab/startup-scan.js"
+    );
+    const result = await scanExistingAssignedIssues();
+    console.log(
+      `\nDone. found=${result.found} enqueued=${result.enqueued} skipped=${result.skipped}`,
+    );
+    console.log(
+      "Keep `npm run dev` running so enqueued jobs actually execute (needs real CURSOR_API_KEY).",
+    );
+  });
 }
 
 const mode = process.argv[2] ?? "list";

@@ -14,8 +14,9 @@ function isPublicApiPath(path: string): boolean {
   }
   if (path === "/me" || path.startsWith("/me/")) return true;
   if (path.startsWith("/auth/")) return true;
-  if (path.startsWith("/projects/")) return true;
+  if (path === "/projects" || path.startsWith("/projects/")) return true;
   if (path.startsWith("/gitlab/")) return true;
+  if (path.startsWith("/fs/")) return true;
   return false;
 }
 
