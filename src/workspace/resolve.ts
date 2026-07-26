@@ -75,6 +75,7 @@ export async function resolveRuntimeContext(opts: {
     repoPath,
     baseBranch: project.mainBranch || membership.baseBranch,
     workBranch: project.workingBranch || membership.workBranch,
+    verifyCommand: project.verifyCommand?.trim() || undefined,
   };
 }
 

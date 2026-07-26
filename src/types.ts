@@ -168,6 +168,8 @@ export type JobRecord = {
    * Cleared when the follow-up starts executing.
    */
   pendingFollowUpMessage?: string;
+  /** send = chat Send (may edit code); ask = Ask only (Q&A). Needed to restore the right kind after restart. */
+  pendingFollowUpKind?: "send" | "ask";
   /** Status to restore if a queued follow-up is cancelled / fails soft. */
   followUpRestoreStatus?: JobStatus;
   /** Hard gate: read/update AiHR feature docs before any app code */

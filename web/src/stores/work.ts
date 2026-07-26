@@ -182,13 +182,22 @@ export const useWorkStore = defineStore("work", () => {
 
   function applyStatusSnapshot(s: {
     currentJobId: string | null;
+    currentJobIds?: string[];
     queueLength: number;
   }) {
-    statusText.value = s.currentJobId
-      ? `Running ${s.currentJobId}`
-      : s.queueLength
-        ? `Queue ${s.queueLength}`
-        : "Idle";
+    const runningIds = s.currentJobIds?.length
+      ? s.currentJobIds
+      : s.currentJobId
+        ? [s.currentJobId]
+        : [];
+    statusText.value =
+      runningIds.length > 1
+        ? `Running ${runningIds.length} jobs`
+        : runningIds.length === 1
+          ? `Running ${runningIds[0]}`
+          : s.queueLength
+            ? `Queue ${s.queueLength}`
+            : "Idle";
   }
 
   /** Debounced jobs list refresh (SSE can fire often during a run). */
@@ -247,6 +256,50 @@ export const useWorkStore = defineStore("work", () => {
     } else {
       scheduleLoadJobs();
     }
+  }
+
+  /** SSE chat event — append message to the open console without refetch. */
+  function applyRealtimeChat(ev: {
+    jobId: string;
+    message?: {
+      role: string;
+      kind?: string;
+      body: string;
+      createdAt?: string;
+    };
+  }) {
+    if (selectedJobId.value !== ev.jobId) return;
+    const msg = ev.message;
+    if (!msg?.body?.trim()) {
+      // No payload — fall back to a soft refresh
+      void refreshJobChat(ev.jobId).catch(() => undefined);
+      return;
+    }
+    const bodyKey = msg.body.trim();
+    // Drop matching optimistic pending message; skip if already present
+    const rest = chat.value.filter(
+      (m) =>
+        !(m.pending && m.role === msg.role && (m.body || "").trim() === bodyKey),
+    );
+    const dup = rest.some(
+      (m) =>
+        m.role === msg.role &&
+        (m.body || "").trim() === bodyKey &&
+        m.createdAt === msg.createdAt,
+    );
+    if (dup) {
+      chat.value = rest;
+      return;
+    }
+    chat.value = [
+      ...rest,
+      {
+        role: msg.role,
+        kind: msg.kind,
+        body: msg.body,
+        createdAt: msg.createdAt,
+      },
+    ];
   }
 
   /** Agent finished (Send/Ask/Run) — drop typing bubble and pull final chat via realtime path. */
@@ -726,6 +779,7 @@ export const useWorkStore = defineStore("work", () => {
     scheduleLoadJobs,
     applyRealtimeProgress,
     applyRealtimeJob,
+    applyRealtimeChat,
     selectJob,
     selectTask,
     refreshJobChat,

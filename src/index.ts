@@ -53,6 +53,13 @@ async function main() {
   }
   logger.info("Job store OK");
 
+  // Requeue jobs that were still waiting in queue when the process died
+  const { jobQueue } = await import("./queue.js");
+  const restored = await jobQueue.restoreQueuedJobs();
+  if (restored > 0) {
+    logger.info(`Restored ${restored} queued job(s) after restart`);
+  }
+
   await startHttpServer();
 }
 

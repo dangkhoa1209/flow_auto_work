@@ -1,6 +1,7 @@
 import { MongoClient, type Collection, type Db } from "mongodb";
 import { buildMongoUri, getConfig } from "../config.js";
 import { logger } from "../logger.js";
+import { publishRealtime } from "../plugins/realtime/hub.js";
 import { jobIdForIssue, type JobRecord, type JobStatus } from "../types.js";
 
 export type JobDoc = JobRecord & {
@@ -263,7 +264,24 @@ export async function addChatMessage(input: {
     createdAt: new Date().toISOString(),
   };
   const result = await chat().insertOne(doc as ChatMessageDoc & { _id?: unknown });
-  return { ...doc, _id: String(result.insertedId) };
+  const saved = { ...doc, _id: String(result.insertedId) };
+  // Realtime push — UI appends without polling /chat
+  if (saved.jobId) {
+    publishRealtime({
+      type: "chat",
+      jobId: saved.jobId,
+      message: {
+        id: saved._id,
+        jobId: saved.jobId,
+        issueIid: saved.issueIid,
+        role: saved.role,
+        kind: saved.kind,
+        body: saved.body,
+        createdAt: saved.createdAt,
+      },
+    });
+  }
+  return saved;
 }
 
 export async function listChatMessages(opts: {

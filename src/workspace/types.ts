@@ -48,6 +48,8 @@ export type WorkspaceProject = {
   repoPath: string;
   mainBranch?: string;
   workingBranch?: string;
+  /** Verify command run after agent code phase (e.g. "npm run typecheck") */
+  verifyCommand?: string;
   isActive: boolean;
   cloneStatus: CloneStatus;
   cloneError?: string;

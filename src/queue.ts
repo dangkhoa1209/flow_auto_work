@@ -23,15 +23,17 @@ import {
   postAgentGitlabComments,
   withAiGeneratedMarker,
 } from "./plugins/gitlab/agent-comment.js";
-import { ensureJob, loadJob, saveJob } from "./job-store.js";
+import { ensureJob, listJobs, loadJob, saveJob } from "./job-store.js";
 import { logger } from "./logger.js";
 import {
   cancelActiveAgentRun,
   continueAgentWindow,
   hasActiveAgentRun,
   isStartupError,
+  isTransientCursorTransportError,
   runNewAgent,
 } from "./plugins/agent/run.js";
+import { runVerifyCommand } from "./plugins/verify/run.js";
 import { answerTaskQuestion } from "./plugins/agent/qa.js";
 import { appendJobProgress, getJobTokenUsage } from "./plugins/agent/progress.js";
 import { cancelDiffApproval } from "./plugins/review/diff-wait.js";
@@ -73,19 +75,45 @@ type QueueItem = {
 
 export class JobQueue {
   private queue: QueueItem[] = [];
-  private running = false;
+  /** Lanes currently pumping — one worker per workspace project. */
+  private runningLanes = new Set<string>();
   private activeIssueKeys = new Set<string>();
   private sources = new Map<string, string>();
-  /** Currently executing job (not merely queued). */
-  private currentJobId: string | null = null;
+  /** Currently executing job per lane (not merely queued). */
+  private currentByLane = new Map<string, string>();
   /** Jobs force-stopped — runJob should abort ASAP. */
   private killedJobs = new Set<string>();
 
+  /** Jobs from different projects run in parallel; same project stays serial. */
+  private laneKeyFor(job: Pick<JobRecord, "workspaceProjectId">): string {
+    return job.workspaceProjectId || "default";
+  }
+
+  private get currentJobIds(): string[] {
+    return [...this.currentByLane.values()];
+  }
+
+  private isCurrent(jobId: string): boolean {
+    return this.currentJobIds.includes(jobId);
+  }
+
+  private setCurrent(job: JobRecord): void {
+    this.currentByLane.set(this.laneKeyFor(job), job.id);
+  }
+
+  private clearCurrent(jobId: string): void {
+    for (const [lane, id] of this.currentByLane) {
+      if (id === jobId) this.currentByLane.delete(lane);
+    }
+  }
+
   snapshot() {
+    const currentJobIds = this.currentJobIds;
     return {
-      running: this.running,
+      running: this.runningLanes.size > 0,
       queued: this.queue.length,
-      currentJobId: this.currentJobId,
+      currentJobId: currentJobIds[0] ?? null,
+      currentJobIds,
       activeIssues: [...this.activeIssueKeys],
     };
   }
@@ -96,12 +124,62 @@ export class JobQueue {
     publishRealtime({
       type: "status",
       currentJobId: snap.currentJobId,
+      currentJobIds: snap.currentJobIds,
       queueLength: snap.queued,
       running: snap.running,
     });
     if (reason) {
       publishRealtime({ type: "jobs", reason });
     }
+  }
+
+  /**
+   * Boot recovery: re-enqueue jobs left `queued` in DB by a restart
+   * (running jobs are failed by failInterruptedJobs).
+   */
+  async restoreQueuedJobs(): Promise<number> {
+    const jobs = await listJobs();
+    let restored = 0;
+    for (const job of jobs) {
+      if (job.status !== "queued") continue;
+      const key = `${job.issue.projectId}:${job.issue.issueIid}`;
+      if (
+        this.activeIssueKeys.has(key) ||
+        this.queue.some((q) => q.job.id === job.id)
+      ) {
+        continue;
+      }
+      this.activeIssueKeys.add(key);
+      const pendingMsg = job.pendingFollowUpMessage?.trim();
+      if (pendingMsg && job.pendingFollowUpKind === "ask") {
+        this.queue.push({
+          job,
+          source: "restore_ask",
+          askOnlyMessage: pendingMsg,
+          followUpRestoreStatus: job.followUpRestoreStatus,
+        });
+      } else if (pendingMsg) {
+        this.queue.push({
+          job,
+          source: "restore_followup",
+          followUpMessage: pendingMsg,
+          followUpRestoreStatus: job.followUpRestoreStatus,
+        });
+      } else {
+        this.queue.push({ job, source: "restore" });
+      }
+      restored += 1;
+      logger.info("Restored queued job after restart", {
+        jobId: job.id,
+        iid: job.issue.issueIid,
+        kind: pendingMsg ? job.pendingFollowUpKind || "send" : "run",
+      });
+    }
+    if (restored > 0) {
+      this.publishStatus("restore");
+      void this.pump();
+    }
+    return restored;
   }
 
   /**
@@ -144,14 +222,14 @@ export class JobQueue {
       job.requireDocsFirst = opts.requireDocsFirst;
     }
 
-    if (isJobBusy(job.status) && job.id !== this.currentJobId) {
+    if (isJobBusy(job.status) && !this.isCurrent(job.id)) {
       const fresh = await loadJob(job.id);
       if (fresh && isJobBusy(fresh.status)) {
         logger.warn("enqueue rejected — busy in DB", {
           key,
           jobId: job.id,
           status: fresh.status,
-          currentJobId: this.currentJobId,
+          currentJobIds: this.currentJobIds,
         });
         return { enqueued: false, reason: "Issue already queued or running" };
       }
@@ -272,7 +350,7 @@ export class JobQueue {
         jobId,
         from: job.status,
         to: reclaimTo,
-        currentJobId: this.currentJobId,
+        currentJobIds: this.currentJobIds,
       });
       job.status = reclaimTo;
       job.error =
@@ -280,8 +358,8 @@ export class JobQueue {
         "Previous agent run was stuck / interrupted — reclaimed for retry";
       job.pendingFollowUpMessage = undefined;
       await saveJob(job);
-      if (this.currentJobId === jobId) {
-        this.currentJobId = null;
+      if (this.isCurrent(jobId)) {
+        this.clearCurrent(jobId);
         this.publishStatus();
       }
     }
@@ -353,8 +431,12 @@ export class JobQueue {
       return { ok: false, job, kind: "bad_context", question: body };
     }
 
+    const budgetError = this.tokenBudgetError(job);
+    if (budgetError) throw new Error(budgetError);
+
     const restoreStatus = job.status;
     job.pendingFollowUpMessage = msg;
+    job.pendingFollowUpKind = "send";
     job.followUpRestoreStatus = restoreStatus;
     job.status = "queued";
     job.error = undefined;
@@ -419,8 +501,8 @@ export class JobQueue {
         "Previous agent run was stuck / interrupted — reclaimed for retry";
       job.pendingFollowUpMessage = undefined;
       await saveJob(job);
-      if (this.currentJobId === jobId) {
-        this.currentJobId = null;
+      if (this.isCurrent(jobId)) {
+        this.clearCurrent(jobId);
         this.publishStatus();
       }
     }
@@ -451,6 +533,7 @@ export class JobQueue {
 
     const restoreStatus = job.status;
     job.pendingFollowUpMessage = msg;
+    job.pendingFollowUpKind = "ask";
     job.followUpRestoreStatus = restoreStatus;
     job.status = "queued";
     job.error = undefined;
@@ -504,9 +587,10 @@ export class JobQueue {
     const key = `${job.issue.projectId}:${job.issue.issueIid}`;
 
     job.pendingFollowUpMessage = undefined;
+    job.pendingFollowUpKind = undefined;
     job.followUpRestoreStatus = undefined;
     this.activeIssueKeys.add(key);
-    this.currentJobId = job.id;
+    this.setCurrent(job);
     this.publishStatus();
     job.status = "running";
     job.error = undefined;
@@ -562,11 +646,13 @@ export class JobQueue {
         .slice(0, 24_000);
 
       const headBefore = await getHeadSha(repoPath);
-      const result = await continueAgentWindow(job.issue, msg, {
-        jobId: job.id,
-        chatHistory: chatHistory || undefined,
-        contextQualityBlock,
-      });
+      const result = await this.runAgentWithRetry(job, () =>
+        continueAgentWindow(job.issue, msg, {
+          jobId: job.id,
+          chatHistory: chatHistory || undefined,
+          contextQualityBlock,
+        }),
+      );
       job.agentId = result.agentId;
       applyTokenUsageToJob(job, result.usage);
       await saveJob(job);
@@ -593,6 +679,9 @@ export class JobQueue {
         await saveJob(job);
         return;
       }
+
+      // Follow-up may have edited code — same verify + self-heal gate as Run
+      await this.verifyAndSelfHeal(job, repoPath, headBefore);
 
       const { hasChange } = await this.finalizeGitlabCommit(
         job,
@@ -658,9 +747,6 @@ export class JobQueue {
         job.status = prevStatus;
         job.agentId = undefined;
       } else {
-        const { isTransientCursorTransportError } = await import(
-          "./plugins/agent/run.js"
-        );
         if (isTransientCursorTransportError(err)) {
           job.status = prevStatus;
           job.agentId = undefined;
@@ -674,10 +760,11 @@ export class JobQueue {
       logger.error("IDE follow-up failed", { jobId: job.id, err: errMsg });
     } finally {
       job.pendingFollowUpMessage = undefined;
+      job.pendingFollowUpKind = undefined;
       job.followUpRestoreStatus = undefined;
       this.activeIssueKeys.delete(key);
-      if (this.currentJobId === job.id) {
-        this.currentJobId = null;
+      if (this.isCurrent(job.id)) {
+        this.clearCurrent(job.id);
         this.publishStatus();
       }
       this.killedJobs.delete(job.id);
@@ -709,9 +796,10 @@ export class JobQueue {
     const key = `${job.issue.projectId}:${job.issue.issueIid}`;
 
     job.pendingFollowUpMessage = undefined;
+    job.pendingFollowUpKind = undefined;
     job.followUpRestoreStatus = undefined;
     this.activeIssueKeys.add(key);
-    this.currentJobId = job.id;
+    this.setCurrent(job);
     this.publishStatus();
     job.status = "running";
     job.error = undefined;
@@ -725,17 +813,19 @@ export class JobQueue {
     }
 
     const runAsk = async (): Promise<void> => {
-      const qa = await answerTaskQuestion({
-        issue: job.issue,
-        question: msg,
-        jobId: job.id,
-        existingAgentId: job.agentId,
-        history: priorChat.map((m) => ({
-          role: m.role,
-          kind: m.kind,
-          body: m.body,
-        })),
-      });
+      const qa = await this.runAgentWithRetry(job, () =>
+        answerTaskQuestion({
+          issue: job.issue,
+          question: msg,
+          jobId: job.id,
+          existingAgentId: job.agentId,
+          history: priorChat.map((m) => ({
+            role: m.role,
+            kind: m.kind,
+            body: m.body,
+          })),
+        }),
+      );
       job.agentId = qa.agentId;
       applyTokenUsageToJob(job, qa.usage);
       job.status = prevStatus;
@@ -793,10 +883,11 @@ export class JobQueue {
       logger.error("Ask only failed", { jobId: job.id, err: errMsg });
     } finally {
       job.pendingFollowUpMessage = undefined;
+      job.pendingFollowUpKind = undefined;
       job.followUpRestoreStatus = undefined;
       this.activeIssueKeys.delete(key);
-      if (this.currentJobId === job.id) {
-        this.currentJobId = null;
+      if (this.isCurrent(job.id)) {
+        this.clearCurrent(job.id);
         this.publishStatus();
       }
       this.killedJobs.delete(job.id);
@@ -838,6 +929,7 @@ export class JobQueue {
       }
       item.job.agentId = undefined;
       item.job.pendingFollowUpMessage = undefined;
+      item.job.pendingFollowUpKind = undefined;
       item.job.followUpRestoreStatus = undefined;
       await saveJob(item.job);
       await this.notifyJobChat(
@@ -893,10 +985,10 @@ export class JobQueue {
       }
     }
 
-    if (this.currentJobId === jobId) {
+    if (this.isCurrent(jobId)) {
       // Clear immediately so UI Idle / status SSE don't stay "Running …"
       // while Cursor cancel / executeJob.finally still unwind.
-      this.currentJobId = null;
+      this.clearCurrent(jobId);
       this.publishStatus("kill-running");
       logger.warn("Kill signal sent to running job", {
         jobId,
@@ -1003,6 +1095,141 @@ export class JobQueue {
     }
   }
 
+  /** Non-null message when JOB_TOKEN_BUDGET is set and this job exceeded it. */
+  private tokenBudgetError(job: JobRecord): string | null {
+    const budget = getConfig().JOB_TOKEN_BUDGET;
+    if (!budget || budget <= 0) return null;
+    const used = job.tokenUsage?.totalTokens ?? 0;
+    if (used < budget) return null;
+    return `Job đã dùng ${used.toLocaleString()} tokens — vượt ngân sách ${budget.toLocaleString()} (JOB_TOKEN_BUDGET). Reset agent window hoặc tăng budget để chạy tiếp.`;
+  }
+
+  /** Retry transient Cursor transport errors with linear backoff. */
+  private async runAgentWithRetry<T>(
+    job: JobRecord,
+    fn: () => Promise<T>,
+  ): Promise<T> {
+    const max = Math.max(0, getConfig().AGENT_TRANSIENT_RETRIES);
+    let attempt = 0;
+    while (true) {
+      try {
+        return await fn();
+      } catch (err) {
+        if (
+          !isTransientCursorTransportError(err) ||
+          attempt >= max ||
+          this.killedJobs.has(job.id)
+        ) {
+          throw err;
+        }
+        attempt += 1;
+        const delayMs = attempt * 5000;
+        appendJobProgress(
+          job.id,
+          "status",
+          `Lỗi mạng Cursor tạm thời — tự retry ${attempt}/${max} sau ${delayMs / 1000}s`,
+        );
+        logger.warn("Transient Cursor error — retrying", {
+          jobId: job.id,
+          attempt,
+          max,
+          err: String(err),
+        });
+        await new Promise((r) => setTimeout(r, delayMs));
+      }
+    }
+  }
+
+  /**
+   * Run VERIFY_COMMAND (project or env) after the code phase; on failure,
+   * give the agent ONE self-heal round, then re-verify. Never blocks the
+   * commit — a persistent failure is surfaced in chat for human review.
+   */
+  private async verifyAndSelfHeal(
+    job: JobRecord,
+    repoPath: string,
+    headBefore: string | null,
+  ): Promise<void> {
+    const config = getConfig();
+    const rt = getRuntimeContext();
+    const command = (rt?.verifyCommand || config.VERIFY_COMMAND || "").trim();
+    if (!command || this.killedJobs.has(job.id)) return;
+
+    // Only verify when the agent actually changed something
+    const headNow = await getHeadSha(repoPath);
+    const dirty = await hasUncommittedChanges(repoPath);
+    const changed = dirty || (headBefore && headNow && headBefore !== headNow);
+    if (!changed) return;
+
+    appendJobProgress(job.id, "status", `Verify: ${command}`);
+    let check = await runVerifyCommand(repoPath, command, {
+      timeoutSec: config.VERIFY_TIMEOUT_SEC,
+    });
+    if (check.ok) {
+      appendJobProgress(job.id, "status", "Verify PASS");
+      return;
+    }
+
+    this.assertNotKilled(job);
+    appendJobProgress(
+      job.id,
+      "status",
+      "Verify FAIL — agent tự sửa (1 vòng self-heal)",
+    );
+    logger.warn("Verify failed — starting self-heal round", {
+      jobId: job.id,
+      command,
+      exitCode: check.exitCode,
+    });
+
+    const fixMessage = [
+      `The verification command failed after your changes. Fix the errors, then stop.`,
+      ``,
+      `Command: ${command}`,
+      `Exit code: ${check.exitCode ?? "timeout"}`,
+      ``,
+      `Output (tail):`,
+      "```",
+      check.output.slice(-4000),
+      "```",
+      ``,
+      `Rules: only fix what the errors point to — no refactors, no new features.`,
+      `Reply with the <<<DONE>>> block when fixed.`,
+    ].join("\n");
+
+    try {
+      const fix = await this.runAgentWithRetry(job, () =>
+        continueAgentWindow(job.issue, fixMessage, { jobId: job.id }),
+      );
+      job.agentId = fix.agentId;
+      applyTokenUsageToJob(job, fix.usage);
+      await saveJob(job);
+    } catch (err) {
+      logger.warn("Self-heal agent round failed", {
+        jobId: job.id,
+        err: err instanceof Error ? err.message : String(err),
+      });
+    }
+
+    check = await runVerifyCommand(repoPath, command, {
+      timeoutSec: config.VERIFY_TIMEOUT_SEC,
+    });
+    if (check.ok) {
+      appendJobProgress(job.id, "status", "Verify PASS (sau self-heal)");
+      await this.notifyJobChat(
+        job,
+        `✅ Verify \`${command}\` PASS sau 1 vòng agent tự sửa.`,
+      );
+      return;
+    }
+
+    appendJobProgress(job.id, "status", "Verify vẫn FAIL — cần review tay");
+    await this.notifyJobChat(
+      job,
+      `⚠️ Verify \`${command}\` vẫn FAIL sau 1 vòng self-heal (exit ${check.exitCode ?? "timeout"}).\n\n\`\`\`\n${check.output.slice(-1500)}\n\`\`\`\n\nCommit vẫn được tạo — review kỹ trước khi handoff.`,
+    );
+  }
+
   /** Surface Run / chat problems in the Agent console so the user always sees them. */
   private async notifyJobChat(
     job: Pick<JobRecord, "id" | "issue">,
@@ -1026,78 +1253,90 @@ export class JobQueue {
     }
   }
 
+  /**
+   * Start one worker per lane (workspace project) that has queued items.
+   * Different projects run in parallel; a project's jobs stay serial.
+   */
   private async pump() {
-    if (this.running) {
-      logger.debug("pump skip — already running", {
-        queueLength: this.queue.length,
-        currentJobId: this.currentJobId,
-        queuedIds: this.queue.map((q) => q.job.id),
-      });
-      return;
+    const lanes = new Set(this.queue.map((q) => this.laneKeyFor(q.job)));
+    for (const lane of lanes) {
+      if (this.runningLanes.has(lane)) continue;
+      this.runningLanes.add(lane);
+      void this.pumpLane(lane)
+        .catch((err) => {
+          logger.error("pump lane crashed (unexpected)", {
+            lane,
+            err: err instanceof Error ? err.message : String(err),
+          });
+        })
+        .finally(() => {
+          this.runningLanes.delete(lane);
+          this.publishStatus();
+          // Race: an item for this lane may have arrived while unwinding
+          if (this.queue.some((q) => this.laneKeyFor(q.job) === lane)) {
+            logger.warn("pump re-kick — jobs arrived during lane shutdown", {
+              lane,
+            });
+            void this.pump();
+          }
+        });
     }
-    this.running = true;
-    logger.info("pump start", {
+  }
+
+  private async pumpLane(lane: string) {
+    logger.info("pump lane start", {
+      lane,
       queueLength: this.queue.length,
       queuedIds: this.queue.map((q) => q.job.id),
     });
-    try {
-      while (this.queue.length > 0) {
-        const item = this.queue.shift()!;
-        logger.info("pump dequeue", {
-          jobId: item.job.id,
-          iid: item.job.issue.issueIid,
-          remaining: this.queue.length,
-          forceCodePhase: Boolean(item.forceCodePhase),
-          followUp: Boolean(item.followUpMessage),
-          askOnly: Boolean(item.askOnlyMessage),
-          source: item.source,
-        });
-        try {
-          if (item.followUpMessage) {
-            await this.executeFollowUpChat(item.job, item.followUpMessage, {
-              restoreStatus: item.followUpRestoreStatus,
-            });
-          } else if (item.askOnlyMessage) {
-            await this.executeAskOnlyChat(item.job, item.askOnlyMessage, {
-              restoreStatus: item.followUpRestoreStatus,
-            });
-          } else {
-            await this.runJob(item.job, { forceCodePhase: item.forceCodePhase });
-          }
-          logger.info("pump job finished", {
-            jobId: item.job.id,
-            status: item.job.status,
-            remaining: this.queue.length,
-          });
-        } catch (err) {
-          // runJob/executeJob should catch; this is a last resort so the pump continues
-          logger.error("pump job threw (unexpected)", {
-            jobId: item.job.id,
-            err: err instanceof Error ? err.message : String(err),
-            remaining: this.queue.length,
-          });
-          const key = `${item.job.issue.projectId}:${item.job.issue.issueIid}`;
-          this.activeIssueKeys.delete(key);
-          if (this.currentJobId === item.job.id) this.currentJobId = null;
-        }
-      }
-    } finally {
-      this.running = false;
-      const leftover = this.queue.length;
-      logger.info("pump idle", {
-        leftover,
-        queuedIds: this.queue.map((q) => q.job.id),
+    while (true) {
+      const idx = this.queue.findIndex(
+        (q) => this.laneKeyFor(q.job) === lane,
+      );
+      if (idx < 0) break;
+      const [item] = this.queue.splice(idx, 1);
+      logger.info("pump dequeue", {
+        lane,
+        jobId: item.job.id,
+        iid: item.job.issue.issueIid,
+        remaining: this.queue.length,
+        forceCodePhase: Boolean(item.forceCodePhase),
+        followUp: Boolean(item.followUpMessage),
+        askOnly: Boolean(item.askOnlyMessage),
+        source: item.source,
       });
-      // Race: a job may have been enqueued while we were exiting (void pump
-      // saw running=true and returned). Re-kick if anything remains.
-      if (leftover > 0) {
-        logger.warn("pump re-kick — jobs arrived during shutdown", {
-          leftover,
-          queuedIds: this.queue.map((q) => q.job.id),
+      try {
+        if (item.followUpMessage) {
+          await this.executeFollowUpChat(item.job, item.followUpMessage, {
+            restoreStatus: item.followUpRestoreStatus,
+          });
+        } else if (item.askOnlyMessage) {
+          await this.executeAskOnlyChat(item.job, item.askOnlyMessage, {
+            restoreStatus: item.followUpRestoreStatus,
+          });
+        } else {
+          await this.runJob(item.job, { forceCodePhase: item.forceCodePhase });
+        }
+        logger.info("pump job finished", {
+          lane,
+          jobId: item.job.id,
+          status: item.job.status,
+          remaining: this.queue.length,
         });
-        void this.pump();
+      } catch (err) {
+        // runJob/executeJob should catch; this is a last resort so the pump continues
+        logger.error("pump job threw (unexpected)", {
+          lane,
+          jobId: item.job.id,
+          err: err instanceof Error ? err.message : String(err),
+          remaining: this.queue.length,
+        });
+        const key = `${item.job.issue.projectId}:${item.job.issue.issueIid}`;
+        this.activeIssueKeys.delete(key);
+        this.clearCurrent(item.job.id);
       }
     }
+    logger.info("pump lane idle", { lane });
   }
 
   private async deliverAgentGitlabComments(
@@ -1328,7 +1567,7 @@ export class JobQueue {
   ) {
     const config = getConfig();
     const key = `${job.issue.projectId}:${job.issue.issueIid}`;
-    this.currentJobId = job.id;
+    this.setCurrent(job);
     this.publishStatus();
 
     const rt = getRuntimeContext();
@@ -1357,7 +1596,25 @@ export class JobQueue {
         "Run dừng: chưa có repo path trong workspace.\nVào Settings → Project để gắn PAT / Confirm clone.",
       );
       this.activeIssueKeys.delete(key);
-      this.currentJobId = null;
+      this.clearCurrent(job.id);
+      this.publishStatus();
+      return;
+    }
+
+    // Token budget gate — never start another agent round past the cap
+    const budgetError = this.tokenBudgetError(job);
+    if (budgetError) {
+      logger.warn("executeJob abort — token budget exceeded", {
+        jobId: job.id,
+        totalTokens: job.tokenUsage?.totalTokens,
+      });
+      job.status = "draft";
+      job.error = budgetError;
+      await saveJob(job);
+      await this.notifyJobChat(job, `⛔ ${budgetError}`);
+      appendJobProgress(job.id, "status", "Token budget vượt hạn mức — dừng");
+      this.activeIssueKeys.delete(key);
+      this.clearCurrent(job.id);
       this.publishStatus();
       return;
     }
@@ -1437,7 +1694,7 @@ export class JobQueue {
         });
       }
       this.activeIssueKeys.delete(key);
-      this.currentJobId = null;
+      this.clearCurrent(job.id);
       this.publishStatus();
       return;
     }
@@ -1473,7 +1730,7 @@ export class JobQueue {
             body: `⛔ Project context chưa sẵn sàng:\n${job.error}\n\nVào Settings → Project để gắn PAT và Confirm clone.`,
           });
           this.activeIssueKeys.delete(key);
-          this.currentJobId = null;
+          this.clearCurrent(job.id);
           this.publishStatus();
           return;
         }
@@ -1526,26 +1783,28 @@ export class JobQueue {
         branch: job.branch,
       });
 
-      let result = await runNewAgent(job.issue, undefined, {
-        jobId: job.id,
-        devNotes: notes || undefined,
-        chatContext: chatContext || undefined,
-        contextQualityBlock,
-        existingAgentId: job.agentId,
-        clarifyRoundsLeft: Math.max(
-          0,
-          config.MAX_CLARIFY_ROUNDS - (job.clarifyRound ?? 0),
-        ),
-        phase: runDocsPhase ? "docs" : "code",
-        approvedDocsPaths:
-          !runDocsPhase && job.docsApprovedAt
-            ? job.docsPaths?.length
-              ? job.docsPaths
-              : job.docsPath
-                ? [job.docsPath]
-                : undefined
-            : undefined,
-      });
+      let result = await this.runAgentWithRetry(job, () =>
+        runNewAgent(job.issue, undefined, {
+          jobId: job.id,
+          devNotes: notes || undefined,
+          chatContext: chatContext || undefined,
+          contextQualityBlock,
+          existingAgentId: job.agentId,
+          clarifyRoundsLeft: Math.max(
+            0,
+            config.MAX_CLARIFY_ROUNDS - (job.clarifyRound ?? 0),
+          ),
+          phase: runDocsPhase ? "docs" : "code",
+          approvedDocsPaths:
+            !runDocsPhase && job.docsApprovedAt
+              ? job.docsPaths?.length
+                ? job.docsPaths
+                : job.docsPath
+                  ? [job.docsPath]
+                  : undefined
+              : undefined,
+        }),
+      );
       logger.info("executeJob agent returned", {
         jobId: job.id,
         kind: result.kind,
@@ -1636,6 +1895,9 @@ export class JobQueue {
           });
         }
       }
+
+      // Verify + one self-heal round BEFORE committing (code phase only)
+      await this.verifyAndSelfHeal(job, repoPath, headBefore);
 
       const { commitSha, hasChange } = await this.finalizeGitlabCommit(
         job,
@@ -1734,8 +1996,8 @@ export class JobQueue {
       logger.error("Job failed", { jobId: job.id, message });
     } finally {
       this.activeIssueKeys.delete(key);
-      if (this.currentJobId === job.id) {
-        this.currentJobId = null;
+      if (this.isCurrent(job.id)) {
+        this.clearCurrent(job.id);
         this.publishStatus();
       }
       this.killedJobs.delete(job.id);

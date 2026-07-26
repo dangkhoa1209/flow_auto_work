@@ -71,12 +71,14 @@ onMounted(async () => {
     onStatus: (ev) => {
       work.applyStatusSnapshot({
         currentJobId: ev.currentJobId,
+        currentJobIds: ev.currentJobIds,
         queueLength: ev.queueLength,
       });
     },
     onProgress: (ev) => work.applyRealtimeProgress(ev),
     onJobs: () => work.scheduleLoadJobs(),
     onJob: (ev) => work.applyRealtimeJob(ev),
+    onChat: (ev) => work.applyRealtimeChat(ev),
   });
 });
 

@@ -4,6 +4,8 @@ import { getAccessToken, loadPersistedAuth } from "@/api/tokenStorage";
 export type RealtimeStatus = {
   type: "status";
   currentJobId: string | null;
+  /** All running jobs (parallel lanes per project) */
+  currentJobIds?: string[];
   queueLength: number;
   running: boolean;
 };
@@ -27,11 +29,28 @@ export type RealtimeJob = {
   status?: string;
 };
 
+export type RealtimeChatMessage = {
+  id?: string;
+  jobId?: string;
+  issueIid: number;
+  role: "user" | "agent" | "system";
+  kind: "clarify" | "qa" | "note";
+  body: string;
+  createdAt: string;
+};
+
+export type RealtimeChat = {
+  type: "chat";
+  jobId: string;
+  message?: RealtimeChatMessage;
+};
+
 type Handlers = {
   onStatus?: (ev: RealtimeStatus) => void;
   onProgress?: (ev: RealtimeProgress) => void;
   onJobs?: (ev: RealtimeJobs) => void;
   onJob?: (ev: RealtimeJob) => void;
+  onChat?: (ev: RealtimeChat) => void;
   onOpen?: () => void;
   onError?: () => void;
 };
@@ -85,6 +104,15 @@ export function connectRealtime(handlers: Handlers): () => void {
     try {
       const data = JSON.parse((e as MessageEvent).data) as RealtimeJob;
       handlers.onJob?.(data);
+    } catch {
+      /* ignore */
+    }
+  });
+
+  es.addEventListener("chat", (e) => {
+    try {
+      const data = JSON.parse((e as MessageEvent).data) as RealtimeChat;
+      handlers.onChat?.(data);
     } catch {
       /* ignore */
     }

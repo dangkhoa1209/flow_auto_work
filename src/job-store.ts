@@ -304,11 +304,11 @@ export function issueKey(projectId: number, issueIid: number): string {
   return `${projectId}:${issueIid}`;
 }
 
-/** Mark interrupted jobs failed after process restart (safe default). */
+/** Mark interrupted RUNNING jobs failed after restart (queued jobs are re-queued by JobQueue.restoreQueuedJobs). */
 export async function failInterruptedJobs(): Promise<void> {
   const jobs = await listJobs();
   for (const job of jobs) {
-    if (isJobBusy(job.status)) {
+    if (job.status === "running") {
       job.status = "failed";
       job.error =
         job.error ??

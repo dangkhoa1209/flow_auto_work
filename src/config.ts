@@ -24,14 +24,17 @@ const envSchema = z.object({
   MR_TARGET_BRANCH: z.string().optional(),
   MR_REVIEWER_USERNAMES: z.string().optional(),
   SKIP_LABELS: z.string().default("auto-work:skip,wip-human"),
-  TEAMS_TENANT_ID: z.string().optional(),
-  TEAMS_CLIENT_ID: z.string().optional(),
-  TEAMS_CLIENT_SECRET: z.string().optional(),
-  TEAMS_CHAT_ID: z.string().optional(),
-  TEAMS_USER_ID: z.string().optional(),
+  /** Minutes before a pending diff-approval waiter times out */
   TEAMS_CLARIFY_TIMEOUT_MIN: z.coerce.number().default(60),
-  TEAMS_POLL_INTERVAL_SEC: z.coerce.number().default(20),
   MAX_CLARIFY_ROUNDS: z.coerce.number().default(3),
+  /** Total token budget per job (0 = unlimited). Blocks further agent calls when exceeded. */
+  JOB_TOKEN_BUDGET: z.coerce.number().default(0),
+  /** Shell command to verify repo after code phase (e.g. "npm run typecheck"). Empty = skip. */
+  VERIFY_COMMAND: z.string().optional(),
+  /** Verify command timeout in seconds */
+  VERIFY_TIMEOUT_SEC: z.coerce.number().default(300),
+  /** Auto-retry count for transient Cursor transport errors per agent call */
+  AGENT_TRANSIENT_RETRIES: z.coerce.number().default(2),
   STARTUP_SCAN: z
     .string()
     .optional()
@@ -69,7 +72,6 @@ export type AppConfig = z.infer<typeof envSchema> & {
   mrReviewerUsernames: string[];
   onCompleteAssignUsernames: string[];
   onCompleteLabels: string[];
-  teamsEnabled: boolean;
   STARTUP_SCAN: boolean;
   STARTUP_SCAN_INCLUDE_SUCCEEDED: boolean;
   isProd: boolean;
@@ -92,12 +94,6 @@ export function getConfig(): AppConfig {
   }
 
   const env = parsed.data;
-  const teamsEnabled = Boolean(
-    env.TEAMS_TENANT_ID &&
-      env.TEAMS_CLIENT_ID &&
-      env.TEAMS_CLIENT_SECRET &&
-      (env.TEAMS_CHAT_ID || env.TEAMS_USER_ID),
-  );
 
   const isProd =
     (env.NODE_ENV || process.env.NODE_ENV || "").toLowerCase() === "production";
@@ -131,7 +127,6 @@ export function getConfig(): AppConfig {
       .split(",")
       .map((s) => s.trim())
       .filter(Boolean),
-    teamsEnabled,
     isProd,
     corsOrigins: resolvedCors,
     rateLimitWindowMs: env.RATE_LIMIT_WINDOW_MS ?? 15 * 60 * 1000,

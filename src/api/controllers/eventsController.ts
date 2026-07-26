@@ -16,6 +16,7 @@ export const eventsController = {
     client.send("status", {
       type: "status",
       currentJobId: snap.currentJobId,
+      currentJobIds: snap.currentJobIds,
       queueLength: snap.queued,
       running: snap.running,
     });

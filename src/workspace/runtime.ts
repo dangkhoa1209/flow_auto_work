@@ -19,6 +19,8 @@ export type RuntimeContext = {
   baseBranch?: string;
   /** Fixed work branch; empty → auto feat/<iid>/slug per task */
   workBranch?: string;
+  /** Per-project verify command (typecheck/lint/build) — overrides VERIFY_COMMAND env */
+  verifyCommand?: string;
 };
 
 const als = new AsyncLocalStorage<RuntimeContext>();

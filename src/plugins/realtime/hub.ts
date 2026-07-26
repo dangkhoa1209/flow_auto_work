@@ -10,10 +10,22 @@ export type ProgressLineEvent = {
   text: string;
 };
 
+export type ChatMessageEvent = {
+  id?: string;
+  jobId?: string;
+  issueIid: number;
+  role: "user" | "agent" | "system";
+  kind: "clarify" | "qa" | "note";
+  body: string;
+  createdAt: string;
+};
+
 export type RealtimeEvent =
   | {
       type: "status";
       currentJobId: string | null;
+      /** All lanes currently executing (parallel per project) */
+      currentJobIds?: string[];
       queueLength: number;
       running: boolean;
     }
@@ -36,6 +48,7 @@ export type RealtimeEvent =
   | {
       type: "chat";
       jobId: string;
+      message?: ChatMessageEvent;
     };
 
 type Listener = (event: RealtimeEvent) => void;

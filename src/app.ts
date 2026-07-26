@@ -6,7 +6,6 @@ import { createApiRouter } from "./api/routes/index.js";
 import { eventsController } from "./api/controllers/eventsController.js";
 import { globalErrorHandler } from "./api/middleware/errorHandler.js";
 import { applyGlobalMiddleware } from "./api/middleware/security.js";
-import { getConfig } from "./config.js";
 
 /**
  * Express application factory (transport layer only).
@@ -22,7 +21,6 @@ export async function createApp(): Promise<Express> {
   app.get("/health", (_req, res) => {
     res.json({
       ok: true,
-      teamsEnabled: getConfig().teamsEnabled,
       ui: "/",
       transport: "express",
     });

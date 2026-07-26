@@ -74,6 +74,10 @@ export async function getDailyStats(daysRaw?: number) {
     succeeded: number;
     failed: number;
     runningLike: number;
+    /** Sum of job tokenUsage attributed to this day */
+    tokensTotal: number;
+    tokensInput: number;
+    tokensOutput: number;
     items: DayItem[];
   };
   const byDay = new Map<string, DayBucket>();
@@ -87,6 +91,9 @@ export async function getDailyStats(daysRaw?: number) {
         succeeded: 0,
         failed: 0,
         runningLike: 0,
+        tokensTotal: 0,
+        tokensInput: 0,
+        tokensOutput: 0,
         items: [],
       };
       byDay.set(d, b);
@@ -98,6 +105,17 @@ export async function getDailyStats(daysRaw?: number) {
   windowStart.setTime(windowStart.getTime() - (days - 1) * 86400000);
   const windowStartKey = dayKey(windowStart.toISOString())!;
 
+  // Token usage per project (whole window — tokenUsage is cumulative per job)
+  type ProjectTokens = {
+    workspaceProjectId: string;
+    jobs: number;
+    inputTokens: number;
+    outputTokens: number;
+    totalTokens: number;
+  };
+  const tokensByProject = new Map<string, ProjectTokens>();
+  const tokensTotal = { inputTokens: 0, outputTokens: 0, totalTokens: 0, jobs: 0 };
+
   for (const job of jobs) {
     const at =
       job.completedAt || job.handedOffAt || job.updatedAt || job.createdAt;
@@ -105,6 +123,33 @@ export async function getDailyStats(daysRaw?: number) {
     if (!key || key < windowStartKey) continue;
 
     const bucket = ensure(key);
+
+    const usage = job.tokenUsage;
+    if (usage?.totalTokens) {
+      bucket.tokensTotal += usage.totalTokens;
+      bucket.tokensInput += usage.inputTokens ?? 0;
+      bucket.tokensOutput += usage.outputTokens ?? 0;
+      tokensTotal.totalTokens += usage.totalTokens;
+      tokensTotal.inputTokens += usage.inputTokens ?? 0;
+      tokensTotal.outputTokens += usage.outputTokens ?? 0;
+      tokensTotal.jobs += 1;
+      const pid = job.workspaceProjectId || "(no project)";
+      let p = tokensByProject.get(pid);
+      if (!p) {
+        p = {
+          workspaceProjectId: pid,
+          jobs: 0,
+          inputTokens: 0,
+          outputTokens: 0,
+          totalTokens: 0,
+        };
+        tokensByProject.set(pid, p);
+      }
+      p.jobs += 1;
+      p.inputTokens += usage.inputTokens ?? 0;
+      p.outputTokens += usage.outputTokens ?? 0;
+      p.totalTokens += usage.totalTokens;
+    }
     if (job.status === "awaiting_handoff") bucket.awaitingHandoff += 1;
     else if (job.status === "succeeded") bucket.succeeded += 1;
     else if (job.status === "failed") bucket.failed += 1;
@@ -135,7 +180,7 @@ export async function getDailyStats(daysRaw?: number) {
   }
 
   const daily = [...byDay.values()]
-    .filter((b) => b.items.length > 0)
+    .filter((b) => b.items.length > 0 || b.tokensTotal > 0)
     .map((b) => {
       b.items.sort((a, c) => (a.at < c.at ? 1 : -1));
       return b;
@@ -227,5 +272,11 @@ export async function getDailyStats(daysRaw?: number) {
     })),
     daily,
     months,
+    tokens: {
+      ...tokensTotal,
+      byProject: [...tokensByProject.values()].sort(
+        (a, b) => b.totalTokens - a.totalTokens,
+      ),
+    },
   };
 }
