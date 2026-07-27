@@ -117,6 +117,19 @@ export const useWorkStore = defineStore("work", () => {
   const loading = ref(false);
   const jobLoading = ref(false);
   const statusText = ref("");
+  const runningJobIds = ref<string[]>([]);
+  const queueLength = ref(0);
+  const killAllBusy = ref(false);
+
+  const activeJobCount = computed(() => {
+    const busyInList = jobs.value.filter((j) =>
+      ["queued", "running"].includes(j.status || ""),
+    ).length;
+    const fromStatus = runningJobIds.value.length + queueLength.value;
+    return Math.max(busyInList, fromStatus);
+  });
+
+  const canKillAll = computed(() => activeJobCount.value >= 1);
 
   const selectedJob = computed(
     () => jobs.value.find((j) => j.id === selectedJobId.value) || currentJob.value,
@@ -169,13 +182,16 @@ export const useWorkStore = defineStore("work", () => {
     const s = await api<{
       queueLength?: number;
       currentJobId?: string | null;
+      currentJobIds?: string[];
       queue?: {
         queued?: number;
         currentJobId?: string | null;
+        currentJobIds?: string[];
       };
     }>("/api/status");
     applyStatusSnapshot({
       currentJobId: s.currentJobId ?? s.queue?.currentJobId ?? null,
+      currentJobIds: s.currentJobIds ?? s.queue?.currentJobIds,
       queueLength: s.queueLength ?? s.queue?.queued ?? 0,
     });
   }
@@ -190,6 +206,8 @@ export const useWorkStore = defineStore("work", () => {
       : s.currentJobId
         ? [s.currentJobId]
         : [];
+    runningJobIds.value = runningIds;
+    queueLength.value = s.queueLength ?? 0;
     statusText.value =
       runningIds.length > 1
         ? `Running ${runningIds.length} jobs`
@@ -640,10 +658,23 @@ export const useWorkStore = defineStore("work", () => {
   async function killJob(jobId: string) {
     await jobApi.kill(jobId);
     agentTyping.value = false;
-    // Force Idle in header even if SSE is delayed / kill was for stuck run
-    applyStatusSnapshot({ currentJobId: null, queueLength: 0 });
+    applyStatusSnapshot({ currentJobId: null, currentJobIds: [], queueLength: 0 });
     await loadJobs();
     await loadStatus().catch(() => undefined);
+  }
+
+  async function killAllJobs() {
+    killAllBusy.value = true;
+    try {
+      const res = await jobApi.killAll();
+      agentTyping.value = false;
+      applyStatusSnapshot({ currentJobId: null, currentJobIds: [], queueLength: 0 });
+      await loadJobs();
+      await loadStatus().catch(() => undefined);
+      return res;
+    } finally {
+      killAllBusy.value = false;
+    }
   }
 
   /** PM approves docs-first phase → enqueue code. */
@@ -771,6 +802,11 @@ export const useWorkStore = defineStore("work", () => {
     loading,
     jobLoading,
     statusText,
+    runningJobIds,
+    queueLength,
+    activeJobCount,
+    canKillAll,
+    killAllBusy,
     loadTasks,
     loadJobs,
     loadMeta,
@@ -793,6 +829,7 @@ export const useWorkStore = defineStore("work", () => {
     sendContinue,
     sendAsk,
     killJob,
+    killAllJobs,
     approveDocs,
     resetAgentWindow,
     setJobStatus,

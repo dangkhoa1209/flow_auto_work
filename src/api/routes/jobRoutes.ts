@@ -18,6 +18,7 @@ export function createJobRoutes(): Router {
   router.post("/start", jobController.start);
   router.post("/ensure", jobController.ensure);
   router.post("/adhoc", jobController.adhoc);
+  router.post("/kill-all", jobController.killAll);
   router.get("/by-issue/:iid", jobController.byIssue);
 
   // —— Single job: sub-resources before the bare `/:id` ——

@@ -41,6 +41,19 @@ export const jobApi = {
     });
   },
 
+  killAll(reason?: string) {
+    return request<{
+      ok: boolean;
+      killed: number;
+      attempted: number;
+      jobIds: string[];
+    }>({
+      url: API.jobs.killAll,
+      method: "POST",
+      data: reason ? { reason } : {},
+    });
+  },
+
   approveDocs(id: string) {
     return request<{ ok: boolean; job?: unknown }>({
       url: API.jobs.approveDocs(id),

@@ -585,6 +585,19 @@ export function useWorkbench() {
     }
   }
 
+  async function killAllJobs() {
+    try {
+      const res = await work.killAllJobs();
+      message.success(
+        res.killed > 0
+          ? `Stopped ${res.killed} job${res.killed === 1 ? "" : "s"}`
+          : "No active jobs to stop",
+      );
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : String(e));
+    }
+  }
+
   async function resetAgentWindow() {
     if (!selectedJobId.value) return;
     busy.value = true;
@@ -932,6 +945,8 @@ export function useWorkbench() {
     detailTitle,
     detailMeta,
     canForceStop,
+    canKillAll: computed(() => work.canKillAll),
+    killAllBusy: computed(() => work.killAllBusy),
     agentWindowShort,
     canResetWindow,
     awaitingDocsApproval,
@@ -954,6 +969,7 @@ export function useWorkbench() {
     runAll,
     sendChat,
     forceStop,
+    killAllJobs,
     resetAgentWindow,
     approveDocs,
     quickMerge,

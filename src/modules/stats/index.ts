@@ -1,9 +1,15 @@
 import { listJobDocs } from "../../db/mongo.js";
+import { getRuntimeContext } from "../../workspace/runtime.js";
 
 /** Todolist / stats: only days with tasks, nested month → week → day (Asia/Ho_Chi_Minh). */
 export async function getDailyStats(daysRaw?: number) {
   const days = Math.min(365, Math.max(1, Number(daysRaw ?? 90)));
-  const jobs = await listJobDocs({ limit: 500 });
+  const rt = getRuntimeContext();
+  const jobs = await listJobDocs({
+    limit: 500,
+    workspaceProjectId: rt?.projectId,
+    ownerUsername: rt?.gitlabUsername,
+  });
   const tz = "Asia/Ho_Chi_Minh";
   const dayKey = (iso?: string) => {
     if (!iso) return null;

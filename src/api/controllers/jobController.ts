@@ -22,6 +22,7 @@ import {
   getJobProgressForUi,
   getLinkedIssueContext,
   killJob,
+  killAllJobs,
   listJobsForUi,
   mergeJobBranch,
   readJobFile,
@@ -183,6 +184,12 @@ export const jobController = {
     const singleCommit =
       queryString(req.query.commit) ?? queryString(req.query.sha);
     res.json(await getJobDiff(jobId(req), singleCommit));
+  }),
+
+  /** POST /api/jobs/kill-all */
+  killAll: asyncHandler(async (_req: Request, res: Response) => {
+    const { reason } = body<{ reason?: string }>(_req);
+    res.json(await killAllJobs(reason));
   }),
 
   /** POST /api/jobs/:id/kill */

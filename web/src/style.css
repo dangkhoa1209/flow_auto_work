@@ -882,6 +882,15 @@ code {
   filter: brightness(1.05);
   color: #04150e;
 }
+.faw-btn--danger {
+  border-color: #5c2a2a;
+  background: #2a1518;
+  color: #f87171;
+}
+.faw-btn--danger:hover:not(:disabled) {
+  border-color: #7f3a3a;
+  color: #fca5a5;
+}
 
 .faw-list-scroll {
   overflow-y: auto;

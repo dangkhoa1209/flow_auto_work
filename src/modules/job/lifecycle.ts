@@ -27,6 +27,7 @@ import {
 } from "../../job-store.js";
 import { logger } from "../../logger.js";
 import { jobQueue } from "../../queue.js";
+import { getRuntimeContext } from "../../workspace/runtime.js";
 import { isAwaitingDiffApproval } from "../../plugins/review/diff-wait.js";
 import {
   isAdhocJob,
@@ -343,6 +344,16 @@ export async function getJobProgressForUi(jobId: string, after: number) {
 
 export async function killJob(jobId: string, reason?: string) {
   return jobQueue.killJob(jobId, reason?.trim() || "Force-stopped from UI");
+}
+
+/** Stop every queued/running job in the current workspace project. */
+export async function killAllJobs(reason?: string) {
+  const rt = getRuntimeContext();
+  return jobQueue.killAllJobs({
+    workspaceProjectId: rt?.projectId,
+    ownerUsername: rt?.gitlabUsername,
+    reason: reason?.trim() || "Kill all from UI",
+  });
 }
 
 /** Drop Cursor agent window; next Run/chat creates a fresh one. */

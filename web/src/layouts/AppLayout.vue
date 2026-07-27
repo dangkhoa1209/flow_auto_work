@@ -105,6 +105,19 @@ async function onSwitchProject(projectId: string) {
 function goManageProjects() {
   router.push("/settings/project");
 }
+
+async function onKillAll() {
+  try {
+    const res = await work.killAllJobs();
+    message.success(
+      res.killed > 0
+        ? `Stopped ${res.killed} job${res.killed === 1 ? "" : "s"}`
+        : "No active jobs to stop",
+    );
+  } catch (e) {
+    message.error(e instanceof Error ? e.message : String(e));
+  }
+}
 </script>
 
 <template>
@@ -168,6 +181,23 @@ function goManageProjects() {
           <span class="faw-idle__dot" :class="idleDot" />
           {{ work.statusText || "Idle" }}
         </span>
+        <a-popconfirm
+          v-if="work.canKillAll"
+          title="Stop all running and queued jobs?"
+          ok-text="Kill all"
+          cancel-text="Cancel"
+          ok-type="danger"
+          @confirm="onKillAll"
+        >
+          <button
+            type="button"
+            class="faw-btn faw-btn--danger"
+            :disabled="work.killAllBusy"
+            title="Force stop all active jobs"
+          >
+            {{ work.killAllBusy ? "Stopping…" : "Kill all" }}
+          </button>
+        </a-popconfirm>
         <div class="faw-user-chip">
           <span class="faw-avatar" />
           @{{ session.session.username }}

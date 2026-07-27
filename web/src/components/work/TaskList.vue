@@ -36,6 +36,8 @@ const props = defineProps<{
   jobStatusBusy: string | null;
   runBlockedReason: string | null;
   contextIsBad: boolean;
+  canKillAll?: boolean;
+  killAllBusy?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -52,6 +54,7 @@ const emit = defineEmits<{
   toggleIid: [iid: number, checked: boolean];
   statusChange: [jobId: string, status: string];
   deleteJob: [jobId: string];
+  killAll: [];
 }>();
 
 const rootEl = ref<HTMLElement | null>(null);
@@ -338,6 +341,23 @@ watch(
         >
           Run all
         </button>
+        <a-popconfirm
+          v-if="canKillAll"
+          title="Stop all running and queued jobs?"
+          ok-text="Kill all"
+          cancel-text="Cancel"
+          ok-type="danger"
+          @confirm="emit('killAll')"
+        >
+          <button
+            type="button"
+            class="faw-btn faw-btn--danger"
+            :disabled="killAllBusy || busy"
+            title="Force stop all active jobs"
+          >
+            {{ killAllBusy ? "Stopping…" : "Kill all" }}
+          </button>
+        </a-popconfirm>
       </div>
     </div>
 

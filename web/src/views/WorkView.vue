@@ -80,6 +80,8 @@ function onPaneResize(event: { panes: Array<{ size: number }> }) {
               :job-status-busy="wb.jobStatusBusy"
               :run-blocked-reason="wb.runBlockedReason"
               :context-is-bad="wb.contextIsBad"
+              :can-kill-all="wb.canKillAll"
+              :kill-all-busy="wb.killAllBusy"
               @update:milestone-filter="wb.milestoneFilter = $event"
               @update:open-iid-draft="wb.openIidDraft = $event"
               @refresh="wb.refreshTasks"
@@ -92,6 +94,7 @@ function onPaneResize(event: { panes: Array<{ size: number }> }) {
               @toggle-iid="wb.toggleTaskIid"
               @status-change="wb.onJobStatusChange"
               @delete-job="wb.onDeleteJob"
+              @kill-all="wb.killAllJobs"
             />
           </div>
         </Pane>
@@ -192,6 +195,8 @@ function onPaneResize(event: { panes: Array<{ size: number }> }) {
         :job-status-busy="wb.jobStatusBusy"
         :run-blocked-reason="wb.runBlockedReason"
         :context-is-bad="wb.contextIsBad"
+        :can-kill-all="wb.canKillAll"
+        :kill-all-busy="wb.killAllBusy"
         @update:milestone-filter="wb.milestoneFilter = $event"
         @update:open-iid-draft="wb.openIidDraft = $event"
         @refresh="wb.refreshTasks"
@@ -204,6 +209,7 @@ function onPaneResize(event: { panes: Array<{ size: number }> }) {
         @toggle-iid="wb.toggleTaskIid"
         @status-change="wb.onJobStatusChange"
         @delete-job="wb.onDeleteJob"
+        @kill-all="wb.killAllJobs"
       />
 
       <div

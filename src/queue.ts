@@ -1014,6 +1014,68 @@ export class JobQueue {
   }
 
   /**
+   * Force-stop all queued + running jobs (optionally scoped to workspace project).
+   * Also picks up DB rows still marked queued/running (stuck after crash/hang).
+   */
+  async killAllJobs(opts?: {
+    workspaceProjectId?: string;
+    ownerUsername?: string;
+    reason?: string;
+  }): Promise<{
+    ok: boolean;
+    killed: number;
+    attempted: number;
+    jobIds: string[];
+    results: Array<{ jobId: string; ok: boolean; phase?: string }>;
+  }> {
+    const reason = opts?.reason?.trim() || "Kill all from UI";
+    const projectId = opts?.workspaceProjectId?.trim();
+    const owner = opts?.ownerUsername?.trim();
+
+    const inScope = (job: Pick<JobRecord, "workspaceProjectId" | "ownerUsername">) => {
+      if (projectId && job.workspaceProjectId !== projectId) return false;
+      if (owner && job.ownerUsername && job.ownerUsername !== owner) return false;
+      return true;
+    };
+
+    const ids = new Set<string>();
+
+    for (const item of this.queue) {
+      if (inScope(item.job)) ids.add(item.job.id);
+    }
+    for (const jobId of this.currentJobIds) {
+      const doc = await loadJob(jobId);
+      if (!doc || inScope(doc)) ids.add(jobId);
+    }
+
+    const { listJobDocs } = await import("./db/mongo.js");
+    const docs = await listJobDocs({
+      workspaceProjectId: projectId,
+      ownerUsername: owner,
+      limit: 200,
+    });
+    for (const doc of docs) {
+      if (!isJobBusy(doc.status)) continue;
+      if (inScope(doc)) ids.add(doc.id);
+    }
+
+    const results: Array<{ jobId: string; ok: boolean; phase?: string }> = [];
+    for (const jobId of ids) {
+      const r = await this.killJob(jobId, reason);
+      results.push({ jobId, ok: r.ok, phase: r.phase });
+    }
+
+    this.publishStatus("kill-all");
+    return {
+      ok: true,
+      killed: results.filter((r) => r.ok).length,
+      attempted: results.length,
+      jobIds: [...ids],
+      results,
+    };
+  }
+
+  /**
    * Drop Cursor agent window for this job.
    * Stops any active run first, clears `agentId` so next Run / chat / Q&A
    * opens a fresh window (prior Mongo chat still injected into prompt).
