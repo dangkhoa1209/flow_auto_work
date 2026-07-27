@@ -64,7 +64,7 @@ async function confirmHandoff() {
     });
     message.success("Handoff OK");
     selectedId.value = null;
-    await work.loadJobs();
+    await Promise.all([work.loadJobs(), work.loadTasks()]);
   } catch (e) {
     message.error(e instanceof Error ? e.message : String(e));
   } finally {

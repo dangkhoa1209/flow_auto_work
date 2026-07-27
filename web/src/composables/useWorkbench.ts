@@ -766,7 +766,7 @@ export function useWorkbench() {
         }),
       });
       message.success("Handoff OK");
-      await work.loadJobs();
+      await Promise.all([work.loadJobs(), work.loadTasks()]);
       if (selectedJobId.value) {
         try {
           await work.selectJob(selectedJobId.value);
