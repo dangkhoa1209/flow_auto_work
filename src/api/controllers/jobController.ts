@@ -30,6 +30,7 @@ import {
   revertJobCommit,
   setJobStatus,
   startJobs,
+  syncJobBranchWithBase,
   updateDevNotes,
   writeJobFile,
   type AdhocJobInput,
@@ -137,6 +138,16 @@ export const jobController = {
   merge: asyncHandler(async (req: Request, res: Response) => {
     res.json(
       await mergeJobBranch(jobId(req), body<{ targetBranch?: string }>(req)),
+    );
+  }),
+
+  /** POST /api/jobs/:id/sync-base — pull base into work branch (AI fixes conflicts) */
+  syncBase: asyncHandler(async (req: Request, res: Response) => {
+    res.json(
+      await syncJobBranchWithBase(
+        jobId(req),
+        body<{ targetBranch?: string }>(req),
+      ),
     );
   }),
 

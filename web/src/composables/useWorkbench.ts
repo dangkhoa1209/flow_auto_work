@@ -47,6 +47,11 @@ export function useWorkbench() {
   const approveDocsBusy = ref(false);
   const mergeBusy = ref(false);
   const handoffBusy = ref(false);
+  const syncBaseBusy = ref(false);
+  const syncBaseOpen = ref(false);
+  const syncBaseChoice = ref<string>("");
+  const syncBaseBranches = ref<string[]>([]);
+  const syncBaseBranchesLoading = ref(false);
 
   const adhocOpen = ref(false);
   const adhocTitle = ref("");
@@ -169,12 +174,24 @@ export function useWorkbench() {
 
   const canQuickMerge = computed(() => {
     const st = currentJob.value?.status;
-    return Boolean(selectedJobId.value && st === "awaiting_handoff");
+    return Boolean(
+      selectedJobId.value && (st === "awaiting_handoff" || st === "succeeded"),
+    );
   });
 
   const canQuickHandoff = computed(() => {
     const st = currentJob.value?.status;
-    return Boolean(selectedJobId.value && st === "awaiting_handoff");
+    return Boolean(
+      selectedJobId.value && (st === "awaiting_handoff" || st === "succeeded"),
+    );
+  });
+
+  /** Pull base → work branch: any job with a branch that is not busy in queue */
+  const canSyncBase = computed(() => {
+    const j = currentJob.value;
+    if (!selectedJobId.value || !j) return false;
+    if (!jobBranch(j)) return false;
+    return j.status !== "running" && j.status !== "queued";
   });
 
   const runBlockedReason = computed(() => {
@@ -618,6 +635,94 @@ export function useWorkbench() {
     }
   }
 
+  /** Base branch configured in Settings → Project (no guessing). */
+  const configuredBaseBranch = computed(() => {
+    const m = session.currentMembership;
+    return (m?.baseBranch || m?.project?.mainBranch || "").trim();
+  });
+
+  /** No Settings base branch → user must pick one explicitly. */
+  async function openSyncBasePicker() {
+    syncBaseChoice.value = "";
+    syncBaseOpen.value = true;
+    const m = session.currentMembership;
+    if (!m?.project?.gitlabPath) return;
+    syncBaseBranchesLoading.value = true;
+    try {
+      const params = new URLSearchParams({
+        gitlabPath: m.project.gitlabPath,
+        repoPath: m.project.repoPath || m.project.localPath || "",
+      });
+      const res = await api<{
+        remote?: Array<{ name: string }>;
+        local?: string[];
+      }>(`/api/gitlab/branches?${params.toString()}`);
+      const names = new Set<string>([
+        ...(res.remote || []).map((b) => b.name),
+        ...(res.local || []),
+      ]);
+      syncBaseBranches.value = [...names].filter(Boolean).sort();
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : String(e));
+    } finally {
+      syncBaseBranchesLoading.value = false;
+    }
+  }
+
+  async function confirmSyncBase() {
+    const branch = syncBaseChoice.value.trim();
+    if (!branch) {
+      message.warning("Chọn nhánh nguồn trước đã");
+      return;
+    }
+    syncBaseOpen.value = false;
+    await syncBase(branch);
+  }
+
+  /** Pull latest base into the job work branch (stash → merge → AI fix → unstash). */
+  async function syncBase(targetBranch?: string) {
+    if (!selectedJobId.value || !canSyncBase.value) return;
+    // Never pull from a guessed default — no Settings base = user picks
+    if (!targetBranch && !configuredBaseBranch.value) {
+      await openSyncBasePicker();
+      return;
+    }
+    syncBaseBusy.value = true;
+    try {
+      const res = await api<{
+        sync?: {
+          target?: string;
+          aiResolved?: boolean;
+          alreadyUpToDate?: boolean;
+          wipWarning?: string;
+        };
+      }>(`/api/jobs/${selectedJobId.value}/sync-base`, {
+        method: "POST",
+        body: JSON.stringify(targetBranch ? { targetBranch } : {}),
+      });
+      const s = res?.sync;
+      if (s?.alreadyUpToDate) {
+        message.info(`Đã mới nhất so với ${s?.target || "base"} — không có gì để pull`);
+      } else if (s?.aiResolved) {
+        message.success(`Đã pull ${s?.target || "base"} — AI đã tự resolve conflict`);
+      } else {
+        message.success(`Đã pull ${s?.target || "base"} vào nhánh job`);
+      }
+      if (s?.wipWarning) message.warning(s.wipWarning, 8);
+      await work.loadJobs();
+      if (selectedJobId.value) await work.selectJob(selectedJobId.value);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (msg.includes("BASE_BRANCH_NOT_SET")) {
+        await openSyncBasePicker();
+      } else {
+        message.error(msg);
+      }
+    } finally {
+      syncBaseBusy.value = false;
+    }
+  }
+
   /** Quick handoff with Settings prefs (assignee / labels / comment). */
   async function quickHandoff() {
     if (!selectedJobId.value || !canQuickHandoff.value) return;
@@ -832,6 +937,8 @@ export function useWorkbench() {
     awaitingDocsApproval,
     canQuickMerge,
     canQuickHandoff,
+    canSyncBase,
+    syncBaseBusy,
     runBlockedReason,
     openTaskByIid,
     openRelatedPreview,
@@ -851,6 +958,12 @@ export function useWorkbench() {
     approveDocs,
     quickMerge,
     quickHandoff,
+    syncBase,
+    syncBaseOpen,
+    syncBaseChoice,
+    syncBaseBranches,
+    syncBaseBranchesLoading,
+    confirmSyncBase,
     refreshTasks,
     jobDisplayIid,
     jobBranch,

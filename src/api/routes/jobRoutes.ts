@@ -31,6 +31,7 @@ export function createJobRoutes(): Router {
 
   router.post("/:id/completion-actions", jobController.completionActions);
   router.post("/:id/merge", jobController.merge);
+  router.post("/:id/sync-base", jobController.syncBase);
 
   router.get("/:id/progress", jobController.progress);
   router.get("/:id/commits", jobController.commits);

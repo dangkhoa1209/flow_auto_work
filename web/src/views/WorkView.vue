@@ -124,8 +124,10 @@ function onPaneResize(event: { panes: Array<{ size: number }> }) {
               :job-branch="wb.jobBranch"
               :can-quick-merge="wb.canQuickMerge"
               :can-quick-handoff="wb.canQuickHandoff"
+              :can-sync-base="wb.canSyncBase"
               :merge-busy="wb.mergeBusy"
               :handoff-busy="wb.handoffBusy"
+              :sync-base-busy="wb.syncBaseBusy"
               @update:mid-tab="wb.midTab = $event"
               @update:notes-draft="wb.notesDraft = $event"
               @update:require-docs-first="wb.requireDocsFirst = $event"
@@ -139,6 +141,7 @@ function onPaneResize(event: { panes: Array<{ size: number }> }) {
               @run-selected="wb.runCurrentJob"
               @quick-merge="wb.quickMerge"
               @quick-handoff="wb.quickHandoff"
+              @sync-base="wb.syncBase"
             />
           </div>
         </Pane>
@@ -300,8 +303,10 @@ function onPaneResize(event: { panes: Array<{ size: number }> }) {
           :job-branch="wb.jobBranch"
           :can-quick-merge="wb.canQuickMerge"
           :can-quick-handoff="wb.canQuickHandoff"
+          :can-sync-base="wb.canSyncBase"
           :merge-busy="wb.mergeBusy"
           :handoff-busy="wb.handoffBusy"
+          :sync-base-busy="wb.syncBaseBusy"
           @update:mid-tab="wb.midTab = $event"
           @update:notes-draft="wb.notesDraft = $event"
           @update:require-docs-first="wb.requireDocsFirst = $event"
@@ -315,6 +320,7 @@ function onPaneResize(event: { panes: Array<{ size: number }> }) {
           @run-selected="wb.runCurrentJob"
           @quick-merge="wb.quickMerge"
           @quick-handoff="wb.quickHandoff"
+          @sync-base="wb.syncBase"
         />
         <AgentConsole
           v-show="wb.mobilePane === 'chat'"
@@ -366,6 +372,15 @@ function onPaneResize(event: { panes: Array<{ size: number }> }) {
         :loading="wb.approveDocsBusy"
         @click="wb.approveDocs()"
         >Docs</a-button
+      >
+      <a-button
+        size="small"
+        class="!h-8"
+        :loading="wb.syncBaseBusy"
+        :disabled="!wb.canSyncBase || wb.syncBaseBusy"
+        title="Pull base mới nhất vào nhánh job (AI tự fix conflict)"
+        @click="wb.syncBase()"
+        >⇣ Sync</a-button
       >
       <a-popconfirm
         title="Merge work → base?"
@@ -460,6 +475,30 @@ function onPaneResize(event: { panes: Array<{ size: number }> }) {
           </a-form-item>
         </a-form>
       </a-spin>
+    </a-modal>
+
+    <a-modal
+      v-model:open="wb.syncBaseOpen"
+      title="Chọn nhánh nguồn để pull"
+      ok-text="Pull"
+      cancel-text="Cancel"
+      :ok-button-props="{ disabled: !wb.syncBaseChoice }"
+      wrap-class-name="work-modal-sheet"
+      :centered="false"
+      @ok="wb.confirmSyncBase"
+    >
+      <p class="text-xs text-ink-muted mt-0 mb-2 leading-relaxed">
+        Project chưa cấu hình Main branch trong Settings — chọn nhánh muốn pull
+        vào nhánh job (không tự đoán default).
+      </p>
+      <a-select
+        v-model:value="wb.syncBaseChoice"
+        class="w-full"
+        show-search
+        :loading="wb.syncBaseBranchesLoading"
+        placeholder="Chọn nhánh…"
+        :options="wb.syncBaseBranches.map((b: string) => ({ value: b, label: b }))"
+      />
     </a-modal>
 
     <a-modal

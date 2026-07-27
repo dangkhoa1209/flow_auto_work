@@ -193,9 +193,26 @@ export async function attemptMergeIntoBase(opts: {
     throw new Error(`Source and target are the same branch: ${source}`);
   }
 
-  if (!(await branchExists(opts.repoPath, source))) {
+  // Fetch the source tip FIRST — the chosen branch may be stale locally or
+  // exist only on origin (never checked out on this machine).
+  try {
+    await git(opts.repoPath, [
+      "fetch",
+      "origin",
+      `+refs/heads/${source}:refs/remotes/origin/${source}`,
+    ]);
+  } catch (err) {
+    logger.warn("Could not fetch source branch from origin before merge", {
+      source,
+      err: String(err),
+    });
+  }
+
+  const sourceLocal = await branchExists(opts.repoPath, source);
+  const sourceRemote = await branchExists(opts.repoPath, `origin/${source}`);
+  if (!sourceLocal && !sourceRemote) {
     await restoreWipAfterMerge(opts.repoPath, wipStashMarker);
-    throw new Error(`Source branch not found: ${source}`);
+    throw new Error(`Source branch not found: ${source} (local or origin)`);
   }
 
   try {
@@ -223,19 +240,15 @@ export async function attemptMergeIntoBase(opts: {
     // offline / no remote / diverged — continue with local target
   }
 
-  // Sync source from origin so GitLab-API commits are visible locally
+  // Point local source at the freshly fetched origin tip (creates the local
+  // branch if it only exists on origin). Safe: we are on `target` here.
   try {
-    await git(opts.repoPath, [
-      "fetch",
-      "origin",
-      `+refs/heads/${source}:refs/remotes/origin/${source}`,
-    ]);
-    if (await branchExists(opts.repoPath, `origin/${source}`)) {
+    if (sourceRemote) {
       await git(opts.repoPath, ["branch", "-f", source, `origin/${source}`]);
       logger.info("Updated local source branch from origin", { source });
     }
   } catch (err) {
-    logger.warn("Could not fetch source branch from origin before merge", {
+    logger.warn("Could not update local source branch from origin", {
       source,
       err: String(err),
     });

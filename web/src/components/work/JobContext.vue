@@ -35,8 +35,10 @@ defineProps<{
   jobBranch: (j: { branch?: string; workBranch?: string }) => string;
   canQuickMerge: boolean;
   canQuickHandoff: boolean;
+  canSyncBase: boolean;
   mergeBusy: boolean;
   handoffBusy: boolean;
+  syncBaseBusy: boolean;
   /** Larger touch targets + gap for mobile sticky bar */
   mobileTouch?: boolean;
   /** Hide internal sticky (WorkView owns mobile action dock) */
@@ -57,6 +59,7 @@ const emit = defineEmits<{
   runSelected: [];
   quickMerge: [];
   quickHandoff: [];
+  syncBase: [];
 }>();
 </script>
 
@@ -405,6 +408,23 @@ const emit = defineEmits<{
       >
         Approve Docs
       </button>
+      <a-tooltip
+        :title="
+          canSyncBase
+            ? 'Pull base mới nhất vào nhánh job (AI tự fix conflict)'
+            : 'Chỉ khi job có branch và không đang chạy'
+        "
+      >
+        <button
+          type="button"
+          class="faw-btn"
+          :class="mobileTouch ? '!min-h-[44px]' : ''"
+          :disabled="!canSyncBase || syncBaseBusy"
+          @click="emit('syncBase')"
+        >
+          {{ syncBaseBusy ? "Syncing…" : "⇣ Sync base" }}
+        </button>
+      </a-tooltip>
       <a-popconfirm
         title="Merge work branch → base?"
         ok-text="Merge"
@@ -416,7 +436,7 @@ const emit = defineEmits<{
           :title="
             canQuickMerge
               ? 'Quick merge (work → base)'
-              : 'Only when job is Awaiting handoff'
+              : 'Only when job is Awaiting handoff / Done'
           "
         >
           <button
@@ -440,7 +460,7 @@ const emit = defineEmits<{
           :title="
             canQuickHandoff
               ? 'Quick handoff (Settings → Labels)'
-              : 'Only when job is Awaiting handoff'
+              : 'Only when job is Awaiting handoff / Done'
           "
         >
           <button
