@@ -4,6 +4,7 @@ import { useRoute, useRouter, RouterLink, RouterView } from "vue-router";
 import { message } from "ant-design-vue";
 import { SettingOutlined } from "@ant-design/icons-vue";
 import { useSessionStore } from "@/stores/session";
+import { useSettingsStore } from "@/stores/settings";
 import { useWorkStore } from "@/stores/work";
 import { connectRealtime } from "@/realtime/client";
 import MobileBottomNav from "@/components/MobileBottomNav.vue";
@@ -12,6 +13,7 @@ const route = useRoute();
 const router = useRouter();
 const session = useSessionStore();
 const work = useWorkStore();
+const settings = useSettingsStore();
 
 const nav = [
   { to: "/work", label: "Work" },
@@ -64,6 +66,7 @@ onMounted(async () => {
   selectedProjectId.value = session.session.projectId || "";
   try {
     await work.refreshAll();
+    await settings.loadHandoffPrefs(session.projectId);
   } catch (e) {
     message.error(e instanceof Error ? e.message : String(e));
   }
@@ -93,6 +96,7 @@ async function onSwitchProject(projectId: string) {
     await session.activateProject(projectId);
     selectedProjectId.value = projectId;
     await work.refreshAll();
+    await settings.loadHandoffPrefs(projectId);
     message.success("Project switched");
   } catch (e) {
     selectedProjectId.value = session.session.projectId || "";

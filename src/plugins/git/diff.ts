@@ -2,16 +2,13 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { resolveRepoPath } from "../../workspace/creds.js";
 import { detectDefaultBranch } from "./prep.js";
+import { gitExecOptions, gitStdout } from "./exec.js";
 
 const execFileAsync = promisify(execFile);
 
 async function git(args: string[]): Promise<string> {
   const repoPath = resolveRepoPath();
-  const { stdout } = await execFileAsync("git", args, {
-    cwd: repoPath,
-    maxBuffer: 20 * 1024 * 1024,
-  });
-  return stdout;
+  return gitStdout(repoPath, args, 20 * 1024 * 1024);
 }
 
 async function gitOk(args: string[]): Promise<string | null> {
@@ -199,12 +196,14 @@ export async function listJobCommits(opts: {
     await execFileAsync(
       "git",
       ["fetch", "origin", `+refs/heads/${tipName}:refs/remotes/origin/${tipName}`, "--quiet"],
-      { cwd: repoPath },
+      gitExecOptions(repoPath),
     ).catch(() => undefined);
   }
-  await execFileAsync("git", ["fetch", "origin", baseName, "--quiet"], {
-    cwd: repoPath,
-  }).catch(() => undefined);
+  await execFileAsync(
+    "git",
+    ["fetch", "origin", baseName, "--quiet"],
+    gitExecOptions(repoPath),
+  ).catch(() => undefined);
 
   // Prefer remote tip when available
   let tipRef = tip;
@@ -333,7 +332,7 @@ export async function getReviewDiff(opts?: {
         `+refs/heads/${tipBranch}:refs/remotes/origin/${tipBranch}`,
         "--quiet",
       ],
-      { cwd: repoPath },
+      gitExecOptions(repoPath),
     ).catch(() => undefined);
   }
 
@@ -349,9 +348,11 @@ export async function getReviewDiff(opts?: {
   const comparedLabel = range;
 
   const baseName = base.replace(/^origin\//, "");
-  await execFileAsync("git", ["fetch", "origin", baseName, "--quiet"], {
-    cwd: repoPath,
-  }).catch(() => undefined);
+  await execFileAsync(
+    "git",
+    ["fetch", "origin", baseName, "--quiet"],
+    gitExecOptions(repoPath),
+  ).catch(() => undefined);
 
   let { files, summary, rangeDiff } = await buildFileStats(range);
   if (!rangeDiff.trim() && tipRef !== "HEAD") {

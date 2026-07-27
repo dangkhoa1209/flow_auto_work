@@ -14,8 +14,23 @@ export type WorkspaceUser = {
   gitlabTokenEnc?: string;
   cursorApiKeyEnc?: string;
   cursorModel?: string;
+  /**
+   * Labels & handoff prefs per project (synced across devices).
+   * Key = workspace project id.
+   */
+  handoffPrefsByProject?: Record<string, HandoffPrefs>;
   createdAt: string;
   updatedAt: string;
+};
+
+/** Prefill for Start / Done awaiting handoff — stored per user+project. */
+export type HandoffPrefs = {
+  assignee?: string | null;
+  processingLabel?: string;
+  onStartLabels?: string[];
+  addLabels?: string[];
+  removeLabels?: string[];
+  comment?: string;
 };
 
 export type WorkspaceUserPublic = {

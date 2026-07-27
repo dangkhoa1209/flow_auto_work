@@ -4,9 +4,11 @@ import { message } from "ant-design-vue";
 import { storeToRefs } from "pinia";
 import { api } from "@/api/client";
 import IssueIidLink from "@/components/IssueIidLink.vue";
+import { useSessionStore } from "@/stores/session";
 import { useSettingsStore } from "@/stores/settings";
 import { useWorkStore } from "@/stores/work";
 
+const session = useSessionStore();
 const work = useWorkStore();
 const settings = useSettingsStore();
 const { jobs, members, labels } = storeToRefs(work);
@@ -38,6 +40,10 @@ const selected = computed(
 );
 
 onMounted(async () => {
+  await settings.loadHandoffPrefs(session.projectId).catch(() => undefined);
+  assignee.value = settings.local.assignee || undefined;
+  addLabels.value = [...settings.local.addLabels];
+  comment.value = settings.local.comment;
   await work.loadJobs();
   await work.loadMeta();
 });

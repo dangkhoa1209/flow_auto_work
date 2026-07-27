@@ -21,6 +21,7 @@ import {
   type WorkspaceUser,
   type WorkspaceUserPublic,
   type CloneStatus,
+  type HandoffPrefs,
 } from "./types.js";
 
 /** Segment under PROJECT_ROOT/{user}/ — same rules as defaultLocalPath */
@@ -151,6 +152,58 @@ export async function updateUserPreferences(opts: {
   existing.updatedAt = now;
   await (await usersCol()).updateOne({ id }, { $set: existing });
   return toPublicUser(existing);
+}
+
+export async function getHandoffPrefs(
+  username: string,
+  projectId: string,
+): Promise<HandoffPrefs> {
+  const user = await getUserByUsername(username);
+  if (!user) return {};
+  const pid = projectId.trim();
+  if (!pid) return {};
+  return { ...(user.handoffPrefsByProject?.[pid] ?? {}) };
+}
+
+export async function setHandoffPrefs(opts: {
+  gitlabUsername: string;
+  projectId: string;
+  prefs: HandoffPrefs;
+}): Promise<HandoffPrefs> {
+  const id = normUserId(opts.gitlabUsername);
+  const existing = await getUserByUsername(id);
+  if (!existing) throw new Error("User not found");
+  const pid = opts.projectId.trim();
+  if (!pid) throw new Error("projectId required");
+
+  const next: HandoffPrefs = {
+    assignee: opts.prefs.assignee?.trim() || null,
+    processingLabel:
+      typeof opts.prefs.processingLabel === "string" &&
+      opts.prefs.processingLabel.trim()
+        ? opts.prefs.processingLabel.trim()
+        : "On-processing",
+    onStartLabels: Array.isArray(opts.prefs.onStartLabels)
+      ? opts.prefs.onStartLabels.map((s) => String(s).trim()).filter(Boolean)
+      : [],
+    addLabels: Array.isArray(opts.prefs.addLabels)
+      ? opts.prefs.addLabels.map((s) => String(s).trim()).filter(Boolean)
+      : [],
+    removeLabels: Array.isArray(opts.prefs.removeLabels)
+      ? opts.prefs.removeLabels.map((s) => String(s).trim()).filter(Boolean)
+      : [],
+    comment:
+      typeof opts.prefs.comment === "string" ? opts.prefs.comment.trim() : "",
+  };
+
+  const map = { ...(existing.handoffPrefsByProject ?? {}) };
+  map[pid] = next;
+  const now = new Date().toISOString();
+  await (await usersCol()).updateOne(
+    { id },
+    { $set: { handoffPrefsByProject: map, updatedAt: now } },
+  );
+  return next;
 }
 
 export async function clearCursorApiKey(

@@ -1,22 +1,11 @@
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
 import {
   collectCommitActions,
   syncLocalToRemoteCommit,
 } from "./changes-for-api.js";
 import { createRepositoryCommit } from "../gitlab/commits.js";
 import { logger } from "../../logger.js";
+import { gitStdout as git } from "./exec.js";
 import { hasUncommittedChanges } from "./prep.js";
-
-const execFileAsync = promisify(execFile);
-
-async function git(repoPath: string, args: string[]): Promise<string> {
-  const { stdout } = await execFileAsync("git", args, {
-    cwd: repoPath,
-    maxBuffer: 20 * 1024 * 1024,
-  });
-  return stdout;
-}
 
 async function gitOk(
   repoPath: string,

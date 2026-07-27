@@ -1,19 +1,6 @@
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
 import { logger } from "../../logger.js";
+import { git } from "./exec.js";
 import { detectDefaultBranch, getHeadSha } from "./prep.js";
-
-const execFileAsync = promisify(execFile);
-
-async function git(
-  repoPath: string,
-  args: string[],
-): Promise<{ stdout: string; stderr: string }> {
-  return execFileAsync("git", args, {
-    cwd: repoPath,
-    maxBuffer: 10 * 1024 * 1024,
-  });
-}
 
 async function branchExists(repoPath: string, name: string): Promise<boolean> {
   try {

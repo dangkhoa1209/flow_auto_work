@@ -12,6 +12,7 @@ export const API = {
   me: {
     root: "/api/me",
     preferences: "/api/me/preferences",
+    handoffPrefs: "/api/me/handoff-prefs",
     secrets: "/api/me/secrets",
     cursorKey: "/api/me/cursor-key",
     cursorModels: "/api/me/cursor-models",

@@ -1,21 +1,8 @@
-import { execFile } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { promisify } from "node:util";
 import type { GitlabCommitAction } from "../gitlab/commits.js";
 import { logger } from "../../logger.js";
-
-const execFileAsync = promisify(execFile);
-
-async function git(
-  repoPath: string,
-  args: string[],
-): Promise<{ stdout: string; stderr: string }> {
-  return execFileAsync("git", args, {
-    cwd: repoPath,
-    maxBuffer: 32 * 1024 * 1024,
-  });
-}
+import { git } from "./exec.js";
 
 function isBinaryBuffer(buf: Buffer): boolean {
   return buf.includes(0);

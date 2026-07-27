@@ -3,12 +3,18 @@ import { asyncHandler } from "../../utils/asyncHandler.js";
 import {
   clearMyCursorKey,
   getMe,
+  getMyHandoffPrefs,
   listCursorModels,
+  updateMyHandoffPrefs,
   updateMyPreferences,
   updateMySecrets,
   type UpdateSecretsBody,
 } from "../../modules/me/index.js";
-import { headerUserFromExpress } from "../middleware/workspaceAuth.js";
+import type { HandoffPrefs } from "../../workspace/types.js";
+import {
+  headerProjectFromExpress,
+  headerUserFromExpress,
+} from "../middleware/workspaceAuth.js";
 
 export const meController = {
   get: asyncHandler(async (req: Request, res: Response) => {
@@ -23,6 +29,27 @@ export const meController = {
   updatePreferences: asyncHandler(async (req: Request, res: Response) => {
     const body = (req.body ?? {}) as { cursorModel?: string };
     res.json(await updateMyPreferences(headerUserFromExpress(req), body));
+  }),
+
+  getHandoffPrefs: asyncHandler(async (req: Request, res: Response) => {
+    const q = typeof req.query.projectId === "string" ? req.query.projectId : "";
+    const projectId = q || headerProjectFromExpress(req);
+    res.json(await getMyHandoffPrefs(headerUserFromExpress(req), projectId));
+  }),
+
+  updateHandoffPrefs: asyncHandler(async (req: Request, res: Response) => {
+    const body = (req.body ?? {}) as {
+      projectId?: string;
+      prefs?: HandoffPrefs;
+    };
+    const projectId =
+      body.projectId?.trim() || headerProjectFromExpress(req) || undefined;
+    res.json(
+      await updateMyHandoffPrefs(headerUserFromExpress(req), {
+        projectId,
+        prefs: body.prefs,
+      }),
+    );
   }),
 
   cursorModels: asyncHandler(async (req: Request, res: Response) => {

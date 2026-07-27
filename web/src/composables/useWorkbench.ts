@@ -739,9 +739,22 @@ export function useWorkbench() {
   /** Quick handoff with Settings prefs (assignee / labels / comment). */
   async function quickHandoff() {
     if (!selectedJobId.value || !canQuickHandoff.value) return;
+    const loc = settings.local;
+    const hasPrefs = Boolean(
+      loc.assignee ||
+        (loc.addLabels && loc.addLabels.length) ||
+        (loc.removeLabels && loc.removeLabels.length) ||
+        (loc.comment && loc.comment.trim()),
+    );
+    if (!hasPrefs) {
+      message.warning(
+        "Chưa cấu hình Labels & handoff — vào Settings → Labels để set assignee/labels, rồi Save",
+      );
+      router.push({ name: "settings-labels" });
+      return;
+    }
     handoffBusy.value = true;
     try {
-      const loc = settings.local;
       await api(`/api/jobs/${selectedJobId.value}/completion-actions`, {
         method: "POST",
         body: JSON.stringify({

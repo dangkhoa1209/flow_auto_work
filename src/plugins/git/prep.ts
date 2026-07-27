@@ -1,21 +1,8 @@
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
 import { logger } from "../../logger.js";
 import { resolveRepoPath } from "../../workspace/creds.js";
 import { getRuntimeContext } from "../../workspace/runtime.js";
 import { autoWorkBranchName } from "./branch-name.js";
-
-const execFileAsync = promisify(execFile);
-
-async function git(
-  repoPath: string,
-  args: string[],
-): Promise<{ stdout: string; stderr: string }> {
-  return execFileAsync("git", args, {
-    cwd: repoPath,
-    maxBuffer: 10 * 1024 * 1024,
-  });
-}
+import { git } from "./exec.js";
 
 /** Full HEAD SHA, or null if unavailable */
 export async function getHeadSha(repoPath: string): Promise<string | null> {

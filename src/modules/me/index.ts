@@ -2,14 +2,18 @@ import { Cursor } from "@cursor/sdk";
 import { verifyGitlabTokenUser } from "../../plugins/gitlab/client.js";
 import {
   clearCursorApiKey,
+  getHandoffPrefs,
   getUserByUsername,
   getUserSecrets,
+  setHandoffPrefs,
   updateUserPreferences,
   upsertUserLogin,
 } from "../../workspace/store.js";
+import type { HandoffPrefs } from "../../workspace/types.js";
 import { toPublicUser } from "../../workspace/types.js";
 import { AppError } from "../../utils/AppError.js";
 import { listPublicMemberships } from "../project/index.js";
+import { getRuntimeContext } from "../../workspace/runtime.js";
 
 const FALLBACK_MODELS = [
   { id: "auto", displayName: "Auto (server picks)" },
@@ -145,6 +149,42 @@ export async function clearMyCursorKey(username: string) {
   try {
     const updated = await clearCursorApiKey(user);
     return { user: updated, ok: true };
+  } catch (err) {
+    throw new AppError(err instanceof Error ? err.message : String(err), 404);
+  }
+}
+
+/** Labels & handoff prefs for the active (or given) project. */
+export async function getMyHandoffPrefs(
+  username: string,
+  projectId?: string,
+) {
+  const user = requireUser(username);
+  const pid =
+    projectId?.trim() || getRuntimeContext()?.projectId?.trim() || "";
+  if (!pid) throw new AppError("projectId required — select a project", 400);
+  const prefs = await getHandoffPrefs(user, pid);
+  return { projectId: pid, prefs };
+}
+
+export async function updateMyHandoffPrefs(
+  username: string,
+  body: { projectId?: string; prefs?: HandoffPrefs },
+) {
+  const user = requireUser(username);
+  const pid =
+    body.projectId?.trim() || getRuntimeContext()?.projectId?.trim() || "";
+  if (!pid) throw new AppError("projectId required — select a project", 400);
+  if (!body.prefs || typeof body.prefs !== "object") {
+    throw new AppError("prefs required", 400);
+  }
+  try {
+    const prefs = await setHandoffPrefs({
+      gitlabUsername: user,
+      projectId: pid,
+      prefs: body.prefs,
+    });
+    return { ok: true, projectId: pid, prefs };
   } catch (err) {
     throw new AppError(err instanceof Error ? err.message : String(err), 404);
   }
