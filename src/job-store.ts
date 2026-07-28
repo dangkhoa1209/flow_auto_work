@@ -280,11 +280,16 @@ export async function migrateAdhocJobToIssue(
 export async function listJobs(opts?: {
   workspaceProjectId?: string;
   ownerUsername?: string;
+  /** Default true — coding queue/UI never sees QA jobs */
+  excludeQa?: boolean;
+  kind?: "issue" | "adhoc" | "qa";
 }): Promise<JobRecord[]> {
   const docs = await listJobDocs({
     limit: 500,
     workspaceProjectId: opts?.workspaceProjectId,
     ownerUsername: opts?.ownerUsername,
+    excludeQa: opts?.excludeQa,
+    kind: opts?.kind,
   });
   return docs.map((doc) => normalizeJob(doc));
 }
@@ -306,7 +311,7 @@ export function issueKey(projectId: number, issueIid: number): string {
 
 /** Mark interrupted RUNNING jobs failed after restart (queued jobs are re-queued by JobQueue.restoreQueuedJobs). */
 export async function failInterruptedJobs(): Promise<void> {
-  const jobs = await listJobs();
+  const jobs = await listJobs({ excludeQa: true });
   for (const job of jobs) {
     if (job.status === "running") {
       job.status = "failed";

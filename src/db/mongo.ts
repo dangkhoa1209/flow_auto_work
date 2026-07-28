@@ -121,6 +121,10 @@ export async function listJobDocs(opts?: {
   status?: JobStatus;
   workspaceProjectId?: string;
   ownerUsername?: string;
+  /** When true (default for coding UI), hide QA triage jobs */
+  excludeQa?: boolean;
+  /** When set, only return jobs of this kind */
+  kind?: "issue" | "adhoc" | "qa";
 }): Promise<JobDoc[]> {
   await connectMongo();
   const filter: Record<string, unknown> = {};
@@ -129,6 +133,12 @@ export async function listJobDocs(opts?: {
     filter.workspaceProjectId = opts.workspaceProjectId;
   }
   if (opts?.ownerUsername) filter.ownerUsername = opts.ownerUsername;
+  if (opts?.kind) {
+    filter.kind = opts.kind;
+  } else if (opts?.excludeQa !== false) {
+    // $ne also matches missing kind — coding jobs stay visible
+    filter.kind = { $ne: "qa" };
+  }
   return jobs()
     .find(filter)
     .sort({ updatedAt: -1 })

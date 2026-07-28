@@ -1,0 +1,304 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+  --app-bg: #0d0f14;
+  --app-ink: #e7e9ee;
+  --app-muted: #9aa2b1;
+  --app-faint: #5e6576;
+  --app-accent: #5b8def;
+  --app-panel: #12151c;
+  --app-panel-soft: #171b24;
+  --app-border: #232833;
+  --font-ui: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+  --done: #34d399;
+  --bug: #f0576b;
+  --r: 6px;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: var(--font-ui);
+  font-size: 13px;
+  color: var(--app-ink);
+  background: var(--app-bg);
+}
+
+.faw-btn {
+  font: 600 11px var(--font-ui);
+  padding: 5px 10px;
+  border-radius: 5px;
+  border: 1px solid var(--app-border);
+  background: var(--app-panel-soft);
+  color: var(--app-muted);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  white-space: nowrap;
+  flex: none;
+}
+.faw-btn:hover:not(:disabled) {
+  border-color: #333a48;
+  color: var(--app-ink);
+}
+.faw-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.faw-btn--run {
+  background: var(--done);
+  border-color: var(--done);
+  color: #04150e;
+  font-weight: 700;
+  flex: 1;
+}
+.faw-btn--run:hover:not(:disabled) {
+  filter: brightness(1.05);
+  color: #04150e;
+}
+
+.faw-seg {
+  display: flex;
+  background: var(--app-panel-soft);
+  border: 1px solid var(--app-border);
+  border-radius: var(--r);
+  padding: 2px;
+  gap: 2px;
+  flex-shrink: 0;
+}
+.faw-seg__btn {
+  background: transparent;
+  border: 0;
+  color: #9aa2b1;
+  font: 600 12px var(--font-ui);
+  padding: 5px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  text-decoration: none;
+  line-height: 1.2;
+}
+.faw-seg__btn:hover {
+  color: #e7e9ee;
+  text-decoration: none;
+}
+.faw-seg__btn.active {
+  background: #5b8def;
+  color: #fff;
+}
+
+/* —— Login (match coding WorkBench) —— */
+.faw-login {
+  position: relative;
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 16px;
+  overflow: hidden;
+  background: var(--app-bg);
+}
+.faw-login__grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(35, 40, 51, 0.45) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(35, 40, 51, 0.45) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: radial-gradient(ellipse 70% 60% at 50% 40%, #000 20%, transparent 75%);
+  -webkit-mask-image: radial-gradient(
+    ellipse 70% 60% at 50% 40%,
+    #000 20%,
+    transparent 75%
+  );
+  opacity: 0.55;
+  animation: faw-login-grid 18s linear infinite;
+  pointer-events: none;
+}
+.faw-login__glow {
+  position: absolute;
+  width: 480px;
+  height: 320px;
+  left: 50%;
+  top: 28%;
+  transform: translate(-50%, -50%);
+  background: radial-gradient(
+    ellipse at center,
+    rgba(91, 141, 239, 0.18) 0%,
+    rgba(91, 141, 239, 0.06) 35%,
+    transparent 70%
+  );
+  pointer-events: none;
+  will-change: left, top;
+  transition:
+    left 0.12s ease-out,
+    top 0.12s ease-out,
+    opacity 0.35s ease;
+  opacity: 0.75;
+}
+.faw-login__glow.is-follow {
+  opacity: 1;
+  transition:
+    left 0.08s linear,
+    top 0.08s linear,
+    opacity 0.25s ease;
+}
+.faw-login__shell {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 380px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  animation: faw-login-in 0.45s ease-out both;
+}
+.faw-login__brand {
+  display: flex;
+  align-items: center;
+  margin-bottom: 10px;
+}
+.faw-login__logo {
+  display: block;
+  height: 52px;
+  width: auto;
+  max-width: 100%;
+  object-fit: contain;
+  user-select: none;
+  pointer-events: none;
+}
+.faw-login__tagline {
+  margin: 0 0 22px;
+  font-size: 12.5px;
+  color: #9aa2b1;
+  line-height: 1.45;
+}
+.faw-login__panel {
+  background: var(--app-panel);
+  border: 1px solid var(--app-border);
+  border-radius: 8px;
+  padding: 16px;
+}
+.faw-login__seg {
+  width: 100%;
+  margin-bottom: 16px;
+}
+.faw-login__seg .faw-seg__btn {
+  flex: 1;
+  text-align: center;
+}
+.faw-login__form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.faw-login__field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+}
+.faw-login__field > span {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--app-faint);
+}
+.faw-login__field > span em {
+  font-style: normal;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--app-faint);
+  opacity: 0.85;
+}
+.faw-login__field .ant-input,
+.faw-login__field .ant-input-affix-wrapper {
+  background: var(--app-panel-soft) !important;
+  border-color: var(--app-border) !important;
+  border-radius: var(--r) !important;
+  color: var(--app-ink) !important;
+  font: 500 13px var(--font-ui) !important;
+  padding: 8px 11px !important;
+  min-height: 36px;
+}
+.faw-login__field .ant-input-affix-wrapper .ant-input {
+  background: transparent !important;
+  border: 0 !important;
+  padding: 0 !important;
+  box-shadow: none !important;
+  min-height: 0;
+}
+.faw-login__field .ant-input:hover,
+.faw-login__field .ant-input-affix-wrapper:hover,
+.faw-login__field .ant-input:focus,
+.faw-login__field .ant-input-affix-wrapper-focused {
+  border-color: #333a48 !important;
+  box-shadow: none !important;
+}
+.faw-login__field .ant-input::placeholder {
+  color: var(--app-faint) !important;
+}
+.faw-login__error {
+  margin: 0;
+  font-size: 12px;
+  color: var(--bug);
+  line-height: 1.4;
+}
+.faw-login__submit {
+  width: 100%;
+  flex: none !important;
+  padding: 10px 14px !important;
+  font-size: 13px !important;
+  margin-top: 4px;
+}
+.faw-login__submit:disabled {
+  opacity: 0.55;
+}
+.faw-login__foot {
+  margin: 14px 0 0;
+  text-align: center;
+  font-size: 11px;
+  color: var(--app-faint);
+  font-family: var(--font-mono);
+}
+
+@keyframes faw-login-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes faw-login-grid {
+  from {
+    background-position: 0 0, 0 0;
+  }
+  to {
+    background-position: 0 48px, 48px 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .faw-login__grid,
+  .faw-login__shell {
+    animation: none;
+  }
+  .faw-login__glow {
+    transition: none;
+  }
+}

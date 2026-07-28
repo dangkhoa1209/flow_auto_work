@@ -5,6 +5,8 @@ loadDotenv();
 
 const envSchema = z.object({
   PORT: z.coerce.number().default(8787),
+  /** QA Agents service HTTP port (separate process) */
+  QA_PORT: z.coerce.number().default(8788),
   HOST: z.string().default("127.0.0.1"),
   /** Server master key to encrypt user GitLab/Cursor tokens at rest */
   FLOW_SECRETS_KEY: z.string().min(16),
@@ -103,6 +105,10 @@ export function getConfig(): AppConfig {
     "http://localhost:5173",
     "http://127.0.0.1:8787",
     "http://localhost:8787",
+    "http://127.0.0.1:5174",
+    "http://localhost:5174",
+    "http://127.0.0.1:8788",
+    "http://localhost:8788",
   ];
   const corsOrigins = (env.CORS_ORIGINS ?? "")
     .split(",")

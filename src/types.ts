@@ -45,6 +45,17 @@ export function newAdhocJobId(): string {
   return `adhoc-${crypto.randomUUID().replace(/-/g, "").slice(0, 16)}`;
 }
 
+/** QA triage session id (browser ReAct → review → GitLab issue) */
+export function newQaJobId(): string {
+  return `qa-${crypto.randomUUID().replace(/-/g, "").slice(0, 16)}`;
+}
+
+export function isQaJob(
+  job: { kind?: string } | null | undefined,
+): boolean {
+  return job?.kind === "qa";
+}
+
 /**
  * Unique negative placeholder iid so Mongo unique (projectId, issueIid) works
  * for multiple adhoc jobs on the same project.
@@ -90,6 +101,10 @@ export type JobStatus =
   | "awaiting_diff_approval"
   /** Code done (GitLab API commit) — awaiting manual assign / labels */
   | "awaiting_handoff"
+  /** QA agent finished capture — awaiting human review before GitLab issue */
+  | "awaiting_qa_review"
+  /** QA agent stuck (timeout / selector) — needs human note then continue */
+  | "needs_human_intervention"
   | "succeeded"
   | "failed";
 
@@ -98,12 +113,47 @@ export function isJobBusy(status: JobStatus): boolean {
   return status === "queued" || status === "running";
 }
 
+/** Captured failed API call during QA browser run */
+export type QaNetworkFailure = {
+  url: string;
+  method: string;
+  status: number;
+  responseBody?: string;
+  initiator?: string;
+};
+
+/** Captured console / runtime error during QA browser run */
+export type QaConsoleError = {
+  message: string;
+  stack?: string;
+};
+
+/** QA-specific payload on JobRecord (kind === "qa") */
+export type QaRunState = {
+  targetUrl: string;
+  presetId: string;
+  presetRole?: string;
+  testcase: string;
+  actionLog?: string[];
+  consoleErrors?: QaConsoleError[];
+  networkFailures?: QaNetworkFailure[];
+  /** Relative paths under qa-agents/artifacts/{jobId}/ */
+  screenshotPaths?: string[];
+  draftMarkdown?: string;
+  draftTitle?: string;
+  createdIssueIid?: number;
+  createdIssueUrl?: string;
+  adjustNotes?: string[];
+};
+
 export type JobRecord = {
   id: string;
   status: JobStatus;
-  /** issue = linked GitLab task; adhoc = free session until create-issue */
-  kind?: "issue" | "adhoc";
+  /** issue = linked GitLab task; adhoc = free session until create-issue; qa = browser triage */
+  kind?: "issue" | "adhoc" | "qa";
   issue: IssueJob;
+  /** Present when kind === "qa" */
+  qa?: QaRunState;
   /**
    * Flow login username (workspace user) who owns/runs this job.
    * Used with withWorkspaceContext — not necessarily GitLab assignee.

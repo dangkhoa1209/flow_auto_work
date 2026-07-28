@@ -200,6 +200,8 @@ export async function createIssue(opts: {
   labels?: string[];
   /** GitLab usernames to assign (usually the logged-in Flow user) */
   assignees?: string[];
+  /** GitLab milestone id */
+  milestoneId?: number;
   projectIdOrPath?: number | string;
 }): Promise<{
   id: number;
@@ -222,6 +224,9 @@ export async function createIssue(opts: {
   };
   if (opts.labels?.length) {
     payload.labels = opts.labels.join(",");
+  }
+  if (opts.milestoneId != null && Number.isFinite(opts.milestoneId)) {
+    payload.milestone_id = opts.milestoneId;
   }
   const assignees = (opts.assignees ?? [])
     .map((s) => s.trim().replace(/^@/, ""))

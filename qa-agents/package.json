@@ -1,0 +1,13 @@
+{
+  "name": "qa-agents",
+  "private": true,
+  "type": "module",
+  "description": "QA Agents service — browser triage via Cursor SDK + Chrome DevTools MCP",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "dev": "tsx watch src/index.ts"
+  }
+}

@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 248 56" fill="none" role="img" aria-label="Flow Auto WorkBench">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#5B8DEF"/>
+      <stop offset="100%" stop-color="#8A6BFF"/>
+    </linearGradient>
+  </defs>
+  <g transform="translate(4, 6)">
+    <path d="M10 8 H32 C38 8 42 12.5 42 18.5 C42 24.5 38 29 32 29 H18 V42"
+          stroke="url(#g)" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M18 18.5 H30" stroke="url(#g)" stroke-width="4.5" stroke-linecap="round"/>
+    <circle cx="10" cy="8" r="3.5" fill="#5B8DEF"/>
+    <circle cx="42" cy="18.5" r="3.5" fill="#8A6BFF"/>
+    <circle cx="18" cy="42" r="3.5" fill="#34D399"/>
+  </g>
+  <text x="62" y="30" fill="#E7E9EE" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="20" font-weight="700" letter-spacing="0.4">FLOW<tspan fill="#5B8DEF">.AUTO</tspan></text>
+  <text x="62" y="46" fill="#5E6576" font-family="ui-monospace, 'SF Mono', Menlo, monospace" font-size="9" font-weight="500" letter-spacing="1.4">WORKBENCH</text>
+</svg>

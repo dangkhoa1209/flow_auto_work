@@ -9,3 +9,8 @@ scripts/.pids
 /project/*
 !/project/.gitkeep
 .vscode/
+qa-agents/artifacts/*
+!qa-agents/artifacts/.gitkeep
+qa-agents/dist/
+qa-web/dist/
+qa-web/node_modules/

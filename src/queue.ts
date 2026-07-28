@@ -138,10 +138,11 @@ export class JobQueue {
    * (running jobs are failed by failInterruptedJobs).
    */
   async restoreQueuedJobs(): Promise<number> {
-    const jobs = await listJobs();
+    const jobs = await listJobs({ excludeQa: true });
     let restored = 0;
     for (const job of jobs) {
       if (job.status !== "queued") continue;
+      if (job.kind === "qa") continue;
       const key = `${job.issue.projectId}:${job.issue.issueIid}`;
       if (
         this.activeIssueKeys.has(key) ||
