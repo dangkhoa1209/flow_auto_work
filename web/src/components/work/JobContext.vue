@@ -34,9 +34,11 @@ defineProps<{
   issueCreateBusy: boolean;
   jobBranch: (j: { branch?: string; workBranch?: string }) => string;
   canQuickMerge: boolean;
+  canCreateMr: boolean;
   canQuickHandoff: boolean;
   canSyncBase: boolean;
   mergeBusy: boolean;
+  createMrBusy: boolean;
   handoffBusy: boolean;
   syncBaseBusy: boolean;
   /** Larger touch targets + gap for mobile sticky bar */
@@ -58,8 +60,10 @@ const emit = defineEmits<{
   approveDocs: [];
   runSelected: [];
   quickMerge: [];
+  createMr: [];
   quickHandoff: [];
   syncBase: [];
+  diffUpdated: [];
 }>();
 </script>
 
@@ -370,12 +374,26 @@ const emit = defineEmits<{
         </div>
       </a-tab-pane>
 
-      <a-tab-pane key="diff" tab="Diff" :disabled="!selectedJobId">
+      <a-tab-pane key="diff" :disabled="!selectedJobId">
+        <template #tab>
+          <span class="inline-flex items-center gap-1.5">
+            Diff
+            <span
+              v-if="currentJob?.hasPendingChanges"
+              class="inline-flex items-center justify-center min-w-[1.1rem] h-4 px-1 rounded text-[10px] font-bold bg-amber-500/25 text-amber-300"
+              title="Uncommitted changes"
+              >WIP</span
+            >
+          </span>
+        </template>
         <div class="h-full min-h-0 flex flex-col overflow-hidden p-3">
           <JobDiffPanel
             class="flex-1 min-h-0"
             :job-id="selectedJobId"
             :branch="currentJob ? jobBranch(currentJob) : null"
+            :issue-iid="currentJob?.issue?.issueIid ?? null"
+            :issue-title="currentJob?.issue?.title ?? detailTitle"
+            @updated="emit('diffUpdated')"
           />
         </div>
       </a-tab-pane>
@@ -425,6 +443,25 @@ const emit = defineEmits<{
           {{ syncBaseBusy ? "Syncing…" : "⇣ Sync base" }}
         </button>
       </a-tooltip>
+      <a-tooltip
+        :title="
+          canCreateMr
+            ? currentJob?.mrUrl
+              ? 'Open existing / refresh MR'
+              : 'Create open MR (no merge) + Ready to Release'
+            : 'Need handoff/done, branch, and no pending changes'
+        "
+      >
+        <button
+          type="button"
+          class="faw-btn"
+          :class="mobileTouch ? '!min-h-[44px]' : ''"
+          :disabled="!canCreateMr || createMrBusy || mergeBusy || handoffBusy"
+          @click="emit('createMr')"
+        >
+          {{ createMrBusy ? "MR…" : currentJob?.mrUrl ? "MR ✓" : "Create MR" }}
+        </button>
+      </a-tooltip>
       <a-popconfirm
         title="Merge work branch → base?"
         ok-text="Merge"
@@ -443,7 +480,7 @@ const emit = defineEmits<{
             type="button"
             class="faw-btn"
             :class="mobileTouch ? '!min-h-[44px]' : ''"
-            :disabled="!canQuickMerge || mergeBusy || handoffBusy"
+            :disabled="!canQuickMerge || mergeBusy || handoffBusy || createMrBusy"
           >
             Merge
           </button>
@@ -467,7 +504,7 @@ const emit = defineEmits<{
             type="button"
             class="faw-btn"
             :class="mobileTouch ? '!min-h-[44px]' : ''"
-            :disabled="!canQuickHandoff || handoffBusy || mergeBusy"
+            :disabled="!canQuickHandoff || handoffBusy || mergeBusy || createMrBusy"
           >
             Handoff
           </button>

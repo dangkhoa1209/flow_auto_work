@@ -282,6 +282,8 @@ export async function createMergeRequest(opts: {
   title: string;
   description: string;
   issueIid?: number;
+  assigneeUsernames?: string[];
+  reviewerUsernames?: string[];
 }): Promise<{ webUrl: string; iid: number }> {
   const config = getConfig();
   const project = projectApiKey(opts.projectId);
@@ -292,6 +294,18 @@ export async function createMergeRequest(opts: {
     description: opts.description,
     remove_source_branch: false,
   };
+
+  const assigneeNames =
+    opts.assigneeUsernames?.filter(Boolean) ??
+    (config.mrAssigneeUsernames.length ? config.mrAssigneeUsernames : []);
+  if (assigneeNames.length) {
+    try {
+      const ids = await resolveUserIds(assigneeNames);
+      if (ids.length) payload.assignee_ids = ids;
+    } catch (err) {
+      logger.warn("Failed to resolve MR assignees", { err: String(err) });
+    }
+  }
 
   const res = await gitlabFetch(
     "POST",
@@ -304,12 +318,14 @@ export async function createMergeRequest(opts: {
   }
   const data = (await res.json()) as { web_url: string; iid: number };
 
-  if (config.mrReviewerUsernames.length > 0) {
+  const reviewerNames =
+    opts.reviewerUsernames?.filter(Boolean) ?? config.mrReviewerUsernames;
+  if (reviewerNames.length > 0) {
     try {
       await gitlabFetch(
         "PUT",
         `/projects/${project}/merge_requests/${data.iid}`,
-        { reviewer_ids: await resolveUserIds(config.mrReviewerUsernames) },
+        { reviewer_ids: await resolveUserIds(reviewerNames) },
       );
     } catch (err) {
       logger.warn("Failed to set MR reviewers", { err: String(err) });

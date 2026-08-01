@@ -74,6 +74,27 @@ export async function gitlabBranchExists(
   return true;
 }
 
+/** Delete a branch on GitLab (used when recreating a squashed tip). */
+export async function deleteGitlabBranch(
+  projectIdOrPath: number | string,
+  branch: string,
+  token?: string,
+): Promise<void> {
+  const project = projectKey(projectIdOrPath);
+  const encBranch = encodeURIComponent(branch);
+  const res = await gitlabFetch(
+    "DELETE",
+    `/projects/${project}/repository/branches/${encBranch}`,
+    undefined,
+    token,
+  );
+  if (res.status === 204 || res.status === 200) return;
+  if (res.status === 404) return;
+  throw new Error(
+    `GitLab delete branch failed (${res.status}): ${await res.text()}`,
+  );
+}
+
 /**
  * Create a commit on GitLab via Commits API.
  * Do not set author_* — GitLab attributes the commit to the PAT owner.

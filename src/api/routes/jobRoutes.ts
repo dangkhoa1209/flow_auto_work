@@ -32,11 +32,16 @@ export function createJobRoutes(): Router {
 
   router.post("/:id/completion-actions", jobController.completionActions);
   router.post("/:id/merge", jobController.merge);
+  router.post("/:id/create-mr", jobController.createMr);
   router.post("/:id/sync-base", jobController.syncBase);
 
   router.get("/:id/progress", jobController.progress);
   router.get("/:id/commits", jobController.commits);
   router.post("/:id/commits/:sha/revert", jobController.revertCommit);
+  router.post("/:id/commit", jobController.commit);
+  router.post("/:id/discard-changes", jobController.discardChanges);
+  router.post("/:id/group-commit", jobController.groupCommit);
+  router.patch("/:id/commit-mode", jobController.commitMode);
   router.get("/:id/diff", jobController.diff);
   router.post("/:id/approve-diff", jobController.approveDiff);
   router.get("/:id/file", jobController.readFile);

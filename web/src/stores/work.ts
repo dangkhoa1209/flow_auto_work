@@ -30,6 +30,10 @@ export type Job = {
   agentId?: string;
   commitSha?: string;
   commitShas?: string[];
+  commitMode?: "manual" | "auto";
+  hasPendingChanges?: boolean;
+  mrUrl?: string;
+  mrIid?: number;
   error?: string;
   summary?: string;
   branch?: string;

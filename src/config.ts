@@ -23,6 +23,8 @@ const envSchema = z.object({
   GITLAB_ASSIGNEE_ID: z.string().optional(),
   MR_TARGET_BRANCH: z.string().optional(),
   MR_REVIEWER_USERNAMES: z.string().optional(),
+  /** Comma-separated GitLab usernames for Create MR assignees (default: reviewers / anhvh4) */
+  MR_ASSIGNEE_USERNAMES: z.string().optional(),
   SKIP_LABELS: z.string().default("auto-work:skip,wip-human"),
   /** Minutes before a pending diff-approval waiter times out */
   TEAMS_CLARIFY_TIMEOUT_MIN: z.coerce.number().default(60),
@@ -70,6 +72,7 @@ const envSchema = z.object({
 export type AppConfig = z.infer<typeof envSchema> & {
   skipLabels: string[];
   mrReviewerUsernames: string[];
+  mrAssigneeUsernames: string[];
   onCompleteAssignUsernames: string[];
   onCompleteLabels: string[];
   STARTUP_SCAN: boolean;
@@ -119,6 +122,19 @@ export function getConfig(): AppConfig {
       .split(",")
       .map((s) => s.trim())
       .filter(Boolean),
+    mrAssigneeUsernames: (() => {
+      const assignees = (env.MR_ASSIGNEE_USERNAMES ?? "")
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+      if (assignees.length) return assignees;
+      const reviewers = (env.MR_REVIEWER_USERNAMES ?? "")
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+      if (reviewers.length) return reviewers;
+      return ["anhvh4"];
+    })(),
     onCompleteAssignUsernames: (env.ON_COMPLETE_ASSIGN_USERNAMES ?? "")
       .split(",")
       .map((s) => s.trim())

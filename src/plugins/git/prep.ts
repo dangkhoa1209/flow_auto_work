@@ -1,8 +1,27 @@
+import { getConfig } from "../../config.js";
 import { logger } from "../../logger.js";
+import { buildOauthCloneUrl } from "../../workspace/clone.js";
 import { resolveRepoPath } from "../../workspace/creds.js";
 import { getRuntimeContext } from "../../workspace/runtime.js";
 import { autoWorkBranchName } from "./branch-name.js";
 import { git } from "./exec.js";
+
+/**
+ * Push remote URL with current runtime GitLab PAT (same scheme as clone).
+ * Avoids relying on a stale `origin` that may lack / have an old token.
+ */
+function resolvePatPushUrl(): string {
+  const rt = getRuntimeContext();
+  const token = rt?.gitlabToken?.trim();
+  const gitlabPath = rt?.gitlabPath?.trim();
+  if (!token || !gitlabPath) {
+    throw new Error(
+      "No GitLab PAT in runtime — cannot push (clone/login with token first)",
+    );
+  }
+  const host = getConfig().GITLAB_BASE_URL;
+  return buildOauthCloneUrl(host, token, gitlabPath);
+}
 
 /** Full HEAD SHA, or null if unavailable */
 export async function getHeadSha(repoPath: string): Promise<string | null> {
@@ -185,7 +204,36 @@ export async function pushBranch(
   repoPath: string,
   branch: string,
 ): Promise<void> {
-  await git(repoPath, ["push", "-u", "origin", "HEAD:refs/heads/" + branch]);
+  const url = resolvePatPushUrl();
+  // One-shot PAT URL — do not `push -u` (would write token into branch.*.remote)
+  await git(repoPath, ["push", url, `HEAD:refs/heads/${branch}`]);
+  await refreshOriginBranchRef(repoPath, branch);
+}
+
+/** Force-push current HEAD using runtime GitLab PAT (history rewrite / squash). */
+export async function forcePushBranch(
+  repoPath: string,
+  branch: string,
+): Promise<void> {
+  const url = resolvePatPushUrl();
+  await git(repoPath, ["push", "--force", url, `HEAD:refs/heads/${branch}`]);
+  await refreshOriginBranchRef(repoPath, branch);
+}
+
+async function refreshOriginBranchRef(
+  repoPath: string,
+  branch: string,
+): Promise<void> {
+  try {
+    await git(repoPath, [
+      "fetch",
+      "origin",
+      `+refs/heads/${branch}:refs/remotes/origin/${branch}`,
+    ]);
+    await git(repoPath, ["branch", `--set-upstream-to=origin/${branch}`, branch]);
+  } catch {
+    /* tracking refresh is best-effort */
+  }
 }
 
 /** True if there are uncommitted changes. */

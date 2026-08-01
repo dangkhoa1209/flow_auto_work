@@ -43,6 +43,8 @@ export function publicProject(project: Awaited<ReturnType<typeof getProject>>) {
     repoPath: project.repoPath || project.localPath,
     mainBranch: project.mainBranch ?? null,
     workingBranch: project.workingBranch ?? null,
+    defaultCommitMode:
+      project.defaultCommitMode === "manual" ? "manual" : "auto",
     isActive: project.isActive,
     cloneStatus: project.cloneStatus,
     cloneError: project.cloneError ?? null,
@@ -107,6 +109,7 @@ export type CreateProjectBody = {
   localPath?: string;
   mainBranch?: string;
   workingBranch?: string;
+  defaultCommitMode?: "manual" | "auto";
   displayName?: string;
   activate?: boolean;
 };
@@ -141,6 +144,8 @@ export async function createProject(username: string, body: CreateProjectBody) {
       localPath: body.localPath?.trim() || defaultLocalPath(user, projectName),
       mainBranch: body.mainBranch,
       workingBranch: body.workingBranch,
+      defaultCommitMode:
+        body.defaultCommitMode === "manual" ? "manual" : "auto",
       displayName: projectName,
       gitlabProjectId,
       isActive: body.activate !== false,
@@ -364,6 +369,8 @@ export type UpdateProjectBody = {
   displayName?: string;
   /** UI “Flow project name” — also renames local folder when possible */
   projectName?: string;
+  /** Default Auto/Manual commit for new jobs in this project */
+  defaultCommitMode?: "manual" | "auto";
 };
 
 /** Update branches / path / token / Flow name (+ rename folder) for owned project */
@@ -416,6 +423,10 @@ export async function updateOwnedProject(
         : {}),
       ...(Object.prototype.hasOwnProperty.call(body, "workBranch")
         ? { workingBranch: body.workBranch ?? "" }
+        : {}),
+      ...(body.defaultCommitMode === "manual" ||
+      body.defaultCommitMode === "auto"
+        ? { defaultCommitMode: body.defaultCommitMode }
         : {}),
       ...(body.gitlabToken?.trim()
         ? { gitlabToken: body.gitlabToken.trim() }

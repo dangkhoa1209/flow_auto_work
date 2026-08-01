@@ -28,6 +28,8 @@ export * from "./docs.js";
 export * from "./diff.js";
 export * from "./merge.js";
 export * from "./chat.js";
+export * from "./commit.js";
+export * from "./create-mr.js";
 
 export type ListJobsQuery = {
   status?: JobStatus;

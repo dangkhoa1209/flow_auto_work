@@ -46,6 +46,7 @@ export function useWorkbench() {
   const standardsOpen = ref(false);
   const approveDocsBusy = ref(false);
   const mergeBusy = ref(false);
+  const createMrBusy = ref(false);
   const handoffBusy = ref(false);
   const syncBaseBusy = ref(false);
   const syncBaseOpen = ref(false);
@@ -177,6 +178,16 @@ export function useWorkbench() {
     return Boolean(
       selectedJobId.value && (st === "awaiting_handoff" || st === "succeeded"),
     );
+  });
+
+  const canCreateMr = computed(() => {
+    const j = currentJob.value;
+    const st = j?.status;
+    if (!selectedJobId.value || !j) return false;
+    if (st !== "awaiting_handoff" && st !== "succeeded") return false;
+    if (!jobBranch(j)) return false;
+    if (j.hasPendingChanges) return false;
+    return true;
   });
 
   const canQuickHandoff = computed(() => {
@@ -648,6 +659,40 @@ export function useWorkbench() {
     }
   }
 
+  /** Open MR only (no accept) + Issue Ready to Release. */
+  async function createMr() {
+    if (!selectedJobId.value || !canCreateMr.value) return;
+    createMrBusy.value = true;
+    try {
+      const res = await api<{
+        mrUrl?: string;
+        created?: boolean;
+      }>(`/api/jobs/${selectedJobId.value}/create-mr`, {
+        method: "POST",
+        body: JSON.stringify({}),
+      });
+      message.success(
+        res.created === false
+          ? "MR already open"
+          : "MR created + Issue Ready to Release",
+      );
+      await work.loadJobs();
+      if (selectedJobId.value) await work.selectJob(selectedJobId.value);
+      if (res.mrUrl) window.open(res.mrUrl, "_blank", "noopener,noreferrer");
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : String(e));
+    } finally {
+      createMrBusy.value = false;
+    }
+  }
+
+  async function onDiffUpdated() {
+    if (selectedJobId.value) {
+      await work.selectJob(selectedJobId.value);
+    }
+    await work.loadJobs();
+  }
+
   /** Base branch configured in Settings → Project (no guessing). */
   const configuredBaseBranch = computed(() => {
     const m = session.currentMembership;
@@ -931,6 +976,7 @@ export function useWorkbench() {
     standardsOpen,
     approveDocsBusy,
     mergeBusy,
+    createMrBusy,
     handoffBusy,
     adhocOpen,
     adhocTitle,
@@ -964,6 +1010,7 @@ export function useWorkbench() {
     canResetWindow,
     awaitingDocsApproval,
     canQuickMerge,
+    canCreateMr,
     canQuickHandoff,
     canSyncBase,
     syncBaseBusy,
@@ -986,6 +1033,8 @@ export function useWorkbench() {
     resetAgentWindow,
     approveDocs,
     quickMerge,
+    createMr,
+    onDiffUpdated,
     quickHandoff,
     syncBase,
     syncBaseOpen,

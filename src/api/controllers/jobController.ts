@@ -8,10 +8,13 @@ import {
   approveJobDocs,
   askJobQuestion,
   buildIssueDraft,
+  commitJobManual,
   continueJobChat,
   createAdhocSession,
   createIssueFromAdhoc,
+  createJobMergeRequest,
   deleteJob,
+  discardJobChanges,
   ensureJobForIssue,
   findJobByIssueIid,
   getJobChat,
@@ -21,6 +24,7 @@ import {
   getJobDocsForReview,
   getJobProgressForUi,
   getLinkedIssueContext,
+  groupJobCommits,
   killJob,
   killAllJobs,
   listJobsForUi,
@@ -29,6 +33,7 @@ import {
   rerunJobDocs,
   resetJobWindow,
   revertJobCommit,
+  setJobCommitMode,
   setJobStatus,
   startJobs,
   syncJobBranchWithBase,
@@ -142,12 +147,59 @@ export const jobController = {
     );
   }),
 
+  /** POST /api/jobs/:id/create-mr — open MR only (no accept) */
+  createMr: asyncHandler(async (req: Request, res: Response) => {
+    res.json(
+      await createJobMergeRequest(
+        jobId(req),
+        body<{ targetBranch?: string }>(req),
+      ),
+    );
+  }),
+
   /** POST /api/jobs/:id/sync-base — pull base into work branch (AI fixes conflicts) */
   syncBase: asyncHandler(async (req: Request, res: Response) => {
     res.json(
       await syncJobBranchWithBase(
         jobId(req),
         body<{ targetBranch?: string }>(req),
+      ),
+    );
+  }),
+
+  /** POST /api/jobs/:id/commit — manual GitLab API commit */
+  commit: asyncHandler(async (req: Request, res: Response) => {
+    res.json(
+      await commitJobManual(jobId(req), body<{ message?: string }>(req)),
+    );
+  }),
+
+  /** POST /api/jobs/:id/discard-changes — drop uncommitted files */
+  discardChanges: asyncHandler(async (req: Request, res: Response) => {
+    res.json(
+      await discardJobChanges(
+        jobId(req),
+        body<{ paths?: string[] }>(req),
+      ),
+    );
+  }),
+
+  /** POST /api/jobs/:id/group-commit — squash job commits into one */
+  groupCommit: asyncHandler(async (req: Request, res: Response) => {
+    res.json(
+      await groupJobCommits(
+        jobId(req),
+        body<{ message?: string; title?: string; body?: string }>(req),
+      ),
+    );
+  }),
+
+  /** PATCH /api/jobs/:id/commit-mode */
+  commitMode: asyncHandler(async (req: Request, res: Response) => {
+    res.json(
+      await setJobCommitMode(
+        jobId(req),
+        body<{ commitMode?: string }>(req).commitMode,
       ),
     );
   }),
@@ -179,11 +231,15 @@ export const jobController = {
     );
   }),
 
-  /** GET /api/jobs/:id/diff?commit=|sha= */
+  /** GET /api/jobs/:id/diff?commit=|sha=|&pending=1 */
   diff: asyncHandler(async (req: Request, res: Response) => {
     const singleCommit =
       queryString(req.query.commit) ?? queryString(req.query.sha);
-    res.json(await getJobDiff(jobId(req), singleCommit));
+    const pending =
+      req.query.pending === "1" ||
+      req.query.pending === "true" ||
+      singleCommit === "pending";
+    res.json(await getJobDiff(jobId(req), singleCommit, pending));
   }),
 
   /** POST /api/jobs/kill-all */

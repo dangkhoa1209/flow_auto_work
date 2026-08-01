@@ -272,6 +272,55 @@ export async function listJobCommits(opts: {
   return commits.slice(0, limit);
 }
 
+/** Working tree (incl. untracked) vs HEAD — for manual-commit pending review. */
+export async function getWorkingTreeDiff(opts?: {
+  branch?: string;
+}): Promise<DiffPayload> {
+  const repoPath = resolveRepoPath();
+  const head = (await gitOk(["rev-parse", "HEAD"]))?.trim() || "HEAD";
+  // Stage everything temporarily so untracked files appear in the diff
+  await gitOk(["add", "-A"]);
+  const rangeDiff = (await gitOk(["diff", "--cached"])) || "";
+  const summary =
+    (await gitOk(["diff", "--cached", "--stat"]))?.trim() || "";
+  const numstatText =
+    (await gitOk(["diff", "--cached", "--numstat"])) || "";
+  const nameStatusText =
+    (await gitOk(["diff", "--cached", "--name-status"])) || "";
+  // Unstage — keep worktree as-is
+  await gitOk(["reset", "HEAD"]);
+
+  const numMap = parseNumstat(numstatText);
+  const nameRows = parseNameStatus(nameStatusText);
+  const files: DiffFileStat[] = nameRows.map((r) => {
+    const n = numMap.get(r.path) || { additions: 0, deletions: 0 };
+    return {
+      path: r.path,
+      status: r.status,
+      additions: n.additions,
+      deletions: n.deletions,
+    };
+  });
+
+  const curBranch =
+    (await gitOk(["branch", "--show-current"]))?.trim() || "(detached)";
+
+  return {
+    branch: opts?.branch?.trim() || curBranch,
+    tip: "WORKING_TREE",
+    base: head,
+    comparedLabel: `${head.slice(0, 8)}…working tree`,
+    rangeDiff,
+    unstaged: "",
+    staged: "",
+    recentCommits: "",
+    files,
+    summary,
+    tipIsHead: true,
+    mode: "range",
+  };
+}
+
 /** Diff for code review in UI — range (base…tip) or single commit (sha^..sha). */
 export async function getReviewDiff(opts?: {
   issueIid?: number;

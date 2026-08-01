@@ -146,6 +146,62 @@ export const jobApi = {
     });
   },
 
+  commit(id: string, body?: { message?: string }) {
+    return request<{ commitSha: string; job?: unknown }>({
+      url: API.jobs.commit(id),
+      method: "POST",
+      data: body || {},
+    });
+  },
+
+  discardChanges(id: string, body?: { paths?: string[] }) {
+    return request<{
+      all?: boolean;
+      discarded?: string[];
+      job?: unknown;
+    }>({
+      url: API.jobs.discardChanges(id),
+      method: "POST",
+      data: body || {},
+    });
+  },
+
+  groupCommit(
+    id: string,
+    body?: { message?: string; title?: string; body?: string },
+  ) {
+    return request<{
+      commitSha: string;
+      groupedCount?: number;
+      job?: unknown;
+    }>({
+      url: API.jobs.groupCommit(id),
+      method: "POST",
+      data: body || {},
+    });
+  },
+
+  setCommitMode(id: string, commitMode: "manual" | "auto") {
+    return request<{ job?: unknown }>({
+      url: API.jobs.commitMode(id),
+      method: "PATCH",
+      data: { commitMode },
+    });
+  },
+
+  createMr(id: string, body?: { targetBranch?: string }) {
+    return request<{
+      mrUrl: string;
+      mrIid: number;
+      created: boolean;
+      job?: unknown;
+    }>({
+      url: API.jobs.createMr(id),
+      method: "POST",
+      data: body || {},
+    });
+  },
+
   completionActions(id: string, body: Record<string, unknown>) {
     return request({
       url: API.jobs.completionActions(id),

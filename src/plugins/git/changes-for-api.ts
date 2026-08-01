@@ -113,8 +113,8 @@ export async function softResetTo(
 }
 
 /**
- * After GitLab API commit: fetch branch and hard-reset local to that SHA
- * so merge/handoff see the same tip as remote.
+ * After remote tip moves (GitLab API commit / force-push): fetch + hard-reset
+ * so local matches remote and later agent runs do not diverge.
  */
 export async function syncLocalToRemoteCommit(
   repoPath: string,
@@ -134,6 +134,12 @@ export async function syncLocalToRemoteCommit(
     }
   }
 
-  // Point local branch at the API commit (clean working tree)
-  await git(repoPath, ["checkout", "-B", branch, sha]);
+  // Ensure we are on the work branch, then hard-reset to the remote SHA
+  await git(repoPath, ["checkout", "-B", branch]);
+  try {
+    await git(repoPath, ["reset", "--hard", sha]);
+  } catch {
+    // Fallback: SHA may only be reachable via origin/<branch> after fetch
+    await git(repoPath, ["reset", "--hard", `origin/${branch}`]);
+  }
 }

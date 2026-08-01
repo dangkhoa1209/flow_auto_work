@@ -1,12 +1,5 @@
 import { getConfig } from "./config.js";
 import {
-  collectCommitActions,
-  softResetTo,
-  syncLocalToRemoteCommit,
-} from "./plugins/git/changes-for-api.js";
-import {
-  currentBranch,
-  detectDefaultBranch,
   getHeadSha,
   hasUncommittedChanges,
   prepareRepoForIssue,
@@ -16,9 +9,10 @@ import {
   getProjectDefaultBranch,
 } from "./plugins/gitlab/client.js";
 import {
-  createRepositoryCommit,
-  gitlabBranchExists,
-} from "./plugins/gitlab/commits.js";
+  finalizeGitlabCommitForJob,
+  markPendingChangesIfDirty,
+  resolveCommitMode,
+} from "./modules/job/commit.js";
 import {
   postAgentGitlabComments,
   withAiGeneratedMarker,
@@ -683,7 +677,7 @@ export class JobQueue {
       // Follow-up may have edited code — same verify + self-heal gate as Run
       await this.verifyAndSelfHeal(job, repoPath, headBefore);
 
-      const { hasChange } = await this.finalizeGitlabCommit(
+      const { hasChange } = await this.finalizeOrDeferCommit(
         job,
         repoPath,
         headBefore,
@@ -1485,108 +1479,35 @@ export class JobQueue {
   }
 
   /**
-   * Commit via GitLab Commits API (author = PAT owner), then sync local to that SHA.
-   * If the agent already `git commit` locally, soft-reset to headBefore and re-commit via API.
+   * Auto mode → GitLab Commits API; manual (default) → keep dirty tree for user Commit.
    */
-  private async finalizeGitlabCommit(
+  private async finalizeOrDeferCommit(
     job: JobRecord,
     repoPath: string,
     headBefore: string | null,
     commitMsg: string,
   ): Promise<{ commitSha: string | null; hasChange: boolean }> {
-    const rt = getRuntimeContext();
-    const headNow = await getHeadSha(repoPath);
-    const dirty = await hasUncommittedChanges(repoPath);
-
-    if (!dirty && headBefore && headNow && headBefore === headNow) {
-      logger.info("No local changes to commit via GitLab API", {
-        jobId: job.id,
-      });
-      return { commitSha: headNow, hasChange: false };
-    }
-
-    // Agent may have committed locally — soft-reset so one API commit (PAT identity)
-    if (headBefore && headNow && headBefore !== headNow) {
-      logger.info("Soft-reset local commits before GitLab API commit", {
-        jobId: job.id,
-        headBefore: headBefore.slice(0, 12),
-        headNow: headNow.slice(0, 12),
-      });
-      await softResetTo(repoPath, headBefore);
-    }
-
     this.assertNotKilled(job);
-
-    const actions = await collectCommitActions(repoPath);
-    if (!actions.length) {
-      const sha = (await getHeadSha(repoPath)) ?? headBefore;
-      logger.info("Nothing to commit via GitLab API", { jobId: job.id });
-      return { commitSha: sha, hasChange: false };
+    if (resolveCommitMode(job) === "auto") {
+      const result = await finalizeGitlabCommitForJob(
+        job,
+        repoPath,
+        headBefore,
+        commitMsg,
+      );
+      this.assertNotKilled(job);
+      return result;
     }
-
-    const branch =
-      (job.branch || job.workBranch || "").trim() ||
-      (await currentBranch(repoPath));
-    const projectIdOrPath =
-      rt?.gitlabProjectId ??
-      rt?.gitlabPath ??
-      job.issue.projectId;
-    if (projectIdOrPath === undefined || projectIdOrPath === "") {
-      throw new Error("No GitLab project for Commits API");
-    }
-
-    const remoteExists = await gitlabBranchExists(projectIdOrPath, branch);
-    let startBranch: string | undefined;
-    if (!remoteExists) {
-      startBranch =
-        rt?.baseBranch?.trim() ||
-        job.baseBranch?.trim() ||
-        (await detectDefaultBranch(repoPath));
-      logger.info("GitLab branch missing — creating via start_branch", {
-        jobId: job.id,
-        branch,
-        startBranch,
-      });
-    }
-
-    logger.info("Creating GitLab commit via API", {
-      jobId: job.id,
-      branch,
-      actions: actions.length,
-      remoteExists,
-    });
-
-    const created = await createRepositoryCommit({
-      projectIdOrPath,
-      branch,
-      startBranch,
-      message: commitMsg,
-      actions,
-      token: rt?.gitlabToken,
-    });
-
+    const deferred = await markPendingChangesIfDirty(
+      job,
+      repoPath,
+      headBefore,
+    );
     this.assertNotKilled(job);
-
-    await syncLocalToRemoteCommit(repoPath, branch, created.id);
-
-    const commitSha = created.id;
-    job.commitSha = commitSha;
-    const prev = Array.isArray(job.commitShas) ? job.commitShas : [];
-    if (!prev.includes(commitSha)) {
-      job.commitShas = [...prev, commitSha].slice(-20);
-    } else {
-      job.commitShas = prev;
-    }
-
-    const stillDirty = await hasUncommittedChanges(repoPath);
-    if (stillDirty) {
-      logger.warn("Working tree still dirty after GitLab sync", {
-        jobId: job.id,
-        commitSha: commitSha.slice(0, 12),
-      });
-    }
-
-    return { commitSha, hasChange: true };
+    return {
+      commitSha: job.commitSha ?? (await getHeadSha(repoPath)),
+      hasChange: deferred.hasChange,
+    };
   }
 
   private async runJob(
@@ -1899,7 +1820,7 @@ export class JobQueue {
           job.docsPath = paths[0];
         }
 
-        await this.finalizeGitlabCommit(
+        await this.finalizeOrDeferCommit(
           job,
           repoPath,
           headBefore,
@@ -1961,7 +1882,7 @@ export class JobQueue {
       // Verify + one self-heal round BEFORE committing (code phase only)
       await this.verifyAndSelfHeal(job, repoPath, headBefore);
 
-      const { commitSha, hasChange } = await this.finalizeGitlabCommit(
+      const { commitSha, hasChange } = await this.finalizeOrDeferCommit(
         job,
         repoPath,
         headBefore,
@@ -1973,7 +1894,7 @@ export class JobQueue {
       job.error = undefined;
       await saveJob(job);
 
-      if (hasChange) {
+      if (hasChange && resolveCommitMode(job) === "auto") {
         const defaultComment = withAiGeneratedMarker(
           result.summary?.trim() || "(AI run completed — see commit)",
         );
@@ -1987,6 +1908,11 @@ export class JobQueue {
           job.issue.issueIid,
           finalComment,
         );
+      } else if (hasChange && resolveCommitMode(job) === "manual") {
+        logger.info("Manual commit mode — pending local changes", {
+          jobId: job.id,
+          headBefore,
+        });
       } else {
         logger.info("No code changes this run — skip GitLab comment", {
           jobId: job.id,

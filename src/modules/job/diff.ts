@@ -1,12 +1,17 @@
 /**
  * Review surface: commits, revert, unified diff, inline file edit, approval.
  */
-import { getReviewDiff, listJobCommits } from "../../plugins/git/diff.js";
+import {
+  getReviewDiff,
+  getWorkingTreeDiff,
+  listJobCommits,
+} from "../../plugins/git/diff.js";
 import {
   extractPathsFromUnifiedDiff,
   readRepoFile,
   writeRepoFile,
 } from "../../plugins/git/files.js";
+import { hasUncommittedChanges } from "../../plugins/git/prep.js";
 import { saveJob } from "../../job-store.js";
 import { logger } from "../../logger.js";
 import {
@@ -15,12 +20,35 @@ import {
 } from "../../plugins/review/diff-wait.js";
 import { getRuntimeContext } from "../../workspace/runtime.js";
 import { AppError } from "../../utils/AppError.js";
+import { resolveCommitMode } from "./commit.js";
 import { requireJobDoc } from "./lifecycle.js";
 
 export async function getJobCommits(jobId: string) {
   const job = await requireJobDoc(jobId);
   const rt = getRuntimeContext();
   try {
+    let pendingFileCount = 0;
+    // Refresh pending flag from disk when possible
+    if (rt?.repoPath) {
+      try {
+        const dirty = await hasUncommittedChanges(rt.repoPath);
+        if (dirty !== Boolean(job.hasPendingChanges)) {
+          job.hasPendingChanges = dirty;
+          await saveJob(job, { source: "commits_pending_sync" });
+        }
+        if (dirty) {
+          const { getWorkingTreeDiff } = await import(
+            "../../plugins/git/diff.js"
+          );
+          const wt = await getWorkingTreeDiff({
+            branch: job.branch || job.workBranch,
+          });
+          pendingFileCount = wt.files?.length ?? 0;
+        }
+      } catch {
+        /* ignore */
+      }
+    }
     const commits = await listJobCommits({
       issueIid: job.issue.issueIid > 0 ? job.issue.issueIid : undefined,
       branch: job.branch || job.workBranch,
@@ -33,6 +61,9 @@ export async function getJobCommits(jobId: string) {
       jobId: job.id,
       branch: job.branch || job.workBranch || null,
       commitSha: job.commitSha || null,
+      commitMode: resolveCommitMode(job),
+      hasPendingChanges: Boolean(job.hasPendingChanges),
+      pendingFileCount,
       commits,
     };
   } catch (err) {
@@ -91,18 +122,30 @@ export async function revertJobCommit(
   }
 }
 
-export async function getJobDiff(jobId: string, singleCommit?: string) {
+export async function getJobDiff(
+  jobId: string,
+  singleCommit?: string,
+  pending?: boolean,
+) {
   const job = await requireJobDoc(jobId);
   const rt = getRuntimeContext();
   try {
-    const diff = await getReviewDiff({
-      issueIid: job.issue.issueIid > 0 ? job.issue.issueIid : undefined,
-      branch: job.branch || job.workBranch,
-      baseBranch:
-        job.baseBranch || rt?.baseBranch || job.mergeTarget || undefined,
-      commitSha: job.commitSha,
-      singleCommit,
-    });
+    const wantPending =
+      pending ||
+      singleCommit === "pending" ||
+      singleCommit === "WORKING_TREE";
+    const diff = wantPending
+      ? await getWorkingTreeDiff({
+          branch: job.branch || job.workBranch,
+        })
+      : await getReviewDiff({
+          issueIid: job.issue.issueIid > 0 ? job.issue.issueIid : undefined,
+          branch: job.branch || job.workBranch,
+          baseBranch:
+            job.baseBranch || rt?.baseBranch || job.mergeTarget || undefined,
+          commitSha: job.commitSha,
+          singleCommit,
+        });
     const text = [diff.rangeDiff, diff.staged, diff.unstaged]
       .filter(Boolean)
       .join("\n");
@@ -115,7 +158,12 @@ export async function getJobDiff(jobId: string, singleCommit?: string) {
       issueIid: job.issue.issueIid,
       status: job.status,
       branch: job.branch || job.workBranch || null,
-      commitSha: singleCommit || job.commitSha || null,
+      commitSha: wantPending
+        ? null
+        : singleCommit || job.commitSha || null,
+      pending: Boolean(wantPending),
+      commitMode: resolveCommitMode(job),
+      hasPendingChanges: Boolean(job.hasPendingChanges),
       diff,
       paths,
       files: diff.files,

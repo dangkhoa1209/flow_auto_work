@@ -54,10 +54,20 @@ export const API = {
     approveDiff: (id: string) =>
       `/api/jobs/${encodeURIComponent(id)}/approve-diff`,
     merge: (id: string) => `/api/jobs/${encodeURIComponent(id)}/merge`,
+    createMr: (id: string) =>
+      `/api/jobs/${encodeURIComponent(id)}/create-mr`,
     completionActions: (id: string) =>
       `/api/jobs/${encodeURIComponent(id)}/completion-actions`,
     commits: (id: string) =>
       `/api/jobs/${encodeURIComponent(id)}/commits`,
+    commit: (id: string) =>
+      `/api/jobs/${encodeURIComponent(id)}/commit`,
+    discardChanges: (id: string) =>
+      `/api/jobs/${encodeURIComponent(id)}/discard-changes`,
+    groupCommit: (id: string) =>
+      `/api/jobs/${encodeURIComponent(id)}/group-commit`,
+    commitMode: (id: string) =>
+      `/api/jobs/${encodeURIComponent(id)}/commit-mode`,
     revertCommit: (id: string, sha: string) =>
       `/api/jobs/${encodeURIComponent(id)}/commits/${encodeURIComponent(sha)}/revert`,
     diff: (id: string) => `/api/jobs/${encodeURIComponent(id)}/diff`,

@@ -125,6 +125,15 @@ export type JobRecord = {
   runId?: string;
   branch?: string;
   mrUrl?: string;
+  /** Open MR iid when Create MR was used */
+  mrIid?: number;
+  /**
+   * When to push agent edits via GitLab Commits API.
+   * Default `auto` — commit after each Run/follow-up; `manual` = user clicks Commit.
+   */
+  commitMode?: "manual" | "auto";
+  /** Local dirty tree waiting for manual Commit */
+  hasPendingChanges?: boolean;
   /** Latest commit SHA after a successful run (GitLab API) */
   commitSha?: string;
   /** History of commit SHAs across re-runs (newest last) */

@@ -1,5 +1,7 @@
 # GitLab Issue Template — chuẩn "Good Context"
 
+> Ví dụ điền sẵn (feature + bug) cho PD/PM: xem `docs/GOOD_CONTEXT_SAMPLE.md`.
+
 Copy file này vào repo dự án (repo được agent code, vd. AiHR) tại:
 
 ```
