@@ -610,6 +610,38 @@ export class JobQueue {
     }
     const contextQualityBlock = formatContextQualityForPrompt(quality);
 
+    // Opt-in Sheets/Excel — same as Run (only if user checked boxes)
+    let googleSheetsBlock = "";
+    try {
+      const { prepareGoogleSheetsForJob } = await import(
+        "./modules/google/index.js"
+      );
+      const sheetsPrep = await prepareGoogleSheetsForJob(
+        job,
+        [...priorChat.map((m) => m.body || ""), msg],
+      );
+      if (sheetsPrep.gate) {
+        logger.info("follow-up pause — awaiting Google Sheets auth", {
+          jobId: job.id,
+        });
+        appendJobProgress(
+          job.id,
+          "status",
+          "Awaiting Google authorization for Sheets",
+        );
+        this.activeIssueKeys.delete(key);
+        this.clearCurrent(job.id);
+        this.publishStatus();
+        return;
+      }
+      googleSheetsBlock = sheetsPrep.promptBlock || "";
+    } catch (err) {
+      logger.warn("Google Sheets prep failed on follow-up — continue without", {
+        jobId: job.id,
+        err: String(err),
+      });
+    }
+
     const runFollowUp = async (): Promise<void> => {
       const rt = getRuntimeContext();
       const repoPath = rt?.repoPath?.trim();
@@ -645,6 +677,7 @@ export class JobQueue {
           jobId: job.id,
           chatHistory: chatHistory || undefined,
           contextQualityBlock,
+          googleSheetsBlock: googleSheetsBlock || undefined,
         }),
       );
       job.agentId = result.agentId;
@@ -1682,6 +1715,38 @@ export class JobQueue {
       return;
     }
 
+    // Google Sheets gate — pause for OAuth when task links sheets without tokens
+    let googleSheetsBlock = "";
+    try {
+      const { prepareGoogleSheetsForJob } = await import(
+        "./modules/google/index.js"
+      );
+      const sheetsPrep = await prepareGoogleSheetsForJob(
+        job,
+        chatRows.map((m) => m.body || ""),
+      );
+      if (sheetsPrep.gate) {
+        logger.info("executeJob pause — awaiting Google Sheets auth", {
+          jobId: job.id,
+        });
+        appendJobProgress(
+          job.id,
+          "status",
+          "Awaiting Google authorization for Sheets",
+        );
+        this.activeIssueKeys.delete(key);
+        this.clearCurrent(job.id);
+        this.publishStatus();
+        return;
+      }
+      googleSheetsBlock = sheetsPrep.promptBlock || "";
+    } catch (err) {
+      logger.warn("Google Sheets prep failed — continuing without sheets", {
+        jobId: job.id,
+        err: String(err),
+      });
+    }
+
     job.status = "running";
     job.runCount = (job.runCount ?? 0) + 1;
     await saveJob(job);
@@ -1772,6 +1837,7 @@ export class JobQueue {
           devNotes: notes || undefined,
           chatContext: chatContext || undefined,
           contextQualityBlock,
+          googleSheetsBlock: googleSheetsBlock || undefined,
           existingAgentId: job.agentId,
           clarifyRoundsLeft: Math.max(
             0,

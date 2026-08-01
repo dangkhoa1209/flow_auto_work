@@ -209,4 +209,66 @@ export const jobApi = {
       data: body,
     });
   },
+
+  googleStatus(id: string) {
+    return request<{
+      configured: boolean;
+      authorized: boolean;
+      email?: string;
+      sheetIds: string[];
+      scopes: string[];
+      authorizedAt?: string;
+      revokedAt?: string;
+      pendingSheetUrls: string[];
+    }>({
+      url: API.jobs.googleStatus(id),
+      method: "GET",
+    });
+  },
+
+  googleDetect(id: string) {
+    return request<{
+      sheets: { spreadsheetId: string; url: string; gid?: string }[];
+      includeIds: string[];
+    }>({
+      url: API.jobs.googleDetect(id),
+      method: "GET",
+    });
+  },
+
+  googleInclude(id: string, spreadsheetIds: string[]) {
+    return request<{ ok: boolean; includeIds: string[]; job?: unknown }>({
+      url: API.jobs.googleInclude(id),
+      method: "PUT",
+      data: { spreadsheetIds },
+    });
+  },
+
+  googleAuthUrl(jobId: string) {
+    return request<{ authUrl: string; state: string; configured: boolean }>({
+      url: API.google.authUrl(jobId),
+      method: "GET",
+    });
+  },
+
+  googleRevoke(id: string) {
+    return request<{ ok: boolean; job?: unknown }>({
+      url: API.jobs.googleRevoke(id),
+      method: "POST",
+      data: {},
+    });
+  },
+
+  googleContinue(id: string) {
+    return request<{
+      ok: boolean;
+      enqueued?: boolean;
+      reason?: string;
+      job?: unknown;
+    }>({
+      url: API.jobs.googleContinue(id),
+      method: "POST",
+      data: {},
+    });
+  },
 };

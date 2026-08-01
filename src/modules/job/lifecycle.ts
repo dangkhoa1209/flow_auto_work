@@ -298,8 +298,11 @@ export async function getJobDetail(jobId: string) {
     listNotes({ jobId: job.id, limit: 50 }),
     listChatMessages({ jobId: job.id, limit: 200 }),
   ]);
+  const { redactJobGoogleAuthForClient } = await import(
+    "../google/index.js"
+  );
   return {
-    job,
+    job: redactJobGoogleAuthForClient(job),
     notes,
     chat,
     pendingQuestion:

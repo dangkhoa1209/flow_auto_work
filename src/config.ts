@@ -67,6 +67,10 @@ const envSchema = z.object({
   RATE_LIMIT_WINDOW_MS: z.coerce.number().optional(),
   /** Max requests per window per IP (default 300). 0 = disable */
   RATE_LIMIT_MAX: z.coerce.number().optional(),
+  /** Google OAuth — read Sheets links in tasks (optional) */
+  GOOGLE_OAUTH_CLIENT_ID: z.string().optional(),
+  GOOGLE_OAUTH_CLIENT_SECRET: z.string().optional(),
+  GOOGLE_OAUTH_REDIRECT_URI: z.string().optional(),
 });
 
 export type AppConfig = z.infer<typeof envSchema> & {
@@ -81,6 +85,7 @@ export type AppConfig = z.infer<typeof envSchema> & {
   corsOrigins: string[];
   rateLimitWindowMs: number;
   rateLimitMax: number;
+  googleOAuthConfigured: boolean;
 };
 
 let cached: AppConfig | null = null;
@@ -112,6 +117,10 @@ export function getConfig(): AppConfig {
     .map((s) => s.trim())
     .filter(Boolean);
   const resolvedCors = corsOrigins.length > 0 ? corsOrigins : defaultCors;
+
+  const googleClientId = (env.GOOGLE_OAUTH_CLIENT_ID ?? "").trim();
+  const googleClientSecret = (env.GOOGLE_OAUTH_CLIENT_SECRET ?? "").trim();
+  const googleRedirect = (env.GOOGLE_OAUTH_REDIRECT_URI ?? "").trim();
 
   cached = {
     ...env,
@@ -147,6 +156,9 @@ export function getConfig(): AppConfig {
     corsOrigins: resolvedCors,
     rateLimitWindowMs: env.RATE_LIMIT_WINDOW_MS ?? 15 * 60 * 1000,
     rateLimitMax: env.RATE_LIMIT_MAX ?? 1000,
+    googleOAuthConfigured: Boolean(
+      googleClientId && googleClientSecret && googleRedirect,
+    ),
   };
 
   // Fail fast on leftover .env.example placeholders (common cause of 401 on scan)

@@ -719,13 +719,13 @@ onMounted(async () => {
           />
         </div>
         <div
-          class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 flex items-center justify-between gap-3"
+          class="rounded-lg border border-[var(--app-border)] bg-[var(--app-panel-soft)] px-3 py-2.5 flex items-center justify-between gap-3"
         >
           <div class="min-w-0">
-            <div class="text-sm text-slate-700 font-medium">
+            <div class="text-sm text-ink-soft font-medium">
               Default Auto commit
             </div>
-            <div class="text-xs text-slate-500 mt-0.5">
+            <div class="text-xs text-ink-muted mt-0.5">
               Job mới trong project lấy mặc định này. Vẫn đổi được trên từng
               task (tab Diff).
             </div>

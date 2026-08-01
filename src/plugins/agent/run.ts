@@ -414,6 +414,8 @@ type RunOpts = {
   existingAgentId?: string;
   /** Injected CONTEXT QUALITY block (good / searchable). */
   contextQualityBlock?: string;
+  /** Truncated Google Sheets values from task links. */
+  googleSheetsBlock?: string;
   /** Remaining NEED_CLARIFICATION rounds before the job hard-fails. */
   clarifyRoundsLeft?: number;
 };
@@ -437,11 +439,13 @@ async function buildMissionPrompt(
       ? buildDocsPhasePrompt(issue, linkedBlock, notes, {
           chatContext: opts.chatContext,
           contextQualityBlock: opts.contextQualityBlock,
+          googleSheetsBlock: opts.googleSheetsBlock,
         })
       : buildWorkPrompt(issue, extraContext, linkedBlock, notes, {
           approvedDocsPaths: opts.approvedDocsPaths,
           chatContext: opts.chatContext,
           contextQualityBlock: opts.contextQualityBlock,
+          googleSheetsBlock: opts.googleSheetsBlock,
           clarifyRoundsLeft: opts.clarifyRoundsLeft,
         });
   if (!resumed) return body;
@@ -610,6 +614,7 @@ export async function continueAgentWindow(
     jobId?: string;
     chatHistory?: string;
     contextQualityBlock?: string;
+    googleSheetsBlock?: string;
   },
 ): Promise<AgentRunResult> {
   const modelId = resolveCursorModel();
@@ -618,10 +623,12 @@ export async function continueAgentWindow(
     ? buildAdhocFollowUpPrompt(message, issue.title, {
         chatHistory: opts?.chatHistory,
         contextQualityBlock: opts?.contextQualityBlock,
+        googleSheetsBlock: opts?.googleSheetsBlock,
       })
     : buildFollowUpPrompt(message, issue, {
         chatHistory: opts?.chatHistory,
         contextQualityBlock: opts?.contextQualityBlock,
+        googleSheetsBlock: opts?.googleSheetsBlock,
       });
 
   if (opts?.jobId) {

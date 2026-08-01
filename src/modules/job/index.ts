@@ -45,8 +45,9 @@ export async function listJobsForUi(query: ListJobsQuery = {}) {
     workspaceProjectId: rt?.projectId,
     ownerUsername: rt?.gitlabUsername,
   });
+  const { redactJobGoogleAuthForClient } = await import("../google/index.js");
   return {
-    jobs,
+    jobs: jobs.map((j) => redactJobGoogleAuthForClient(j)),
     pendingDiffApprovals: listPendingDiffApprovals(),
   };
 }

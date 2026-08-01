@@ -78,6 +78,20 @@ export const API = {
     notes: (id: string) => `/api/jobs/${encodeURIComponent(id)}/notes`,
     devNotes: (id: string) =>
       `/api/jobs/${encodeURIComponent(id)}/dev-notes`,
+    googleStatus: (id: string) =>
+      `/api/jobs/${encodeURIComponent(id)}/google/status`,
+    googleDetect: (id: string) =>
+      `/api/jobs/${encodeURIComponent(id)}/google/detect`,
+    googleInclude: (id: string) =>
+      `/api/jobs/${encodeURIComponent(id)}/google/include`,
+    googleRevoke: (id: string) =>
+      `/api/jobs/${encodeURIComponent(id)}/google/revoke`,
+    googleContinue: (id: string) =>
+      `/api/jobs/${encodeURIComponent(id)}/google/continue`,
+  },
+  google: {
+    authUrl: (jobId: string) =>
+      `/api/google/auth-url?jobId=${encodeURIComponent(jobId)}`,
   },
   tasks: {
     list: "/api/tasks",

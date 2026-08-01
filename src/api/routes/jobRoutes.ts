@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { jobController } from "../controllers/jobController.js";
+import { googleController } from "../controllers/googleController.js";
 
 export const routePath = "/jobs";
 
@@ -47,6 +48,12 @@ export function createJobRoutes(): Router {
   router.get("/:id/file", jobController.readFile);
   router.put("/:id/file", jobController.writeFile);
   router.get("/:id/linked", jobController.linked);
+
+  router.get("/:id/google/status", googleController.status);
+  router.get("/:id/google/detect", googleController.detect);
+  router.put("/:id/google/include", googleController.include);
+  router.post("/:id/google/revoke", googleController.revoke);
+  router.post("/:id/google/continue", googleController.continueRun);
 
   router.post("/:id/kill", jobController.kill);
   router.post("/:id/reset-window", jobController.resetWindow);

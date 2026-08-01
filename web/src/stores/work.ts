@@ -49,6 +49,17 @@ export type Job = {
     anchors?: string[];
     fileHints?: string[];
   };
+  /** Public Google auth metadata (tokens never sent to UI) */
+  googleAuth?: {
+    email?: string;
+    scopes?: string[];
+    sheetIds?: string[];
+    authorizedAt?: string;
+    revokedAt?: string;
+  };
+  pendingGoogleSheetUrls?: string[];
+  /** Opt-in spreadsheet IDs to read on Run (default empty = skip) */
+  googleSheetsIncludeIds?: string[];
 };
 
 export function isAdhocJob(job: Job | null | undefined): boolean {
