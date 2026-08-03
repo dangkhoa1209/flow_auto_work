@@ -155,7 +155,7 @@ export function getConfig(): AppConfig {
     isProd,
     corsOrigins: resolvedCors,
     rateLimitWindowMs: env.RATE_LIMIT_WINDOW_MS ?? 15 * 60 * 1000,
-    rateLimitMax: env.RATE_LIMIT_MAX ?? 1000,
+    rateLimitMax: env.RATE_LIMIT_MAX ?? 0, //1000,
     googleOAuthConfigured: Boolean(
       googleClientId && googleClientSecret && googleRedirect,
     ),
