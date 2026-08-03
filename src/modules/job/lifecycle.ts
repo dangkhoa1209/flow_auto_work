@@ -269,7 +269,9 @@ export type DevNotesInput = {
 export async function updateDevNotes(jobId: string, input: DevNotesInput) {
   const job = await requireJobRecord(jobId, "job not found");
   if (input.devNotes !== undefined) {
-    job.devNotes = input.devNotes.trim() || undefined;
+    // Keep user whitespace while typing/autosave; only treat all-blank as empty
+    job.devNotes =
+      input.devNotes.trim() === "" ? undefined : input.devNotes;
   }
   if (input.requireDocsFirst !== undefined) {
     job.requireDocsFirst = Boolean(input.requireDocsFirst);

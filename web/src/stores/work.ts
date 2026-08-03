@@ -465,10 +465,12 @@ export const useWorkStore = defineStore("work", () => {
     devNotes: string;
     requireDocsFirst?: boolean;
   }) {
-    const notes = opts.devNotes.trim();
+    // Do not trim here — preserve draft whitespace; server clears all-blank only
+    const notes = opts.devNotes;
     if (selectedJobId.value) {
+      const jobId = selectedJobId.value;
       const res = await api<{ job: Job }>(
-        `/api/jobs/${selectedJobId.value}/dev-notes`,
+        `/api/jobs/${jobId}/dev-notes`,
         {
           method: "PUT",
           body: JSON.stringify({
@@ -477,23 +479,34 @@ export const useWorkStore = defineStore("work", () => {
           }),
         },
       );
-      currentJob.value = res.job;
+      // Merge server job; keep local optimistic/fresher Dev Notes (textarea owns draft)
+      if (selectedJobId.value === jobId && currentJob.value?.id === jobId) {
+        const localNotes = currentJob.value.devNotes;
+        currentJob.value = {
+          ...res.job,
+          devNotes:
+            localNotes !== undefined ? localNotes : res.job.devNotes,
+        };
+      }
       await loadJobs();
       return res.job;
     }
     if (!selectedTaskIid.value) {
       throw new Error("No task/job selected");
     }
+    const iid = selectedTaskIid.value;
     const res = await api<{ job: Job }>("/api/jobs/ensure", {
       method: "POST",
       body: JSON.stringify({
-        issueIid: selectedTaskIid.value,
+        issueIid: iid,
         devNotes: notes,
         requireDocsFirst: opts.requireDocsFirst,
       }),
     });
-    currentJob.value = res.job;
-    selectedJobId.value = res.job.id;
+    if (selectedTaskIid.value === iid) {
+      currentJob.value = res.job;
+      selectedJobId.value = res.job.id;
+    }
     await loadJobs();
     return res.job;
   }
