@@ -10,6 +10,7 @@ import {
   defaultLocalPath,
   membershipId,
   normalizeGitlabHost,
+  normalizeUserRoles,
   normUserId,
   projectIdForUser,
   projectIdFromPath,
@@ -151,6 +152,27 @@ export async function updateUserPreferences(opts: {
   }
   existing.updatedAt = now;
   await (await usersCol()).updateOne({ id }, { $set: existing });
+  return toPublicUser(existing);
+}
+
+/** Enable or disable the QC capability role (“I am QC”). */
+export async function setUserQcRole(opts: {
+  username: string;
+  enabled: boolean;
+}): Promise<WorkspaceUserPublic> {
+  const id = normUserId(opts.username);
+  const existing = await getUserByUsername(id);
+  if (!existing) throw new Error("User not found");
+  const roles = new Set(normalizeUserRoles(existing.roles));
+  if (opts.enabled) roles.add("qc");
+  else roles.delete("qc");
+  const now = new Date().toISOString();
+  existing.roles = [...roles];
+  existing.updatedAt = now;
+  await (await usersCol()).updateOne(
+    { id },
+    { $set: { roles: existing.roles, updatedAt: now } },
+  );
   return toPublicUser(existing);
 }
 

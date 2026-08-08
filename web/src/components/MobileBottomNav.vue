@@ -6,17 +6,26 @@ import {
   CheckCircleOutlined,
   BarChartOutlined,
   SettingOutlined,
+  ExperimentOutlined,
 } from "@ant-design/icons-vue";
+import { useSessionStore } from "@/stores/session";
 
 const route = useRoute();
 const router = useRouter();
+const session = useSessionStore();
 
-const tabs = [
-  { to: "/work", label: "Work", icon: ThunderboltOutlined },
-  { to: "/handoff", label: "Handoff", icon: CheckCircleOutlined },
-  { to: "/stats", label: "Stats", icon: BarChartOutlined },
-  { to: "/settings", label: "Settings", icon: SettingOutlined },
-] as const;
+const tabs = computed(() => {
+  const base = [
+    { to: "/work", label: "Work", icon: ThunderboltOutlined },
+    { to: "/handoff", label: "Handoff", icon: CheckCircleOutlined },
+    { to: "/stats", label: "Stats", icon: BarChartOutlined },
+  ];
+  if (session.isQc) {
+    base.push({ to: "/qc", label: "QC", icon: ExperimentOutlined });
+  }
+  base.push({ to: "/settings", label: "Settings", icon: SettingOutlined });
+  return base;
+});
 
 const activePath = computed(() => route.path);
 
@@ -39,7 +48,10 @@ function go(to: string) {
     class="lg:hidden fixed inset-x-0 bottom-0 z-[40] border-t border-line bg-surface-raised/95 backdrop-blur-md pb-[env(safe-area-inset-bottom)] shadow-[0_-4px_16px_rgba(15,23,42,0.08)]"
     aria-label="Bottom navigation"
   >
-    <div class="grid grid-cols-4 h-[3.25rem]">
+    <div
+      class="grid h-[3.25rem]"
+      :style="{ gridTemplateColumns: `repeat(${tabs.length}, minmax(0, 1fr))` }"
+    >
       <button
         v-for="t in tabs"
         :key="t.to"

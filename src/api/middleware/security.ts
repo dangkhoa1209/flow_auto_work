@@ -31,6 +31,7 @@ export function applyGlobalMiddleware(app: Express): void {
         "Authorization",
         "X-Flow-User",
         "X-Flow-Project",
+        "X-Qc-Project",
       ],
     }),
   );

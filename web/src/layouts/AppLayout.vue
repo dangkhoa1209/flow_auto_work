@@ -15,11 +15,15 @@ const session = useSessionStore();
 const work = useWorkStore();
 const settings = useSettingsStore();
 
-const nav = [
-  { to: "/work", label: "Work" },
-  { to: "/handoff", label: "Handoff" },
-  { to: "/stats", label: "Stats" },
-];
+const nav = computed(() => {
+  const items = [
+    { to: "/work", label: "Work" },
+    { to: "/handoff", label: "Handoff" },
+    { to: "/stats", label: "Stats" },
+  ];
+  if (session.isQc) items.push({ to: "/qc", label: "QC" });
+  return items;
+});
 
 const switching = ref(false);
 const selectedProjectId = ref(session.session.projectId || "");

@@ -39,6 +39,7 @@ export type UserPublic = {
   hasCursorApiKey?: boolean;
   hasGitlabToken?: boolean;
   cursorModel?: string;
+  roles?: string[];
 };
 
 /** Workspace / project session — tokens live in useAuthStore. */
@@ -88,6 +89,10 @@ export const useSessionStore = defineStore("session", () => {
   });
 
   const isLoggedIn = computed(() => auth.isAuthenticated);
+
+  const isQc = computed(() =>
+    Boolean(me.value?.roles?.includes("qc")),
+  );
 
   const currentMembership = computed(() =>
     memberships.value.find((m) => m.projectId === projectId.value),
@@ -279,6 +284,7 @@ export const useSessionStore = defineStore("session", () => {
     loading,
     bootstrapped,
     isLoggedIn,
+    isQc,
     currentMembership,
     bootstrap,
     refreshMe,

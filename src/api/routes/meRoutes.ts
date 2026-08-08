@@ -13,6 +13,7 @@ export function createMeRoutes(): Router {
   router.put("/handoff-prefs", meController.updateHandoffPrefs);
   router.get("/cursor-models", meController.cursorModels);
   router.delete("/cursor-key", meController.clearCursorKey);
+  router.put("/qc-role", meController.setQcRole);
   router.put("/projects/:projectId", projectController.updateOwned);
   return router;
 }

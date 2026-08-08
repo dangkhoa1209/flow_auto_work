@@ -31,6 +31,12 @@ const router = createRouter({
           component: () => import("@/views/StatsView.vue"),
         },
         {
+          path: "qc",
+          name: "qc",
+          component: () => import("@/views/QcView.vue"),
+          meta: { requiresQc: true },
+        },
+        {
           path: "settings",
           component: () => import("@/layouts/SettingsLayout.vue"),
           children: [
@@ -84,6 +90,9 @@ router.beforeEach(async (to) => {
   }
   if (!session.isLoggedIn) {
     return { name: "login", query: { redirect: to.fullPath } };
+  }
+  if (to.meta.requiresQc && !session.isQc) {
+    return { name: "settings-account" };
   }
   return true;
 });

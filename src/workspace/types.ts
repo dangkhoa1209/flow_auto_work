@@ -3,6 +3,9 @@ import { getConfig } from "../config.js";
 
 export type CloneStatus = "pending" | "cloning" | "ready" | "failed";
 
+/** Platform capability roles (QC is independent of GitLab membership role). */
+export type UserRole = "dev" | "pm" | "admin" | "qc";
+
 export type WorkspaceUser = {
   /** Lowercase username id */
   id: string;
@@ -14,6 +17,8 @@ export type WorkspaceUser = {
   gitlabTokenEnc?: string;
   cursorApiKeyEnc?: string;
   cursorModel?: string;
+  /** Capability roles — include `"qc"` for QC Automation APIs */
+  roles?: UserRole[];
   /**
    * Labels & handoff prefs per project (synced across devices).
    * Key = workspace project id.
@@ -41,6 +46,7 @@ export type WorkspaceUserPublic = {
   hasCursorApiKey: boolean;
   hasPassword: boolean;
   cursorModel: string;
+  roles: UserRole[];
   createdAt: string;
   updatedAt: string;
 };
@@ -94,6 +100,21 @@ export type MembershipWithProject = WorkspaceMembership & {
   project: WorkspaceProject;
 };
 
+export function normalizeUserRoles(roles?: UserRole[] | null): UserRole[] {
+  const set = new Set<UserRole>();
+  for (const r of roles || []) {
+    if (r === "dev" || r === "pm" || r === "admin" || r === "qc") set.add(r);
+  }
+  return [...set];
+}
+
+export function userHasRole(
+  u: Pick<WorkspaceUser, "roles"> | null | undefined,
+  role: UserRole,
+): boolean {
+  return normalizeUserRoles(u?.roles).includes(role);
+}
+
 export function toPublicUser(u: WorkspaceUser): WorkspaceUserPublic {
   return {
     id: u.id,
@@ -103,6 +124,7 @@ export function toPublicUser(u: WorkspaceUser): WorkspaceUserPublic {
     hasCursorApiKey: Boolean(u.cursorApiKeyEnc),
     hasPassword: Boolean(u.passwordHash),
     cursorModel: u.cursorModel?.trim() || "auto",
+    roles: normalizeUserRoles(u.roles),
     createdAt: u.createdAt,
     updatedAt: u.updatedAt,
   };

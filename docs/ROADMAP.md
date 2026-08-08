@@ -21,3 +21,17 @@ Plan approval đầy đủ (file `.flow/plans/`, sửa step) vẫn backlog.
 ### 3. Terminal / CLI approval — P1
 
 ### 4. GitLab CI feedback loop — P1
+
+### 5. QC Automation Extension — P0 (in progress)
+
+Tách namespace `/api/qc` + role `qc`; Chrome MV3 Record/Playback; web `/qc` CRUD.
+
+| Phase | Mục tiêu |
+|-------|----------|
+| 0 | Docs + `requireQc` + collections |
+| 1 | MV3 message passing + `chrome.storage.session` |
+| 2 | Record engine + save flows |
+| 3 | Playback + navigation resume + flow chaining |
+| 4 | Faker/loop, web CRUD, sample file upload |
+
+Chi tiết: [QC_PRD.md](./QC_PRD.md) · [QC_ARCHITECTURE.md](./QC_ARCHITECTURE.md).

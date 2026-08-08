@@ -5,6 +5,7 @@ import {
   getMe,
   getMyHandoffPrefs,
   listCursorModels,
+  setMyQcRole,
   updateMyHandoffPrefs,
   updateMyPreferences,
   updateMySecrets,
@@ -58,5 +59,10 @@ export const meController = {
 
   clearCursorKey: asyncHandler(async (req: Request, res: Response) => {
     res.json(await clearMyCursorKey(headerUserFromExpress(req)));
+  }),
+
+  setQcRole: asyncHandler(async (req: Request, res: Response) => {
+    const enabled = Boolean((req.body ?? {}).enabled);
+    res.json(await setMyQcRole(headerUserFromExpress(req), enabled));
   }),
 };

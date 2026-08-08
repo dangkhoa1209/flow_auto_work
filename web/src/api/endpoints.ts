@@ -16,8 +16,20 @@ export const API = {
     secrets: "/api/me/secrets",
     cursorKey: "/api/me/cursor-key",
     cursorModels: "/api/me/cursor-models",
+    qcRole: "/api/me/qc-role",
     project: (projectId: string) =>
       `/api/me/projects/${encodeURIComponent(projectId)}`,
+  },
+  qc: {
+    projects: "/api/qc/projects",
+    project: (id: string) => `/api/qc/projects/${encodeURIComponent(id)}`,
+    flows: "/api/qc/flows",
+    flow: (id: string) => `/api/qc/flows/${encodeURIComponent(id)}`,
+    testCases: "/api/qc/test-cases",
+    testCase: (id: string) => `/api/qc/test-cases/${encodeURIComponent(id)}`,
+    sampleFiles: "/api/qc/sample-files",
+    sampleFile: (id: string) =>
+      `/api/qc/sample-files/${encodeURIComponent(id)}`,
   },
   projects: {
     root: "/api/projects",
