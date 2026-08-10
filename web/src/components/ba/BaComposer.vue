@@ -5,10 +5,12 @@ const props = defineProps<{
   disabled?: boolean;
   disabledReason?: string;
   loading?: boolean;
+  stopBusy?: boolean;
 }>();
 
 const emit = defineEmits<{
   send: [content: string];
+  stop: [];
 }>();
 
 const text = ref("");
@@ -52,14 +54,32 @@ function onKeydown(e: KeyboardEvent) {
       <span class="faw-ba-input-hint">
         URL hoặc điểm neo UI · ⌘/Ctrl+Enter gửi
       </span>
-      <button
-        type="button"
-        class="faw-btn faw-btn--run faw-btn--send"
-        :disabled="!canSend"
-        @click="submit"
-      >
-        {{ loading ? "…" : "Send" }}
-      </button>
+      <div class="faw-ba-input-actions">
+        <a-popconfirm
+          v-if="loading"
+          title="Dừng trả lời đang chạy?"
+          ok-text="Dừng"
+          cancel-text="Huỷ"
+          ok-type="danger"
+          @confirm="emit('stop')"
+        >
+          <button
+            type="button"
+            class="faw-btn faw-btn--danger"
+            :disabled="stopBusy"
+          >
+            {{ stopBusy ? "…" : "Stop" }}
+          </button>
+        </a-popconfirm>
+        <button
+          type="button"
+          class="faw-btn faw-btn--run faw-btn--send"
+          :disabled="!canSend"
+          @click="submit"
+        >
+          {{ loading ? "…" : "Send" }}
+        </button>
+      </div>
     </div>
   </div>
 </template>

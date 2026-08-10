@@ -41,4 +41,9 @@ export const baController = {
       ),
     );
   }),
+
+  stopThread: asyncHandler(async (req: Request, res: Response) => {
+    const { username } = requireRoleContext();
+    res.json(await ba.baStopThread(username, String(req.params.id || "")));
+  }),
 };

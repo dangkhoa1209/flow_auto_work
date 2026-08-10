@@ -30,6 +30,15 @@ async function onSend(content: string) {
     message.error(e instanceof Error ? e.message : String(e));
   }
 }
+
+async function onStop() {
+  try {
+    await ba.stop();
+    message.info("Đã gửi lệnh dừng");
+  } catch (e) {
+    message.error(e instanceof Error ? e.message : String(e));
+  }
+}
 </script>
 
 <template>
@@ -87,7 +96,9 @@ async function onSend(content: string) {
           :disabled="composerDisabled"
           :disabled-reason="disabledReason"
           :loading="ba.streaming"
+          :stop-busy="ba.stopBusy"
           @send="onSend"
+          @stop="onStop"
         />
       </template>
     </section>

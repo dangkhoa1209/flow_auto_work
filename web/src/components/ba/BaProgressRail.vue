@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
+import { message } from "ant-design-vue";
 import { useBaChatStore, type BaProgressStep } from "@/stores/baChat";
 
 const ba = useBaChatStore();
@@ -32,6 +33,15 @@ function stepState(id: BaProgressStep): "done" | "active" | "todo" {
   if (ii === ci) return "active";
   return "todo";
 }
+
+async function onStopProgress() {
+  try {
+    await ba.stop();
+    message.info("Đã gửi lệnh dừng");
+  } catch (e) {
+    message.error(e instanceof Error ? e.message : String(e));
+  }
+}
 </script>
 
 <template>
@@ -60,6 +70,22 @@ function stepState(id: BaProgressStep): "done" | "active" | "todo" {
         >
           · {{ ba.progress[ba.progress.length - 1]?.detail }}
         </span>
+        <a-popconfirm
+          v-if="ba.streaming"
+          title="Dừng trả lời đang chạy?"
+          ok-text="Dừng"
+          cancel-text="Huỷ"
+          ok-type="danger"
+          @confirm="onStopProgress"
+        >
+          <button
+            type="button"
+            class="faw-btn faw-btn--danger faw-ba-progress__stop"
+            :disabled="ba.stopBusy"
+          >
+            {{ ba.stopBusy ? "…" : "Stop" }}
+          </button>
+        </a-popconfirm>
       </div>
       <div class="faw-ba-progress__steps" aria-hidden="true">
         <span

@@ -12,7 +12,16 @@ import {
 import { isGitRepo } from "../../workspace/clone.js";
 import { AppError } from "../../utils/AppError.js";
 import { publishRealtime } from "../../plugins/realtime/hub.js";
-import { kickBaChatAnswer } from "../../plugins/agent/baChat.js";
+import { kickBaChatAnswer, stopBaThreadAgent } from "../../plugins/agent/baChat.js";
+
+export async function baStopThread(userId: string, threadId: string) {
+  const thread = await getBaThread(threadId);
+  if (!thread || thread.userId !== userId.toLowerCase()) {
+    throw new AppError("Thread not found", 404);
+  }
+  const cancelled = await stopBaThreadAgent(threadId);
+  return { ok: true, cancelled };
+}
 
 export async function baListProjects() {
   const projects = await listBaProjects();

@@ -66,6 +66,7 @@ export const useBaChatStore = defineStore("baChat", () => {
   const messages = ref<BaMessage[]>([]);
   const streaming = ref(false);
   const streamingMessageId = ref<string | null>(null);
+  const stopBusy = ref(false);
   const loading = ref(false);
   const errorText = ref("");
   const progress = ref<BaProgressItem[]>([]);
@@ -156,9 +157,23 @@ export const useBaChatStore = defineStore("baChat", () => {
     messages.value = [];
     streaming.value = false;
     streamingMessageId.value = null;
+    stopBusy.value = false;
     loading.value = false;
     errorText.value = "";
     clearProgress();
+  }
+
+  async function stop() {
+    const threadId = activeThreadId.value;
+    if (!threadId || !streaming.value || stopBusy.value) return;
+    stopBusy.value = true;
+    try {
+      await api<{ ok?: boolean; cancelled?: boolean }>(API.ba.stop(threadId), {
+        method: "POST",
+      });
+    } finally {
+      stopBusy.value = false;
+    }
   }
 
   function currentUserId(): string {
@@ -335,11 +350,19 @@ export const useBaChatStore = defineStore("baChat", () => {
     if (!isMyEvent(ev.userId)) return;
     if (ev.threadId === activeThreadId.value) {
       const idx = messages.value.findIndex((m) => m.id === ev.messageId);
-      const finalContent = ev.content?.trim()
+      const prev = idx >= 0 ? messages.value[idx].content : "";
+      let finalContent = ev.content?.trim()
         ? ev.content
-        : idx >= 0
-          ? messages.value[idx].content
-          : ev.content;
+        : prev || ev.content;
+      // Prefer longer in-memory stream if stop note would wipe it
+      if (
+        prev &&
+        finalContent &&
+        prev.length > finalContent.length &&
+        /⏹ Đã dừng/.test(finalContent)
+      ) {
+        finalContent = `${prev.trim()}\n\n⏹ Đã dừng theo yêu cầu.`;
+      }
       if (idx >= 0) {
         messages.value[idx] = {
           ...messages.value[idx],
@@ -357,6 +380,7 @@ export const useBaChatStore = defineStore("baChat", () => {
     }
     streaming.value = false;
     streamingMessageId.value = null;
+    errorText.value = "";
     void loadThreads();
     window.setTimeout(() => {
       if (!streaming.value) clearProgress();
@@ -439,6 +463,7 @@ export const useBaChatStore = defineStore("baChat", () => {
     messages,
     streaming,
     streamingMessageId,
+    stopBusy,
     loading,
     errorText,
     progress,
@@ -455,6 +480,7 @@ export const useBaChatStore = defineStore("baChat", () => {
     newChat,
     deleteThread,
     sendMessage,
+    stop,
     applyBaMessage,
     applyBaDelta,
     applyBaDone,

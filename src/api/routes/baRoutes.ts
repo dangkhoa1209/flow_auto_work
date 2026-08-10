@@ -14,6 +14,7 @@ export function createBaRoutes(): Router {
   router.delete("/threads/:id", baController.deleteThread);
   router.get("/threads/:id/messages", baController.getMessages);
   router.post("/threads/:id/messages", baController.sendMessage);
+  router.post("/threads/:id/stop", baController.stopThread);
 
   return router;
 }

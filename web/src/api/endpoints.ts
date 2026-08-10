@@ -47,6 +47,8 @@ export const API = {
     thread: (id: string) => `/api/ba/threads/${encodeURIComponent(id)}`,
     messages: (id: string) =>
       `/api/ba/threads/${encodeURIComponent(id)}/messages`,
+    stop: (id: string) =>
+      `/api/ba/threads/${encodeURIComponent(id)}/stop`,
   },
   projects: {
     root: "/api/projects",
