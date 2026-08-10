@@ -32,48 +32,53 @@ async function onSend(content: string) {
 </script>
 
 <template>
-  <div class="h-full min-h-0 flex">
+  <div class="faw-ba h-full min-h-0 flex overflow-hidden">
     <BaChatSidebar />
-    <section class="flex-1 min-w-0 min-h-0 flex flex-col">
-      <div
-        class="shrink-0 px-4 py-2.5 border-b border-line flex items-center gap-2"
-      >
-        <h1 class="text-sm font-semibold text-ink m-0 truncate">
-          {{ ba.activeThread?.title || "Project Chat" }}
-        </h1>
-        <span
-          v-if="ba.selectedProject"
-          class="text-xs text-ink-muted truncate"
-        >
-          · {{ ba.selectedProject.displayName }}
-        </span>
-        <span
-          v-if="ba.streaming"
-          class="ml-auto text-xs text-blue-600"
-        >
-          Streaming…
-        </span>
+
+    <section class="faw-console flex-1 min-w-0 min-h-0 flex flex-col">
+      <div class="faw-console-head">
+        <div class="faw-console-head__title">
+          <h2>{{ ba.activeThread?.title || "Project Chat" }}</h2>
+          <div class="faw-console-head__win">
+            <template v-if="ba.selectedProject">
+              {{ ba.selectedProject.displayName }}
+              <template v-if="ba.selectedProject.gitlabPath">
+                · {{ ba.selectedProject.gitlabPath }}
+              </template>
+            </template>
+            <template v-else>Chưa chọn project</template>
+          </div>
+        </div>
+        <div class="faw-console-actions">
+          <span
+            v-if="ba.streaming"
+            class="faw-idle text-[11px]"
+          >
+            <span class="faw-idle__dot wip" />
+            Streaming
+          </span>
+        </div>
       </div>
 
       <div
         v-if="!ba.projects.length"
-        class="flex-1 flex items-center justify-center text-ink-muted text-sm px-6 text-center"
+        class="flex-1 flex items-center justify-center px-6"
       >
-        Chưa có project nào. Admin cần tạo và clone project trước.
+        <a-empty description="Chưa có project — admin cần tạo và clone trước" />
       </div>
+
       <template v-else>
         <BaMessageList
           :messages="ba.messages"
           :streaming="ba.streaming"
           :streaming-message-id="ba.streamingMessageId"
         />
-        <p
+        <div
           v-if="ba.errorText"
-          class="px-4 text-xs text-red-600 mb-0"
-          role="alert"
+          class="shrink-0 px-3 pb-1"
         >
-          {{ ba.errorText }}
-        </p>
+          <a-alert type="error" show-icon :message="ba.errorText" />
+        </div>
         <BaComposer
           :disabled="composerDisabled"
           :disabled-reason="disabledReason"

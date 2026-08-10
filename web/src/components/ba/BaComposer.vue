@@ -33,59 +33,33 @@ function onKeydown(e: KeyboardEvent) {
 </script>
 
 <template>
-  <div class="shrink-0 border-t border-line p-3 bg-surface-raised">
+  <div class="faw-console-input">
     <a-tooltip :title="disabled && disabledReason ? disabledReason : ''">
-      <div class="ba-composer">
-        <a-textarea
-          v-model:value="text"
-          :rows="3"
-          :disabled="disabled || loading"
-          :auto-size="{ minRows: 2, maxRows: 6 }"
-          placeholder="Hỏi về dự án… Nên kèm URL hoặc tên màn hình / nút trên UI. ⌘/Ctrl+Enter để gửi"
-          class="ba-composer__input"
-          @keydown="onKeydown"
-        />
-        <div class="ba-composer__row">
-          <span class="ba-composer__hint text-xs text-ink-muted">
-            Nên nêu URL hoặc điểm neo UI (menu, nút, màn hình)
-          </span>
-          <button
-            type="button"
-            class="faw-btn faw-btn--run faw-btn--send"
-            :disabled="!canSend"
-            @click="submit"
-          >
-            {{ loading ? "…" : "Send" }}
-          </button>
-        </div>
-      </div>
+      <a-textarea
+        v-model:value="text"
+        :rows="2"
+        :auto-size="{ minRows: 2, maxRows: 6 }"
+        :disabled="disabled || loading"
+        :placeholder="
+          loading
+            ? 'Đang suy nghĩ… đợi xong rồi hỏi tiếp'
+            : 'Hỏi về dự án — nên kèm URL hoặc tên màn hình / nút trên UI'
+        "
+        @keydown="onKeydown"
+      />
     </a-tooltip>
+    <div class="faw-console-input__row faw-ba-input-row">
+      <span class="faw-ba-input-hint">
+        URL hoặc điểm neo UI · ⌘/Ctrl+Enter gửi
+      </span>
+      <button
+        type="button"
+        class="faw-btn faw-btn--run faw-btn--send"
+        :disabled="!canSend"
+        @click="submit"
+      >
+        {{ loading ? "…" : "Send" }}
+      </button>
+    </div>
   </div>
 </template>
-
-<style scoped>
-.ba-composer {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  width: 100%;
-}
-.ba-composer__input {
-  width: 100% !important;
-}
-.ba-composer__input :deep(textarea) {
-  width: 100% !important;
-  resize: none;
-}
-.ba-composer__row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-.ba-composer__hint {
-  flex: 1;
-  min-width: 0;
-  line-height: 1.35;
-}
-</style>

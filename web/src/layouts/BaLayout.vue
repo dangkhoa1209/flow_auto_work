@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted } from "vue";
+import { computed, onMounted, onUnmounted } from "vue";
 import { useRouter, RouterLink, RouterView } from "vue-router";
 import { message } from "ant-design-vue";
 import { useSessionStore } from "@/stores/session";
@@ -11,6 +11,15 @@ const session = useSessionStore();
 const ba = useBaChatStore();
 
 let disconnect: (() => void) | undefined;
+
+const statusDot = computed(() => (ba.streaming ? "wip" : "idle"));
+const statusText = computed(() =>
+  ba.streaming
+    ? "Đang trả lời…"
+    : ba.selectedProject
+      ? ba.selectedProject.displayName
+      : "Chọn project",
+);
 
 onMounted(async () => {
   try {
@@ -38,32 +47,51 @@ async function logout() {
 </script>
 
 <template>
-  <div class="h-full min-h-0 flex flex-col bg-surface">
-    <header
-      class="shrink-0 flex items-center gap-3 px-4 py-2.5 border-b border-line bg-surface-raised"
-    >
-      <img src="/logo.svg" alt="" class="h-7 w-auto" draggable="false" />
-      <span class="text-sm font-semibold text-ink">Project Chat</span>
-      <span class="text-xs text-ink-muted truncate">
-        {{ session.me?.gitlabUsername }}
-      </span>
-      <div class="flex-1" />
-      <RouterLink
-        v-if="session.isAdmin"
-        to="/admin"
-        class="text-sm text-accent hover:underline"
-      >
-        Admin
-      </RouterLink>
-      <button
-        type="button"
-        class="text-sm text-ink-muted hover:text-ink"
-        @click="logout"
-      >
-        Logout
-      </button>
+  <div
+    class="h-[100dvh] max-h-[100dvh] flex flex-col overflow-hidden overflow-x-hidden bg-[var(--app-bg)]"
+  >
+    <header class="faw-topbar">
+      <div class="faw-brand" title="Project Chat">
+        <img
+          class="faw-brand__logo"
+          src="/logo.svg"
+          alt="Flow Auto WorkBench"
+          width="148"
+          height="33"
+          draggable="false"
+        />
+      </div>
+
+      <div class="faw-seg hidden sm:flex">
+        <span class="faw-seg__btn active">Project Chat</span>
+      </div>
+
+      <div class="faw-topbar__spacer" />
+
+      <div class="faw-topbar__right">
+        <span class="faw-idle">
+          <span class="faw-idle__dot" :class="statusDot" />
+          {{ statusText }}
+        </span>
+        <div class="faw-user-chip">
+          <span class="faw-avatar" />
+          @{{ session.session.username }}
+        </div>
+        <RouterLink
+          v-if="session.isAdmin"
+          to="/admin"
+          class="faw-btn"
+          title="Admin"
+        >
+          Admin
+        </RouterLink>
+        <button type="button" class="faw-btn" title="Logout" @click="logout">
+          Logout
+        </button>
+      </div>
     </header>
-    <main class="flex-1 min-h-0">
+
+    <main class="flex-1 min-h-0 overflow-hidden">
       <RouterView />
     </main>
   </div>

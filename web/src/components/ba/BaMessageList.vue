@@ -18,56 +18,68 @@ const { onScroll } = useAutoScroll(listRef, () =>
 watch(
   () => props.streaming,
   () => {
-    /* keep auto-scroll source reactive via content watch */
+    /* content watch drives auto-scroll */
   },
 );
+
+function whoLabel(role: string) {
+  if (role === "user") return "You";
+  if (role === "system") return "system";
+  return "assistant";
+}
 </script>
 
 <template>
   <div
     ref="listRef"
-    class="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-3"
+    class="faw-console-scroll flex-1 min-h-0 overflow-y-auto"
     @scroll="onScroll"
   >
     <div
-      v-if="!messages.length"
-      class="h-full flex items-center justify-center px-6"
+      v-if="!messages.length && !streaming"
+      class="flex-1 flex items-center justify-center py-16 px-4"
     >
-      <div class="max-w-md text-center space-y-3">
-        <p class="text-sm text-ink m-0 font-medium">
+      <div class="max-w-sm text-center space-y-2">
+        <p class="text-[13px] font-semibold text-[var(--app-ink)] m-0">
           Hỏi bất cứ điều gì về dự án đã chọn
         </p>
-        <p class="text-xs text-ink-muted m-0 leading-relaxed">
-          Nên kèm <strong class="text-ink font-medium">URL</strong> hoặc điểm neo
-          trên UI (tên menu, nút, màn hình) để trả lời khớp hệ thống.
+        <p class="text-[11.5px] text-[var(--app-muted)] m-0 leading-relaxed">
+          Nên kèm
+          <strong class="text-[var(--app-ink)] font-medium">URL</strong>
+          hoặc điểm neo trên UI (menu, nút, màn hình) để trả lời khớp hệ thống.
         </p>
       </div>
     </div>
+
     <div
       v-for="m in messages"
       :key="m.id"
-      class="flex"
-      :class="m.role === 'user' ? 'justify-end' : 'justify-start'"
+      class="faw-msg"
+      :class="
+        m.role === 'user' ? 'user' : m.role === 'system' ? 'system' : 'agent'
+      "
     >
+      <div class="faw-msg__who">{{ whoLabel(m.role) }}</div>
       <div
-        class="max-w-[85%] rounded-lg px-3 py-2 text-sm shadow-sm"
-        :class="
-          m.role === 'user'
-            ? 'bg-accent text-white'
-            : 'bg-surface-raised border border-line text-ink'
-        "
+        class="faw-msg__bubble"
+        :class="{
+          'faw-msg__bubble--typing':
+            !m.content && streaming && streamingMessageId === m.id,
+        }"
       >
         <ChatMessageBody
           v-if="m.content"
           :body="m.content"
           :role="m.role === 'user' ? 'user' : 'agent'"
         />
-        <span
-          v-else-if="streaming && streamingMessageId === m.id"
-          class="text-ink-muted italic"
-        >
-          đang suy nghĩ…
-        </span>
+        <template v-else-if="streaming && streamingMessageId === m.id">
+          <span class="chat-typing" aria-label="Đang suy nghĩ">
+            <span /><span /><span />
+          </span>
+          <span class="text-[11px] text-[var(--app-faint)] ml-1.5"
+            >đang suy nghĩ…</span
+          >
+        </template>
       </div>
     </div>
   </div>

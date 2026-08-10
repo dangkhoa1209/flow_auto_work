@@ -34,9 +34,11 @@ async function onNewChat() {
 
 function onDelete(id: string, title: string) {
   Modal.confirm({
-    title: "Delete chat?",
+    title: "Xóa chat?",
     content: title,
     okType: "danger",
+    okText: "Xóa",
+    cancelText: "Hủy",
     onOk: async () => {
       try {
         await ba.deleteThread(id);
@@ -46,21 +48,42 @@ function onDelete(id: string, title: string) {
     },
   });
 }
+
+function formatTime(iso: string) {
+  try {
+    return new Date(iso).toLocaleString(undefined, {
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch {
+    return "";
+  }
+}
 </script>
 
 <template>
-  <aside
-    class="h-full min-h-0 w-64 shrink-0 flex flex-col border-r border-line bg-surface-raised"
-  >
-    <div class="p-3 border-b border-line space-y-2">
-      <label class="block text-xs font-medium text-ink-muted">Project</label>
+  <aside class="faw-col faw-ba-side flex flex-col min-h-0 overflow-hidden h-full">
+    <div class="faw-col-head">
+      <h2>Chats</h2>
+      <span class="faw-count">{{ ba.threads.length }}</span>
+    </div>
+
+    <div class="faw-filters">
+      <label class="block text-[10px] font-semibold uppercase tracking-wide text-[var(--app-faint)]">
+        Project
+      </label>
       <a-select
         :value="ba.selectedProjectId || undefined"
         :options="projectOptions"
         placeholder="Select project"
-        class="w-full"
+        class="w-full faw-ba-select"
+        size="small"
         :disabled="!ba.projects.length"
-        @update:value="(v: string) => onProjectChange(v)"
+        show-search
+        option-filter-prop="label"
+        @update:value="onProjectChange"
       />
       <a-tooltip
         :title="
@@ -68,12 +91,12 @@ function onDelete(id: string, title: string) {
             ? 'Chọn project trước'
             : !ba.projectReady
               ? 'Project chưa sẵn sàng — liên hệ admin'
-              : 'Start a new conversation'
+              : 'Bắt đầu hội thoại mới'
         "
       >
         <button
           type="button"
-          class="faw-btn faw-btn--run w-full flex items-center justify-center gap-1"
+          class="faw-btn faw-btn--run w-full flex items-center justify-center gap-1.5"
           :disabled="!ba.projectReady || ba.streaming"
           @click="onNewChat"
         >
@@ -82,36 +105,34 @@ function onDelete(id: string, title: string) {
       </a-tooltip>
     </div>
 
-    <div class="flex-1 min-h-0 overflow-y-auto p-2">
+    <div class="flex-1 min-h-0 overflow-y-auto">
       <div
         v-if="!ba.threads.length"
-        class="text-xs text-ink-muted text-center py-8 px-2"
+        class="px-3 py-10 text-center text-[11px] text-[var(--app-faint)]"
       >
-        Chưa có chat. Bấm New Chat để bắt đầu.
+        Chưa có chat.<br />Bấm <b class="text-[var(--app-muted)]">New Chat</b> để bắt đầu.
       </div>
-      <ul class="list-none m-0 p-0 space-y-0.5">
-        <li v-for="t in ba.threads" :key="t.id">
-          <div
-            class="group flex items-center gap-1 rounded-md px-2 py-2 cursor-pointer text-sm"
-            :class="
-              t.id === ba.activeThreadId
-                ? 'bg-accent-soft text-accent font-medium'
-                : 'text-ink hover:bg-surface'
-            "
-            @click="ba.selectThread(t.id)"
-          >
-            <span class="flex-1 min-w-0 truncate">{{ t.title }}</span>
-            <button
-              type="button"
-              class="opacity-0 group-hover:opacity-100 p-1 text-ink-muted hover:text-red-600"
-              title="Delete"
-              @click.stop="onDelete(t.id, t.title)"
-            >
-              <DeleteOutlined />
-            </button>
-          </div>
-        </li>
-      </ul>
+      <button
+        v-for="t in ba.threads"
+        :key="t.id"
+        type="button"
+        class="faw-ba-thread"
+        :class="{ active: t.id === ba.activeThreadId }"
+        @click="ba.selectThread(t.id)"
+      >
+        <div class="faw-ba-thread__main">
+          <span class="faw-ba-thread__title">{{ t.title }}</span>
+          <span class="faw-ba-thread__time">{{ formatTime(t.updatedAt) }}</span>
+        </div>
+        <button
+          type="button"
+          class="faw-icon-btn faw-ba-thread__del"
+          title="Xóa"
+          @click.stop="onDelete(t.id, t.title)"
+        >
+          <DeleteOutlined />
+        </button>
+      </button>
     </div>
   </aside>
 </template>
