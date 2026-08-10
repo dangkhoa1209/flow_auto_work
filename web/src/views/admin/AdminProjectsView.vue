@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, reactive, ref } from "vue";
+import { computed, onMounted, onUnmounted, reactive, ref } from "vue";
 import { message, Modal } from "ant-design-vue";
 import { api } from "@/api/client";
 import { API } from "@/api/endpoints";
@@ -21,7 +21,13 @@ const loading = ref(false);
 const projects = ref<BaProject[]>([]);
 const showForm = ref(false);
 const editingId = ref<string | null>(null);
+const wizardStep = ref(0);
 const pollTimers = new Map<string, ReturnType<typeof setInterval>>();
+
+const gitlabProjects = ref<
+  Array<{ pathWithNamespace: string; name?: string; id?: number }>
+>([]);
+const branches = ref<string[]>([]);
 
 const form = reactive({
   displayName: "",
@@ -32,14 +38,30 @@ const form = reactive({
   mainBranch: "main",
 });
 
+const steps = ["GitLab PAT", "Project", "Main branch"];
+
+const projectOptions = computed(() =>
+  gitlabProjects.value.map((p) => ({
+    value: p.pathWithNamespace,
+    label: p.pathWithNamespace,
+  })),
+);
+
+const branchOptions = computed(() =>
+  branches.value.map((b) => ({ value: b, label: b })),
+);
+
 function resetForm() {
   editingId.value = null;
+  wizardStep.value = 0;
   form.displayName = "";
   form.slug = "";
   form.gitlabPath = "";
   form.gitlabHost = "https://gitlab.com";
   form.gitlabToken = "";
   form.mainBranch = "main";
+  gitlabProjects.value = [];
+  branches.value = [];
 }
 
 async function load() {
@@ -60,19 +82,107 @@ function openCreate() {
 }
 
 function openEdit(p: BaProject) {
+  resetForm();
   editingId.value = p.id;
   form.displayName = p.displayName;
   form.slug = p.slug;
   form.gitlabPath = p.gitlabPath;
-  form.gitlabHost = p.gitlabHost;
+  form.gitlabHost = p.gitlabHost || "https://gitlab.com";
   form.gitlabToken = "";
   form.mainBranch = p.mainBranch || "main";
+  wizardStep.value = 0;
   showForm.value = true;
+}
+
+async function loadPreviewProjects() {
+  if (!form.gitlabToken.trim()) {
+    message.warning("Enter GitLab PAT");
+    return;
+  }
+  if (!form.gitlabHost.trim()) {
+    message.warning("Enter GitLab host");
+    return;
+  }
+  loading.value = true;
+  try {
+    const res = await api<{
+      projects: Array<{
+        pathWithNamespace: string;
+        name?: string;
+        id?: number;
+      }>;
+    }>("/api/gitlab/preview", {
+      method: "POST",
+      body: JSON.stringify({ gitlabToken: form.gitlabToken.trim() }),
+    });
+    gitlabProjects.value = res.projects || [];
+    if (!gitlabProjects.value.length) {
+      message.warning("PAT found no projects");
+      return;
+    }
+    wizardStep.value = 1;
+  } catch (e) {
+    message.error(e instanceof Error ? e.message : String(e));
+  } finally {
+    loading.value = false;
+  }
+}
+
+function onProjectSelect(path: string) {
+  form.gitlabPath = path;
+  if (!form.displayName.trim()) {
+    form.displayName = path.split("/").pop() || path;
+  }
+  if (!form.slug.trim() && !editingId.value) {
+    form.slug = (path.split("/").pop() || path)
+      .toLowerCase()
+      .replace(/[^a-z0-9_-]+/g, "-");
+  }
+}
+
+async function loadBranchesForPath() {
+  if (!form.gitlabPath.trim()) {
+    message.warning("Select a GitLab project");
+    return;
+  }
+  if (!form.displayName.trim()) {
+    form.displayName =
+      form.gitlabPath.trim().split("/").pop() || form.gitlabPath;
+  }
+  loading.value = true;
+  try {
+    const res = await api<{
+      branches: Array<{ name: string; default?: boolean }>;
+      defaultBranch?: string | null;
+    }>("/api/gitlab/preview", {
+      method: "POST",
+      body: JSON.stringify({
+        gitlabToken: form.gitlabToken.trim(),
+        gitlabPath: form.gitlabPath.trim(),
+      }),
+    });
+    branches.value = (res.branches || []).map((b) => b.name).filter(Boolean);
+    form.mainBranch =
+      res.defaultBranch ||
+      branches.value.find((b) => b === "main" || b === "master") ||
+      branches.value[0] ||
+      form.mainBranch ||
+      "main";
+    wizardStep.value = 2;
+  } catch (e) {
+    message.error(e instanceof Error ? e.message : String(e));
+  } finally {
+    loading.value = false;
+  }
 }
 
 async function save() {
   if (!form.displayName.trim() || !form.gitlabPath.trim()) {
-    message.warning("Display name and GitLab path required");
+    message.warning("Display name and GitLab project required");
+    return;
+  }
+  if (!form.mainBranch.trim()) {
+    message.warning("Select main branch");
     return;
   }
   loading.value = true;
@@ -80,7 +190,7 @@ async function save() {
     const body: Record<string, string> = {
       displayName: form.displayName.trim(),
       gitlabPath: form.gitlabPath.trim(),
-      gitlabHost: form.gitlabHost.trim(),
+      gitlabHost: form.gitlabHost.trim() || "https://gitlab.com",
       mainBranch: form.mainBranch.trim() || "main",
     };
     if (form.slug.trim()) body.slug = form.slug.trim();
@@ -201,7 +311,8 @@ onUnmounted(() => {
       <div>
         <h1 class="text-xl font-semibold text-ink m-0">BA projects</h1>
         <p class="text-sm text-ink-muted mt-1 mb-0">
-          Shared sources for BA / PD / QC chat. Enter GitLab PAT per project to clone.
+          Wizard: GitLab host + PAT → chọn project → main branch · clone vào
+          <code class="text-xs">project/_ba/&lt;slug&gt;/source</code>
         </p>
       </div>
       <button
@@ -218,63 +329,149 @@ onUnmounted(() => {
       v-if="showForm"
       class="mb-6 p-4 rounded-lg border border-line bg-surface-raised shadow-sm"
     >
-      <h2 class="text-base font-semibold text-ink mt-0 mb-4">
+      <h2 class="text-base font-semibold text-ink mt-0 mb-3">
         {{ editingId ? "Edit project" : "Create project" }}
       </h2>
-      <div class="grid gap-3 sm:grid-cols-2">
-        <label class="flex flex-col gap-1 text-sm">
-          <span class="text-ink-muted">Display name</span>
-          <a-input v-model:value="form.displayName" placeholder="YKK" />
-        </label>
-        <label class="flex flex-col gap-1 text-sm">
-          <span class="text-ink-muted">Slug <em>(optional)</em></span>
-          <a-input
-            v-model:value="form.slug"
-            placeholder="ykk"
-            :disabled="Boolean(editingId)"
-          />
-        </label>
-        <label class="flex flex-col gap-1 text-sm sm:col-span-2">
-          <span class="text-ink-muted">GitLab path</span>
-          <a-input
-            v-model:value="form.gitlabPath"
-            placeholder="group/repo"
-          />
-        </label>
+
+      <div class="flex gap-2 mb-4 flex-wrap">
+        <span
+          v-for="(s, i) in steps"
+          :key="s"
+          class="px-2.5 py-1 rounded text-xs border"
+          :class="
+            wizardStep === i
+              ? 'border-accent text-accent bg-accent-soft font-semibold'
+              : wizardStep > i
+                ? 'border-line text-ink'
+                : 'border-line text-ink-muted'
+          "
+        >
+          {{ i + 1 }. {{ s }}
+        </span>
+      </div>
+
+      <!-- Step 0: Host + PAT -->
+      <div v-if="wizardStep === 0" class="space-y-3">
         <label class="flex flex-col gap-1 text-sm">
           <span class="text-ink-muted">GitLab host</span>
-          <a-input v-model:value="form.gitlabHost" />
+          <a-input
+            v-model:value="form.gitlabHost"
+            placeholder="https://gitlab.com"
+          />
         </label>
         <label class="flex flex-col gap-1 text-sm">
-          <span class="text-ink-muted">Main branch</span>
-          <a-input v-model:value="form.mainBranch" />
-        </label>
-        <label class="flex flex-col gap-1 text-sm sm:col-span-2">
           <span class="text-ink-muted">
-            GitLab PAT {{ editingId ? "(leave blank to keep)" : "" }}
+            GitLab PAT
+            {{ editingId ? "(bắt buộc để load lại list project)" : "" }}
           </span>
           <a-input-password
             v-model:value="form.gitlabToken"
             placeholder="glpat-…"
           />
         </label>
+        <div class="flex gap-2 pt-1">
+          <button
+            type="button"
+            class="faw-btn faw-btn--run"
+            :disabled="loading"
+            @click="loadPreviewProjects"
+          >
+            {{ loading ? "Loading…" : "Continue" }}
+          </button>
+          <button
+            type="button"
+            class="px-3 py-1.5 text-sm text-ink-muted hover:text-ink"
+            @click="showForm = false"
+          >
+            Cancel
+          </button>
+        </div>
       </div>
-      <div class="flex gap-2 mt-4">
-        <button
-          type="button"
-          class="faw-btn faw-btn--run"
-          :disabled="loading"
-          @click="save"
-        >
-          {{ loading ? "Saving…" : "Save" }}
-        </button>
-        <button
-          type="button"
-          class="px-3 py-1.5 text-sm text-ink-muted hover:text-ink"
-          @click="showForm = false"
-        >
-          Cancel
-        </button>
+
+      <!-- Step 1: Select project -->
+      <div v-else-if="wizardStep === 1" class="space-y-3">
+        <label class="flex flex-col gap-1 text-sm">
+          <span class="text-ink-muted">GitLab project</span>
+          <a-select
+            :value="form.gitlabPath || undefined"
+            show-search
+            :options="projectOptions"
+            placeholder="Select project"
+            class="w-full"
+            :filter-option="
+              (input: string, option: { label?: string }) =>
+                (option?.label || '')
+                  .toLowerCase()
+                  .includes(input.toLowerCase())
+            "
+            @update:value="(v: string) => onProjectSelect(v)"
+          />
+        </label>
+        <label class="flex flex-col gap-1 text-sm">
+          <span class="text-ink-muted">Display name</span>
+          <a-input v-model:value="form.displayName" placeholder="YKK" />
+        </label>
+        <label v-if="!editingId" class="flex flex-col gap-1 text-sm">
+          <span class="text-ink-muted">Slug <em>(optional)</em></span>
+          <a-input v-model:value="form.slug" placeholder="ykk" />
+        </label>
+        <div class="flex gap-2 pt-1">
+          <button
+            type="button"
+            class="px-3 py-1.5 text-sm border border-line rounded-md"
+            @click="wizardStep = 0"
+          >
+            Back
+          </button>
+          <button
+            type="button"
+            class="faw-btn faw-btn--run"
+            :disabled="loading"
+            @click="loadBranchesForPath"
+          >
+            {{ loading ? "Loading…" : "Continue" }}
+          </button>
+        </div>
+      </div>
+
+      <!-- Step 2: Main branch -->
+      <div v-else class="space-y-3">
+        <label class="flex flex-col gap-1 text-sm">
+          <span class="text-ink-muted">Main branch</span>
+          <a-select
+            v-model:value="form.mainBranch"
+            show-search
+            :options="branchOptions"
+            placeholder="Select branch"
+            class="w-full"
+            :filter-option="
+              (input: string, option: { label?: string }) =>
+                (option?.label || '')
+                  .toLowerCase()
+                  .includes(input.toLowerCase())
+            "
+          />
+        </label>
+        <p class="text-xs text-ink-muted m-0">
+          {{ form.gitlabPath }} · {{ form.displayName }}
+        </p>
+        <div class="flex gap-2 pt-1">
+          <button
+            type="button"
+            class="px-3 py-1.5 text-sm border border-line rounded-md"
+            @click="wizardStep = 1"
+          >
+            Back
+          </button>
+          <button
+            type="button"
+            class="faw-btn faw-btn--run"
+            :disabled="loading"
+            @click="save"
+          >
+            {{ loading ? "Saving…" : editingId ? "Save" : "Create" }}
+          </button>
+        </div>
       </div>
     </div>
 
@@ -295,7 +492,7 @@ onUnmounted(() => {
             <div class="min-w-0">
               <div class="font-semibold text-ink">{{ p.displayName }}</div>
               <div class="text-sm text-ink-muted mt-0.5">
-                {{ p.gitlabPath }} · {{ p.slug }}
+                {{ p.gitlabPath }} · {{ p.mainBranch || "—" }} · {{ p.slug }}
               </div>
               <div class="text-xs text-ink-muted mt-1 font-mono truncate">
                 {{ p.localPath }}
