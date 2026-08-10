@@ -167,24 +167,30 @@ export async function runBaChatAgent(opts: {
         run.supports?.("stream") !== false
       ) {
         for await (const message of run.stream()) {
-          const full = extractAssistantText(
+          // Cursor SDK stream: each assistant event carries a *chunk* (incremental),
+          // not the full cumulative text — append like Q&A agent.
+          const chunk = extractAssistantText(
             message as {
               type?: string;
               message?: { content?: Array<{ type?: string; text?: string }> };
             },
           );
-          if (!full) continue;
+          if (!chunk) continue;
+
           let delta = "";
-          if (full.startsWith(streamed)) {
-            delta = full.slice(streamed.length);
-            streamed = full;
-          } else if (full.length > streamed.length) {
-            delta = full.slice(streamed.length);
-            streamed = full;
-          } else {
-            streamed = full;
+          if (chunk.startsWith(streamed) && chunk.length >= streamed.length) {
+            // Cumulative snapshot (some SDK builds)
+            delta = chunk.slice(streamed.length);
+            streamed = chunk;
+          } else if (streamed && streamed.endsWith(chunk)) {
+            // Duplicate / echo of already-applied tail
             delta = "";
+          } else {
+            // Incremental token/chunk
+            delta = chunk;
+            streamed += chunk;
           }
+
           if (delta) {
             lastPublished = streamed;
             publishRealtime({
@@ -218,20 +224,25 @@ export async function runBaChatAgent(opts: {
       throw new Error("BA chat cancelled");
     }
 
+    const fromResult = String((result as { result?: string }).result || "").trim();
+    const fromStream = streamed.trim() || lastPublished.trim();
     const finalText =
-      streamed.trim() ||
-      String((result as { result?: string }).result || "").trim() ||
-      lastPublished.trim();
+      fromResult.length >= fromStream.length
+        ? fromResult || fromStream
+        : fromStream || fromResult;
 
     if (!finalText) {
       throw new Error("Agent returned an empty answer");
     }
 
-    if (
-      finalText.length > lastPublished.length &&
-      finalText.startsWith(lastPublished)
-    ) {
-      const delta = finalText.slice(lastPublished.length);
+    // Publish any remaining text not sent as deltas
+    if (finalText.length > lastPublished.length) {
+      let delta = "";
+      if (finalText.startsWith(lastPublished)) {
+        delta = finalText.slice(lastPublished.length);
+      } else if (!lastPublished) {
+        delta = finalText;
+      }
       if (delta) {
         publishRealtime({
           type: "ba_delta",

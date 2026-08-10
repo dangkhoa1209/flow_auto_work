@@ -182,8 +182,18 @@ export const useBaChatStore = defineStore("baChat", () => {
       return;
     }
     const idx = messages.value.findIndex((m) => m.id === ev.message.id);
-    if (idx >= 0) messages.value[idx] = ev.message;
-    else messages.value.push(ev.message);
+    if (idx >= 0) {
+      const prev = messages.value[idx];
+      // Don't wipe streamed text if a late empty placeholder arrives
+      if (!ev.message.content && prev.content) {
+        streamingMessageId.value = ev.message.id;
+        streaming.value = true;
+        return;
+      }
+      messages.value[idx] = ev.message;
+    } else {
+      messages.value.push(ev.message);
+    }
     if (ev.message.role === "assistant" && !ev.message.content) {
       streamingMessageId.value = ev.message.id;
       streaming.value = true;
@@ -228,11 +238,24 @@ export const useBaChatStore = defineStore("baChat", () => {
     if (ev.userId && uid && ev.userId !== uid) return;
     if (ev.threadId === activeThreadId.value) {
       const idx = messages.value.findIndex((m) => m.id === ev.messageId);
+      const finalContent = ev.content?.trim()
+        ? ev.content
+        : idx >= 0
+          ? messages.value[idx].content
+          : ev.content;
       if (idx >= 0) {
         messages.value[idx] = {
           ...messages.value[idx],
-          content: ev.content,
+          content: finalContent,
         };
+      } else if (finalContent) {
+        messages.value.push({
+          id: ev.messageId,
+          threadId: ev.threadId,
+          role: "assistant",
+          content: finalContent,
+          createdAt: new Date().toISOString(),
+        });
       }
     }
     streaming.value = false;
