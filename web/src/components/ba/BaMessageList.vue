@@ -31,9 +31,17 @@ watch(
   >
     <div
       v-if="!messages.length"
-      class="h-full flex items-center justify-center text-ink-muted text-sm text-center px-6"
+      class="h-full flex items-center justify-center px-6"
     >
-      Hỏi bất cứ điều gì về dự án đã chọn — agent sẽ đọc source và trả lời.
+      <div class="max-w-md text-center space-y-3">
+        <p class="text-sm text-ink m-0 font-medium">
+          Hỏi bất cứ điều gì về dự án đã chọn
+        </p>
+        <p class="text-xs text-ink-muted m-0 leading-relaxed">
+          Nên kèm <strong class="text-ink font-medium">URL</strong> hoặc điểm neo
+          trên UI (tên menu, nút, màn hình) để trả lời khớp hệ thống.
+        </p>
+      </div>
     </div>
     <div
       v-for="m in messages"
