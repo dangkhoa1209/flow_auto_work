@@ -51,6 +51,13 @@ const branchOptions = computed(() =>
   branches.value.map((b) => ({ value: b, label: b })),
 );
 
+function filterSelectOption(
+  input: string,
+  option?: { label?: string },
+): boolean {
+  return (option?.label || "").toLowerCase().includes(input.toLowerCase());
+}
+
 function resetForm() {
   editingId.value = null;
   wizardStep.value = 0;
@@ -346,7 +353,7 @@ onUnmounted(() => {
                 : 'border-line text-ink-muted'
           "
         >
-          {{ i + 1 }. {{ s }}
+          {{ i + 1 }}. {{ s }}
         </span>
       </div>
 
@@ -398,13 +405,8 @@ onUnmounted(() => {
             :options="projectOptions"
             placeholder="Select project"
             class="w-full"
-            :filter-option="
-              (input: string, option: { label?: string }) =>
-                (option?.label || '')
-                  .toLowerCase()
-                  .includes(input.toLowerCase())
-            "
-            @update:value="(v: string) => onProjectSelect(v)"
+            :filter-option="filterSelectOption"
+            @update:value="onProjectSelect"
           />
         </label>
         <label class="flex flex-col gap-1 text-sm">
@@ -444,12 +446,7 @@ onUnmounted(() => {
             :options="branchOptions"
             placeholder="Select branch"
             class="w-full"
-            :filter-option="
-              (input: string, option: { label?: string }) =>
-                (option?.label || '')
-                  .toLowerCase()
-                  .includes(input.toLowerCase())
-            "
+            :filter-option="filterSelectOption"
           />
         </label>
         <p class="text-xs text-ink-muted m-0">
