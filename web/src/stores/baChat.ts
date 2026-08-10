@@ -81,11 +81,57 @@ export const useBaChatStore = defineStore("baChat", () => {
   async function loadThreads() {
     if (!selectedProjectId.value) {
       threads.value = [];
+      activeThreadId.value = null;
+      messages.value = [];
       return;
     }
     const qs = `?baProjectId=${encodeURIComponent(selectedProjectId.value)}`;
     const data = await api<{ threads?: BaThread[] }>(`${API.ba.threads}${qs}`);
-    threads.value = data.threads || [];
+    const uid = currentUserId();
+    // Defense: never show another user's threads in the sidebar
+    threads.value = (data.threads || []).filter(
+      (t) => !uid || t.userId.toLowerCase() === uid,
+    );
+    if (
+      activeThreadId.value &&
+      !threads.value.some((t) => t.id === activeThreadId.value)
+    ) {
+      activeThreadId.value = null;
+      messages.value = [];
+      streaming.value = false;
+      streamingMessageId.value = null;
+    }
+  }
+
+  /** Clear all BA chat state (call on logout / user switch). */
+  function reset() {
+    projects.value = [];
+    threads.value = [];
+    activeThreadId.value = null;
+    messages.value = [];
+    streaming.value = false;
+    streamingMessageId.value = null;
+    loading.value = false;
+    errorText.value = "";
+    // Keep selectedProjectId in localStorage (shared catalog) — only wipe chat
+  }
+
+  function currentUserId(): string {
+    return (
+      session.me?.id ||
+      session.me?.gitlabUsername ||
+      session.session.username ||
+      ""
+    )
+      .toLowerCase()
+      .replace(/^@/, "");
+  }
+
+  /** Strict: drop events if we can't prove they belong to the logged-in user. */
+  function isMyEvent(userId: string | undefined): boolean {
+    const uid = currentUserId();
+    if (!uid || !userId) return false;
+    return userId.toLowerCase() === uid;
   }
 
   async function selectProject(id: string) {
@@ -174,10 +220,8 @@ export const useBaChatStore = defineStore("baChat", () => {
     threadId: string;
     message: BaMessage;
   }) {
-    const uid = (session.me?.id || session.me?.gitlabUsername || "").toLowerCase();
-    if (ev.userId && uid && ev.userId !== uid) return;
+    if (!isMyEvent(ev.userId)) return;
     if (ev.threadId !== activeThreadId.value) {
-      // Refresh thread list titles when idle
       void loadThreads();
       return;
     }
@@ -206,8 +250,7 @@ export const useBaChatStore = defineStore("baChat", () => {
     messageId: string;
     delta: string;
   }) {
-    const uid = (session.me?.id || session.me?.gitlabUsername || "").toLowerCase();
-    if (ev.userId && uid && ev.userId !== uid) return;
+    if (!isMyEvent(ev.userId)) return;
     if (ev.threadId !== activeThreadId.value) return;
     streaming.value = true;
     streamingMessageId.value = ev.messageId;
@@ -234,8 +277,7 @@ export const useBaChatStore = defineStore("baChat", () => {
     messageId: string;
     content: string;
   }) {
-    const uid = (session.me?.id || session.me?.gitlabUsername || "").toLowerCase();
-    if (ev.userId && uid && ev.userId !== uid) return;
+    if (!isMyEvent(ev.userId)) return;
     if (ev.threadId === activeThreadId.value) {
       const idx = messages.value.findIndex((m) => m.id === ev.messageId);
       const finalContent = ev.content?.trim()
@@ -269,8 +311,7 @@ export const useBaChatStore = defineStore("baChat", () => {
     messageId?: string;
     error: string;
   }) {
-    const uid = (session.me?.id || session.me?.gitlabUsername || "").toLowerCase();
-    if (ev.userId && uid && ev.userId !== uid) return;
+    if (!isMyEvent(ev.userId)) return;
     if (ev.threadId === activeThreadId.value) {
       errorText.value = ev.error;
       if (ev.messageId) {
@@ -290,6 +331,12 @@ export const useBaChatStore = defineStore("baChat", () => {
   async function bootstrap() {
     loading.value = true;
     try {
+      // Drop any leftover conversation from a previous account (SPA logout)
+      activeThreadId.value = null;
+      messages.value = [];
+      streaming.value = false;
+      streamingMessageId.value = null;
+      errorText.value = "";
       await loadProjects();
       await loadThreads();
     } finally {
@@ -311,6 +358,7 @@ export const useBaChatStore = defineStore("baChat", () => {
     errorText,
     projectReady,
     bootstrap,
+    reset,
     loadProjects,
     loadThreads,
     selectProject,

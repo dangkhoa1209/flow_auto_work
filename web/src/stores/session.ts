@@ -261,7 +261,14 @@ export const useSessionStore = defineStore("session", () => {
     });
   }
 
+  function clearBaChatState() {
+    void import("@/stores/baChat")
+      .then((m) => m.useBaChatStore().reset())
+      .catch(() => undefined);
+  }
+
   async function logout() {
+    clearBaChatState();
     await auth.logout();
     projectId.value = null;
     me.value = null;
@@ -269,6 +276,7 @@ export const useSessionStore = defineStore("session", () => {
   }
 
   function handleSessionExpired() {
+    clearBaChatState();
     auth.clearLocal();
     projectId.value = null;
     me.value = null;

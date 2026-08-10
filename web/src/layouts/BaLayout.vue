@@ -40,6 +40,13 @@ onUnmounted(() => {
 });
 
 async function logout() {
+  // Clear BA chat before navigating away (avoid leaking admin threads to next user)
+  try {
+    const { useBaChatStore } = await import("@/stores/baChat");
+    useBaChatStore().reset();
+  } catch {
+    /* ignore */
+  }
   await session.logout();
   message.success("Signed out");
   await router.push({ name: "login" });
