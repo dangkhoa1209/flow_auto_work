@@ -19,6 +19,9 @@ function isPublicApiPath(path: string): boolean {
   if (path.startsWith("/fs/")) return true;
   // QC Automation — gated by requireQc on qcRoutes (no GitLab workspace)
   if (path === "/qc" || path.startsWith("/qc/")) return true;
+  // BA Chat + Admin catalog — gated by requireBa / requireAdmin
+  if (path === "/ba" || path.startsWith("/ba/")) return true;
+  if (path === "/admin" || path.startsWith("/admin/")) return true;
   // Google OAuth browser redirect (no Bearer / project headers)
   if (path === "/google/callback") return true;
   return false;

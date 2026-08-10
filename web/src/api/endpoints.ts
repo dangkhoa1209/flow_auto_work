@@ -31,6 +31,23 @@ export const API = {
     sampleFile: (id: string) =>
       `/api/qc/sample-files/${encodeURIComponent(id)}`,
   },
+  admin: {
+    baProjects: "/api/admin/ba-projects",
+    baProject: (id: string) =>
+      `/api/admin/ba-projects/${encodeURIComponent(id)}`,
+    baClone: (id: string) =>
+      `/api/admin/ba-projects/${encodeURIComponent(id)}/clone`,
+    baCloneStatus: (id: string) =>
+      `/api/admin/ba-projects/${encodeURIComponent(id)}/clone-status`,
+    cursorSettings: "/api/admin/settings/cursor",
+  },
+  ba: {
+    projects: "/api/ba/projects",
+    threads: "/api/ba/threads",
+    thread: (id: string) => `/api/ba/threads/${encodeURIComponent(id)}`,
+    messages: (id: string) =>
+      `/api/ba/threads/${encodeURIComponent(id)}/messages`,
+  },
   projects: {
     root: "/api/projects",
     defaultPath: "/api/projects/default-path",

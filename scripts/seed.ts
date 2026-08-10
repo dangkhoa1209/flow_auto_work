@@ -1,37 +1,32 @@
 /**
- * One-shot seed / ownership migrate — not run on server boot.
+ * One-shot seed — creates admin account only. Does not touch projects.
  *
  *   npm run seed
  */
 import { getConfig } from "../src/config.js";
 import { connectMongo, closeMongo } from "../src/db/mongo.js";
-import { assignJobsToDefaultWorkspace } from "../src/job-store.js";
 import { logger } from "../src/logger.js";
 import { ensureAuthIndexes } from "../src/auth/sessions.js";
 import { ensureWorkspaceIndexes } from "../src/workspace/store.js";
 import {
   ensureWorkspaceSeed,
-  SEED_PASSWORD,
-  SEED_PROJECT,
-  SEED_USERNAME,
-  seedWorkspaceProjectId,
+  ADMIN_PASSWORD,
+  ADMIN_USERNAME,
 } from "../src/workspace/seed.js";
+import { ensureBaIndexes } from "../src/workspace/baStore.js";
 
 async function main() {
   getConfig();
   await connectMongo();
   await ensureWorkspaceIndexes();
   await ensureAuthIndexes();
+  await ensureBaIndexes();
 
   await ensureWorkspaceSeed();
-  const owned = await assignJobsToDefaultWorkspace();
 
   logger.info("Seed done", {
-    user: SEED_USERNAME,
-    password: SEED_PASSWORD,
-    project: SEED_PROJECT,
-    workspaceProjectId: seedWorkspaceProjectId(),
-    jobsAssigned: owned,
+    adminUser: ADMIN_USERNAME,
+    adminPassword: ADMIN_PASSWORD,
   });
 
   await closeMongo();

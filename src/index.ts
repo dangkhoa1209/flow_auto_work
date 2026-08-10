@@ -44,6 +44,8 @@ async function main() {
 
   await ensureWorkspaceIndexes();
   await ensureAuthIndexes();
+  const { ensureBaIndexes } = await import("./workspace/baStore.js");
+  await ensureBaIndexes();
   logger.info("Workspace + auth indexes OK");
 
   await failInterruptedJobs();

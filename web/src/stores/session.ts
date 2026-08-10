@@ -90,9 +90,24 @@ export const useSessionStore = defineStore("session", () => {
 
   const isLoggedIn = computed(() => auth.isAuthenticated);
 
-  const isQc = computed(() =>
-    Boolean(me.value?.roles?.includes("qc")),
-  );
+  const isQc = computed(() => Boolean(me.value?.roles?.includes("qc")));
+
+  const isAdmin = computed(() => Boolean(me.value?.roles?.includes("admin")));
+
+  /** BA / PD / QC-only audience (not Dev+QC toggle). */
+  const isBaAudience = computed(() => {
+    const roles = me.value?.roles || [];
+    if (roles.includes("admin")) return false;
+    if (roles.includes("ba") || roles.includes("pd")) return true;
+    if (roles.includes("qc") && !roles.includes("dev")) return true;
+    return false;
+  });
+
+  const homeRoute = computed(() => {
+    if (isAdmin.value) return "/admin";
+    if (isBaAudience.value) return "/ba";
+    return "/work";
+  });
 
   const currentMembership = computed(() =>
     memberships.value.find((m) => m.projectId === projectId.value),
@@ -285,6 +300,9 @@ export const useSessionStore = defineStore("session", () => {
     bootstrapped,
     isLoggedIn,
     isQc,
+    isAdmin,
+    isBaAudience,
+    homeRoute,
     currentMembership,
     bootstrap,
     refreshMe,

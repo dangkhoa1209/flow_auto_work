@@ -88,6 +88,7 @@ export const useAuthStore = defineStore("auth", () => {
     username: string;
     password: string;
     displayName?: string;
+    role?: string;
   }) {
     const res = await authApi.register(opts);
     applyAuthResponse(res, opts.username);

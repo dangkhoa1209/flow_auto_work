@@ -2,7 +2,11 @@ import { API } from "./endpoints";
 import { request } from "./http";
 
 export type AuthTokensResponse = {
-  user: { gitlabUsername?: string; username?: string };
+  user: {
+    gitlabUsername?: string;
+    username?: string;
+    roles?: string[];
+  };
   memberships?: Array<{
     projectId: string;
     project?: { id: string; gitlabPath?: string };
@@ -29,6 +33,7 @@ export const authApi = {
     username: string;
     password: string;
     displayName?: string;
+    role?: string;
   }) {
     return request<AuthTokensResponse>({
       url: API.auth.register,

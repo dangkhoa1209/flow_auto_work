@@ -17,7 +17,7 @@ import {
   getUserByUsername,
   upsertUserLogin,
 } from "../../workspace/store.js";
-import { toPublicUser } from "../../workspace/types.js";
+import { isRegisterableRole, toPublicUser } from "../../workspace/types.js";
 import { AppError } from "../../utils/AppError.js";
 import { listPublicMemberships } from "../project/index.js";
 
@@ -74,6 +74,8 @@ export type RegisterBody = {
   username?: string;
   password?: string;
   displayName?: string;
+  /** Platform role: dev | qc | pd | ba */
+  role?: string;
 };
 
 /** Register new username + password, then issue tokens (same shape as login). */
@@ -81,6 +83,7 @@ export async function registerUser(body: RegisterBody) {
   const username = (body.username || "").trim().replace(/^@/, "");
   const password = body.password ?? "";
   const displayName = body.displayName?.trim();
+  const roleRaw = (body.role || "dev").trim().toLowerCase();
 
   if (!username) {
     throw new AppError("username required", 400);
@@ -94,6 +97,13 @@ export async function registerUser(body: RegisterBody) {
   if (password.length < 6) {
     throw new AppError("Password must be at least 6 characters", 400);
   }
+  if (!isRegisterableRole(roleRaw)) {
+    throw new AppError(
+      "role must be one of: dev, qc, pd, ba",
+      400,
+      "invalid_role",
+    );
+  }
 
   const existing = await getUserByUsername(username);
   if (existing) {
@@ -104,6 +114,7 @@ export async function registerUser(body: RegisterBody) {
     username,
     password,
     displayName: displayName || username,
+    roles: [roleRaw],
   });
   const memberships = await listPublicMemberships(username);
   const tokens = await issueAuthTokens(username);
