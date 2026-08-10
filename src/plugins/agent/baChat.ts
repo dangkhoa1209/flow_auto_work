@@ -56,6 +56,25 @@ function extractAssistantText(message: {
   return text;
 }
 
+function publishBaProgress(opts: {
+  userId: string;
+  threadId: string;
+  messageId?: string;
+  step: "pull" | "start" | "read" | "write" | "done" | "error";
+  label: string;
+  detail?: string;
+}) {
+  publishRealtime({
+    type: "ba_progress",
+    userId: opts.userId,
+    threadId: opts.threadId,
+    messageId: opts.messageId,
+    step: opts.step,
+    label: opts.label,
+    detail: opts.detail,
+  });
+}
+
 /** BA / PM / QC non-tech assistant — UI + locale vi terminology, no code changes. */
 function buildBaPrompt(opts: {
   displayName: string;
@@ -108,6 +127,15 @@ export async function runBaChatAgent(opts: {
     throw new Error("Project chưa sẵn sàng — liên hệ admin để clone source");
   }
 
+  publishBaProgress({
+    userId: opts.userId,
+    threadId: opts.threadId,
+    messageId: opts.assistantMessageId,
+    step: "pull",
+    label: "Đang đồng bộ code mới nhất…",
+    detail: project.mainBranch || "main",
+  });
+
   try {
     await pullBaProjectLatest(project);
   } catch (err) {
@@ -148,6 +176,15 @@ export async function runBaChatAgent(opts: {
     model: modelId,
   });
 
+  publishBaProgress({
+    userId: opts.userId,
+    threadId: opts.threadId,
+    messageId: opts.assistantMessageId,
+    step: "start",
+    label: "Khởi động trợ lý…",
+    detail: modelId,
+  });
+
   const work = async (): Promise<string> => {
     const agent = await Agent.create({
       apiKey,
@@ -156,10 +193,21 @@ export async function runBaChatAgent(opts: {
     });
 
     await using disposed = agent;
+
+    publishBaProgress({
+      userId: opts.userId,
+      threadId: opts.threadId,
+      messageId: opts.assistantMessageId,
+      step: "read",
+      label: "Đang đọc UI / locale & suy nghĩ…",
+      detail: project.displayName,
+    });
+
     const run = await disposed.send(prompt);
 
     let streamed = "";
     let lastPublished = "";
+    let wroteOnce = false;
 
     try {
       if (
@@ -167,8 +215,6 @@ export async function runBaChatAgent(opts: {
         run.supports?.("stream") !== false
       ) {
         for await (const message of run.stream()) {
-          // Cursor SDK stream: each assistant event carries a *chunk* (incremental),
-          // not the full cumulative text — append like Q&A agent.
           const chunk = extractAssistantText(
             message as {
               type?: string;
@@ -179,19 +225,26 @@ export async function runBaChatAgent(opts: {
 
           let delta = "";
           if (chunk.startsWith(streamed) && chunk.length >= streamed.length) {
-            // Cumulative snapshot (some SDK builds)
             delta = chunk.slice(streamed.length);
             streamed = chunk;
           } else if (streamed && streamed.endsWith(chunk)) {
-            // Duplicate / echo of already-applied tail
             delta = "";
           } else {
-            // Incremental token/chunk
             delta = chunk;
             streamed += chunk;
           }
 
           if (delta) {
+            if (!wroteOnce) {
+              wroteOnce = true;
+              publishBaProgress({
+                userId: opts.userId,
+                threadId: opts.threadId,
+                messageId: opts.assistantMessageId,
+                step: "write",
+                label: "Đang soạn câu trả lời…",
+              });
+            }
             lastPublished = streamed;
             publishRealtime({
               type: "ba_delta",
@@ -235,7 +288,6 @@ export async function runBaChatAgent(opts: {
       throw new Error("Agent returned an empty answer");
     }
 
-    // Publish any remaining text not sent as deltas
     if (finalText.length > lastPublished.length) {
       let delta = "";
       if (finalText.startsWith(lastPublished)) {
@@ -244,6 +296,15 @@ export async function runBaChatAgent(opts: {
         delta = finalText;
       }
       if (delta) {
+        if (!wroteOnce) {
+          publishBaProgress({
+            userId: opts.userId,
+            threadId: opts.threadId,
+            messageId: opts.assistantMessageId,
+            step: "write",
+            label: "Đang soạn câu trả lời…",
+          });
+        }
         publishRealtime({
           type: "ba_delta",
           userId: opts.userId,
@@ -258,7 +319,15 @@ export async function runBaChatAgent(opts: {
   };
 
   try {
-    return await withTimeout(work(), BA_TIMEOUT_MS, "BA chat");
+    const answer = await withTimeout(work(), BA_TIMEOUT_MS, "BA chat");
+    publishBaProgress({
+      userId: opts.userId,
+      threadId: opts.threadId,
+      messageId: opts.assistantMessageId,
+      step: "done",
+      label: "Xong",
+    });
+    return answer;
   } catch (err) {
     throw new Error(
       formatCursorAgentFailure(
@@ -334,6 +403,14 @@ export function kickBaChatAnswer(opts: {
         threadId: opts.threadId,
         messageId: assistantId,
         error: msg,
+      });
+      publishBaProgress({
+        userId: opts.userId,
+        threadId: opts.threadId,
+        messageId: assistantId,
+        step: "error",
+        label: "Gặp lỗi",
+        detail: msg.slice(0, 120),
       });
     }
   })();

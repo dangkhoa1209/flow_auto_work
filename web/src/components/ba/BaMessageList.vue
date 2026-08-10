@@ -8,6 +8,7 @@ const props = defineProps<{
   messages: BaMessage[];
   streaming?: boolean;
   streamingMessageId?: string | null;
+  progressHint?: string;
 }>();
 
 const listRef = ref<HTMLElement | null>(null);
@@ -76,9 +77,9 @@ function whoLabel(role: string) {
           <span class="chat-typing" aria-label="Đang suy nghĩ">
             <span /><span /><span />
           </span>
-          <span class="text-[11px] text-[var(--app-faint)] ml-1.5"
-            >đang suy nghĩ…</span
-          >
+          <span class="text-[11px] text-[var(--app-faint)] ml-1.5">{{
+            progressHint || "đang suy nghĩ…"
+          }}</span>
         </template>
       </div>
     </div>

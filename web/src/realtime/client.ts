@@ -82,6 +82,16 @@ export type RealtimeBaError = {
   error: string;
 };
 
+export type RealtimeBaProgress = {
+  type: "ba_progress";
+  userId: string;
+  threadId: string;
+  messageId?: string;
+  step: "pull" | "start" | "read" | "write" | "done" | "error";
+  label: string;
+  detail?: string;
+};
+
 type Handlers = {
   onStatus?: (ev: RealtimeStatus) => void;
   onProgress?: (ev: RealtimeProgress) => void;
@@ -92,6 +102,7 @@ type Handlers = {
   onBaDelta?: (ev: RealtimeBaDelta) => void;
   onBaDone?: (ev: RealtimeBaDone) => void;
   onBaError?: (ev: RealtimeBaError) => void;
+  onBaProgress?: (ev: RealtimeBaProgress) => void;
   onOpen?: () => void;
   onError?: () => void;
 };
@@ -190,6 +201,15 @@ export function connectRealtime(handlers: Handlers): () => void {
     try {
       const data = JSON.parse((e as MessageEvent).data) as RealtimeBaError;
       handlers.onBaError?.(data);
+    } catch {
+      /* ignore */
+    }
+  });
+
+  es.addEventListener("ba_progress", (e) => {
+    try {
+      const data = JSON.parse((e as MessageEvent).data) as RealtimeBaProgress;
+      handlers.onBaProgress?.(data);
     } catch {
       /* ignore */
     }

@@ -5,6 +5,7 @@ import { useBaChatStore } from "@/stores/baChat";
 import BaChatSidebar from "@/components/ba/BaChatSidebar.vue";
 import BaMessageList from "@/components/ba/BaMessageList.vue";
 import BaComposer from "@/components/ba/BaComposer.vue";
+import BaProgressRail from "@/components/ba/BaProgressRail.vue";
 
 const ba = useBaChatStore();
 
@@ -55,10 +56,12 @@ async function onSend(content: string) {
             class="faw-idle text-[11px]"
           >
             <span class="faw-idle__dot wip" />
-            Streaming
+            {{ ba.currentProgressLabel || "Streaming" }}
           </span>
         </div>
       </div>
+
+      <BaProgressRail />
 
       <div
         v-if="!ba.projects.length"
@@ -72,6 +75,7 @@ async function onSend(content: string) {
           :messages="ba.messages"
           :streaming="ba.streaming"
           :streaming-message-id="ba.streamingMessageId"
+          :progress-hint="ba.currentProgressLabel"
         />
         <div
           v-if="ba.errorText"

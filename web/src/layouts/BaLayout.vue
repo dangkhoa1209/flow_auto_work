@@ -15,7 +15,7 @@ let disconnect: (() => void) | undefined;
 const statusDot = computed(() => (ba.streaming ? "wip" : "idle"));
 const statusText = computed(() =>
   ba.streaming
-    ? "Đang trả lời…"
+    ? ba.currentProgressLabel || "Đang trả lời…"
     : ba.selectedProject
       ? ba.selectedProject.displayName
       : "Chọn project",
@@ -32,6 +32,7 @@ onMounted(async () => {
     onBaDelta: (ev) => ba.applyBaDelta(ev),
     onBaDone: (ev) => ba.applyBaDone(ev),
     onBaError: (ev) => ba.applyBaError(ev),
+    onBaProgress: (ev) => ba.applyBaProgress(ev),
   });
 });
 

@@ -31,6 +31,29 @@ export type BaMessage = {
   createdAt: string;
 };
 
+export type BaProgressStep =
+  | "pull"
+  | "start"
+  | "read"
+  | "write"
+  | "done"
+  | "error";
+
+export type BaProgressItem = {
+  step: BaProgressStep;
+  label: string;
+  detail?: string;
+  at: string;
+};
+
+const STEP_ORDER: BaProgressStep[] = [
+  "pull",
+  "start",
+  "read",
+  "write",
+  "done",
+];
+
 export const useBaChatStore = defineStore("baChat", () => {
   const session = useSessionStore();
 
@@ -45,6 +68,8 @@ export const useBaChatStore = defineStore("baChat", () => {
   const streamingMessageId = ref<string | null>(null);
   const loading = ref(false);
   const errorText = ref("");
+  const progress = ref<BaProgressItem[]>([]);
+  const progressVisible = ref(false);
 
   const selectedProject = computed(() =>
     projects.value.find((p) => p.id === selectedProjectId.value) || null,
@@ -57,6 +82,25 @@ export const useBaChatStore = defineStore("baChat", () => {
   const projectReady = computed(() =>
     Boolean(selectedProject.value?.ready),
   );
+
+  const currentProgressLabel = computed(() => {
+    const last = progress.value[progress.value.length - 1];
+    return last?.label || (streaming.value ? "Đang xử lý…" : "");
+  });
+
+  const progressPct = computed(() => {
+    const last = progress.value[progress.value.length - 1];
+    if (!last) return streaming.value ? 8 : 0;
+    if (last.step === "error") return 100;
+    const idx = STEP_ORDER.indexOf(last.step);
+    if (idx < 0) return 12;
+    return Math.min(100, Math.round(((idx + 1) / STEP_ORDER.length) * 100));
+  });
+
+  function clearProgress() {
+    progress.value = [];
+    progressVisible.value = false;
+  }
 
   function persistProjectId(id: string | null) {
     selectedProjectId.value = id;
@@ -100,6 +144,7 @@ export const useBaChatStore = defineStore("baChat", () => {
       messages.value = [];
       streaming.value = false;
       streamingMessageId.value = null;
+      clearProgress();
     }
   }
 
@@ -113,7 +158,7 @@ export const useBaChatStore = defineStore("baChat", () => {
     streamingMessageId.value = null;
     loading.value = false;
     errorText.value = "";
-    // Keep selectedProjectId in localStorage (shared catalog) — only wipe chat
+    clearProgress();
   }
 
   function currentUserId(): string {
@@ -199,6 +244,15 @@ export const useBaChatStore = defineStore("baChat", () => {
     const threadId = activeThreadId.value!;
     streaming.value = true;
     errorText.value = "";
+    clearProgress();
+    progressVisible.value = true;
+    progress.value = [
+      {
+        step: "pull",
+        label: "Đang gửi câu hỏi…",
+        at: new Date().toISOString(),
+      },
+    ];
     try {
       const data = await api<{ message?: BaMessage }>(API.ba.messages(threadId), {
         method: "POST",
@@ -211,6 +265,7 @@ export const useBaChatStore = defineStore("baChat", () => {
     } catch (e) {
       streaming.value = false;
       errorText.value = e instanceof Error ? e.message : String(e);
+      clearProgress();
       throw e;
     }
   }
@@ -303,6 +358,9 @@ export const useBaChatStore = defineStore("baChat", () => {
     streaming.value = false;
     streamingMessageId.value = null;
     void loadThreads();
+    window.setTimeout(() => {
+      if (!streaming.value) clearProgress();
+    }, 1200);
   }
 
   function applyBaError(ev: {
@@ -328,15 +386,42 @@ export const useBaChatStore = defineStore("baChat", () => {
     streamingMessageId.value = null;
   }
 
+  function applyBaProgress(ev: {
+    userId: string;
+    threadId: string;
+    messageId?: string;
+    step: BaProgressStep;
+    label: string;
+    detail?: string;
+  }) {
+    if (!isMyEvent(ev.userId)) return;
+    if (ev.threadId !== activeThreadId.value) return;
+    progressVisible.value = true;
+    const item: BaProgressItem = {
+      step: ev.step,
+      label: ev.label,
+      detail: ev.detail,
+      at: new Date().toISOString(),
+    };
+    const idx = progress.value.findIndex((p) => p.step === ev.step);
+    if (idx >= 0) progress.value[idx] = item;
+    else progress.value = [...progress.value, item];
+    if (ev.step === "done") {
+      window.setTimeout(() => {
+        if (!streaming.value) clearProgress();
+      }, 900);
+    }
+  }
+
   async function bootstrap() {
     loading.value = true;
     try {
-      // Drop any leftover conversation from a previous account (SPA logout)
       activeThreadId.value = null;
       messages.value = [];
       streaming.value = false;
       streamingMessageId.value = null;
       errorText.value = "";
+      clearProgress();
       await loadProjects();
       await loadThreads();
     } finally {
@@ -356,6 +441,10 @@ export const useBaChatStore = defineStore("baChat", () => {
     streamingMessageId,
     loading,
     errorText,
+    progress,
+    progressVisible,
+    currentProgressLabel,
+    progressPct,
     projectReady,
     bootstrap,
     reset,
@@ -370,5 +459,6 @@ export const useBaChatStore = defineStore("baChat", () => {
     applyBaDelta,
     applyBaDone,
     applyBaError,
+    applyBaProgress,
   };
 });
