@@ -1,0 +1,14 @@
+---
+description: When working under project/, load that source's .cursor/rules and graphify
+globs: project/**/*
+alwaysApply: false
+---
+
+# Nested project context (`project/<user>/<slug>/source`)
+
+You are working inside a customer/source checkout under `project/`, not the WorkBench app itself.
+
+1. Resolve `SOURCE_ROOT` = the nearest `project/<username>/<slug>/source` ancestor of the focused/open files (or the path the user named).
+2. **Load rules** — Read all of `SOURCE_ROOT/.cursor/rules/*.mdc` and obey them for this task. Workspace rules alone are not enough; nested rules are not auto-injected.
+3. **graphify** — all `query` / `path` / `explain` / `update` run with cwd=`SOURCE_ROOT` (or `--graph SOURCE_ROOT/graphify-out/graph.json`). Do not use workspace-root `graphify-out/`.
+4. Prefer editing/searching under `SOURCE_ROOT`. Treat WorkBench (`extension/`, `web/`, `src/`) as out of scope unless the user explicitly asks to change QC/WorkBench code to match this source.
