@@ -63,6 +63,11 @@ export type WorkspaceProject = {
   repoPath: string;
   mainBranch?: string;
   workingBranch?: string;
+  /**
+   * Default Auto/Manual commit for new jobs in this project.
+   * Per-job `commitMode` can still override. Missing → auto.
+   */
+  defaultCommitMode?: "manual" | "auto";
   /** Verify command run after agent code phase (e.g. "npm run typecheck") */
   verifyCommand?: string;
   isActive: boolean;

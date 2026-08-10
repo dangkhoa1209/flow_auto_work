@@ -1,8 +1,12 @@
 <script setup lang="ts">
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import { message } from "ant-design-vue";
 import { CopyOutlined } from "@ant-design/icons-vue";
 import ChatMessageBody from "@/components/ChatMessageBody.vue";
 import IssueIidLink from "@/components/IssueIidLink.vue";
 import JobDiffPanel from "@/components/JobDiffPanel.vue";
+import { jobApi } from "@/api/jobApi";
+import { useWorkStore } from "@/stores/work";
 import {
   contextQualityLabel,
   contextQualityColor,
@@ -10,7 +14,7 @@ import {
 import type { Job, TaskDetail } from "@/stores/work";
 import type { MidTab } from "@/composables/useWorkbench";
 
-defineProps<{
+const props = defineProps<{
   midTab: MidTab;
   jobLoading: boolean;
   selectedJobId: string | null;
@@ -34,9 +38,11 @@ defineProps<{
   issueCreateBusy: boolean;
   jobBranch: (j: { branch?: string; workBranch?: string }) => string;
   canQuickMerge: boolean;
+  canCreateMr: boolean;
   canQuickHandoff: boolean;
   canSyncBase: boolean;
   mergeBusy: boolean;
+  createMrBusy: boolean;
   handoffBusy: boolean;
   syncBaseBusy: boolean;
   /** Larger touch targets + gap for mobile sticky bar */
@@ -58,9 +64,215 @@ const emit = defineEmits<{
   approveDocs: [];
   runSelected: [];
   quickMerge: [];
+  createMr: [];
   quickHandoff: [];
   syncBase: [];
+  diffUpdated: [];
 }>();
+
+const work = useWorkStore();
+const googleBusy = ref(false);
+const autoContinueAfterAuth = ref(false);
+const googleStatus = ref<{
+  configured: boolean;
+  authorized: boolean;
+  email?: string;
+  sheetIds: string[];
+  pendingSheetUrls: string[];
+} | null>(null);
+const detectedSheets = ref<
+  { spreadsheetId: string; url: string; gid?: string }[]
+>([]);
+const includeSheetIds = ref<string[]>([]);
+const includeSaving = ref(false);
+
+const awaitingGoogleAuth = computed(
+  () => props.currentJob?.status === "awaiting_google_auth",
+);
+
+const showGoogleCard = computed(
+  () =>
+    awaitingGoogleAuth.value ||
+    Boolean(googleStatus.value?.authorized || googleStatus.value?.email) ||
+    Boolean(props.currentJob?.googleAuth?.email) ||
+    Boolean(props.currentJob?.pendingGoogleSheetUrls?.length) ||
+    detectedSheets.value.length > 0,
+);
+
+function sheetLabel(s: { spreadsheetId: string; url: string }): string {
+  try {
+    const u = new URL(s.url);
+    if (u.hostname.includes("docs.google.com")) {
+      return `Sheets …${s.spreadsheetId.slice(-8)}`;
+    }
+    if (u.hostname.includes("drive.google.com")) {
+      return `Drive …${s.spreadsheetId.slice(-8)}`;
+    }
+  } catch {
+    /* ignore */
+  }
+  return `…${s.spreadsheetId.slice(-10)}`;
+}
+
+async function refreshGoogleStatus() {
+  const id = props.selectedJobId;
+  if (!id) {
+    googleStatus.value = null;
+    detectedSheets.value = [];
+    includeSheetIds.value = [];
+    return;
+  }
+  try {
+    const [status, detected] = await Promise.all([
+      jobApi.googleStatus(id),
+      jobApi.googleDetect(id),
+    ]);
+    googleStatus.value = status;
+    detectedSheets.value = detected.sheets || [];
+    includeSheetIds.value = [...(detected.includeIds || [])];
+  } catch {
+    googleStatus.value = null;
+  }
+}
+
+async function toggleIncludeSheet(spreadsheetId: string, checked: boolean) {
+  const id = props.selectedJobId;
+  if (!id) return;
+  const next = new Set(includeSheetIds.value);
+  if (checked) next.add(spreadsheetId);
+  else next.delete(spreadsheetId);
+  includeSheetIds.value = [...next];
+  includeSaving.value = true;
+  try {
+    const res = await jobApi.googleInclude(id, includeSheetIds.value);
+    includeSheetIds.value = res.includeIds || includeSheetIds.value;
+    await work.loadJobs().catch(() => undefined);
+  } catch (e) {
+    message.error(e instanceof Error ? e.message : String(e));
+    await refreshGoogleStatus();
+  } finally {
+    includeSaving.value = false;
+  }
+}
+
+async function reloadJob() {
+  await work.loadJobs().catch(() => undefined);
+  if (props.selectedJobId) {
+    await work.selectJob(props.selectedJobId).catch(() => undefined);
+  }
+  await refreshGoogleStatus();
+}
+
+async function authorizeGoogle() {
+  const id = props.selectedJobId;
+  if (!id) return;
+  googleBusy.value = true;
+  autoContinueAfterAuth.value = awaitingGoogleAuth.value;
+  try {
+    const { authUrl, configured } = await jobApi.googleAuthUrl(id);
+    if (!configured || !authUrl) {
+      message.error("Google OAuth is not configured on the server");
+      return;
+    }
+    const popup = window.open(
+      authUrl,
+      "flow-google-oauth",
+      "width=520,height=720,menubar=no,toolbar=no",
+    );
+    if (!popup) {
+      message.warning("Popup blocked — allow popups for this site");
+    }
+  } catch (e) {
+    message.error(e instanceof Error ? e.message : String(e));
+  } finally {
+    googleBusy.value = false;
+  }
+}
+
+async function continueAfterGoogle() {
+  const id = props.selectedJobId;
+  if (!id) return;
+  googleBusy.value = true;
+  try {
+    const res = await jobApi.googleContinue(id);
+    if (!res.enqueued && !res.ok) {
+      message.warning(res.reason || "Could not enqueue job");
+    } else {
+      message.success("Continue Run — job queued");
+    }
+    await reloadJob();
+  } catch (e) {
+    message.error(e instanceof Error ? e.message : String(e));
+  } finally {
+    googleBusy.value = false;
+  }
+}
+
+async function revokeGoogle() {
+  const id = props.selectedJobId;
+  if (!id) return;
+  googleBusy.value = true;
+  try {
+    await jobApi.googleRevoke(id);
+    message.success("Google access revoked for this task");
+    await reloadJob();
+  } catch (e) {
+    message.error(e instanceof Error ? e.message : String(e));
+  } finally {
+    googleBusy.value = false;
+  }
+}
+
+function onGoogleOAuthMessage(ev: MessageEvent) {
+  const d = ev.data as {
+    type?: string;
+    ok?: boolean;
+    jobId?: string | null;
+    message?: string;
+  } | null;
+  if (!d || d.type !== "flow-google-oauth") return;
+  if (d.jobId && props.selectedJobId && d.jobId !== props.selectedJobId) {
+    return;
+  }
+  if (d.ok) {
+    message.success(d.message || "Google authorized");
+    void (async () => {
+      await reloadJob();
+      if (autoContinueAfterAuth.value) {
+        autoContinueAfterAuth.value = false;
+        await continueAfterGoogle();
+      }
+    })();
+  } else {
+    message.error(d.message || "Google authorization failed");
+  }
+}
+
+watch(
+  () => [
+    props.selectedJobId,
+    props.currentJob?.status,
+    props.currentJob?.googleAuth?.email,
+  ],
+  () => {
+    void refreshGoogleStatus();
+  },
+  { immediate: true },
+);
+
+watch(
+  () => props.notesSaving,
+  (saving, wasSaving) => {
+    if (wasSaving && !saving) void refreshGoogleStatus();
+  },
+);
+
+onMounted(() => {
+  window.addEventListener("message", onGoogleOAuthMessage);
+});
+onUnmounted(() => {
+  window.removeEventListener("message", onGoogleOAuthMessage);
+});
 </script>
 
 <template>
@@ -128,6 +340,58 @@ const emit = defineEmits<{
                 >
               </template>
             </a-alert>
+
+            <a-alert
+              v-if="awaitingGoogleAuth"
+              type="warning"
+              show-icon
+              class="mb-3"
+              message="Authorize Google to read linked Sheets"
+              description="Task có link Google Sheets. Cấp quyền đọc (readonly), rồi Continue Run."
+            >
+              <template #action>
+                <div class="flex flex-col gap-1.5 items-end">
+                  <a-button
+                    size="small"
+                    type="primary"
+                    :loading="googleBusy"
+                    @click="authorizeGoogle"
+                    >Authorize Google</a-button
+                  >
+                  <a-button
+                    size="small"
+                    :loading="googleBusy"
+                    :disabled="!googleStatus?.authorized"
+                    @click="continueAfterGoogle"
+                    >Continue Run</a-button
+                  >
+                </div>
+              </template>
+            </a-alert>
+
+            <div
+              v-if="showGoogleCard && !awaitingGoogleAuth"
+              class="mb-3 flex flex-wrap items-center gap-2 text-[12px] text-ink-soft"
+            >
+              <span v-if="googleStatus?.authorized || currentJob?.googleAuth?.email">
+                Google Sheets:
+                {{
+                  googleStatus?.email ||
+                  currentJob?.googleAuth?.email ||
+                  "linked"
+                }}
+              </span>
+              <a-button
+                v-if="googleStatus?.authorized || currentJob?.googleAuth?.email"
+                size="small"
+                danger
+                type="link"
+                class="!px-0"
+                :loading="googleBusy"
+                @click="revokeGoogle"
+                >Revoke</a-button
+              >
+            </div>
 
             <div class="faw-issue-head">
               <template v-if="isCurrentAdhoc">
@@ -360,6 +624,49 @@ const emit = defineEmits<{
                   >Docs-first (read docs before coding)</span
                 >
               </div>
+
+              <div
+                v-if="detectedSheets.length"
+                class="mt-3 rounded-lg border border-[var(--app-border)] bg-[var(--app-panel-soft)] px-3 py-2.5"
+              >
+                <div class="text-[12px] text-ink-soft font-medium">
+                  Đọc Google Sheets / Excel khi Run
+                </div>
+                <div class="text-[11px] text-ink-muted mt-0.5 mb-2">
+                  Mặc định tắt. Tick file cần đưa vào agent context (tối đa ~200
+                  dòng / file).
+                </div>
+                <div class="space-y-1.5">
+                  <label
+                    v-for="s in detectedSheets"
+                    :key="s.spreadsheetId"
+                    class="flex items-start gap-2 text-[12px] text-ink-soft cursor-pointer"
+                  >
+                    <a-checkbox
+                      :checked="includeSheetIds.includes(s.spreadsheetId)"
+                      :disabled="includeSaving || busy"
+                      @change="
+                        (e: { target: { checked: boolean } }) =>
+                          toggleIncludeSheet(
+                            s.spreadsheetId,
+                            e.target.checked,
+                          )
+                      "
+                    />
+                    <span class="min-w-0">
+                      <span class="font-medium">{{ sheetLabel(s) }}</span>
+                      <a
+                        :href="s.url"
+                        target="_blank"
+                        rel="noopener"
+                        class="block text-[10px] text-ink-faint truncate hover:underline"
+                        @click.stop
+                        >{{ s.url }}</a
+                      >
+                    </span>
+                  </label>
+                </div>
+              </div>
             </div>
           </template>
           <a-empty v-else description="Select a task or job">
@@ -370,12 +677,54 @@ const emit = defineEmits<{
         </div>
       </a-tab-pane>
 
-      <a-tab-pane key="diff" tab="Diff" :disabled="!selectedJobId">
+      <a-tab-pane key="diff" :disabled="!selectedJobId">
+        <template #tab>
+          <span class="inline-flex items-center gap-1.5">
+            Diff
+            <span
+              v-if="currentJob?.hasPendingChanges"
+              class="inline-flex items-center justify-center min-w-[1.1rem] h-4 px-1 rounded text-[10px] font-bold bg-amber-500/25 text-amber-300"
+              title="Uncommitted changes"
+              >WIP</span
+            >
+          </span>
+        </template>
         <div class="h-full min-h-0 flex flex-col overflow-hidden p-3">
+          <div
+            v-if="showGoogleCard"
+            class="mb-2 flex flex-wrap items-center gap-2 text-[12px] text-ink-soft shrink-0"
+          >
+            <span v-if="awaitingGoogleAuth">Awaiting Google Sheets auth</span>
+            <span v-else-if="googleStatus?.email || currentJob?.googleAuth?.email">
+              Google Sheets:
+              {{ googleStatus?.email || currentJob?.googleAuth?.email }}
+            </span>
+            <a-button
+              v-if="awaitingGoogleAuth"
+              size="small"
+              type="primary"
+              :loading="googleBusy"
+              @click="authorizeGoogle"
+              >Authorize Google</a-button
+            >
+            <a-button
+              v-else-if="googleStatus?.authorized || currentJob?.googleAuth?.email"
+              size="small"
+              danger
+              type="link"
+              class="!px-0"
+              :loading="googleBusy"
+              @click="revokeGoogle"
+              >Revoke</a-button
+            >
+          </div>
           <JobDiffPanel
             class="flex-1 min-h-0"
             :job-id="selectedJobId"
             :branch="currentJob ? jobBranch(currentJob) : null"
+            :issue-iid="currentJob?.issue?.issueIid ?? null"
+            :issue-title="currentJob?.issue?.title ?? detailTitle"
+            @updated="emit('diffUpdated')"
           />
         </div>
       </a-tab-pane>
@@ -425,6 +774,25 @@ const emit = defineEmits<{
           {{ syncBaseBusy ? "Syncing…" : "⇣ Sync base" }}
         </button>
       </a-tooltip>
+      <a-tooltip
+        :title="
+          canCreateMr
+            ? currentJob?.mrUrl
+              ? 'Open existing / refresh MR'
+              : 'Create open MR (no merge) + Ready to Release'
+            : 'Need handoff/done, branch, and no pending changes'
+        "
+      >
+        <button
+          type="button"
+          class="faw-btn"
+          :class="mobileTouch ? '!min-h-[44px]' : ''"
+          :disabled="!canCreateMr || createMrBusy || mergeBusy || handoffBusy"
+          @click="emit('createMr')"
+        >
+          {{ createMrBusy ? "MR…" : currentJob?.mrUrl ? "MR ✓" : "Create MR" }}
+        </button>
+      </a-tooltip>
       <a-popconfirm
         title="Merge work branch → base?"
         ok-text="Merge"
@@ -443,7 +811,7 @@ const emit = defineEmits<{
             type="button"
             class="faw-btn"
             :class="mobileTouch ? '!min-h-[44px]' : ''"
-            :disabled="!canQuickMerge || mergeBusy || handoffBusy"
+            :disabled="!canQuickMerge || mergeBusy || handoffBusy || createMrBusy"
           >
             Merge
           </button>
@@ -467,7 +835,7 @@ const emit = defineEmits<{
             type="button"
             class="faw-btn"
             :class="mobileTouch ? '!min-h-[44px]' : ''"
-            :disabled="!canQuickHandoff || handoffBusy || mergeBusy"
+            :disabled="!canQuickHandoff || handoffBusy || mergeBusy || createMrBusy"
           >
             Handoff
           </button>

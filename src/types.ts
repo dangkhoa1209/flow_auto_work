@@ -99,6 +99,8 @@ export type JobStatus =
   | "awaiting_docs_approval"
   /** @deprecated legacy — migrated to succeeded on boot (push/MR gate removed) */
   | "awaiting_diff_approval"
+  /** Need Google OAuth to read Sheets links in the task */
+  | "awaiting_google_auth"
   /** Code done (GitLab API commit) — awaiting manual assign / labels */
   | "awaiting_handoff"
   /** QA agent finished capture — awaiting human review before GitLab issue */
@@ -109,7 +111,7 @@ export type JobStatus =
   | "failed";
 
 export function isJobBusy(status: JobStatus): boolean {
-  // awaiting_clarification is idle — user replies via chat (not a blocked waiter)
+  // awaiting_* idle states — user acts in UI (not a blocked waiter)
   return status === "queued" || status === "running";
 }
 
@@ -146,6 +148,19 @@ export type QaRunState = {
   adjustNotes?: string[];
 };
 
+/** Encrypted Google OAuth tokens for reading Sheets (per job). */
+export type JobGoogleAuth = {
+  email?: string;
+  refreshTokenEnc: string;
+  accessTokenEnc?: string;
+  accessExpiresAt?: string;
+  scopes: string[];
+  /** Spreadsheet IDs seen/authorized for this job */
+  sheetIds: string[];
+  authorizedAt: string;
+  revokedAt?: string;
+};
+
 export type JobRecord = {
   id: string;
   status: JobStatus;
@@ -175,6 +190,24 @@ export type JobRecord = {
   runId?: string;
   branch?: string;
   mrUrl?: string;
+  /** Open MR iid when Create MR was used */
+  mrIid?: number;
+  /**
+   * When to push agent edits via GitLab Commits API.
+   * Default `auto` — commit after each Run/follow-up; `manual` = user clicks Commit.
+   */
+  commitMode?: "manual" | "auto";
+  /** Local dirty tree waiting for manual Commit */
+  hasPendingChanges?: boolean;
+  /** Google OAuth (encrypted) for Sheets links in this task */
+  googleAuth?: JobGoogleAuth;
+  /** Sheet URLs detected when paused for Google auth */
+  pendingGoogleSheetUrls?: string[];
+  /**
+   * Spreadsheet IDs the user opted in to read before Run.
+   * Empty / unset = do not fetch Sheets (default).
+   */
+  googleSheetsIncludeIds?: string[];
   /** Latest commit SHA after a successful run (GitLab API) */
   commitSha?: string;
   /** History of commit SHAs across re-runs (newest last) */

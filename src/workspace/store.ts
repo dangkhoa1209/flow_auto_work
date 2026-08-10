@@ -323,6 +323,7 @@ export async function createUserProject(opts: {
   localPath?: string;
   mainBranch?: string;
   workingBranch?: string;
+  defaultCommitMode?: "manual" | "auto";
   displayName?: string;
   gitlabProjectId?: number;
   isActive?: boolean;
@@ -366,6 +367,8 @@ export async function createUserProject(opts: {
     repoPath: localPath,
     mainBranch: opts.mainBranch?.trim() || undefined,
     workingBranch: opts.workingBranch?.trim() || undefined,
+    defaultCommitMode:
+      opts.defaultCommitMode === "manual" ? "manual" : "auto",
     isActive: Boolean(opts.isActive),
     cloneStatus: "pending",
     gitlabProjectId: opts.gitlabProjectId,
@@ -444,6 +447,7 @@ export async function updateProjectFields(
     localPath: string;
     mainBranch: string;
     workingBranch: string;
+    defaultCommitMode: "manual" | "auto";
     displayName: string;
     projectName: string;
     gitlabHost: string;
@@ -494,6 +498,10 @@ export async function updateProjectFields(
   }
   if (patch.workingBranch !== undefined) {
     existing.workingBranch = patch.workingBranch.trim() || undefined;
+  }
+  if (patch.defaultCommitMode !== undefined) {
+    existing.defaultCommitMode =
+      patch.defaultCommitMode === "manual" ? "manual" : "auto";
   }
   if (patch.displayName !== undefined) {
     existing.displayName = patch.displayName.trim() || existing.projectName;

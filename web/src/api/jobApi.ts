@@ -146,11 +146,129 @@ export const jobApi = {
     });
   },
 
+  commit(id: string, body?: { message?: string }) {
+    return request<{ commitSha: string; job?: unknown }>({
+      url: API.jobs.commit(id),
+      method: "POST",
+      data: body || {},
+    });
+  },
+
+  discardChanges(id: string, body?: { paths?: string[] }) {
+    return request<{
+      all?: boolean;
+      discarded?: string[];
+      job?: unknown;
+    }>({
+      url: API.jobs.discardChanges(id),
+      method: "POST",
+      data: body || {},
+    });
+  },
+
+  groupCommit(
+    id: string,
+    body?: { message?: string; title?: string; body?: string },
+  ) {
+    return request<{
+      commitSha: string;
+      groupedCount?: number;
+      job?: unknown;
+    }>({
+      url: API.jobs.groupCommit(id),
+      method: "POST",
+      data: body || {},
+    });
+  },
+
+  setCommitMode(id: string, commitMode: "manual" | "auto") {
+    return request<{ job?: unknown }>({
+      url: API.jobs.commitMode(id),
+      method: "PATCH",
+      data: { commitMode },
+    });
+  },
+
+  createMr(id: string, body?: { targetBranch?: string }) {
+    return request<{
+      mrUrl: string;
+      mrIid: number;
+      created: boolean;
+      job?: unknown;
+    }>({
+      url: API.jobs.createMr(id),
+      method: "POST",
+      data: body || {},
+    });
+  },
+
   completionActions(id: string, body: Record<string, unknown>) {
     return request({
       url: API.jobs.completionActions(id),
       method: "POST",
       data: body,
+    });
+  },
+
+  googleStatus(id: string) {
+    return request<{
+      configured: boolean;
+      authorized: boolean;
+      email?: string;
+      sheetIds: string[];
+      scopes: string[];
+      authorizedAt?: string;
+      revokedAt?: string;
+      pendingSheetUrls: string[];
+    }>({
+      url: API.jobs.googleStatus(id),
+      method: "GET",
+    });
+  },
+
+  googleDetect(id: string) {
+    return request<{
+      sheets: { spreadsheetId: string; url: string; gid?: string }[];
+      includeIds: string[];
+    }>({
+      url: API.jobs.googleDetect(id),
+      method: "GET",
+    });
+  },
+
+  googleInclude(id: string, spreadsheetIds: string[]) {
+    return request<{ ok: boolean; includeIds: string[]; job?: unknown }>({
+      url: API.jobs.googleInclude(id),
+      method: "PUT",
+      data: { spreadsheetIds },
+    });
+  },
+
+  googleAuthUrl(jobId: string) {
+    return request<{ authUrl: string; state: string; configured: boolean }>({
+      url: API.google.authUrl(jobId),
+      method: "GET",
+    });
+  },
+
+  googleRevoke(id: string) {
+    return request<{ ok: boolean; job?: unknown }>({
+      url: API.jobs.googleRevoke(id),
+      method: "POST",
+      data: {},
+    });
+  },
+
+  googleContinue(id: string) {
+    return request<{
+      ok: boolean;
+      enqueued?: boolean;
+      reason?: string;
+      job?: unknown;
+    }>({
+      url: API.jobs.googleContinue(id),
+      method: "POST",
+      data: {},
     });
   },
 };

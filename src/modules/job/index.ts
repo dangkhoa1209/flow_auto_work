@@ -28,6 +28,8 @@ export * from "./docs.js";
 export * from "./diff.js";
 export * from "./merge.js";
 export * from "./chat.js";
+export * from "./commit.js";
+export * from "./create-mr.js";
 
 export type ListJobsQuery = {
   status?: JobStatus;
@@ -43,8 +45,9 @@ export async function listJobsForUi(query: ListJobsQuery = {}) {
     workspaceProjectId: rt?.projectId,
     ownerUsername: rt?.gitlabUsername,
   });
+  const { redactJobGoogleAuthForClient } = await import("../google/index.js");
   return {
-    jobs,
+    jobs: jobs.map((j) => redactJobGoogleAuthForClient(j)),
     pendingDiffApprovals: listPendingDiffApprovals(),
   };
 }

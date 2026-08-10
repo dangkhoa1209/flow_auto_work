@@ -17,11 +17,25 @@ import {
   syntheticAdhocIssueIid,
 } from "./types.js";
 import { getRuntimeContext } from "./workspace/runtime.js";
+import { getProject } from "./workspace/store.js";
 import { fetchGitlabProject } from "./plugins/gitlab/client.js";
 import {
   SEED_USERNAME,
   seedWorkspaceProjectId,
 } from "./workspace/seed.js";
+
+/** Project default for new jobs — missing → auto. */
+async function projectDefaultCommitMode(): Promise<"manual" | "auto"> {
+  const rt = getRuntimeContext();
+  const pid = rt?.projectId?.trim();
+  if (!pid) return "auto";
+  try {
+    const project = await getProject(pid);
+    return project?.defaultCommitMode === "manual" ? "manual" : "auto";
+  } catch {
+    return "auto";
+  }
+}
 
 export async function saveJob(
   job: JobRecord,
@@ -143,12 +157,14 @@ export async function ensureJob(
   }
 
   const id = jobIdForIssue(issue.projectId, issue.issueIid);
+  const commitMode = await projectDefaultCommitMode();
   const job: JobRecord = {
     id,
     flowTaskId: id,
     status: "draft",
     kind: "issue",
     issue,
+    commitMode,
     clarifyRound: 0,
     runCount: 0,
     completion: opts?.completion,
@@ -165,6 +181,7 @@ export async function ensureJob(
     issueIid: issue.issueIid,
     ownerUsername: job.ownerUsername,
     workspaceProjectId: job.workspaceProjectId,
+    commitMode: job.commitMode,
   });
   return job;
 }
@@ -196,6 +213,7 @@ export async function createAdhocJob(opts: {
   const now = new Date().toISOString();
   const syntheticIid = syntheticAdhocIssueIid(id);
 
+  const commitMode = await projectDefaultCommitMode();
   const job: JobRecord = {
     id,
     flowTaskId: id,
@@ -217,6 +235,7 @@ export async function createAdhocJob(opts: {
     baseBranch: rt.baseBranch,
     workBranch: fixedWork || undefined,
     branch,
+    commitMode,
     clarifyRound: 0,
     runCount: 0,
     createdAt: now,
@@ -227,6 +246,7 @@ export async function createAdhocJob(opts: {
   logger.info("Created adhoc job", {
     jobId: job.id,
     flowTaskId: job.flowTaskId,
+    commitMode: job.commitMode,
     title,
     branch,
     ownerUsername: job.ownerUsername,

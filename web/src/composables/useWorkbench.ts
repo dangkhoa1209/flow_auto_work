@@ -46,6 +46,7 @@ export function useWorkbench() {
   const standardsOpen = ref(false);
   const approveDocsBusy = ref(false);
   const mergeBusy = ref(false);
+  const createMrBusy = ref(false);
   const handoffBusy = ref(false);
   const syncBaseBusy = ref(false);
   const syncBaseOpen = ref(false);
@@ -179,6 +180,16 @@ export function useWorkbench() {
     );
   });
 
+  const canCreateMr = computed(() => {
+    const j = currentJob.value;
+    const st = j?.status;
+    if (!selectedJobId.value || !j) return false;
+    if (st !== "awaiting_handoff" && st !== "succeeded") return false;
+    if (!jobBranch(j)) return false;
+    if (j.hasPendingChanges) return false;
+    return true;
+  });
+
   const canQuickHandoff = computed(() => {
     const st = currentJob.value?.status;
     return Boolean(
@@ -199,11 +210,27 @@ export function useWorkbench() {
     return null;
   });
 
+  /** Last notes content successfully saved for the open job (skip no-op autosaves). */
+  let lastSavedNotes = "";
+  /** Monotonic token so stale save responses never clobber newer typing. */
+  let notesSaveToken = 0;
+  let notesBoundJobId: string | null = null;
+
+  function syncNotesDraftFromJob(j: typeof currentJob.value) {
+    const id = j?.id ?? null;
+    notesBoundJobId = id;
+    // Exact server text — never .trim() here (wipes trailing spaces while typing)
+    notesDraft.value = j?.devNotes ?? "";
+    lastSavedNotes = notesDraft.value;
+    requireDocsFirst.value = Boolean(j?.requireDocsFirst);
+  }
+
+  // Only reset the textarea when switching jobs — not on every job SSE/API refresh
   watch(
-    currentJob,
-    (j) => {
-      notesDraft.value = (j?.devNotes || "").trim();
-      requireDocsFirst.value = Boolean(j?.requireDocsFirst);
+    () => currentJob.value?.id ?? null,
+    (id, prevId) => {
+      if (id === prevId && id === notesBoundJobId) return;
+      syncNotesDraftFromJob(currentJob.value);
     },
     { immediate: true },
   );
@@ -217,7 +244,68 @@ export function useWorkbench() {
     if (notesDebounce) clearTimeout(notesDebounce);
     notesDebounce = setTimeout(() => {
       void saveNotes({ silent: true });
-    }, 900);
+    }, 1600);
+  }
+
+  async function saveNotes(opts?: { silent?: boolean }) {
+    if (!selectedJobId.value && !selectedTaskIid.value) return;
+
+    const nextNotes = notesDraft.value;
+    const jobIdAtStart = selectedJobId.value;
+    const taskIidAtStart = selectedTaskIid.value;
+
+    // Silent autosave: skip if nothing changed since last successful save
+    if (opts?.silent && nextNotes === lastSavedNotes) return;
+
+    const token = ++notesSaveToken;
+    const prevJob = currentJob.value;
+    const prevNotes = prevJob?.devNotes ?? "";
+
+    // Optimistic: reflect notes on the open job immediately (draft stays source of truth)
+    if (currentJob.value) {
+      currentJob.value = {
+        ...currentJob.value,
+        devNotes: nextNotes,
+      };
+    }
+    notesSaving.value = true;
+    try {
+      await work.saveDevNotes({
+        devNotes: nextNotes,
+        requireDocsFirst: requireDocsFirst.value,
+      });
+      // Ignore stale responses if user switched job or typed more saves
+      if (token !== notesSaveToken) return;
+      if (
+        selectedJobId.value !== jobIdAtStart ||
+        selectedTaskIid.value !== taskIidAtStart
+      ) {
+        return;
+      }
+      // If user typed during the request, keep the newer draft — never revert
+      if (notesDraft.value === nextNotes) {
+        lastSavedNotes = nextNotes;
+      } else {
+        // Draft moved ahead — schedule another save for the newer text
+        scheduleNotesAutosave();
+      }
+      if (!opts?.silent) message.success("Dev Notes saved");
+    } catch (e) {
+      if (token !== notesSaveToken) return;
+      if (
+        currentJob.value &&
+        prevJob?.id === currentJob.value.id &&
+        notesDraft.value === nextNotes
+      ) {
+        currentJob.value = {
+          ...currentJob.value,
+          devNotes: prevNotes,
+        };
+      }
+      message.error(e instanceof Error ? e.message : String(e));
+    } finally {
+      if (token === notesSaveToken) notesSaving.value = false;
+    }
   }
 
   async function openTaskByIid() {
@@ -312,39 +400,6 @@ export function useWorkbench() {
       message.error(e instanceof Error ? e.message : String(e));
     } finally {
       jobStatusBusy.value = null;
-    }
-  }
-
-  async function saveNotes(opts?: { silent?: boolean }) {
-    if (!selectedJobId.value && !selectedTaskIid.value) return;
-    const nextNotes = notesDraft.value;
-    const prevJob = currentJob.value;
-    const prevNotes = prevJob?.devNotes ?? "";
-
-    // Optimistic: reflect notes on the open job immediately
-    if (currentJob.value) {
-      currentJob.value = {
-        ...currentJob.value,
-        devNotes: nextNotes,
-      };
-    }
-    notesSaving.value = true;
-    try {
-      await work.saveDevNotes({
-        devNotes: nextNotes,
-        requireDocsFirst: requireDocsFirst.value,
-      });
-      if (!opts?.silent) message.success("Dev Notes saved");
-    } catch (e) {
-      if (currentJob.value && prevJob?.id === currentJob.value.id) {
-        currentJob.value = {
-          ...currentJob.value,
-          devNotes: prevNotes,
-        };
-      }
-      message.error(e instanceof Error ? e.message : String(e));
-    } finally {
-      notesSaving.value = false;
     }
   }
 
@@ -648,6 +703,40 @@ export function useWorkbench() {
     }
   }
 
+  /** Open MR only (no accept) + Issue Ready to Release. */
+  async function createMr() {
+    if (!selectedJobId.value || !canCreateMr.value) return;
+    createMrBusy.value = true;
+    try {
+      const res = await api<{
+        mrUrl?: string;
+        created?: boolean;
+      }>(`/api/jobs/${selectedJobId.value}/create-mr`, {
+        method: "POST",
+        body: JSON.stringify({}),
+      });
+      message.success(
+        res.created === false
+          ? "MR already open"
+          : "MR created + Issue Ready to Release",
+      );
+      await work.loadJobs();
+      if (selectedJobId.value) await work.selectJob(selectedJobId.value);
+      if (res.mrUrl) window.open(res.mrUrl, "_blank", "noopener,noreferrer");
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : String(e));
+    } finally {
+      createMrBusy.value = false;
+    }
+  }
+
+  async function onDiffUpdated() {
+    if (selectedJobId.value) {
+      await work.selectJob(selectedJobId.value);
+    }
+    await work.loadJobs();
+  }
+
   /** Base branch configured in Settings → Project (no guessing). */
   const configuredBaseBranch = computed(() => {
     const m = session.currentMembership;
@@ -931,6 +1020,7 @@ export function useWorkbench() {
     standardsOpen,
     approveDocsBusy,
     mergeBusy,
+    createMrBusy,
     handoffBusy,
     adhocOpen,
     adhocTitle,
@@ -964,6 +1054,7 @@ export function useWorkbench() {
     canResetWindow,
     awaitingDocsApproval,
     canQuickMerge,
+    canCreateMr,
     canQuickHandoff,
     canSyncBase,
     syncBaseBusy,
@@ -986,6 +1077,8 @@ export function useWorkbench() {
     resetAgentWindow,
     approveDocs,
     quickMerge,
+    createMr,
+    onDiffUpdated,
     quickHandoff,
     syncBase,
     syncBaseOpen,

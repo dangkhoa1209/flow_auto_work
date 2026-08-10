@@ -25,6 +25,8 @@ const envSchema = z.object({
   GITLAB_ASSIGNEE_ID: z.string().optional(),
   MR_TARGET_BRANCH: z.string().optional(),
   MR_REVIEWER_USERNAMES: z.string().optional(),
+  /** Comma-separated GitLab usernames for Create MR assignees (default: reviewers / anhvh4) */
+  MR_ASSIGNEE_USERNAMES: z.string().optional(),
   SKIP_LABELS: z.string().default("auto-work:skip,wip-human"),
   /** Minutes before a pending diff-approval waiter times out */
   TEAMS_CLARIFY_TIMEOUT_MIN: z.coerce.number().default(60),
@@ -67,11 +69,16 @@ const envSchema = z.object({
   RATE_LIMIT_WINDOW_MS: z.coerce.number().optional(),
   /** Max requests per window per IP (default 300). 0 = disable */
   RATE_LIMIT_MAX: z.coerce.number().optional(),
+  /** Google OAuth — read Sheets links in tasks (optional) */
+  GOOGLE_OAUTH_CLIENT_ID: z.string().optional(),
+  GOOGLE_OAUTH_CLIENT_SECRET: z.string().optional(),
+  GOOGLE_OAUTH_REDIRECT_URI: z.string().optional(),
 });
 
 export type AppConfig = z.infer<typeof envSchema> & {
   skipLabels: string[];
   mrReviewerUsernames: string[];
+  mrAssigneeUsernames: string[];
   onCompleteAssignUsernames: string[];
   onCompleteLabels: string[];
   STARTUP_SCAN: boolean;
@@ -80,6 +87,7 @@ export type AppConfig = z.infer<typeof envSchema> & {
   corsOrigins: string[];
   rateLimitWindowMs: number;
   rateLimitMax: number;
+  googleOAuthConfigured: boolean;
 };
 
 let cached: AppConfig | null = null;
@@ -116,6 +124,10 @@ export function getConfig(): AppConfig {
     .filter(Boolean);
   const resolvedCors = corsOrigins.length > 0 ? corsOrigins : defaultCors;
 
+  const googleClientId = (env.GOOGLE_OAUTH_CLIENT_ID ?? "").trim();
+  const googleClientSecret = (env.GOOGLE_OAUTH_CLIENT_SECRET ?? "").trim();
+  const googleRedirect = (env.GOOGLE_OAUTH_REDIRECT_URI ?? "").trim();
+
   cached = {
     ...env,
     skipLabels: env.SKIP_LABELS.split(",")
@@ -125,6 +137,19 @@ export function getConfig(): AppConfig {
       .split(",")
       .map((s) => s.trim())
       .filter(Boolean),
+    mrAssigneeUsernames: (() => {
+      const assignees = (env.MR_ASSIGNEE_USERNAMES ?? "")
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+      if (assignees.length) return assignees;
+      const reviewers = (env.MR_REVIEWER_USERNAMES ?? "")
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+      if (reviewers.length) return reviewers;
+      return ["anhvh4"];
+    })(),
     onCompleteAssignUsernames: (env.ON_COMPLETE_ASSIGN_USERNAMES ?? "")
       .split(",")
       .map((s) => s.trim())
@@ -136,7 +161,10 @@ export function getConfig(): AppConfig {
     isProd,
     corsOrigins: resolvedCors,
     rateLimitWindowMs: env.RATE_LIMIT_WINDOW_MS ?? 15 * 60 * 1000,
-    rateLimitMax: env.RATE_LIMIT_MAX ?? 1000,
+    rateLimitMax: env.RATE_LIMIT_MAX ?? 0, //1000,
+    googleOAuthConfigured: Boolean(
+      googleClientId && googleClientSecret && googleRedirect,
+    ),
   };
 
   // Fail fast on leftover .env.example placeholders (common cause of 401 on scan)

@@ -25,6 +25,7 @@ type ProjectPublic = {
   repoPath?: string;
   mainBranch?: string | null;
   workingBranch?: string | null;
+  defaultCommitMode?: "manual" | "auto" | null;
   isActive?: boolean;
   cloneStatus?: string;
   cloneError?: string | null;
@@ -40,6 +41,8 @@ const form = reactive({
   mainBranch: "main",
   workingBranch: "",
   localPath: "",
+  /** Project default for new jobs — per-job toggle can still override */
+  defaultCommitMode: "auto" as "manual" | "auto",
 });
 
 const gitlabProjects = ref<
@@ -67,6 +70,8 @@ const tableRows = computed(() =>
       gitlabPath: p.gitlabPath,
       mainBranch: p.mainBranch || m.baseBranch || "—",
       workBranch: p.workingBranch || m.workBranch || "—",
+      defaultCommitMode:
+        p.defaultCommitMode === "manual" ? "manual" : "auto",
       localPath: p.localPath || p.repoPath || "—",
       cloneStatus: p.cloneStatus || "—",
       cloneError: p.cloneError,
@@ -81,6 +86,7 @@ const columns = [
   { title: "GitLab", dataIndex: "gitlabPath", key: "gitlabPath", ellipsis: true },
   { title: "Main", dataIndex: "mainBranch", key: "mainBranch", width: 100 },
   { title: "Work", dataIndex: "workBranch", key: "workBranch", width: 120 },
+  { title: "Commit", dataIndex: "defaultCommitMode", key: "defaultCommitMode", width: 90 },
   { title: "Path", dataIndex: "localPath", key: "localPath", ellipsis: true },
   { title: "Clone", dataIndex: "cloneStatus", key: "cloneStatus", width: 100 },
   { title: "Active", key: "active", width: 80 },
@@ -121,6 +127,7 @@ function resetWizard() {
   form.mainBranch = "main";
   form.workingBranch = "";
   form.localPath = "";
+  form.defaultCommitMode = "auto";
   gitlabProjects.value = [];
   branches.value = [];
 }
@@ -145,6 +152,8 @@ function openEdit(row: (typeof tableRows.value)[0]) {
   form.workingBranch =
     (p?.workingBranch || m?.workBranch || "") as string;
   form.localPath = (p?.localPath || p?.repoPath || "") as string;
+  form.defaultCommitMode =
+    p?.defaultCommitMode === "manual" ? "manual" : "auto";
   form.gitlabToken = "";
   wizardStep.value = 0;
   wizardOpen.value = true;
@@ -347,6 +356,7 @@ async function saveWizard() {
         body: JSON.stringify({
           baseBranch: form.mainBranch || "",
           workBranch: form.workingBranch || "",
+          defaultCommitMode: form.defaultCommitMode,
           localPath: renaming ? undefined : resolvedPath || undefined,
           gitlabToken: form.gitlabToken || undefined,
           gitlabHost: form.gitlabHost || undefined,
@@ -411,6 +421,7 @@ async function saveWizard() {
         localPath: pathEmpty ? undefined : form.localPath.trim(),
         mainBranch: form.mainBranch || undefined,
         workingBranch: form.workingBranch || undefined,
+        defaultCommitMode: form.defaultCommitMode,
         displayName: flowName,
         activate: true,
       }),
@@ -502,7 +513,14 @@ onMounted(async () => {
       :scroll="{ x: 960 }"
     >
       <template #bodyCell="{ column, record }">
-        <template v-if="column.key === 'active'">
+        <template v-if="column.key === 'defaultCommitMode'">
+          <a-tag
+            :color="record.defaultCommitMode === 'manual' ? 'orange' : 'blue'"
+          >
+            {{ record.defaultCommitMode === "manual" ? "Manual" : "Auto" }}
+          </a-tag>
+        </template>
+        <template v-else-if="column.key === 'active'">
           <a-tag :color="record.isActive ? 'green' : 'default'">
             {{ record.isActive ? "Active" : "—" }}
           </a-tag>
@@ -680,7 +698,7 @@ onMounted(async () => {
         </div>
       </div>
 
-      <!-- Step 3: Work branch -->
+      <!-- Step 3: Work branch + default commit mode -->
       <div v-else-if="wizardStep === 3" class="space-y-3">
         <div>
           <label class="text-sm text-slate-600"
@@ -698,6 +716,28 @@ onMounted(async () => {
             v-model:value="form.workingBranch"
             class="mt-2"
             placeholder="Or type a new branch name"
+          />
+        </div>
+        <div
+          class="rounded-lg border border-[var(--app-border)] bg-[var(--app-panel-soft)] px-3 py-2.5 flex items-center justify-between gap-3"
+        >
+          <div class="min-w-0">
+            <div class="text-sm text-ink-soft font-medium">
+              Default Auto commit
+            </div>
+            <div class="text-xs text-ink-muted mt-0.5">
+              Job mới trong project lấy mặc định này. Vẫn đổi được trên từng
+              task (tab Diff).
+            </div>
+          </div>
+          <a-switch
+            :checked="form.defaultCommitMode === 'auto'"
+            checked-children="Auto"
+            un-checked-children="Manual"
+            @change="
+              (v: boolean) =>
+                (form.defaultCommitMode = v ? 'auto' : 'manual')
+            "
           />
         </div>
         <div class="flex justify-between gap-2 pt-2">

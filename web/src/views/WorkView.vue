@@ -126,9 +126,11 @@ function onPaneResize(event: { panes: Array<{ size: number }> }) {
               :issue-create-busy="wb.issueCreateBusy"
               :job-branch="wb.jobBranch"
               :can-quick-merge="wb.canQuickMerge"
+              :can-create-mr="wb.canCreateMr"
               :can-quick-handoff="wb.canQuickHandoff"
               :can-sync-base="wb.canSyncBase"
               :merge-busy="wb.mergeBusy"
+              :create-mr-busy="wb.createMrBusy"
               :handoff-busy="wb.handoffBusy"
               :sync-base-busy="wb.syncBaseBusy"
               @update:mid-tab="wb.midTab = $event"
@@ -143,6 +145,8 @@ function onPaneResize(event: { panes: Array<{ size: number }> }) {
               @approve-docs="wb.approveDocs"
               @run-selected="wb.runCurrentJob"
               @quick-merge="wb.quickMerge"
+              @create-mr="wb.createMr"
+              @diff-updated="wb.onDiffUpdated"
               @quick-handoff="wb.quickHandoff"
               @sync-base="wb.syncBase"
             />
@@ -308,9 +312,11 @@ function onPaneResize(event: { panes: Array<{ size: number }> }) {
           :issue-create-busy="wb.issueCreateBusy"
           :job-branch="wb.jobBranch"
           :can-quick-merge="wb.canQuickMerge"
+          :can-create-mr="wb.canCreateMr"
           :can-quick-handoff="wb.canQuickHandoff"
           :can-sync-base="wb.canSyncBase"
           :merge-busy="wb.mergeBusy"
+          :create-mr-busy="wb.createMrBusy"
           :handoff-busy="wb.handoffBusy"
           :sync-base-busy="wb.syncBaseBusy"
           @update:mid-tab="wb.midTab = $event"
@@ -325,6 +331,8 @@ function onPaneResize(event: { panes: Array<{ size: number }> }) {
           @approve-docs="wb.approveDocs"
           @run-selected="wb.runCurrentJob"
           @quick-merge="wb.quickMerge"
+          @create-mr="wb.createMr"
+          @diff-updated="wb.onDiffUpdated"
           @quick-handoff="wb.quickHandoff"
           @sync-base="wb.syncBase"
         />
@@ -387,6 +395,15 @@ function onPaneResize(event: { panes: Array<{ size: number }> }) {
         title="Pull base mới nhất vào nhánh job (AI tự fix conflict)"
         @click="wb.syncBase()"
         >⇣ Sync</a-button
+      >
+      <a-button
+        size="small"
+        class="!h-8"
+        :loading="wb.createMrBusy"
+        :disabled="!wb.canCreateMr || wb.createMrBusy || wb.mergeBusy"
+        title="Create open MR (no merge)"
+        @click="wb.createMr()"
+        >MR</a-button
       >
       <a-popconfirm
         title="Merge work → base?"

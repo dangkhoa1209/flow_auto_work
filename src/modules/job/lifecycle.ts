@@ -269,7 +269,9 @@ export type DevNotesInput = {
 export async function updateDevNotes(jobId: string, input: DevNotesInput) {
   const job = await requireJobRecord(jobId, "job not found");
   if (input.devNotes !== undefined) {
-    job.devNotes = input.devNotes.trim() || undefined;
+    // Keep user whitespace while typing/autosave; only treat all-blank as empty
+    job.devNotes =
+      input.devNotes.trim() === "" ? undefined : input.devNotes;
   }
   if (input.requireDocsFirst !== undefined) {
     job.requireDocsFirst = Boolean(input.requireDocsFirst);
@@ -298,8 +300,11 @@ export async function getJobDetail(jobId: string) {
     listNotes({ jobId: job.id, limit: 50 }),
     listChatMessages({ jobId: job.id, limit: 200 }),
   ]);
+  const { redactJobGoogleAuthForClient } = await import(
+    "../google/index.js"
+  );
   return {
-    job,
+    job: redactJobGoogleAuthForClient(job),
     notes,
     chat,
     pendingQuestion:

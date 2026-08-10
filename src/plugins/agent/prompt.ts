@@ -96,7 +96,11 @@ export function buildDocsPhasePrompt(
   issue: IssueJob,
   linkedContext?: string,
   devNotes?: string,
-  opts?: { chatContext?: string; contextQualityBlock?: string },
+  opts?: {
+    chatContext?: string;
+    contextQualityBlock?: string;
+    googleSheetsBlock?: string;
+  },
 ): string {
   const { notesBlock, description } = sharedPreamble(issue, devNotes);
   const chatBlock = opts?.chatContext?.trim()
@@ -107,6 +111,9 @@ export function buildDocsPhasePrompt(
     : "";
   const linkedBlock = linkedContext?.trim()
     ? `\n## Linked / related context\n${linkedContext.trim()}\n`
+    : "";
+  const sheetsBlock = opts?.googleSheetsBlock?.trim()
+    ? `\n${opts.googleSheetsBlock.trim()}\n`
     : "";
 
   return `# MISSION — DOCS PHASE ONLY (NO APP CODE)
@@ -131,7 +138,7 @@ Labels: ${issue.labels.join(", ") || "(none)"}
 
 ## Description
 ${description}
-${linkedBlock}
+${linkedBlock}${sheetsBlock}
 
 # HARD RULES (DOCS PHASE)
 1. DO NOT modify application code (no PHP/JS/Vue/TS/CSS outside docs, no migrations, no app config).
@@ -181,6 +188,7 @@ export function buildWorkPrompt(
     approvedDocsPaths?: string[];
     chatContext?: string;
     contextQualityBlock?: string;
+    googleSheetsBlock?: string;
     /** How many NEED_CLARIFICATION rounds remain before the job hard-fails. */
     clarifyRoundsLeft?: number;
   },
@@ -196,6 +204,9 @@ export function buildWorkPrompt(
 
   const linkedBlock = linkedContext?.trim()
     ? `\n## Linked / related context\n${linkedContext.trim()}\n`
+    : "";
+  const sheetsBlock = opts?.googleSheetsBlock?.trim()
+    ? `\n${opts.googleSheetsBlock.trim()}\n`
     : "";
 
   const extraBlock = extra?.trim()
@@ -239,7 +250,7 @@ Action that triggered this run: ${issue.action}
 
 ## Description
 ${description}
-${linkedBlock}
+${linkedBlock}${sheetsBlock}
 Use linked/mentioned issues and comments above as additional requirements/context. Prefer the primary issue (#${issue.issueIid}) scope; do not expand work into unrelated linked tickets unless required.
 Ignore image/file attachments — only use text. Do not try to download or open media.
 
@@ -312,7 +323,11 @@ Then end with the DONE block (SUMMARY / ASSUMPTIONS / RISKS / TESTED) in Vietnam
 export function buildFollowUpPrompt(
   message: string,
   issue: IssueJob,
-  opts?: { chatHistory?: string; contextQualityBlock?: string },
+  opts?: {
+    chatHistory?: string;
+    contextQualityBlock?: string;
+    googleSheetsBlock?: string;
+  },
 ): string {
   const history = opts?.chatHistory?.trim();
   const historyBlock = history
@@ -325,10 +340,13 @@ ${history}
   const qualityBlock = opts?.contextQualityBlock?.trim()
     ? `${opts.contextQualityBlock.trim()}\n\n`
     : "";
+  const sheetsBlock = opts?.googleSheetsBlock?.trim()
+    ? `\n${opts.googleSheetsBlock.trim()}\n\n`
+    : "";
 
   return `You are working on GitLab issue #${issue.issueIid} ("${issue.title}") in a Cursor agent window.
 This may be a **new** window — use prior chat + the repo (inspect if needed). Do not assume old tool state is still loaded.
-${qualityBlock}${historyBlock}## Human follow-up (this turn)
+${qualityBlock}${sheetsBlock}${historyBlock}## Human follow-up (this turn)
 ${message.trim()}
 
 ## How to behave (IDE-like)
@@ -353,7 +371,11 @@ ${gitlabCommentInstructions(issue)}<<<NEED_CLARIFICATION>>> / <<<DONE>>> blocks 
 export function buildAdhocFollowUpPrompt(
   message: string,
   sessionTitle: string,
-  opts?: { chatHistory?: string; contextQualityBlock?: string },
+  opts?: {
+    chatHistory?: string;
+    contextQualityBlock?: string;
+    googleSheetsBlock?: string;
+  },
 ): string {
   const title = sessionTitle.replace(/\s+/g, " ").trim() || "Ad-hoc session";
   const history = opts?.chatHistory?.trim();
@@ -367,11 +389,14 @@ ${history}
   const qualityBlock = opts?.contextQualityBlock?.trim()
     ? `${opts.contextQualityBlock.trim()}\n\n`
     : "";
+  const sheetsBlock = opts?.googleSheetsBlock?.trim()
+    ? `\n${opts.googleSheetsBlock.trim()}\n\n`
+    : "";
 
   return `You are in a **free Cursor agent session** (hotfix / ad-hoc) titled "${title}".
 There is **no GitLab issue yet** — a human may create one later from your summary.
 This may be a **new** window — use prior chat + the repo (inspect if needed).
-${qualityBlock}${historyBlock}## Human request (this turn)
+${qualityBlock}${sheetsBlock}${historyBlock}## Human request (this turn)
 ${message.trim()}
 
 ## How to behave (IDE-like)

@@ -17,6 +17,8 @@ function isPublicApiPath(path: string): boolean {
   if (path === "/projects" || path.startsWith("/projects/")) return true;
   if (path.startsWith("/gitlab/")) return true;
   if (path.startsWith("/fs/")) return true;
+  // Google OAuth browser redirect (no Bearer / project headers)
+  if (path === "/google/callback") return true;
   return false;
 }
 

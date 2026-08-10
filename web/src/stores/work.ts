@@ -30,6 +30,10 @@ export type Job = {
   agentId?: string;
   commitSha?: string;
   commitShas?: string[];
+  commitMode?: "manual" | "auto";
+  hasPendingChanges?: boolean;
+  mrUrl?: string;
+  mrIid?: number;
   error?: string;
   summary?: string;
   branch?: string;
@@ -45,6 +49,17 @@ export type Job = {
     anchors?: string[];
     fileHints?: string[];
   };
+  /** Public Google auth metadata (tokens never sent to UI) */
+  googleAuth?: {
+    email?: string;
+    scopes?: string[];
+    sheetIds?: string[];
+    authorizedAt?: string;
+    revokedAt?: string;
+  };
+  pendingGoogleSheetUrls?: string[];
+  /** Opt-in spreadsheet IDs to read on Run (default empty = skip) */
+  googleSheetsIncludeIds?: string[];
 };
 
 export function isAdhocJob(job: Job | null | undefined): boolean {
@@ -450,10 +465,12 @@ export const useWorkStore = defineStore("work", () => {
     devNotes: string;
     requireDocsFirst?: boolean;
   }) {
-    const notes = opts.devNotes.trim();
+    // Do not trim here — preserve draft whitespace; server clears all-blank only
+    const notes = opts.devNotes;
     if (selectedJobId.value) {
+      const jobId = selectedJobId.value;
       const res = await api<{ job: Job }>(
-        `/api/jobs/${selectedJobId.value}/dev-notes`,
+        `/api/jobs/${jobId}/dev-notes`,
         {
           method: "PUT",
           body: JSON.stringify({
@@ -462,23 +479,34 @@ export const useWorkStore = defineStore("work", () => {
           }),
         },
       );
-      currentJob.value = res.job;
+      // Merge server job; keep local optimistic/fresher Dev Notes (textarea owns draft)
+      if (selectedJobId.value === jobId && currentJob.value?.id === jobId) {
+        const localNotes = currentJob.value.devNotes;
+        currentJob.value = {
+          ...res.job,
+          devNotes:
+            localNotes !== undefined ? localNotes : res.job.devNotes,
+        };
+      }
       await loadJobs();
       return res.job;
     }
     if (!selectedTaskIid.value) {
       throw new Error("No task/job selected");
     }
+    const iid = selectedTaskIid.value;
     const res = await api<{ job: Job }>("/api/jobs/ensure", {
       method: "POST",
       body: JSON.stringify({
-        issueIid: selectedTaskIid.value,
+        issueIid: iid,
         devNotes: notes,
         requireDocsFirst: opts.requireDocsFirst,
       }),
     });
-    currentJob.value = res.job;
-    selectedJobId.value = res.job.id;
+    if (selectedTaskIid.value === iid) {
+      currentJob.value = res.job;
+      selectedJobId.value = res.job.id;
+    }
     await loadJobs();
     return res.job;
   }
