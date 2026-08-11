@@ -35,7 +35,7 @@ async function logout() {
 <template>
   <div class="space-y-4">
     <h2 class="text-lg font-medium m-0">Account</h2>
-    <a-descriptions bordered size="small" :column="1">
+    <a-descriptions bordered size="small" :column="1" class="faw-settings-desc">
       <a-descriptions-item label="GitLab user">
         @{{ session.me?.gitlabUsername || session.session.username }}
       </a-descriptions-item>
@@ -43,16 +43,18 @@ async function logout() {
         {{ session.me?.hasGitlabToken ? "Saved (encrypted)" : "Not set" }}
       </a-descriptions-item>
       <a-descriptions-item label="I am QC">
-        <a-switch
-          :checked="isQc"
-          :loading="qcBusy"
-          checked-children="QC"
-          un-checked-children="Off"
-          @change="toggleQc"
-        />
-        <span class="text-xs text-ink-muted ml-2">
-          Unlocks /qc APIs and the QC nav (no GitLab clone required)
-        </span>
+        <div class="flex flex-col gap-1.5 sm:flex-row sm:items-center">
+          <a-switch
+            :checked="isQc"
+            :loading="qcBusy"
+            checked-children="QC"
+            un-checked-children="Off"
+            @change="toggleQc"
+          />
+          <span class="text-xs text-ink-muted">
+            Unlocks /qc APIs and the QC nav
+          </span>
+        </div>
       </a-descriptions-item>
     </a-descriptions>
     <a-button danger @click="logout">Sign out</a-button>

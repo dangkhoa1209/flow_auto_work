@@ -1,9 +1,35 @@
 import { defineStore } from "pinia";
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { API } from "@/api/endpoints";
 import { api } from "@/api/client";
+import { getProjectId } from "@/api/tokenStorage";
 import { jobApi } from "@/api/jobApi";
 import { useSettingsStore } from "./settings";
+
+const MILESTONE_FILTER_KEY = "faw.milestoneFilter";
+
+function milestoneFilterStorageKey(projectId: string): string {
+  return `${MILESTONE_FILTER_KEY}:${projectId}`;
+}
+
+function readMilestoneFilter(projectId: string | null): string {
+  if (!projectId) return "all";
+  try {
+    const v = localStorage.getItem(milestoneFilterStorageKey(projectId));
+    return (v || "all").trim() || "all";
+  } catch {
+    return "all";
+  }
+}
+
+function writeMilestoneFilter(projectId: string | null, value: string): void {
+  if (!projectId) return;
+  try {
+    localStorage.setItem(milestoneFilterStorageKey(projectId), value || "all");
+  } catch {
+    /* ignore quota / private mode */
+  }
+}
 
 export type Task = {
   issueIid: number;
@@ -129,6 +155,10 @@ export const useWorkStore = defineStore("work", () => {
   const progressLive = ref(false);
   const members = ref<Array<{ username: string; name?: string }>>([]);
   const labels = ref<string[]>([]);
+  /** GitLab project milestone titles (stable across task refresh) */
+  const projectMilestones = ref<string[]>([]);
+  /** Persisted per active project — survives F5 */
+  const milestoneFilter = ref<string>(readMilestoneFilter(getProjectId()));
   const loading = ref(false);
   const jobLoading = ref(false);
   const statusText = ref("");
@@ -145,6 +175,18 @@ export const useWorkStore = defineStore("work", () => {
   });
 
   const canKillAll = computed(() => activeJobCount.value >= 1);
+
+  watch(milestoneFilter, (v) => {
+    writeMilestoneFilter(getProjectId(), v);
+  });
+
+  function hydrateMilestoneFilter() {
+    milestoneFilter.value = readMilestoneFilter(getProjectId());
+  }
+
+  function setMilestoneFilter(value: string) {
+    milestoneFilter.value = (value || "all").trim() || "all";
+  }
 
   const selectedJob = computed(
     () => jobs.value.find((j) => j.id === selectedJobId.value) || currentJob.value,
@@ -179,18 +221,25 @@ export const useWorkStore = defineStore("work", () => {
   }
 
   async function loadMeta() {
-    const [m, l] = await Promise.all([
+    hydrateMilestoneFilter();
+    const [m, l, ms] = await Promise.all([
       api<{ members: Array<{ username: string; name?: string }> }>(
-        "/api/meta/members",
+        API.meta.members,
       ).catch(() => ({ members: [] })),
-      api<{ labels: Array<string | { name?: string }> }>("/api/meta/labels").catch(
+      api<{ labels: Array<string | { name?: string }> }>(API.meta.labels).catch(
         () => ({ labels: [] }),
       ),
+      api<{ milestones: string[] }>(API.meta.milestones).catch(() => ({
+        milestones: [],
+      })),
     ]);
     members.value = m.members || [];
     labels.value = (l.labels || [])
       .map((x) => (typeof x === "string" ? x : x?.name)?.trim())
       .filter((n): n is string => Boolean(n));
+    projectMilestones.value = (ms.milestones || [])
+      .map((t) => t?.trim())
+      .filter((t): t is string => Boolean(t));
   }
 
   async function loadStatus() {
@@ -827,6 +876,10 @@ export const useWorkStore = defineStore("work", () => {
     progressLive,
     members,
     labels,
+    projectMilestones,
+    milestoneFilter,
+    setMilestoneFilter,
+    hydrateMilestoneFilter,
     loading,
     jobLoading,
     statusText,

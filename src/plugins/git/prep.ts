@@ -112,7 +112,7 @@ export type PreparedRepo = {
 
 /**
  * - If workBranch set: checkout existing work branch (local or origin).
- *   Does not create unless createWorkBranchIfMissing=true.
+ *   If missing and createWorkBranchIfMissing=true, create from base/Main.
  * - If workBranch empty: create feat/<iid>/<slug> from projectBranch (or default).
  */
 export async function prepareRepoForIssue(opts: {
@@ -126,8 +126,8 @@ export async function prepareRepoForIssue(opts: {
   repoPath?: string;
   /**
    * When using workBranch: if missing locally/on origin, create from base.
-   * Default false for configured workspace work branch (must already exist).
-   * Pass true for one-off hotfix/... branches.
+   * Default false; Flow queue passes true so a configured Work branch can
+   * be created from Main on first Run.
    */
   createWorkBranchIfMissing?: boolean;
 }): Promise<PreparedRepo> {

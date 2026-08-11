@@ -113,6 +113,7 @@ export const API = {
   meta: {
     members: "/api/meta/members",
     labels: "/api/meta/labels",
+    milestones: "/api/meta/milestones",
     completionDefaults: "/api/meta/completion-defaults",
   },
   status: "/api/status",

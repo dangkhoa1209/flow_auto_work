@@ -323,28 +323,25 @@ watch(chatBox, (el, prev) => {
       <!-- Mobile: Chat | Logs switcher -->
       <div
         v-if="mobileTabs"
-        class="shrink-0 flex gap-0.5 p-0.5 border-b border-line bg-surface-soft/80"
+        class="faw-m-console-tabs shrink-0"
+        role="tablist"
       >
         <button
           type="button"
-          class="flex-1 h-7 rounded-md text-[11px] font-medium fx-colors touch-manipulation"
-          :class="
-            mobileConsoleTab === 'chat'
-              ? 'bg-surface-raised text-accent shadow-sm'
-              : 'text-ink-muted'
-          "
+          role="tab"
+          class="faw-m-console-tabs__btn touch-manipulation fx-colors"
+          :class="{ 'is-active': mobileConsoleTab === 'chat' }"
+          :aria-selected="mobileConsoleTab === 'chat'"
           @click="mobileConsoleTab = 'chat'"
         >
           Chat
         </button>
         <button
           type="button"
-          class="flex-1 h-7 rounded-md text-[11px] font-medium fx-colors touch-manipulation"
-          :class="
-            mobileConsoleTab === 'logs'
-              ? 'bg-surface-raised text-accent shadow-sm'
-              : 'text-ink-muted'
-          "
+          role="tab"
+          class="faw-m-console-tabs__btn touch-manipulation fx-colors"
+          :class="{ 'is-active': mobileConsoleTab === 'logs' }"
+          :aria-selected="mobileConsoleTab === 'logs'"
           @click="mobileConsoleTab = 'logs'"
         >
           Logs
@@ -537,7 +534,7 @@ watch(chatBox, (el, prev) => {
           </button>
           <button
             type="button"
-            class="faw-btn"
+            class="faw-btn faw-btn--ask"
             :disabled="busy || agentTyping"
             title="Hỏi nhanh (Q&A, không sửa code) → xếp queue"
             @click="emit('sendChat', 'ask')"

@@ -4,6 +4,7 @@ import {
   getCompletionDefaults,
   listLabels,
   listMembers,
+  listMilestones,
 } from "../../modules/meta/index.js";
 
 export const metaController = {
@@ -15,5 +16,8 @@ export const metaController = {
   }),
   labels: asyncHandler(async (_req: Request, res: Response) => {
     res.json(await listLabels());
+  }),
+  milestones: asyncHandler(async (_req: Request, res: Response) => {
+    res.json(await listMilestones());
   }),
 };

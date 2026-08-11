@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { reactive } from "vue";
+import { Modal } from "ant-design-vue";
 import { Splitpanes, Pane } from "splitpanes";
 import "splitpanes/dist/splitpanes.css";
-import { ArrowLeftOutlined } from "@ant-design/icons-vue";
+import { ArrowLeftOutlined, MoreOutlined } from "@ant-design/icons-vue";
 import {
   contextQualityLabel,
   contextQualityColor,
@@ -52,6 +53,16 @@ useWorkbenchShortcuts({
 function onPaneResize(event: { panes: Array<{ size: number }> }) {
   panes.onResized(event.panes ?? []);
 }
+
+function confirmMergeFromMenu() {
+  if (!wb.canQuickMerge || wb.mergeBusy || wb.handoffBusy) return;
+  Modal.confirm({
+    title: "Merge work → base?",
+    okText: "Merge",
+    cancelText: "Cancel",
+    onOk: () => wb.quickMerge(),
+  });
+}
 </script>
 
 <template>
@@ -82,7 +93,7 @@ function onPaneResize(event: { panes: Array<{ size: number }> }) {
               :context-is-bad="wb.contextIsBad"
               :can-kill-all="wb.canKillAll"
               :kill-all-busy="wb.killAllBusy"
-              @update:milestone-filter="wb.milestoneFilter = $event"
+              @update:milestone-filter="wb.setMilestoneFilter($event)"
               @update:open-iid-draft="wb.openIidDraft = $event"
               @refresh="wb.refreshTasks"
               @open-adhoc="wb.openAdhocModal"
@@ -201,7 +212,7 @@ function onPaneResize(event: { panes: Array<{ size: number }> }) {
         :context-is-bad="wb.contextIsBad"
         :can-kill-all="wb.canKillAll"
         :kill-all-busy="wb.killAllBusy"
-        @update:milestone-filter="wb.milestoneFilter = $event"
+        @update:milestone-filter="wb.setMilestoneFilter($event)"
         @update:open-iid-draft="wb.openIidDraft = $event"
         @refresh="wb.refreshTasks"
         @open-adhoc="wb.openAdhocModal"
@@ -218,71 +229,67 @@ function onPaneResize(event: { panes: Array<{ size: number }> }) {
 
       <div
         v-show="wb.mobilePane !== 'tasks'"
-        class="flex flex-col w-full flex-1 min-h-0 gap-1.5"
-        :class="wb.mobilePane === 'detail' ? 'pb-12' : ''"
+        class="flex flex-col w-full flex-1 min-h-0"
+        :class="wb.mobilePane === 'detail' ? 'pb-10' : ''"
       >
-        <!-- Compact: Back + Issue/Console in one row -->
-        <div
-          class="shrink-0 flex items-center gap-1 rounded-lg bg-surface-muted/90 border border-line p-0.5"
-        >
+        <!-- Mobile detail chrome: back + title + slim Issue/Console -->
+        <div class="faw-m-detail-bar shrink-0">
           <button
             type="button"
-            class="inline-flex items-center justify-center gap-1 h-8 px-2 rounded-md text-xs font-medium text-ink-muted touch-manipulation active:bg-surface-raised shrink-0"
+            class="faw-m-detail-bar__back touch-manipulation"
+            title="Back to tasks"
             @click="wb.backToMobileList()"
           >
-            <ArrowLeftOutlined class="text-[11px]" />
-            Back
+            <ArrowLeftOutlined />
           </button>
-          <div class="w-px h-4 bg-line shrink-0" />
-          <button
-            type="button"
-            class="flex-1 h-8 rounded-md text-xs font-medium fx-colors touch-manipulation"
-            :class="
-              wb.mobilePane === 'detail'
-                ? 'bg-surface-raised text-accent shadow-sm'
-                : 'text-ink-muted'
-            "
-            @click="wb.mobilePane = 'detail'"
-          >
-            Issue
-          </button>
-          <button
-            type="button"
-            class="flex-1 h-8 rounded-md text-xs font-medium fx-colors touch-manipulation"
-            :class="
-              wb.mobilePane === 'chat'
-                ? 'bg-surface-raised text-accent shadow-sm'
-                : 'text-ink-muted'
-            "
-            @click="wb.mobilePane = 'chat'"
-          >
-            Console
-          </button>
-        </div>
-
-        <div
-          v-if="wb.detailTitle || wb.selectedTaskIid || wb.currentJob?.issue?.issueIid"
-          class="shrink-0 px-1 text-[11px] text-ink-faint truncate leading-tight flex items-center gap-1.5 min-w-0"
-        >
-          <IssueIidLink
-            v-if="!wb.isCurrentAdhoc"
-            :iid="
-              wb.taskDetail?.issueIid ||
-              wb.currentJob?.issue?.issueIid ||
-              wb.selectedTaskIid
-            "
-            :url="wb.taskDetail?.url || wb.currentJob?.issue?.url"
-            link-class="!text-[11px] shrink-0"
-          />
-          <span
-            v-else
-            class="text-accent font-semibold shrink-0"
-            >Hotfix</span
-          >
-          <span v-if="wb.detailTitle" class="font-medium text-ink-soft truncate">{{
-            wb.detailTitle
-          }}</span>
-          <span v-if="wb.detailMeta" class="truncate">· {{ wb.detailMeta }}</span>
+          <div class="faw-m-detail-bar__title min-w-0">
+            <div class="faw-m-detail-bar__name truncate">
+              <IssueIidLink
+                v-if="!wb.isCurrentAdhoc"
+                :iid="
+                  wb.taskDetail?.issueIid ||
+                  wb.currentJob?.issue?.issueIid ||
+                  wb.selectedTaskIid
+                "
+                :url="wb.taskDetail?.url || wb.currentJob?.issue?.url"
+                link-class="!text-[12px] shrink-0 mr-1"
+              />
+              <span
+                v-else
+                class="text-status-done font-semibold shrink-0 mr-1"
+                >Hotfix</span
+              >
+              <span>{{ wb.detailTitle || "—" }}</span>
+            </div>
+            <div
+              v-if="wb.detailMeta"
+              class="faw-m-detail-bar__meta truncate"
+            >
+              {{ wb.detailMeta }}
+            </div>
+          </div>
+          <div class="faw-m-seg" role="tablist">
+            <button
+              type="button"
+              role="tab"
+              class="faw-m-seg__btn touch-manipulation"
+              :class="{ 'is-active': wb.mobilePane === 'detail' }"
+              :aria-selected="wb.mobilePane === 'detail'"
+              @click="wb.mobilePane = 'detail'"
+            >
+              Issue
+            </button>
+            <button
+              type="button"
+              role="tab"
+              class="faw-m-seg__btn touch-manipulation"
+              :class="{ 'is-active': wb.mobilePane === 'chat' }"
+              :aria-selected="wb.mobilePane === 'chat'"
+              @click="wb.mobilePane = 'chat'"
+            >
+              Console
+            </button>
+          </div>
         </div>
 
         <JobContext
@@ -361,82 +368,81 @@ function onPaneResize(event: { panes: Array<{ size: number }> }) {
       </div>
     </div>
 
-    <!-- Mobile action dock: above bottom nav, always visible on Issue -->
+    <!-- Mobile action dock: Run | Handoff equal pair + overflow -->
     <div
       v-if="wb.mobilePane === 'detail'"
-      class="lg:hidden fixed inset-x-0 z-[45] border-t border-line bg-surface-raised/95 backdrop-blur-sm px-2 py-1.5 flex items-center gap-2 shadow-[0_-2px_10px_rgba(15,23,42,0.08)]"
-      style="bottom: calc(3.25rem + env(safe-area-inset-bottom, 0px))"
+      class="faw-m-dock lg:hidden"
     >
-      <a-tooltip :title="wb.runBlockedReason || 'Run agent'">
-        <a-button
-          type="primary"
-          size="small"
-          class="!h-8 !px-3"
-          :loading="wb.busy"
-          :disabled="Boolean(wb.runBlockedReason)"
-          @click="wb.runCurrentJob()"
-          >Run</a-button
+      <div class="faw-m-dock__pair">
+        <a-tooltip :title="wb.runBlockedReason || 'Run agent'">
+          <button
+            type="button"
+            class="faw-m-btn faw-m-btn--primary touch-manipulation"
+            :disabled="wb.busy || Boolean(wb.runBlockedReason)"
+            @click="wb.runCurrentJob()"
+          >
+            {{ wb.busy ? "Running…" : "Run" }}
+          </button>
+        </a-tooltip>
+        <a-popconfirm
+          title="Handoff with Settings prefs?"
+          ok-text="Handoff"
+          cancel-text="Cancel"
+          :disabled="!wb.canQuickHandoff || wb.handoffBusy"
+          @confirm="wb.quickHandoff()"
         >
-      </a-tooltip>
-      <a-button
+          <button
+            type="button"
+            class="faw-m-btn faw-m-btn--handoff touch-manipulation"
+            :disabled="!wb.canQuickHandoff || wb.handoffBusy || wb.mergeBusy"
+          >
+            {{ wb.handoffBusy ? "…" : "Handoff" }}
+          </button>
+        </a-popconfirm>
+      </div>
+      <button
         v-if="wb.awaitingDocsApproval"
-        type="primary"
-        size="small"
-        class="!h-8 !bg-violet-600"
-        :loading="wb.approveDocsBusy"
+        type="button"
+        class="faw-m-btn faw-m-btn--docs touch-manipulation"
+        :disabled="wb.approveDocsBusy"
         @click="wb.approveDocs()"
-        >Docs</a-button
       >
-      <a-button
-        size="small"
-        class="!h-8"
-        :loading="wb.syncBaseBusy"
-        :disabled="!wb.canSyncBase || wb.syncBaseBusy"
-        title="Pull base mới nhất vào nhánh job (AI tự fix conflict)"
-        @click="wb.syncBase()"
-        >⇣ Sync</a-button
-      >
-      <a-button
-        size="small"
-        class="!h-8"
-        :loading="wb.createMrBusy"
-        :disabled="!wb.canCreateMr || wb.createMrBusy || wb.mergeBusy"
-        title="Create open MR (no merge)"
-        @click="wb.createMr()"
-        >MR</a-button
-      >
-      <a-popconfirm
-        title="Merge work → base?"
-        ok-text="Merge"
-        cancel-text="Cancel"
-        :disabled="!wb.canQuickMerge || wb.mergeBusy"
-        @confirm="wb.quickMerge()"
-      >
-        <a-button
-          size="small"
-          class="!h-8"
-          :loading="wb.mergeBusy"
-          :disabled="!wb.canQuickMerge || wb.mergeBusy || wb.handoffBusy"
-          >Merge</a-button
+        {{ wb.approveDocsBusy ? "…" : "Docs" }}
+      </button>
+      <a-dropdown placement="topRight" :trigger="['click']">
+        <button
+          type="button"
+          class="faw-m-btn faw-m-btn--more touch-manipulation"
+          title="More actions"
         >
-      </a-popconfirm>
-      <a-popconfirm
-        title="Handoff with Settings prefs?"
-        ok-text="Handoff"
-        cancel-text="Cancel"
-        :disabled="!wb.canQuickHandoff || wb.handoffBusy"
-        @confirm="wb.quickHandoff()"
-      >
-        <a-button
-          type="primary"
-          ghost
-          size="small"
-          class="!h-8 !border-cyan-600 !text-cyan-700"
-          :loading="wb.handoffBusy"
-          :disabled="!wb.canQuickHandoff || wb.handoffBusy || wb.mergeBusy"
-          >Handoff</a-button
-        >
-      </a-popconfirm>
+          <MoreOutlined />
+        </button>
+        <template #overlay>
+          <a-menu>
+            <a-menu-item
+              key="sync"
+              :disabled="!wb.canSyncBase || wb.syncBaseBusy"
+              @click="wb.syncBase()"
+            >
+              {{ wb.syncBaseBusy ? "Syncing…" : "⇣ Sync base" }}
+            </a-menu-item>
+            <a-menu-item
+              key="mr"
+              :disabled="!wb.canCreateMr || wb.createMrBusy || wb.mergeBusy"
+              @click="wb.createMr()"
+            >
+              {{ wb.createMrBusy ? "Creating…" : "Create MR" }}
+            </a-menu-item>
+            <a-menu-item
+              key="merge"
+              :disabled="!wb.canQuickMerge || wb.mergeBusy || wb.handoffBusy"
+              @click="confirmMergeFromMenu"
+            >
+              {{ wb.mergeBusy ? "Merging…" : "Merge → base" }}
+            </a-menu-item>
+          </a-menu>
+        </template>
+      </a-dropdown>
     </div>
 
     <a-modal

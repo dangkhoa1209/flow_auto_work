@@ -653,7 +653,8 @@ export class JobQueue {
         title: job.issue.title,
         baseBranch: job.baseBranch || rt?.baseBranch,
         workBranch: fixedWork || (job.kind === "adhoc" ? job.branch : undefined),
-        createWorkBranchIfMissing: !fixedWork,
+        // Missing work branch → create from Main / base
+        createWorkBranchIfMissing: true,
         repoPath,
       });
       job.branch = fixedWork || prepared.branch;
@@ -1806,8 +1807,8 @@ export class JobQueue {
         targetBranchOverride: targetOverride,
         baseBranch: job.baseBranch || rt?.baseBranch,
         workBranch: job.workBranch || rt?.workBranch,
-        // Workspace work branch must already exist — do not create
-        createWorkBranchIfMissing: false,
+        // Missing configured work branch → create from Main / base
+        createWorkBranchIfMissing: true,
         repoPath,
       });
       job.branch = prepared.branch;
