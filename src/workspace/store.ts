@@ -23,6 +23,7 @@ import {
   type WorkspaceUserPublic,
   type CloneStatus,
   type HandoffPrefs,
+  type UserRole,
 } from "./types.js";
 
 /** Segment under PROJECT_ROOT/{user}/ — same rules as defaultLocalPath */
@@ -79,6 +80,8 @@ export async function createOrUpdateUserPassword(opts: {
   username: string;
   password: string;
   displayName?: string;
+  /** When set, replaces user roles (e.g. register / seed admin). */
+  roles?: UserRole[];
 }): Promise<WorkspaceUserPublic> {
   const id = normUserId(opts.username);
   if (!id) throw new Error("username required");
@@ -93,6 +96,9 @@ export async function createOrUpdateUserPassword(opts: {
   };
   doc.passwordHash = passwordHash;
   if (opts.displayName?.trim()) doc.displayName = opts.displayName.trim();
+  if (opts.roles !== undefined) {
+    doc.roles = normalizeUserRoles(opts.roles);
+  }
   if (!doc.cursorModel) doc.cursorModel = "auto";
   doc.updatedAt = now;
   doc.gitlabUsername = opts.username.trim().replace(/^@/, "");
