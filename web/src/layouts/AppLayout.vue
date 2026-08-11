@@ -147,9 +147,9 @@ async function onKillAll() {
 
 <template>
   <div
-    class="h-[100dvh] max-h-[100dvh] flex flex-col overflow-hidden overflow-x-hidden bg-[var(--app-bg)]"
+    class="faw-app-shell h-[100dvh] max-h-[100dvh] flex flex-col overflow-hidden overflow-x-hidden bg-[var(--app-bg)]"
   >
-    <header class="faw-topbar">
+    <header class="faw-topbar faw-topbar--work">
       <!-- Brand: full logo desktop, icon-only mobile -->
       <RouterLink to="/work" class="faw-brand" title="Flow Auto WorkBench">
         <img

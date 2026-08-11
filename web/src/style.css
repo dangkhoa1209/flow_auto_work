@@ -1301,24 +1301,24 @@ code {
   display: none;
 }
 @media (max-width: 1023px) {
-  .faw-topbar {
+  .faw-topbar--work {
     height: 48px;
     gap: 6px;
     padding: 0 8px 0 10px;
   }
-  .faw-brand__logo--full {
+  .faw-topbar--work .faw-brand__logo--full {
     display: none;
   }
-  .faw-brand__logo--mark {
+  .faw-topbar--work .faw-brand__logo--mark {
     display: block;
     height: 24px;
     width: 24px;
     max-width: 24px;
     border-radius: 6px;
   }
-  .faw-topbar__spacer,
-  .faw-topbar .faw-seg,
-  .faw-topbar__right {
+  .faw-topbar--work .faw-topbar__spacer,
+  .faw-topbar--work .faw-seg,
+  .faw-topbar--work .faw-topbar__right {
     display: none !important;
   }
 }
@@ -1693,278 +1693,278 @@ code {
   color: var(--app-muted);
 }
 
-/* —— Mobile Work density: one compact scale —— */
+/* —— Mobile App shell density (Work/Handoff/Settings only; NOT /ba) —— */
 @media (max-width: 1023px) {
   /* Shared control height */
-  .faw-work {
+  .faw-app-shell {
     --faw-ctrl-h: 28px;
     --faw-ctrl-fs: 11px;
     --faw-ctrl-r: 6px;
   }
 
-  .faw-col-head {
+  .faw-app-shell .faw-col-head {
     padding: 6px 10px;
     gap: 6px;
   }
-  .faw-col-head h2 {
+  .faw-app-shell .faw-col-head h2 {
     font-size: 10px;
   }
-  .faw-count {
+  .faw-app-shell .faw-count {
     font-size: 9px;
     padding: 0 5px;
   }
-  .faw-icon-btn {
+  .faw-app-shell .faw-icon-btn {
     width: 24px;
     height: 24px;
     font-size: 11px;
   }
 
-  .faw-filters {
+  .faw-app-shell .faw-filters {
     padding: 6px 8px;
     gap: 5px;
   }
-  .faw-filters__row {
+  .faw-app-shell .faw-filters__row {
     gap: 5px;
   }
-  .faw-field {
+  .faw-app-shell .faw-field {
     min-height: var(--faw-ctrl-h);
     padding: 0 6px;
     border-radius: var(--faw-ctrl-r);
   }
-  .faw-field--iid {
+  .faw-app-shell .faw-field--iid {
     max-width: 64px;
   }
-  .faw-input-ghost.ant-input,
-  .faw-input-ghost .ant-input,
-  .faw-select-ghost .ant-select-selector {
+  .faw-app-shell .faw-input-ghost.ant-input,
+  .faw-app-shell .faw-input-ghost .ant-input,
+  .faw-app-shell .faw-select-ghost .ant-select-selector {
     font-size: var(--faw-ctrl-fs) !important;
     min-height: 24px !important;
   }
-  .faw-filters__row .faw-btn,
-  .faw-filters__row .faw-btn--run,
-  .faw-filters__row .faw-btn--danger {
+  .faw-app-shell .faw-filters__row .faw-btn,
+  .faw-app-shell .faw-filters__row .faw-btn--run,
+  .faw-app-shell .faw-filters__row .faw-btn--danger {
     height: var(--faw-ctrl-h);
     padding: 0 8px;
     border-radius: var(--faw-ctrl-r);
     font-size: var(--faw-ctrl-fs);
     font-weight: 650;
   }
-  .faw-btn--run {
+  .faw-app-shell .faw-btn--run {
     flex: 1 1 0 !important;
     min-width: 0 !important;
     max-width: none !important;
   }
-  .faw-filters__row .faw-btn[style*="flex: 1"] {
+  .faw-app-shell .faw-filters__row .faw-btn[style*="flex: 1"] {
     flex: 1 1 0 !important;
   }
 
-  .faw-group-label {
+  .faw-app-shell .faw-group-label {
     padding: 6px 8px 3px;
     font-size: 9.5px;
   }
-  .faw-task-row {
+  .faw-app-shell .faw-task-row {
     gap: 6px;
     padding: 5px 8px 5px 5px;
   }
-  .faw-task-row__id {
+  .faw-app-shell .faw-task-row__id {
     font-size: 10px;
   }
-  .faw-task-row__title {
+  .faw-app-shell .faw-task-row__title {
     font-size: 11.5px;
     margin: 1px 0 3px;
     line-height: 1.3;
   }
-  .faw-chip {
+  .faw-app-shell .faw-chip {
     font-size: 9px;
     padding: 1px 5px;
   }
-  .faw-job-row {
+  .faw-app-shell .faw-job-row {
     gap: 6px;
     padding: 4px 8px;
   }
-  .faw-job-id {
+  .faw-app-shell .faw-job-id {
     font-size: 10px !important;
   }
-  .faw-job-t {
+  .faw-app-shell .faw-job-t {
     font-size: 10.5px;
   }
-  .faw-job-tag {
+  .faw-app-shell .faw-job-tag {
     font-size: 8.5px;
     max-width: 3.5rem;
   }
 
-  .faw-issue-scroll {
+  .faw-app-shell .faw-issue-scroll {
     padding: 10px 10px 20px;
   }
-  .faw-issue-head {
+  .faw-app-shell .faw-issue-head {
     display: none;
   }
-  .meta-line {
+  .faw-app-shell .meta-line {
     font-size: 10.5px;
     margin-bottom: 8px;
   }
-  .meta-line__detail {
+  .faw-app-shell .meta-line__detail {
     display: none;
   }
-  .faw-ctx-tags {
+  .faw-app-shell .faw-ctx-tags {
     gap: 4px;
     margin-bottom: 10px;
   }
-  .faw-ctx-tags .faw-chip,
-  .faw-pill {
+  .faw-app-shell .faw-ctx-tags .faw-chip,
+  .faw-app-shell .faw-pill {
     font-size: 10px;
     padding: 2px 7px;
   }
-  .faw-issue-body,
-  .faw-issue-body .chat-md-rich {
+  .faw-app-shell .faw-issue-body,
+  .faw-app-shell .faw-issue-body .chat-md-rich {
     font-size: 12px;
     line-height: 1.5;
   }
 
-  .faw-m-detail-bar {
+  .faw-app-shell .faw-m-detail-bar {
     min-height: 40px;
     padding: 4px 8px;
     gap: 6px;
   }
-  .faw-m-detail-bar__back {
+  .faw-app-shell .faw-m-detail-bar__back {
     width: 28px;
     height: 28px;
     border-radius: 6px;
     font-size: 12px;
   }
-  .faw-m-detail-bar__name {
+  .faw-app-shell .faw-m-detail-bar__name {
     font-size: 12px;
   }
-  .faw-m-detail-bar__meta {
+  .faw-app-shell .faw-m-detail-bar__meta {
     font-size: 10px;
   }
-  .faw-m-seg {
+  .faw-app-shell .faw-m-seg {
     padding: 2px;
     border-radius: 6px;
   }
-  .faw-m-seg__btn {
+  .faw-app-shell .faw-m-seg__btn {
     height: 24px;
     padding: 0 8px;
     font-size: 10px;
     border-radius: 4px;
   }
 
-  .faw-m-console-tabs {
+  .faw-app-shell .faw-m-console-tabs {
     padding: 4px 8px;
   }
-  .faw-m-console-tabs__btn {
+  .faw-app-shell .faw-m-console-tabs__btn {
     height: 26px;
     font-size: 10.5px;
     border-radius: 6px;
   }
 
-  .faw-console-head {
+  .faw-app-shell .faw-console-head {
     padding: 6px 10px;
   }
-  .faw-console-head__title h2 {
+  .faw-app-shell .faw-console-head__title h2 {
     font-size: 11px;
   }
-  .faw-console-head__win {
+  .faw-app-shell .faw-console-head__win {
     font-size: 9px;
   }
-  .faw-console-actions .faw-btn,
-  .faw-console-actions .ant-btn {
+  .faw-app-shell .faw-console-actions .faw-btn,
+  .faw-app-shell .faw-console-actions .ant-btn {
     height: var(--faw-ctrl-h) !important;
     padding: 0 8px !important;
     font-size: var(--faw-ctrl-fs) !important;
     border-radius: var(--faw-ctrl-r) !important;
   }
-  .faw-console-scroll {
+  .faw-app-shell .faw-console-scroll {
     padding: 8px;
     gap: 8px;
   }
-  .faw-msg__who {
+  .faw-app-shell .faw-msg__who {
     font-size: 9px;
     margin-bottom: 2px;
   }
-  .faw-msg__bubble {
+  .faw-app-shell .faw-msg__bubble {
     padding: 7px 9px;
     font-size: 11.5px;
     line-height: 1.45;
   }
-  .faw-console-input {
+  .faw-app-shell .faw-console-input {
     padding: 8px;
   }
-  .faw-console-input .ant-input,
-  .faw-console-input textarea.ant-input {
+  .faw-app-shell .faw-console-input .ant-input,
+  .faw-app-shell .faw-console-input textarea.ant-input {
     font-size: 12px !important;
     padding: 6px 8px !important;
   }
-  .faw-console-input__row {
+  .faw-app-shell .faw-console-input__row {
     gap: 5px;
     margin-top: 5px;
   }
-  .faw-console-input__row .faw-btn--send,
-  .faw-console-input__row .faw-btn--ask {
+  .faw-app-shell .faw-console-input__row .faw-btn--send,
+  .faw-app-shell .faw-console-input__row .faw-btn--ask {
     height: var(--faw-ctrl-h);
     padding: 0 8px;
     border-radius: var(--faw-ctrl-r);
     font-size: var(--faw-ctrl-fs);
   }
 
-  .faw-m-dock {
+  .faw-app-shell .faw-m-dock {
     gap: 5px;
     padding: 5px 8px;
   }
-  .faw-m-dock__pair {
+  .faw-app-shell .faw-m-dock__pair {
     gap: 5px;
   }
-  .faw-m-btn {
+  .faw-app-shell .faw-m-btn {
     height: var(--faw-ctrl-h);
     border-radius: var(--faw-ctrl-r);
     font: 650 var(--faw-ctrl-fs) var(--font-ui);
     padding: 0 8px;
   }
-  .faw-m-btn--more {
+  .faw-app-shell .faw-m-btn--more {
     width: var(--faw-ctrl-h);
     height: var(--faw-ctrl-h);
     font-size: 13px;
   }
 
-  .faw-topbar {
+  .faw-app-shell .faw-topbar--work {
     height: 48px;
     gap: 6px;
     padding: 0 8px 0 10px;
   }
-  .faw-brand__logo--mark {
+  .faw-app-shell .faw-topbar--work .faw-brand__logo--mark {
     height: 24px;
     width: 24px;
     max-width: 24px;
     border-radius: 6px;
   }
-  .faw-crumb-tap {
+  .faw-app-shell .faw-crumb-tap {
     height: 30px;
     padding: 0 8px;
     border-radius: 6px;
   }
-  .faw-crumb-tap__flow {
+  .faw-app-shell .faw-crumb-tap__flow {
     font-size: 12px;
   }
-  .faw-status-avatar {
+  .faw-app-shell .faw-status-avatar {
     width: 30px;
     height: 30px;
   }
-  .faw-avatar--md {
+  .faw-app-shell .faw-avatar--md {
     width: 18px;
     height: 18px;
   }
 
-  .faw-mnav__grid {
+  .faw-app-shell .faw-mnav__grid {
     height: 3.25rem;
   }
-  .faw-mnav__icon {
+  .faw-app-shell .faw-mnav__icon {
     font-size: 16px;
   }
-  .faw-mnav__label {
+  .faw-app-shell .faw-mnav__label {
     font-size: 10px;
   }
 
-  .faw-m-dock {
+  .faw-app-shell .faw-m-dock {
     bottom: calc(3.25rem + env(safe-area-inset-bottom, 0px));
   }
 }
@@ -2588,3 +2588,300 @@ code {
     font-size: 11px !important;
   }
 }
+
+/* —— BA Project Chat (scoped to /ba only — do not reuse on Work) —— */
+.faw-ba-shell {
+  position: relative;
+}
+.faw-topbar--ba {
+  gap: 10px;
+}
+.faw-topbar--ba .faw-brand__logo--mark {
+  display: none;
+}
+.faw-ba-menu-btn {
+  flex-shrink: 0;
+}
+.faw-ba-top-right {
+  display: flex !important;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.faw-ba-idle {
+  min-width: 0;
+  max-width: 14rem;
+}
+.faw-ba-idle__text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.faw-ba-user__name {
+  max-width: 7rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.faw-ba {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+.faw-ba-side {
+  width: 280px;
+  flex: none;
+  border-right: 1px solid var(--app-border);
+  background: var(--app-panel);
+}
+.faw-ba-filters {
+  gap: 8px;
+}
+.faw-ba-label {
+  display: block;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--app-faint);
+}
+.faw-ba-select {
+  width: 100%;
+}
+.faw-ba-select .ant-select-selector {
+  background: var(--app-panel-soft) !important;
+  border-color: var(--app-border) !important;
+  border-radius: 6px !important;
+  color: var(--app-ink) !important;
+}
+.faw-ba-new {
+  width: 100%;
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 32px;
+  border-radius: 6px;
+}
+.faw-ba-thread {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  text-align: left;
+  padding: 8px 10px;
+  border: 0;
+  border-bottom: 1px solid var(--line-soft, #1b1f29);
+  border-left: 2px solid transparent;
+  background: transparent;
+  color: var(--app-ink);
+  cursor: pointer;
+}
+.faw-ba-thread:hover {
+  background: var(--app-panel-soft);
+}
+.faw-ba-thread.active {
+  background: #161b26;
+  border-left-color: var(--app-accent);
+}
+.faw-ba-thread__main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.faw-ba-thread__title {
+  font-size: 12px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.faw-ba-thread__time {
+  font-size: 10px;
+  color: var(--app-faint);
+}
+.faw-ba-thread__del {
+  opacity: 0;
+  flex-shrink: 0;
+}
+.faw-ba-thread:hover .faw-ba-thread__del,
+.faw-ba-thread:focus-within .faw-ba-thread__del {
+  opacity: 1;
+}
+@media (hover: none) {
+  .faw-ba-thread__del {
+    opacity: 1;
+  }
+}
+
+.faw-ba-progress {
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--app-border);
+  background: var(--app-panel);
+  padding: 0 0 8px;
+}
+.faw-ba-progress.is-error .faw-ba-progress__fill {
+  background: var(--bug, #f0576b);
+}
+.faw-ba-progress__bar {
+  height: 2px;
+  background: var(--app-border);
+  overflow: hidden;
+}
+.faw-ba-progress__fill {
+  height: 100%;
+  background: var(--done, #34d399);
+  transition: width 0.25s ease;
+}
+.faw-ba-progress__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px 0;
+}
+.faw-ba-progress__live {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+.faw-ba-progress__label {
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--app-ink);
+  white-space: nowrap;
+}
+.faw-ba-progress__detail {
+  font-size: 11px;
+  color: var(--app-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.faw-ba-progress__stop {
+  flex: none;
+  height: 28px;
+  padding: 0 10px;
+  font-size: 11px;
+}
+.faw-ba-progress__steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.faw-ba-progress__chip {
+  font-size: 9.5px;
+  font-weight: 650;
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--app-border);
+  color: var(--app-faint);
+  background: transparent;
+}
+.faw-ba-progress__chip.is-done {
+  color: var(--done);
+  border-color: rgba(52, 211, 153, 0.35);
+  background: rgba(52, 211, 153, 0.1);
+}
+.faw-ba-progress__chip.is-active {
+  color: var(--app-accent);
+  border-color: rgba(91, 141, 239, 0.45);
+  background: rgba(91, 141, 239, 0.12);
+}
+
+.faw-ba-input-row {
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+.faw-ba-input-hint {
+  font-size: 10.5px;
+  color: var(--app-faint);
+  min-width: 0;
+  flex: 1;
+}
+.faw-ba-input-actions {
+  display: flex;
+  gap: 6px;
+  flex: none;
+}
+.faw-ba-input-actions .faw-btn {
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 6px;
+  font-size: 11.5px;
+}
+.faw-ba-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 35;
+  border: 0;
+  background: rgba(0, 0, 0, 0.45);
+  cursor: pointer;
+}
+
+@media (max-width: 1023px) {
+  .faw-topbar--ba {
+    height: 48px;
+    gap: 8px;
+    padding: 0 8px 0 10px;
+  }
+  .faw-topbar--ba .faw-brand__logo--full {
+    display: none;
+  }
+  .faw-topbar--ba .faw-brand__logo--mark {
+    display: block;
+    height: 24px;
+    width: 24px;
+    max-width: 24px;
+    border-radius: 6px;
+  }
+  .faw-topbar--ba .faw-seg {
+    display: none !important;
+  }
+  .faw-ba-idle {
+    max-width: 6.5rem;
+  }
+  .faw-ba-user__name {
+    display: none;
+  }
+  .faw-ba-user {
+    padding: 4px;
+  }
+  .faw-ba-side {
+    position: fixed;
+    top: 48px;
+    left: 0;
+    bottom: 0;
+    z-index: 40;
+    width: min(300px, 86vw);
+    transform: translateX(-105%);
+    transition: transform 0.2s ease;
+    box-shadow: 8px 0 24px rgba(0, 0, 0, 0.35);
+  }
+  .faw-ba-shell.is-side-open .faw-ba-side {
+    transform: translateX(0);
+  }
+  .faw-ba-progress__row {
+    padding: 8px 10px 0;
+  }
+  .faw-ba-progress__steps {
+    width: 100%;
+  }
+  .faw-ba-input-hint {
+    display: none;
+  }
+  .faw-ba-input-actions {
+    width: 100%;
+  }
+  .faw-ba-input-actions .faw-btn {
+    flex: 1;
+  }
+}
+

@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, inject } from "vue";
 import { Modal, message } from "ant-design-vue";
 import { PlusOutlined, DeleteOutlined } from "@ant-design/icons-vue";
 import { useBaChatStore } from "@/stores/baChat";
 
 const ba = useBaChatStore();
+const closeSide = inject<() => void>("baCloseSide", () => undefined);
 
 const projectOptions = computed(() =>
   ba.projects.map((p) => ({
@@ -27,9 +28,15 @@ async function onProjectChange(id: string) {
 async function onNewChat() {
   try {
     await ba.newChat();
+    closeSide();
   } catch (e) {
     message.warning(e instanceof Error ? e.message : String(e));
   }
+}
+
+function onSelectThread(id: string) {
+  ba.selectThread(id);
+  closeSide();
 }
 
 function onDelete(id: string, title: string) {
@@ -70,10 +77,8 @@ function formatTime(iso: string) {
       <span class="faw-count">{{ ba.threads.length }}</span>
     </div>
 
-    <div class="faw-filters">
-      <label class="block text-[10px] font-semibold uppercase tracking-wide text-[var(--app-faint)]">
-        Project
-      </label>
+    <div class="faw-filters faw-ba-filters">
+      <label class="faw-ba-label">Project</label>
       <a-select
         :value="ba.selectedProjectId || undefined"
         :options="projectOptions"
@@ -96,7 +101,7 @@ function formatTime(iso: string) {
       >
         <button
           type="button"
-          class="faw-btn faw-btn--run w-full flex items-center justify-center gap-1.5"
+          class="faw-btn faw-btn--run faw-ba-new"
           :disabled="!ba.projectReady || ba.streaming"
           @click="onNewChat"
         >
@@ -118,7 +123,7 @@ function formatTime(iso: string) {
         type="button"
         class="faw-ba-thread"
         :class="{ active: t.id === ba.activeThreadId }"
-        @click="ba.selectThread(t.id)"
+        @click="onSelectThread(t.id)"
       >
         <div class="faw-ba-thread__main">
           <span class="faw-ba-thread__title">{{ t.title }}</span>
