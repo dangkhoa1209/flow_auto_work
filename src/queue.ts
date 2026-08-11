@@ -78,9 +78,50 @@ export class JobQueue {
   /** Jobs force-stopped — runJob should abort ASAP. */
   private killedJobs = new Set<string>();
 
-  /** Jobs from different projects run in parallel; same project stays serial. */
-  private laneKeyFor(job: Pick<JobRecord, "workspaceProjectId">): string {
-    return job.workspaceProjectId || "default";
+  /** Per user + project: A running on project X does not block B on the same project. */
+  private laneKeyFor(
+    job: Pick<JobRecord, "workspaceProjectId" | "ownerUsername">,
+  ): string {
+    const project = job.workspaceProjectId || "default";
+    const owner = (job.ownerUsername || "").trim().toLowerCase() || "anon";
+    return `${project}::${owner}`;
+  }
+
+  private jobScopes = new Map<
+    string,
+    { owner: string; projectId: string }
+  >();
+
+  rememberJobScope(
+    job: Pick<JobRecord, "id" | "ownerUsername" | "workspaceProjectId">,
+  ): void {
+    this.jobScopes.set(job.id, {
+      owner: (job.ownerUsername || "").trim().toLowerCase(),
+      projectId: (job.workspaceProjectId || "").trim(),
+    });
+  }
+
+  ownerOf(jobId: string): string | undefined {
+    const owner = this.jobScopes.get(jobId)?.owner;
+    return owner || undefined;
+  }
+
+  eventVisibleTo(
+    ev: { type: string; jobId?: string; userId?: string },
+    viewer: { ownerUsername?: string; workspaceProjectId?: string },
+  ): boolean {
+    const me = (viewer.ownerUsername || "").trim().toLowerCase();
+    const project = (viewer.workspaceProjectId || "").trim();
+    if (ev.type.startsWith("ba_")) {
+      if (!me || !ev.userId) return true;
+      return ev.userId.trim().toLowerCase() === me;
+    }
+    if (!ev.jobId) return true;
+    const scope = this.jobScopes.get(ev.jobId);
+    if (!scope) return true;
+    if (me && scope.owner && scope.owner !== me) return false;
+    if (project && scope.projectId && scope.projectId !== project) return false;
+    return true;
   }
 
   private get currentJobIds(): string[] {
@@ -92,6 +133,7 @@ export class JobQueue {
   }
 
   private setCurrent(job: JobRecord): void {
+    this.rememberJobScope(job);
     this.currentByLane.set(this.laneKeyFor(job), job.id);
   }
 
@@ -101,11 +143,32 @@ export class JobQueue {
     }
   }
 
-  snapshot() {
-    const currentJobIds = this.currentJobIds;
+  snapshot(filter?: { ownerUsername?: string; workspaceProjectId?: string }) {
+    return this.snapshotFor(filter);
+  }
+
+  snapshotFor(filter?: {
+    ownerUsername?: string;
+    workspaceProjectId?: string;
+  }) {
+    const me = (filter?.ownerUsername || "").trim().toLowerCase();
+    const project = (filter?.workspaceProjectId || "").trim();
+    const inScope = (jobId: string, fallbackOwner?: string, fallbackProject?: string) => {
+      const scope = this.jobScopes.get(jobId);
+      const owner = scope?.owner || (fallbackOwner || "").toLowerCase();
+      const pid = scope?.projectId || fallbackProject || "";
+      if (me && owner && owner !== me) return false;
+      if (project && pid && pid !== project) return false;
+      return true;
+    };
+
+    const currentJobIds = this.currentJobIds.filter((id) => inScope(id));
+    const queuedItems = this.queue.filter((q) =>
+      inScope(q.job.id, q.job.ownerUsername, q.job.workspaceProjectId),
+    );
     return {
-      running: this.runningLanes.size > 0,
-      queued: this.queue.length,
+      running: currentJobIds.length > 0,
+      queued: queuedItems.length,
       currentJobId: currentJobIds[0] ?? null,
       currentJobIds,
       activeIssues: [...this.activeIssueKeys],
@@ -144,6 +207,7 @@ export class JobQueue {
         continue;
       }
       this.activeIssueKeys.add(key);
+      this.rememberJobScope(job);
       const pendingMsg = job.pendingFollowUpMessage?.trim();
       if (pendingMsg && job.pendingFollowUpKind === "ask") {
         this.queue.push({
@@ -246,6 +310,7 @@ export class JobQueue {
     }
 
     this.activeIssueKeys.add(key);
+    this.rememberJobScope(job);
     if (opts?.source) this.sources.set(job.id, opts.source);
     this.queue.push({
       job,
@@ -437,6 +502,7 @@ export class JobQueue {
     await saveJob(job);
 
     this.activeIssueKeys.add(key);
+    this.rememberJobScope(job);
     this.sources.set(job.id, "chat_followup");
     this.queue.push({
       job,
@@ -534,6 +600,7 @@ export class JobQueue {
     await saveJob(job);
 
     this.activeIssueKeys.add(key);
+    this.rememberJobScope(job);
     this.sources.set(job.id, "chat_ask");
     this.queue.push({
       job,
@@ -1344,8 +1411,8 @@ export class JobQueue {
   }
 
   /**
-   * Start one worker per lane (workspace project) that has queued items.
-   * Different projects run in parallel; a project's jobs stay serial.
+   * Start one worker per lane (workspace project + owner) that has queued items.
+   * Different users/projects run in parallel; one user's jobs on a project stay serial.
    */
   private async pump() {
     const lanes = new Set(this.queue.map((q) => this.laneKeyFor(q.job)));

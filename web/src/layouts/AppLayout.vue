@@ -86,6 +86,9 @@ onMounted(async () => {
     message.error(e instanceof Error ? e.message : String(e));
   }
   disconnectRealtime = connectRealtime({
+    onOpen: () => {
+      void work.resyncRealtime();
+    },
     onStatus: (ev) => {
       work.applyStatusSnapshot({
         currentJobId: ev.currentJobId,

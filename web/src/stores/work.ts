@@ -461,9 +461,13 @@ export const useWorkStore = defineStore("work", () => {
       currentJob.value = detail.job;
       chat.value = detail.chat || [];
       agentTyping.value = isJobStatusBusy(detail.job.status);
+      if (agentTyping.value) watchProgress();
       await loadIssueForJob(detail.job);
       if (selectedJobId.value !== id) return;
       await pollProgress(switching || progressLines.value.length === 0);
+      if (selectedJobId.value === id && isJobStatusBusy(currentJob.value?.status)) {
+        watchProgress();
+      }
     } finally {
       if (selectedJobId.value === id) jobLoading.value = false;
     }
@@ -862,6 +866,37 @@ export const useWorkStore = defineStore("work", () => {
     }
   }
 
+  /** After SSE reconnect / tab wake — catch up status, jobs, open job progress+chat. */
+  let resyncTimer: ReturnType<typeof setTimeout> | undefined;
+  let resyncInFlight = false;
+  async function resyncRealtime() {
+    if (resyncTimer) clearTimeout(resyncTimer);
+    resyncTimer = setTimeout(() => {
+      resyncTimer = undefined;
+      if (resyncInFlight) return;
+      resyncInFlight = true;
+      void (async () => {
+        try {
+          await Promise.all([loadStatus(), loadJobs()]).catch(() => undefined);
+          const id = selectedJobId.value;
+          if (!id) return;
+          const busy = isJobStatusBusy(
+            (jobs.value.find((j) => j.id === id) || currentJob.value)?.status,
+          );
+          if (busy) {
+            agentTyping.value = true;
+            watchProgress();
+          }
+          await Promise.all([pollProgress(false), refreshJobChat(id)]).catch(
+            () => undefined,
+          );
+        } finally {
+          resyncInFlight = false;
+        }
+      })();
+    }, 250);
+  }
+
   return {
     tasks,
     jobs,
@@ -892,6 +927,7 @@ export const useWorkStore = defineStore("work", () => {
     loadJobs,
     loadMeta,
     loadStatus,
+    resyncRealtime,
     applyStatusSnapshot,
     scheduleLoadJobs,
     applyRealtimeProgress,

@@ -47,13 +47,17 @@ export function headerUserFromExpress(req: Request): string {
       /* fall through */
     }
   }
-  return (req.get("X-Flow-User") || "").trim().replace(/^@/, "");
+  return (
+    (req.get("X-Flow-User") || "").trim() ||
+    String(req.query.u || req.query.user || "").trim()
+  ).replace(/^@/, "");
 }
 
 export function headerProjectFromExpress(req: Request): string {
   return (
     (req.get("X-Flow-Project") || "").trim() ||
-    String(req.query.project || "").trim()
+    String(req.query.project || "").trim() ||
+    String(req.query.p || "").trim()
   );
 }
 

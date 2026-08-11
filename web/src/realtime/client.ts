@@ -1,5 +1,6 @@
 import { API } from "@/api/endpoints";
-import { getAccessToken, loadPersistedAuth } from "@/api/tokenStorage";
+import { refreshAccessToken } from "@/api/client";
+import { getAccessExpiresAt, getAccessToken, loadPersistedAuth } from "@/api/tokenStorage";
 
 export type RealtimeStatus = {
   type: "status";
@@ -107,115 +108,181 @@ type Handlers = {
   onError?: () => void;
 };
 
-/**
- * SSE listen channel — replaces setInterval polling of /api/status + /api/jobs.
- * Auto-reconnects (browser EventSource default).
- */
-export function connectRealtime(handlers: Handlers): () => void {
+function eventsUrl(): string {
   const persisted = loadPersistedAuth();
   const qs = new URLSearchParams();
   if (persisted.username) qs.set("u", persisted.username);
   if (persisted.projectId) qs.set("p", persisted.projectId);
   const access = getAccessToken();
   if (access) qs.set("access_token", access);
-  const url = `${API.events}${qs.toString() ? `?${qs}` : ""}`;
+  return `${API.events}${qs.toString() ? `?${qs}` : ""}`;
+}
 
-  const es = new EventSource(url);
+async function ensureFreshAccessToken(): Promise<void> {
+  const exp = getAccessExpiresAt();
+  if (!getAccessToken() || (exp && exp < Date.now() + 20_000)) {
+    await refreshAccessToken().catch(() => false);
+  }
+}
 
-  es.addEventListener("open", () => handlers.onOpen?.());
-  es.onerror = () => handlers.onError?.();
+/**
+ * SSE listen channel with explicit reconnect (tab close, mobile sleep, token expiry).
+ * EventSource's built-in retry keeps a stale access_token in the URL.
+ */
+export function connectRealtime(handlers: Handlers): () => void {
+  let stopped = false;
+  let es: EventSource | null = null;
+  let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+  let attempt = 0;
+  let connecting = false;
 
-  es.addEventListener("status", (e) => {
+  const bind = (source: EventSource) => {
+    source.addEventListener("open", () => {
+      attempt = 0;
+      handlers.onOpen?.();
+    });
+    source.onerror = () => {
+      handlers.onError?.();
+      source.close();
+      if (es === source) es = null;
+      scheduleReconnect();
+    };
+    source.addEventListener("status", (e) => {
+      try {
+        handlers.onStatus?.(JSON.parse((e as MessageEvent).data) as RealtimeStatus);
+      } catch {
+        /* ignore */
+      }
+    });
+    source.addEventListener("progress", (e) => {
+      try {
+        handlers.onProgress?.(
+          JSON.parse((e as MessageEvent).data) as RealtimeProgress,
+        );
+      } catch {
+        /* ignore */
+      }
+    });
+    source.addEventListener("jobs", (e) => {
+      try {
+        handlers.onJobs?.(JSON.parse((e as MessageEvent).data) as RealtimeJobs);
+      } catch {
+        /* ignore */
+      }
+    });
+    source.addEventListener("job", (e) => {
+      try {
+        handlers.onJob?.(JSON.parse((e as MessageEvent).data) as RealtimeJob);
+      } catch {
+        /* ignore */
+      }
+    });
+    source.addEventListener("chat", (e) => {
+      try {
+        handlers.onChat?.(JSON.parse((e as MessageEvent).data) as RealtimeChat);
+      } catch {
+        /* ignore */
+      }
+    });
+    source.addEventListener("ba_message", (e) => {
+      try {
+        handlers.onBaMessage?.(
+          JSON.parse((e as MessageEvent).data) as RealtimeBaMessage,
+        );
+      } catch {
+        /* ignore */
+      }
+    });
+    source.addEventListener("ba_delta", (e) => {
+      try {
+        handlers.onBaDelta?.(
+          JSON.parse((e as MessageEvent).data) as RealtimeBaDelta,
+        );
+      } catch {
+        /* ignore */
+      }
+    });
+    source.addEventListener("ba_done", (e) => {
+      try {
+        handlers.onBaDone?.(JSON.parse((e as MessageEvent).data) as RealtimeBaDone);
+      } catch {
+        /* ignore */
+      }
+    });
+    source.addEventListener("ba_error", (e) => {
+      try {
+        handlers.onBaError?.(
+          JSON.parse((e as MessageEvent).data) as RealtimeBaError,
+        );
+      } catch {
+        /* ignore */
+      }
+    });
+    source.addEventListener("ba_progress", (e) => {
+      try {
+        handlers.onBaProgress?.(
+          JSON.parse((e as MessageEvent).data) as RealtimeBaProgress,
+        );
+      } catch {
+        /* ignore */
+      }
+    });
+  };
+
+  const connect = async () => {
+    if (stopped || connecting) return;
+    connecting = true;
     try {
-      const data = JSON.parse((e as MessageEvent).data) as RealtimeStatus;
-      handlers.onStatus?.(data);
-    } catch {
-      /* ignore */
+      await ensureFreshAccessToken();
+      if (stopped) return;
+      es?.close();
+      es = new EventSource(eventsUrl());
+      bind(es);
+    } finally {
+      connecting = false;
     }
-  });
+  };
 
-  es.addEventListener("progress", (e) => {
-    try {
-      const data = JSON.parse((e as MessageEvent).data) as RealtimeProgress;
-      handlers.onProgress?.(data);
-    } catch {
-      /* ignore */
-    }
-  });
+  const scheduleReconnect = () => {
+    if (stopped || reconnectTimer) return;
+    const delay = Math.min(800 * 2 ** attempt, 12_000);
+    attempt += 1;
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = undefined;
+      void connect();
+    }, delay);
+  };
 
-  es.addEventListener("jobs", (e) => {
-    try {
-      const data = JSON.parse((e as MessageEvent).data) as RealtimeJobs;
-      handlers.onJobs?.(data);
-    } catch {
-      /* ignore */
+  const wake = () => {
+    if (stopped) return;
+    if (document.visibilityState === "hidden") return;
+    if (!es || es.readyState === EventSource.CLOSED) {
+      if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = undefined;
+      }
+      attempt = 0;
+      void connect();
+      return;
     }
-  });
+    if (es.readyState === EventSource.OPEN) {
+      handlers.onOpen?.();
+    }
+  };
 
-  es.addEventListener("job", (e) => {
-    try {
-      const data = JSON.parse((e as MessageEvent).data) as RealtimeJob;
-      handlers.onJob?.(data);
-    } catch {
-      /* ignore */
-    }
-  });
+  document.addEventListener("visibilitychange", wake);
+  window.addEventListener("online", wake);
+  window.addEventListener("pageshow", wake);
 
-  es.addEventListener("chat", (e) => {
-    try {
-      const data = JSON.parse((e as MessageEvent).data) as RealtimeChat;
-      handlers.onChat?.(data);
-    } catch {
-      /* ignore */
-    }
-  });
-
-  es.addEventListener("ba_message", (e) => {
-    try {
-      const data = JSON.parse((e as MessageEvent).data) as RealtimeBaMessage;
-      handlers.onBaMessage?.(data);
-    } catch {
-      /* ignore */
-    }
-  });
-
-  es.addEventListener("ba_delta", (e) => {
-    try {
-      const data = JSON.parse((e as MessageEvent).data) as RealtimeBaDelta;
-      handlers.onBaDelta?.(data);
-    } catch {
-      /* ignore */
-    }
-  });
-
-  es.addEventListener("ba_done", (e) => {
-    try {
-      const data = JSON.parse((e as MessageEvent).data) as RealtimeBaDone;
-      handlers.onBaDone?.(data);
-    } catch {
-      /* ignore */
-    }
-  });
-
-  es.addEventListener("ba_error", (e) => {
-    try {
-      const data = JSON.parse((e as MessageEvent).data) as RealtimeBaError;
-      handlers.onBaError?.(data);
-    } catch {
-      /* ignore */
-    }
-  });
-
-  es.addEventListener("ba_progress", (e) => {
-    try {
-      const data = JSON.parse((e as MessageEvent).data) as RealtimeBaProgress;
-      handlers.onBaProgress?.(data);
-    } catch {
-      /* ignore */
-    }
-  });
+  void connect();
 
   return () => {
-    es.close();
+    stopped = true;
+    if (reconnectTimer) clearTimeout(reconnectTimer);
+    document.removeEventListener("visibilitychange", wake);
+    window.removeEventListener("online", wake);
+    window.removeEventListener("pageshow", wake);
+    es?.close();
+    es = null;
   };
 }
