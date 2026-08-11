@@ -10,3 +10,4 @@ scripts/.pids
 /project/*
 !/project/.gitkeep
 .vscode/
+graphify-out/
