@@ -49,6 +49,55 @@ export type RealtimeEvent =
       type: "chat";
       jobId: string;
       message?: ChatMessageEvent;
+    }
+  | {
+      type: "ba_message";
+      userId: string;
+      threadId: string;
+      message: {
+        id: string;
+        threadId: string;
+        role: "user" | "assistant" | "system";
+        content: string;
+        createdAt: string;
+      };
+    }
+  | {
+      type: "ba_delta";
+      userId: string;
+      threadId: string;
+      messageId: string;
+      delta: string;
+    }
+  | {
+      type: "ba_done";
+      userId: string;
+      threadId: string;
+      messageId: string;
+      content: string;
+    }
+  | {
+      type: "ba_error";
+      userId: string;
+      threadId: string;
+      messageId?: string;
+      error: string;
+    }
+  | {
+      type: "ba_progress";
+      userId: string;
+      threadId: string;
+      messageId?: string;
+      /** Machine step id for UI timeline */
+      step:
+        | "pull"
+        | "start"
+        | "read"
+        | "write"
+        | "done"
+        | "error";
+      label: string;
+      detail?: string;
     };
 
 type Listener = (event: RealtimeEvent) => void;

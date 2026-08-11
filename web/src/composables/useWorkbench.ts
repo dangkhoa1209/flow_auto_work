@@ -29,6 +29,8 @@ export function useWorkbench() {
     loading,
     jobLoading,
     labels,
+    projectMilestones,
+    milestoneFilter,
     agentTyping,
   } = storeToRefs(work);
 
@@ -40,7 +42,6 @@ export function useWorkbench() {
   const notesSaving = ref(false);
   const notesDraft = ref("");
   const requireDocsFirst = ref(false);
-  const milestoneFilter = ref<string>("all");
   const openIidDraft = ref("");
   const mobilePane = ref<MobilePane>("tasks");
   const standardsOpen = ref(false);
@@ -80,12 +81,16 @@ export function useWorkbench() {
   const isCurrentAdhoc = computed(() => isAdhocJob(currentJob.value));
 
   const milestones = computed(() => {
-    const set = new Set<string>();
+    const set = new Set<string>(projectMilestones.value);
     for (const t of tasks.value) {
       const title = t.milestone?.title?.trim();
       if (title) set.add(title);
     }
-    return ["all", ...Array.from(set).sort(), "__none__"];
+    const selected = milestoneFilter.value?.trim();
+    if (selected && selected !== "all" && selected !== "__none__") {
+      set.add(selected);
+    }
+    return ["all", ...Array.from(set).sort((a, b) => a.localeCompare(b)), "__none__"];
   });
 
   const filteredTasks = computed(() => {
@@ -1014,6 +1019,7 @@ export function useWorkbench() {
     notesDraft,
     requireDocsFirst,
     milestoneFilter,
+    setMilestoneFilter: work.setMilestoneFilter,
     openIidDraft,
     mobilePane,
     backToMobileList,

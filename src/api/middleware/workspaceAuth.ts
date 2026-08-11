@@ -17,6 +17,11 @@ function isPublicApiPath(path: string): boolean {
   if (path === "/projects" || path.startsWith("/projects/")) return true;
   if (path.startsWith("/gitlab/")) return true;
   if (path.startsWith("/fs/")) return true;
+  // QC Automation — gated by requireQc on qcRoutes (no GitLab workspace)
+  if (path === "/qc" || path.startsWith("/qc/")) return true;
+  // BA Chat + Admin catalog — gated by requireBa / requireAdmin
+  if (path === "/ba" || path.startsWith("/ba/")) return true;
+  if (path === "/admin" || path.startsWith("/admin/")) return true;
   // Google OAuth browser redirect (no Bearer / project headers)
   if (path === "/google/callback") return true;
   return false;
@@ -42,13 +47,17 @@ export function headerUserFromExpress(req: Request): string {
       /* fall through */
     }
   }
-  return (req.get("X-Flow-User") || "").trim().replace(/^@/, "");
+  return (
+    (req.get("X-Flow-User") || "").trim() ||
+    String(req.query.u || req.query.user || "").trim()
+  ).replace(/^@/, "");
 }
 
 export function headerProjectFromExpress(req: Request): string {
   return (
     (req.get("X-Flow-Project") || "").trim() ||
-    String(req.query.project || "").trim()
+    String(req.query.project || "").trim() ||
+    String(req.query.p || "").trim()
   );
 }
 

@@ -33,7 +33,7 @@ export function setupSse(
   res: Response,
   opts: SseSetupOptions = {},
 ): SseClient {
-  const heartbeatMs = opts.heartbeatMs ?? 20_000;
+  const heartbeatMs = opts.heartbeatMs ?? 15_000;
   const heartbeatEvent = opts.heartbeatEvent ?? "ping";
 
   res.status(200);
@@ -79,7 +79,17 @@ export function setupSse(
 
   if (heartbeatMs > 0) {
     heartbeat = setInterval(() => {
-      if (!send(heartbeatEvent, { at: new Date().toISOString() })) {
+      if (closed || res.writableEnded) {
+        close();
+        return;
+      }
+      try {
+        // Comment keep-alive (proxies) + named ping (client)
+        res.write(`: ping ${Date.now()}\n\n`);
+        if (!send(heartbeatEvent, { at: new Date().toISOString() })) {
+          close();
+        }
+      } catch {
         close();
       }
     }, heartbeatMs);

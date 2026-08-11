@@ -732,6 +732,42 @@ export async function listProjectLabels(
   return labels;
 }
 
+/** Active + closed project milestones (titles for Work filter). */
+export async function listProjectMilestones(
+  projectIdOrPath?: number | string,
+): Promise<Array<{ id: number; title: string; state?: string }>> {
+  const project = encodeURIComponent(
+    String(projectIdOrPath ?? resolveGitlabProjectPath()),
+  );
+  const milestones: Array<{ id: number; title: string; state?: string }> = [];
+  let page = 1;
+  while (page <= 10) {
+    const res = await gitlabFetch(
+      "GET",
+      `/projects/${project}/milestones?state=all&per_page=100&page=${page}`,
+    );
+    if (!res.ok) break;
+    const batch = (await res.json()) as Array<{
+      id: number;
+      title: string;
+      state?: string;
+    }>;
+    if (!batch.length) break;
+    milestones.push(
+      ...batch
+        .map((m) => ({
+          id: m.id,
+          title: (m.title || "").trim(),
+          state: m.state,
+        }))
+        .filter((m) => m.title),
+    );
+    if (batch.length < 100) break;
+    page += 1;
+  }
+  return milestones;
+}
+
 export async function listProjectMembers(): Promise<
   Array<{ id: number; username: string; name: string }>
 > {

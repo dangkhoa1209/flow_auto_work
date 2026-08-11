@@ -1291,8 +1291,683 @@ code {
   background: linear-gradient(135deg, #8a6bff, var(--app-accent));
   flex-shrink: 0;
 }
+.faw-avatar--md {
+  width: 22px;
+  height: 22px;
+}
 
-/* —— Work layout —— */
+/* —— Mobile topbar adaptations —— */
+.faw-brand__logo--mark {
+  display: none;
+}
+@media (max-width: 1023px) {
+  .faw-topbar--work {
+    height: 48px;
+    gap: 6px;
+    padding: 0 8px 0 10px;
+  }
+  .faw-topbar--work .faw-brand__logo--full {
+    display: none;
+  }
+  .faw-topbar--work .faw-brand__logo--mark {
+    display: block;
+    height: 24px;
+    width: 24px;
+    max-width: 24px;
+    border-radius: 6px;
+  }
+  .faw-topbar--work .faw-topbar__spacer,
+  .faw-topbar--work .faw-seg,
+  .faw-topbar--work .faw-topbar__right {
+    display: none !important;
+  }
+}
+
+.faw-crumb-tap {
+  flex: 1;
+  min-width: 0;
+  max-width: none;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid var(--app-border);
+  background: var(--app-panel-soft);
+  color: var(--app-ink);
+  cursor: pointer;
+  text-align: left;
+}
+.faw-crumb-tap:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.faw-crumb-tap:active:not(:disabled) {
+  background: #1c212c;
+}
+.faw-crumb-tap__flow {
+  font-size: 13px;
+  font-weight: 650;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  flex: 1;
+}
+.faw-crumb-tap__path {
+  display: none;
+}
+.faw-crumb-tap__chev {
+  font-size: 10px;
+  color: var(--app-faint);
+  flex-shrink: 0;
+}
+
+.faw-status-avatar {
+  position: relative;
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  border: 1px solid var(--app-border);
+  background: var(--app-panel-soft);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  padding: 0;
+  cursor: pointer;
+}
+.faw-status-avatar__dot {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 1.5px solid var(--app-panel);
+  background: var(--app-faint);
+}
+.faw-status-avatar__dot.wip {
+  background: var(--wip);
+  box-shadow: 0 0 0 2px rgba(240, 180, 41, 0.25);
+}
+.faw-status-avatar__dot.idle {
+  background: #6b7280;
+}
+
+/* —— Mobile bottom nav —— */
+.faw-mnav {
+  position: fixed;
+  inset-inline: 0;
+  bottom: 0;
+  z-index: 40;
+  background: #1a1d27;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.35);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+.faw-mnav__grid {
+  display: grid;
+  height: 3.5rem;
+  padding: 0 4px;
+}
+.faw-mnav__tab {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  height: 100%;
+  border: 0;
+  background: transparent;
+  color: rgba(158, 166, 182, 0.48);
+  cursor: pointer;
+  padding: 4px 2px;
+}
+.faw-mnav__tab.is-active {
+  color: var(--done);
+}
+.faw-mnav__icon {
+  font-size: 18px;
+  line-height: 1;
+}
+.faw-mnav__label {
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.01em;
+}
+
+/* —— Mobile project sheet —— */
+.faw-project-sheet-root .ant-drawer-content {
+  background: #151821 !important;
+  border-radius: 16px 16px 0 0 !important;
+  overflow: hidden;
+}
+.faw-project-sheet-root .ant-drawer-body {
+  background: #151821;
+}
+.faw-project-sheet__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 16px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.faw-project-sheet__eyebrow {
+  margin: 0;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--app-faint);
+  font-weight: 700;
+}
+.faw-project-sheet__title {
+  margin: 2px 0 0;
+  font-size: 16px;
+  font-weight: 650;
+  color: var(--app-ink);
+}
+.faw-project-sheet__list {
+  max-height: min(420px, 55vh);
+  overflow-y: auto;
+  padding: 8px;
+}
+.faw-project-sheet__item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--app-ink);
+  cursor: pointer;
+  margin-bottom: 4px;
+}
+.faw-project-sheet__item:active {
+  background: rgba(255, 255, 255, 0.04);
+}
+.faw-project-sheet__item.is-active {
+  background: rgba(52, 211, 153, 0.1);
+  border-color: rgba(52, 211, 153, 0.28);
+}
+.faw-project-sheet__name {
+  font-size: 14px;
+  font-weight: 650;
+}
+.faw-project-sheet__repo {
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--app-faint);
+}
+.faw-project-sheet__check {
+  color: var(--done);
+  flex-shrink: 0;
+}
+
+/* —— Mobile detail chrome —— */
+.faw-m-detail-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 52px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--app-border);
+  background: var(--app-panel);
+}
+.faw-m-detail-bar__back {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  border: 1px solid var(--app-border);
+  background: var(--app-panel-soft);
+  color: var(--app-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  cursor: pointer;
+  padding: 0;
+}
+.faw-m-detail-bar__back:active {
+  color: var(--app-ink);
+  background: #1c212c;
+}
+.faw-m-detail-bar__title {
+  flex: 1;
+  min-width: 0;
+}
+.faw-m-detail-bar__name {
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--app-ink);
+  line-height: 1.25;
+}
+.faw-m-detail-bar__meta {
+  margin-top: 1px;
+  font-size: 11px;
+  color: var(--app-faint);
+  line-height: 1.2;
+}
+.faw-m-seg {
+  display: flex;
+  flex-shrink: 0;
+  padding: 2px;
+  gap: 2px;
+  border-radius: 8px;
+  background: var(--app-panel-soft);
+  border: 1px solid var(--app-border);
+}
+.faw-m-seg__btn {
+  height: 28px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--app-faint);
+  font: 600 11px var(--font-ui);
+  cursor: pointer;
+}
+.faw-m-seg__btn.is-active {
+  background: #1f2736;
+  color: var(--app-accent);
+}
+
+/* —— Mobile action dock —— */
+.faw-m-dock {
+  position: fixed;
+  inset-inline: 0;
+  z-index: 45;
+  bottom: calc(3.5rem + env(safe-area-inset-bottom, 0px));
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: #151821;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 -6px 18px rgba(0, 0, 0, 0.28);
+}
+.faw-m-dock__pair {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  gap: 6px;
+}
+/* Ant tooltip/popconfirm wrappers must share width */
+.faw-m-dock__pair > * {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+}
+.faw-m-dock__pair .faw-m-btn {
+  flex: 1;
+  width: 100%;
+}
+.faw-m-btn {
+  height: 32px;
+  border-radius: 6px;
+  font: 650 11.5px var(--font-ui);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  cursor: pointer;
+  padding: 0 10px;
+  white-space: nowrap;
+  touch-action: manipulation;
+}
+.faw-m-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.faw-m-btn--primary {
+  border: 0;
+  background: var(--done);
+  color: #04150e;
+}
+.faw-m-btn--primary:active:not(:disabled) {
+  filter: brightness(1.06);
+}
+.faw-m-btn--handoff {
+  border: 1px solid var(--app-border);
+  background: transparent;
+  color: var(--app-muted);
+}
+.faw-m-btn--handoff:active:not(:disabled) {
+  border-color: #333a48;
+  color: var(--app-ink);
+  background: rgba(255, 255, 255, 0.04);
+}
+.faw-m-btn--docs {
+  flex: 0 0 auto;
+  padding: 0 10px;
+  border: 0;
+  background: #6d28d9;
+  color: #fff;
+}
+.faw-m-btn--more {
+  width: 32px;
+  height: 32px;
+  flex: none;
+  padding: 0;
+  border: 1px solid var(--app-border);
+  background: transparent;
+  color: var(--app-muted);
+  font-size: 14px;
+}
+.faw-m-btn--more:active {
+  color: var(--app-ink);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+/* Mobile Chat | Logs tabs */
+.faw-m-console-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--app-border);
+  background: var(--app-panel);
+}
+.faw-m-console-tabs__btn {
+  flex: 1;
+  height: 32px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--app-faint);
+  font: 600 12px var(--font-ui);
+  cursor: pointer;
+}
+.faw-m-console-tabs__btn.is-active {
+  background: var(--app-panel-soft);
+  border-color: var(--app-border);
+  color: var(--app-accent);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+.faw-m-console-tabs__btn:active:not(.is-active) {
+  color: var(--app-muted);
+}
+
+/* —— Mobile App shell density (Work/Handoff/Settings only; NOT /ba) —— */
+@media (max-width: 1023px) {
+  /* Shared control height */
+  .faw-app-shell {
+    --faw-ctrl-h: 28px;
+    --faw-ctrl-fs: 11px;
+    --faw-ctrl-r: 6px;
+  }
+
+  .faw-app-shell .faw-col-head {
+    padding: 6px 10px;
+    gap: 6px;
+  }
+  .faw-app-shell .faw-col-head h2 {
+    font-size: 10px;
+  }
+  .faw-app-shell .faw-count {
+    font-size: 9px;
+    padding: 0 5px;
+  }
+  .faw-app-shell .faw-icon-btn {
+    width: 24px;
+    height: 24px;
+    font-size: 11px;
+  }
+
+  .faw-app-shell .faw-filters {
+    padding: 6px 8px;
+    gap: 5px;
+  }
+  .faw-app-shell .faw-filters__row {
+    gap: 5px;
+  }
+  .faw-app-shell .faw-field {
+    min-height: var(--faw-ctrl-h);
+    padding: 0 6px;
+    border-radius: var(--faw-ctrl-r);
+  }
+  .faw-app-shell .faw-field--iid {
+    max-width: 64px;
+  }
+  .faw-app-shell .faw-input-ghost.ant-input,
+  .faw-app-shell .faw-input-ghost .ant-input,
+  .faw-app-shell .faw-select-ghost .ant-select-selector {
+    font-size: var(--faw-ctrl-fs) !important;
+    min-height: 24px !important;
+  }
+  .faw-app-shell .faw-filters__row .faw-btn,
+  .faw-app-shell .faw-filters__row .faw-btn--run,
+  .faw-app-shell .faw-filters__row .faw-btn--danger {
+    height: var(--faw-ctrl-h);
+    padding: 0 8px;
+    border-radius: var(--faw-ctrl-r);
+    font-size: var(--faw-ctrl-fs);
+    font-weight: 650;
+  }
+  .faw-app-shell .faw-btn--run {
+    flex: 1 1 0 !important;
+    min-width: 0 !important;
+    max-width: none !important;
+  }
+  .faw-app-shell .faw-filters__row .faw-btn[style*="flex: 1"] {
+    flex: 1 1 0 !important;
+  }
+
+  .faw-app-shell .faw-group-label {
+    padding: 6px 8px 3px;
+    font-size: 9.5px;
+  }
+  .faw-app-shell .faw-task-row {
+    gap: 6px;
+    padding: 5px 8px 5px 5px;
+  }
+  .faw-app-shell .faw-task-row__id {
+    font-size: 10px;
+  }
+  .faw-app-shell .faw-task-row__title {
+    font-size: 11.5px;
+    margin: 1px 0 3px;
+    line-height: 1.3;
+  }
+  .faw-app-shell .faw-chip {
+    font-size: 9px;
+    padding: 1px 5px;
+  }
+  .faw-app-shell .faw-job-row {
+    gap: 6px;
+    padding: 4px 8px;
+  }
+  .faw-app-shell .faw-job-id {
+    font-size: 10px !important;
+  }
+  .faw-app-shell .faw-job-t {
+    font-size: 10.5px;
+  }
+  .faw-app-shell .faw-job-tag {
+    font-size: 8.5px;
+    max-width: 3.5rem;
+  }
+
+  .faw-app-shell .faw-issue-scroll {
+    padding: 10px 10px 20px;
+  }
+  .faw-app-shell .faw-issue-head {
+    display: none;
+  }
+  .faw-app-shell .meta-line {
+    font-size: 10.5px;
+    margin-bottom: 8px;
+  }
+  .faw-app-shell .meta-line__detail {
+    display: none;
+  }
+  .faw-app-shell .faw-ctx-tags {
+    gap: 4px;
+    margin-bottom: 10px;
+  }
+  .faw-app-shell .faw-ctx-tags .faw-chip,
+  .faw-app-shell .faw-pill {
+    font-size: 10px;
+    padding: 2px 7px;
+  }
+  .faw-app-shell .faw-issue-body,
+  .faw-app-shell .faw-issue-body .chat-md-rich {
+    font-size: 12px;
+    line-height: 1.5;
+  }
+
+  .faw-app-shell .faw-m-detail-bar {
+    min-height: 40px;
+    padding: 4px 8px;
+    gap: 6px;
+  }
+  .faw-app-shell .faw-m-detail-bar__back {
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    font-size: 12px;
+  }
+  .faw-app-shell .faw-m-detail-bar__name {
+    font-size: 12px;
+  }
+  .faw-app-shell .faw-m-detail-bar__meta {
+    font-size: 10px;
+  }
+  .faw-app-shell .faw-m-seg {
+    padding: 2px;
+    border-radius: 6px;
+  }
+  .faw-app-shell .faw-m-seg__btn {
+    height: 24px;
+    padding: 0 8px;
+    font-size: 10px;
+    border-radius: 4px;
+  }
+
+  .faw-app-shell .faw-m-console-tabs {
+    padding: 4px 8px;
+  }
+  .faw-app-shell .faw-m-console-tabs__btn {
+    height: 26px;
+    font-size: 10.5px;
+    border-radius: 6px;
+  }
+
+  .faw-app-shell .faw-console-head {
+    padding: 6px 10px;
+  }
+  .faw-app-shell .faw-console-head__title h2 {
+    font-size: 11px;
+  }
+  .faw-app-shell .faw-console-head__win {
+    font-size: 9px;
+  }
+  .faw-app-shell .faw-console-actions .faw-btn,
+  .faw-app-shell .faw-console-actions .ant-btn {
+    height: var(--faw-ctrl-h) !important;
+    padding: 0 8px !important;
+    font-size: var(--faw-ctrl-fs) !important;
+    border-radius: var(--faw-ctrl-r) !important;
+  }
+  .faw-app-shell .faw-console-scroll {
+    padding: 8px;
+    gap: 8px;
+  }
+  .faw-app-shell .faw-msg__who {
+    font-size: 9px;
+    margin-bottom: 2px;
+  }
+  .faw-app-shell .faw-msg__bubble {
+    padding: 7px 9px;
+    font-size: 11.5px;
+    line-height: 1.45;
+  }
+  .faw-app-shell .faw-console-input {
+    padding: 8px;
+  }
+  .faw-app-shell .faw-console-input .ant-input,
+  .faw-app-shell .faw-console-input textarea.ant-input {
+    font-size: 12px !important;
+    padding: 6px 8px !important;
+  }
+  .faw-app-shell .faw-console-input__row {
+    gap: 5px;
+    margin-top: 5px;
+  }
+  .faw-app-shell .faw-console-input__row .faw-btn--send,
+  .faw-app-shell .faw-console-input__row .faw-btn--ask {
+    height: var(--faw-ctrl-h);
+    padding: 0 8px;
+    border-radius: var(--faw-ctrl-r);
+    font-size: var(--faw-ctrl-fs);
+  }
+
+  .faw-app-shell .faw-m-dock {
+    gap: 5px;
+    padding: 5px 8px;
+  }
+  .faw-app-shell .faw-m-dock__pair {
+    gap: 5px;
+  }
+  .faw-app-shell .faw-m-btn {
+    height: var(--faw-ctrl-h);
+    border-radius: var(--faw-ctrl-r);
+    font: 650 var(--faw-ctrl-fs) var(--font-ui);
+    padding: 0 8px;
+  }
+  .faw-app-shell .faw-m-btn--more {
+    width: var(--faw-ctrl-h);
+    height: var(--faw-ctrl-h);
+    font-size: 13px;
+  }
+
+  .faw-app-shell .faw-topbar--work {
+    height: 48px;
+    gap: 6px;
+    padding: 0 8px 0 10px;
+  }
+  .faw-app-shell .faw-topbar--work .faw-brand__logo--mark {
+    height: 24px;
+    width: 24px;
+    max-width: 24px;
+    border-radius: 6px;
+  }
+  .faw-app-shell .faw-crumb-tap {
+    height: 30px;
+    padding: 0 8px;
+    border-radius: 6px;
+  }
+  .faw-app-shell .faw-crumb-tap__flow {
+    font-size: 12px;
+  }
+  .faw-app-shell .faw-status-avatar {
+    width: 30px;
+    height: 30px;
+  }
+  .faw-app-shell .faw-avatar--md {
+    width: 18px;
+    height: 18px;
+  }
+
+  .faw-app-shell .faw-mnav__grid {
+    height: 3.25rem;
+  }
+  .faw-app-shell .faw-mnav__icon {
+    font-size: 16px;
+  }
+  .faw-app-shell .faw-mnav__label {
+    font-size: 10px;
+  }
+
+  .faw-app-shell .faw-m-dock {
+    bottom: calc(3.25rem + env(safe-area-inset-bottom, 0px));
+  }
+}
 .faw-work {
   background: var(--app-bg);
 }
@@ -1461,15 +2136,27 @@ code {
 }
 .faw-console-input__row {
   display: flex;
-  gap: 8px;
-  margin-top: 8px;
+  gap: 6px;
+  margin-top: 6px;
 }
-.faw-console-input__row .faw-btn--send {
+.faw-console-input__row .faw-btn--send,
+.faw-console-input__row .faw-btn--ask {
   flex: 1;
+  min-width: 0;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 6px;
+  font-size: 11.5px;
 }
-.faw-console-input__row .faw-btn:not(.faw-btn--send) {
-  flex: none;
-  padding: 8px 12px;
+.faw-console-input__row .faw-btn--ask {
+  background: transparent;
+  border: 1px solid var(--app-border);
+  color: var(--app-muted);
+  font-weight: 600;
+}
+.faw-console-input__row .faw-btn--ask:hover:not(:disabled) {
+  border-color: #333a48;
+  color: var(--app-ink);
 }
 
 .chat-md-rich :where(table th) {
@@ -1752,3 +2439,449 @@ code {
     border-radius: 1rem 1rem 0 0;
   }
 }
+/* —— Handoff mobile —— */
+.faw-handoff-card {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 12px;
+  margin-bottom: 8px;
+  border-radius: 10px;
+  border: 1px solid var(--app-border);
+  background: var(--app-panel);
+  color: inherit;
+  cursor: pointer;
+}
+.faw-handoff-card:active {
+  border-color: rgba(91, 141, 239, 0.5);
+  background: rgba(91, 141, 239, 0.08);
+}
+.faw-handoff-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+}
+.faw-handoff-actions .faw-m-btn {
+  flex: 1;
+  min-width: 0;
+}
+.faw-handoff-form .ant-form-item {
+  margin-bottom: 12px;
+}
+
+/* —— Settings mobile —— */
+.faw-settings__inner {
+  max-width: 48rem;
+  margin: 0 auto;
+  padding: 16px 16px 24px;
+}
+.faw-settings__head {
+  margin-bottom: 12px;
+}
+.faw-settings__title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 650;
+  color: var(--app-ink);
+}
+.faw-settings__tabs {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  margin: 0 -16px 14px;
+  padding: 0 16px 4px;
+}
+.faw-settings__tabs::-webkit-scrollbar {
+  display: none;
+}
+.faw-settings__tab {
+  flex: none;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--app-border);
+  background: var(--app-panel);
+  color: var(--app-muted);
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.faw-settings__tab:hover {
+  color: var(--app-ink);
+  border-color: #333a48;
+  text-decoration: none;
+}
+.faw-settings__tab.is-active {
+  border-color: var(--app-accent);
+  color: var(--app-accent);
+  background: var(--accent-dim, rgba(91, 141, 239, 0.14));
+}
+.faw-settings__panel {
+  border: 1px solid var(--app-border);
+  border-radius: 12px;
+  background: var(--app-panel);
+  padding: 14px;
+  min-width: 0;
+  overflow-x: hidden;
+}
+.faw-project-card {
+  border: 1px solid var(--app-border);
+  border-radius: 10px;
+  background: var(--app-panel-soft);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.faw-project-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  font-size: 11px;
+  color: var(--app-faint);
+}
+.faw-project-card__meta b {
+  color: var(--app-muted);
+  font-weight: 650;
+}
+.faw-project-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.faw-settings-desc {
+  overflow-x: auto;
+}
+.faw-settings-desc .ant-descriptions-item-label,
+.faw-settings-desc .ant-descriptions-item-content {
+  word-break: break-word;
+}
+
+@media (max-width: 1023px) {
+  .faw-settings__inner {
+    padding: 12px 12px 20px;
+  }
+  .faw-settings__tabs {
+    margin-left: -12px;
+    margin-right: -12px;
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+  .faw-settings__panel {
+    padding: 12px;
+    border-radius: 10px;
+  }
+  .faw-settings-modal .ant-modal {
+    max-width: calc(100vw - 24px) !important;
+    margin: 12px auto !important;
+    padding-bottom: 0;
+  }
+  .faw-settings-modal .ant-modal-content {
+    border-radius: 12px;
+  }
+  .faw-wizard-steps.ant-steps {
+    overflow-x: auto;
+  }
+  .faw-wizard-steps .ant-steps-item-title {
+    font-size: 11px !important;
+  }
+}
+
+/* —— BA Project Chat (scoped to /ba only — do not reuse on Work) —— */
+.faw-ba-shell {
+  position: relative;
+}
+.faw-topbar--ba {
+  gap: 10px;
+}
+.faw-topbar--ba .faw-brand__logo--mark {
+  display: none;
+}
+.faw-ba-menu-btn {
+  flex-shrink: 0;
+}
+.faw-ba-top-right {
+  display: flex !important;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.faw-ba-idle {
+  min-width: 0;
+  max-width: 14rem;
+}
+.faw-ba-idle__text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.faw-ba-user__name {
+  max-width: 7rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.faw-ba {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+.faw-ba-side {
+  width: 280px;
+  flex: none;
+  border-right: 1px solid var(--app-border);
+  background: var(--app-panel);
+}
+.faw-ba-filters {
+  gap: 8px;
+}
+.faw-ba-label {
+  display: block;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--app-faint);
+}
+.faw-ba-select {
+  width: 100%;
+}
+.faw-ba-select .ant-select-selector {
+  background: var(--app-panel-soft) !important;
+  border-color: var(--app-border) !important;
+  border-radius: 6px !important;
+  color: var(--app-ink) !important;
+}
+.faw-ba-new {
+  width: 100%;
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 32px;
+  border-radius: 6px;
+}
+.faw-ba-thread {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  text-align: left;
+  padding: 8px 10px;
+  border: 0;
+  border-bottom: 1px solid var(--line-soft, #1b1f29);
+  border-left: 2px solid transparent;
+  background: transparent;
+  color: var(--app-ink);
+  cursor: pointer;
+}
+.faw-ba-thread:hover {
+  background: var(--app-panel-soft);
+}
+.faw-ba-thread.active {
+  background: #161b26;
+  border-left-color: var(--app-accent);
+}
+.faw-ba-thread__main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.faw-ba-thread__title {
+  font-size: 12px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.faw-ba-thread__time {
+  font-size: 10px;
+  color: var(--app-faint);
+}
+.faw-ba-thread__del {
+  opacity: 0;
+  flex-shrink: 0;
+}
+.faw-ba-thread:hover .faw-ba-thread__del,
+.faw-ba-thread:focus-within .faw-ba-thread__del {
+  opacity: 1;
+}
+@media (hover: none) {
+  .faw-ba-thread__del {
+    opacity: 1;
+  }
+}
+
+.faw-ba-progress {
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--app-border);
+  background: var(--app-panel);
+  padding: 0 0 8px;
+}
+.faw-ba-progress.is-error .faw-ba-progress__fill {
+  background: var(--bug, #f0576b);
+}
+.faw-ba-progress__bar {
+  height: 2px;
+  background: var(--app-border);
+  overflow: hidden;
+}
+.faw-ba-progress__fill {
+  height: 100%;
+  background: var(--done, #34d399);
+  transition: width 0.25s ease;
+}
+.faw-ba-progress__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px 0;
+}
+.faw-ba-progress__live {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+.faw-ba-progress__label {
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--app-ink);
+  white-space: nowrap;
+}
+.faw-ba-progress__detail {
+  font-size: 11px;
+  color: var(--app-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.faw-ba-progress__stop {
+  flex: none;
+  height: 28px;
+  padding: 0 10px;
+  font-size: 11px;
+}
+.faw-ba-progress__steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.faw-ba-progress__chip {
+  font-size: 9.5px;
+  font-weight: 650;
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--app-border);
+  color: var(--app-faint);
+  background: transparent;
+}
+.faw-ba-progress__chip.is-done {
+  color: var(--done);
+  border-color: rgba(52, 211, 153, 0.35);
+  background: rgba(52, 211, 153, 0.1);
+}
+.faw-ba-progress__chip.is-active {
+  color: var(--app-accent);
+  border-color: rgba(91, 141, 239, 0.45);
+  background: rgba(91, 141, 239, 0.12);
+}
+
+.faw-ba-input-row {
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+.faw-ba-input-hint {
+  font-size: 10.5px;
+  color: var(--app-faint);
+  min-width: 0;
+  flex: 1;
+}
+.faw-ba-input-actions {
+  display: flex;
+  gap: 6px;
+  flex: none;
+}
+.faw-ba-input-actions .faw-btn {
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 6px;
+  font-size: 11.5px;
+}
+.faw-ba-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 35;
+  border: 0;
+  background: rgba(0, 0, 0, 0.45);
+  cursor: pointer;
+}
+
+@media (max-width: 1023px) {
+  .faw-topbar--ba {
+    height: 48px;
+    gap: 8px;
+    padding: 0 8px 0 10px;
+  }
+  .faw-topbar--ba .faw-brand__logo--full {
+    display: none;
+  }
+  .faw-topbar--ba .faw-brand__logo--mark {
+    display: block;
+    height: 24px;
+    width: 24px;
+    max-width: 24px;
+    border-radius: 6px;
+  }
+  .faw-topbar--ba .faw-seg {
+    display: none !important;
+  }
+  .faw-ba-idle {
+    max-width: 6.5rem;
+  }
+  .faw-ba-user__name {
+    display: none;
+  }
+  .faw-ba-user {
+    padding: 4px;
+  }
+  .faw-ba-side {
+    position: fixed;
+    top: 48px;
+    left: 0;
+    bottom: 0;
+    z-index: 40;
+    width: min(300px, 86vw);
+    transform: translateX(-105%);
+    transition: transform 0.2s ease;
+    box-shadow: 8px 0 24px rgba(0, 0, 0, 0.35);
+  }
+  .faw-ba-shell.is-side-open .faw-ba-side {
+    transform: translateX(0);
+  }
+  .faw-ba-progress__row {
+    padding: 8px 10px 0;
+  }
+  .faw-ba-progress__steps {
+    width: 100%;
+  }
+  .faw-ba-input-hint {
+    display: none;
+  }
+  .faw-ba-input-actions {
+    width: 100%;
+  }
+  .faw-ba-input-actions .faw-btn {
+    flex: 1;
+  }
+}
+

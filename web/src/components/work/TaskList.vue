@@ -334,8 +334,8 @@ watch(
         <button
           type="button"
           class="faw-btn"
-          :disabled="busy"
           style="flex: 1"
+          :disabled="busy"
           title="All assigned open tasks"
           @click="emit('runAll')"
         >

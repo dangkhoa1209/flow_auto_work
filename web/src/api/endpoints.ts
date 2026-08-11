@@ -16,8 +16,39 @@ export const API = {
     secrets: "/api/me/secrets",
     cursorKey: "/api/me/cursor-key",
     cursorModels: "/api/me/cursor-models",
+    qcRole: "/api/me/qc-role",
     project: (projectId: string) =>
       `/api/me/projects/${encodeURIComponent(projectId)}`,
+  },
+  qc: {
+    projects: "/api/qc/projects",
+    project: (id: string) => `/api/qc/projects/${encodeURIComponent(id)}`,
+    flows: "/api/qc/flows",
+    flow: (id: string) => `/api/qc/flows/${encodeURIComponent(id)}`,
+    testCases: "/api/qc/test-cases",
+    testCase: (id: string) => `/api/qc/test-cases/${encodeURIComponent(id)}`,
+    sampleFiles: "/api/qc/sample-files",
+    sampleFile: (id: string) =>
+      `/api/qc/sample-files/${encodeURIComponent(id)}`,
+  },
+  admin: {
+    baProjects: "/api/admin/ba-projects",
+    baProject: (id: string) =>
+      `/api/admin/ba-projects/${encodeURIComponent(id)}`,
+    baClone: (id: string) =>
+      `/api/admin/ba-projects/${encodeURIComponent(id)}/clone`,
+    baCloneStatus: (id: string) =>
+      `/api/admin/ba-projects/${encodeURIComponent(id)}/clone-status`,
+    cursorSettings: "/api/admin/settings/cursor",
+  },
+  ba: {
+    projects: "/api/ba/projects",
+    threads: "/api/ba/threads",
+    thread: (id: string) => `/api/ba/threads/${encodeURIComponent(id)}`,
+    messages: (id: string) =>
+      `/api/ba/threads/${encodeURIComponent(id)}/messages`,
+    stop: (id: string) =>
+      `/api/ba/threads/${encodeURIComponent(id)}/stop`,
   },
   projects: {
     root: "/api/projects",
@@ -101,6 +132,7 @@ export const API = {
   meta: {
     members: "/api/meta/members",
     labels: "/api/meta/labels",
+    milestones: "/api/meta/milestones",
     completionDefaults: "/api/meta/completion-defaults",
   },
   status: "/api/status",

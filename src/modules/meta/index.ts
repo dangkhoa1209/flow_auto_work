@@ -2,6 +2,7 @@ import { getConfig } from "../../config.js";
 import {
   listProjectLabels,
   listProjectMembers,
+  listProjectMilestones,
 } from "../../plugins/gitlab/client.js";
 
 export async function getCompletionDefaults() {
@@ -23,4 +24,16 @@ export async function listLabels() {
     .map((l) => (typeof l === "string" ? l : l?.name)?.trim())
     .filter((n): n is string => Boolean(n));
   return { labels };
+}
+
+export async function listMilestones() {
+  const milestones = await listProjectMilestones();
+  const titles = [
+    ...new Set(
+      milestones
+        .map((m) => m.title?.trim())
+        .filter((t): t is string => Boolean(t)),
+    ),
+  ].sort((a, b) => a.localeCompare(b));
+  return { milestones: titles };
 }

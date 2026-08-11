@@ -11,8 +11,38 @@ const router = createRouter({
       meta: { public: true },
     },
     {
+      path: "/ba",
+      component: () => import("@/layouts/BaLayout.vue"),
+      meta: { requiresBa: true },
+      children: [
+        {
+          path: "",
+          name: "ba-chat",
+          component: () => import("@/views/BaChatView.vue"),
+        },
+      ],
+    },
+    {
+      path: "/admin",
+      component: () => import("@/layouts/AdminLayout.vue"),
+      meta: { requiresAdmin: true },
+      children: [
+        {
+          path: "",
+          name: "admin",
+          component: () => import("@/views/admin/AdminProjectsView.vue"),
+        },
+        {
+          path: "cursor",
+          name: "admin-cursor",
+          component: () => import("@/views/admin/AdminCursorView.vue"),
+        },
+      ],
+    },
+    {
       path: "/",
       component: () => import("@/layouts/AppLayout.vue"),
+      meta: { requiresDev: true },
       children: [
         { path: "", redirect: "/work" },
         {
@@ -29,6 +59,12 @@ const router = createRouter({
           path: "stats",
           name: "stats",
           component: () => import("@/views/StatsView.vue"),
+        },
+        {
+          path: "qc",
+          name: "qc",
+          component: () => import("@/views/QcView.vue"),
+          meta: { requiresQc: true },
         },
         {
           path: "settings",
@@ -78,12 +114,33 @@ router.beforeEach(async (to) => {
       ) {
         return path;
       }
-      return { name: "work" };
+      return session.homeRoute;
     }
     return true;
   }
   if (!session.isLoggedIn) {
     return { name: "login", query: { redirect: to.fullPath } };
+  }
+
+  if (to.meta.requiresAdmin && !session.isAdmin) {
+    return session.homeRoute;
+  }
+  if (to.meta.requiresBa) {
+    if (!(session.isBaAudience || session.isAdmin)) {
+      return session.homeRoute;
+    }
+  }
+  if (to.meta.requiresDev) {
+    if (session.isBaAudience) {
+      return { name: "ba-chat" };
+    }
+    if (session.isAdmin && !to.path.startsWith("/settings")) {
+      // Admin should use Admin / BA, not WorkBench (except we block entirely)
+      return { name: "admin" };
+    }
+  }
+  if (to.meta.requiresQc && !session.isQc) {
+    return { name: "settings-account" };
   }
   return true;
 });

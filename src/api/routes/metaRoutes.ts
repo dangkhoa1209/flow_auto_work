@@ -8,5 +8,6 @@ export function createMetaRoutes(): Router {
   router.get("/completion-defaults", metaController.completionDefaults);
   router.get("/members", metaController.members);
   router.get("/labels", metaController.labels);
+  router.get("/milestones", metaController.milestones);
   return router;
 }

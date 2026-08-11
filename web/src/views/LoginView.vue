@@ -27,7 +27,15 @@ const form = reactive({
   password: "",
   password2: "",
   displayName: "",
+  role: "dev" as "dev" | "qc" | "pd" | "ba",
 });
+
+const roleOptions = [
+  { value: "dev", label: "Dev — WorkBench" },
+  { value: "ba", label: "BA — Project chat" },
+  { value: "pd", label: "PD — Project chat" },
+  { value: "qc", label: "QC — Project chat" },
+];
 
 /** Only allow same-origin relative paths (block open redirects). */
 function safeRedirectTarget(): string | null {
@@ -40,8 +48,10 @@ function safeRedirectTarget(): string | null {
   return path;
 }
 
-function postAuthPath(projectId: string | null): string {
-  return safeRedirectTarget() || (projectId ? "/work" : "/settings/project");
+function postAuthPath(): string {
+  const redirect = safeRedirectTarget();
+  if (redirect) return redirect;
+  return session.homeRoute;
 }
 
 function onPointerMove(e: PointerEvent) {
@@ -108,6 +118,14 @@ async function applyAuthAndGo(res: AuthTokensResponse) {
 
   session.setMemberships((res.memberships || []) as Membership[]);
   session.setSession({ username, projectId });
+  if (res.user) {
+    session.me = {
+      ...session.me,
+      ...res.user,
+      gitlabUsername: res.user.gitlabUsername || username,
+      roles: res.user.roles,
+    };
+  }
 
   try {
     await session.refreshMe();
@@ -123,7 +141,7 @@ async function applyAuthAndGo(res: AuthTokensResponse) {
     }),
   );
 
-  await router.replace(postAuthPath(session.session.projectId));
+  await router.replace(postAuthPath());
 }
 
 async function onLogin(e?: Event) {
@@ -182,6 +200,7 @@ async function onRegister(e?: Event) {
       username,
       password: form.password,
       displayName: form.displayName.trim() || undefined,
+      role: form.role,
     });
     message.success("Account created");
     await applyAuthAndGo(res);
@@ -303,6 +322,14 @@ async function onRegister(e?: Event) {
             <a-input
               v-model:value="form.displayName"
               placeholder="How you appear in the bench"
+            />
+          </label>
+          <label class="faw-login__field">
+            <span>Role</span>
+            <a-select
+              v-model:value="form.role"
+              :options="roleOptions"
+              class="w-full"
             />
           </label>
           <label class="faw-login__field">

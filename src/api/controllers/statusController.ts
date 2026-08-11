@@ -1,9 +1,18 @@
 import type { Request, Response } from "express";
 import { asyncHandler } from "../../utils/asyncHandler.js";
 import { getStatusPayload } from "../../modules/status/index.js";
+import {
+  headerProjectFromExpress,
+  headerUserFromExpress,
+} from "../middleware/workspaceAuth.js";
 
 export const statusController = {
-  get: asyncHandler(async (_req: Request, res: Response) => {
-    res.json(await getStatusPayload());
+  get: asyncHandler(async (req: Request, res: Response) => {
+    res.json(
+      await getStatusPayload({
+        ownerUsername: headerUserFromExpress(req),
+        workspaceProjectId: headerProjectFromExpress(req),
+      }),
+    );
   }),
 };

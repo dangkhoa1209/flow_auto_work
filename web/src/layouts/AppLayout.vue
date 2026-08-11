@@ -2,7 +2,12 @@
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter, RouterLink, RouterView } from "vue-router";
 import { message } from "ant-design-vue";
-import { SettingOutlined } from "@ant-design/icons-vue";
+import {
+  SettingOutlined,
+  DownOutlined,
+  PlusOutlined,
+  CheckOutlined,
+} from "@ant-design/icons-vue";
 import { useSessionStore } from "@/stores/session";
 import { useSettingsStore } from "@/stores/settings";
 import { useWorkStore } from "@/stores/work";
@@ -15,14 +20,19 @@ const session = useSessionStore();
 const work = useWorkStore();
 const settings = useSettingsStore();
 
-const nav = [
-  { to: "/work", label: "Work" },
-  { to: "/handoff", label: "Handoff" },
-  { to: "/stats", label: "Stats" },
-];
+const nav = computed(() => {
+  const items = [
+    { to: "/work", label: "Work" },
+    { to: "/handoff", label: "Handoff" },
+    { to: "/stats", label: "Stats" },
+  ];
+  if (session.isQc) items.push({ to: "/qc", label: "QC" });
+  return items;
+});
 
 const switching = ref(false);
 const selectedProjectId = ref(session.session.projectId || "");
+const projectPickerOpen = ref(false);
 
 watch(
   () => session.session.projectId,
@@ -60,6 +70,11 @@ const idleDot = computed(() => {
   return "idle";
 });
 
+const projectSheetHeight = computed(() => {
+  if (typeof window === "undefined") return 480;
+  return Math.min(520, Math.round(window.innerHeight * 0.72));
+});
+
 let disconnectRealtime: (() => void) | undefined;
 
 onMounted(async () => {
@@ -71,6 +86,9 @@ onMounted(async () => {
     message.error(e instanceof Error ? e.message : String(e));
   }
   disconnectRealtime = connectRealtime({
+    onOpen: () => {
+      void work.resyncRealtime();
+    },
     onStatus: (ev) => {
       work.applyStatusSnapshot({
         currentJobId: ev.currentJobId,
@@ -90,11 +108,16 @@ onUnmounted(() => {
 });
 
 async function onSwitchProject(projectId: string) {
-  if (!projectId || projectId === session.session.projectId) return;
+  if (!projectId) return;
+  if (projectId === session.session.projectId) {
+    projectPickerOpen.value = false;
+    return;
+  }
   switching.value = true;
   try {
     await session.activateProject(projectId);
     selectedProjectId.value = projectId;
+    projectPickerOpen.value = false;
     await work.refreshAll();
     await settings.loadHandoffPrefs(projectId);
     message.success("Project switched");
@@ -107,6 +130,7 @@ async function onSwitchProject(projectId: string) {
 }
 
 function goManageProjects() {
+  projectPickerOpen.value = false;
   router.push("/settings/project");
 }
 
@@ -125,20 +149,32 @@ async function onKillAll() {
 </script>
 
 <template>
-  <div class="h-[100dvh] max-h-[100dvh] flex flex-col overflow-hidden overflow-x-hidden bg-[var(--app-bg)]">
-    <header class="faw-topbar">
+  <div
+    class="faw-app-shell h-[100dvh] max-h-[100dvh] flex flex-col overflow-hidden overflow-x-hidden bg-[var(--app-bg)]"
+  >
+    <header class="faw-topbar faw-topbar--work">
+      <!-- Brand: full logo desktop, icon-only mobile -->
       <RouterLink to="/work" class="faw-brand" title="Flow Auto WorkBench">
         <img
-          class="faw-brand__logo"
+          class="faw-brand__logo faw-brand__logo--full"
           src="/logo.svg"
           alt="Flow Auto WorkBench"
           width="148"
           height="33"
           draggable="false"
         />
+        <img
+          class="faw-brand__logo faw-brand__logo--mark"
+          src="/favicon.svg"
+          alt="FLOW.AUTO"
+          width="28"
+          height="28"
+          draggable="false"
+        />
       </RouterLink>
 
-      <div class="faw-crumb">
+      <!-- Desktop: inline project select -->
+      <div class="faw-crumb hidden lg:flex">
         <a-select
           v-model:value="selectedProjectId"
           class="faw-crumb-select"
@@ -166,6 +202,23 @@ async function onKillAll() {
         </a-select>
       </div>
 
+      <!-- Mobile: tappable truncated workspace → bottom sheet -->
+      <button
+        type="button"
+        class="faw-crumb-tap lg:hidden"
+        :disabled="switching || !projectOptions.length"
+        :title="activeProject?.label || 'Select project'"
+        @click="projectPickerOpen = true"
+      >
+        <span class="faw-crumb-tap__flow">{{
+          activeProject?.flowName || "Select project"
+        }}</span>
+        <span class="faw-crumb-tap__path">{{
+          activeProject?.gitlabPath || ""
+        }}</span>
+        <DownOutlined class="faw-crumb-tap__chev" />
+      </button>
+
       <nav class="faw-seg hidden lg:flex">
         <RouterLink
           v-for="item in nav"
@@ -178,7 +231,7 @@ async function onKillAll() {
         </RouterLink>
       </nav>
 
-      <div class="faw-topbar__spacer" />
+      <div class="faw-topbar__spacer hidden lg:block" />
 
       <div class="faw-topbar__right hidden lg:flex">
         <span class="faw-idle">
@@ -223,6 +276,17 @@ async function onKillAll() {
           +
         </button>
       </div>
+
+      <!-- Mobile: status + avatar only -->
+      <button
+        type="button"
+        class="faw-status-avatar lg:hidden"
+        :title="work.statusText || 'Idle'"
+        @click="router.push('/settings/account')"
+      >
+        <span class="faw-status-avatar__dot" :class="idleDot" />
+        <span class="faw-avatar faw-avatar--md" />
+      </button>
     </header>
 
     <main
@@ -232,5 +296,61 @@ async function onKillAll() {
     </main>
 
     <MobileBottomNav />
+
+    <!-- Mobile project picker (bottom sheet) -->
+    <a-drawer
+      v-model:open="projectPickerOpen"
+      placement="bottom"
+      :height="projectSheetHeight"
+      :title="null"
+      :closable="false"
+      class="faw-project-sheet"
+      root-class-name="faw-project-sheet-root"
+      :body-style="{ padding: 0 }"
+    >
+      <div class="faw-project-sheet__head">
+        <div>
+          <p class="faw-project-sheet__eyebrow">Workspace</p>
+          <h3 class="faw-project-sheet__title">Chọn project</h3>
+        </div>
+        <button
+          type="button"
+          class="faw-btn"
+          @click="goManageProjects"
+        >
+          <PlusOutlined /> Manage
+        </button>
+      </div>
+      <div class="faw-project-sheet__list">
+        <button
+          v-for="o in projectOptions"
+          :key="o.value"
+          type="button"
+          class="faw-project-sheet__item touch-manipulation"
+          :class="{
+            'is-active': o.value === (selectedProjectId || session.session.projectId),
+          }"
+          :disabled="switching"
+          @click="onSwitchProject(o.value)"
+        >
+          <div class="min-w-0 flex-1">
+            <div class="faw-project-sheet__name truncate">{{ o.flowName }}</div>
+            <div class="faw-project-sheet__repo truncate font-mono">
+              {{ o.gitlabPath }}
+            </div>
+          </div>
+          <CheckOutlined
+            v-if="o.value === (selectedProjectId || session.session.projectId)"
+            class="faw-project-sheet__check"
+          />
+        </button>
+        <p
+          v-if="!projectOptions.length"
+          class="px-4 py-8 text-center text-ink-faint text-sm"
+        >
+          Chưa có project — thêm trong Settings.
+        </p>
+      </div>
+    </a-drawer>
   </div>
 </template>

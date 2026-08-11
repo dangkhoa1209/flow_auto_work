@@ -6,6 +6,7 @@ import {
   getUserByUsername,
   getUserSecrets,
   setHandoffPrefs,
+  setUserQcRole,
   updateUserPreferences,
   upsertUserLogin,
 } from "../../workspace/store.js";
@@ -88,6 +89,17 @@ export async function updateMyPreferences(
       cursorModel: body.cursorModel,
     });
     return { user: updated, ok: true };
+  } catch (err) {
+    throw new AppError(err instanceof Error ? err.message : String(err), 404);
+  }
+}
+
+/** Toggle “I am QC” capability for the current user. */
+export async function setMyQcRole(username: string, enabled: boolean) {
+  const user = requireUser(username);
+  try {
+    const updated = await setUserQcRole({ username: user, enabled });
+    return { user: updated, ok: true, isQc: enabled };
   } catch (err) {
     throw new AppError(err instanceof Error ? err.message : String(err), 404);
   }

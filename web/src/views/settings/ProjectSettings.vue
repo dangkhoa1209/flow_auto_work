@@ -93,6 +93,11 @@ const columns = [
   { title: "", key: "actions", width: 220 },
 ];
 
+const wizardWidth = computed(() => {
+  if (typeof window === "undefined") return 640;
+  return window.innerWidth < 640 ? "calc(100vw - 24px)" : 640;
+});
+
 onUnmounted(() => {
   if (pollTimer.value) clearInterval(pollTimer.value);
 });
@@ -491,90 +496,166 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="space-y-4">
-    <div class="flex items-center justify-between gap-3">
-      <div>
+  <div class="space-y-4 min-w-0">
+    <div class="flex items-start justify-between gap-2 flex-wrap">
+      <div class="min-w-0">
         <h2 class="text-lg font-medium m-0">Project management</h2>
-        <p class="text-sm text-slate-500 m-0 mt-1">
-          CRUD project · wizard PAT → project → branch → path · empty path →
-          <code>project/username/projectName/source</code>
+        <p class="text-sm text-ink-muted m-0 mt-1 hidden sm:block">
+          CRUD project · wizard PAT → project → branch → path
         </p>
       </div>
-      <a-button type="primary" :loading="loading" @click="openCreate"
+      <a-button type="primary" size="small" :loading="loading" @click="openCreate"
         >Add project</a-button
       >
     </div>
 
-    <a-table
-      size="small"
-      :columns="columns"
-      :data-source="tableRows"
-      :pagination="false"
-      :scroll="{ x: 960 }"
-    >
-      <template #bodyCell="{ column, record }">
-        <template v-if="column.key === 'defaultCommitMode'">
-          <a-tag
-            :color="record.defaultCommitMode === 'manual' ? 'orange' : 'blue'"
-          >
-            {{ record.defaultCommitMode === "manual" ? "Manual" : "Auto" }}
-          </a-tag>
+    <!-- Desktop table -->
+    <div class="hidden md:block min-w-0 overflow-x-auto">
+      <a-table
+        size="small"
+        :columns="columns"
+        :data-source="tableRows"
+        :pagination="false"
+        :scroll="{ x: 960 }"
+      >
+        <template #bodyCell="{ column, record }">
+          <template v-if="column.key === 'defaultCommitMode'">
+            <a-tag
+              :color="record.defaultCommitMode === 'manual' ? 'orange' : 'blue'"
+            >
+              {{ record.defaultCommitMode === "manual" ? "Manual" : "Auto" }}
+            </a-tag>
+          </template>
+          <template v-else-if="column.key === 'active'">
+            <a-tag :color="record.isActive ? 'green' : 'default'">
+              {{ record.isActive ? "Active" : "—" }}
+            </a-tag>
+          </template>
+          <template v-else-if="column.key === 'cloneStatus'">
+            <a-tooltip v-if="record.cloneError" :title="record.cloneError">
+              <a-tag color="red">{{ record.cloneStatus }}</a-tag>
+            </a-tooltip>
+            <a-tag
+              v-else
+              :color="
+                record.cloneStatus === 'ready'
+                  ? 'green'
+                  : record.cloneStatus === 'cloning'
+                    ? 'blue'
+                    : 'default'
+              "
+              >{{ record.cloneStatus }}</a-tag
+            >
+          </template>
+          <template v-else-if="column.key === 'actions'">
+            <div class="flex flex-wrap gap-1">
+              <a-button
+                size="small"
+                :disabled="record.isActive"
+                @click="activate(record.id)"
+                >Active</a-button
+              >
+              <a-button size="small" @click="openEdit(record)">Edit</a-button>
+              <a-button
+                size="small"
+                :loading="cloningId === record.id"
+                @click="startClone(record.id)"
+                >Clone</a-button
+              >
+              <a-button size="small" danger @click="remove(record.id)"
+                >Delete</a-button
+              >
+            </div>
+          </template>
         </template>
-        <template v-else-if="column.key === 'active'">
-          <a-tag :color="record.isActive ? 'green' : 'default'">
+      </a-table>
+    </div>
+
+    <!-- Mobile cards -->
+    <div class="md:hidden space-y-2">
+      <div
+        v-for="record in tableRows"
+        :key="record.id"
+        class="faw-project-card"
+      >
+        <div class="flex items-start justify-between gap-2">
+          <div class="min-w-0">
+            <div class="font-semibold text-ink truncate">{{ record.name }}</div>
+            <div class="text-[11px] text-ink-faint font-mono truncate mt-0.5">
+              {{ record.gitlabPath }}
+            </div>
+          </div>
+          <a-tag
+            class="shrink-0 m-0"
+            :color="record.isActive ? 'green' : 'default'"
+          >
             {{ record.isActive ? "Active" : "—" }}
           </a-tag>
-        </template>
-        <template v-else-if="column.key === 'cloneStatus'">
-          <a-tooltip v-if="record.cloneError" :title="record.cloneError">
-            <a-tag color="red">{{ record.cloneStatus }}</a-tag>
-          </a-tooltip>
-          <a-tag
-            v-else
-            :color="
-              record.cloneStatus === 'ready'
-                ? 'green'
-                : record.cloneStatus === 'cloning'
-                  ? 'blue'
-                  : 'default'
-            "
-            >{{ record.cloneStatus }}</a-tag
+        </div>
+        <div class="faw-project-card__meta">
+          <span>Main <b>{{ record.mainBranch }}</b></span>
+          <span>Work <b>{{ record.workBranch }}</b></span>
+          <span>
+            <a-tag
+              class="!m-0 !text-[10px]"
+              :color="record.defaultCommitMode === 'manual' ? 'orange' : 'blue'"
+            >
+              {{ record.defaultCommitMode === "manual" ? "Manual" : "Auto" }}
+            </a-tag>
+          </span>
+          <span>
+            <a-tag
+              class="!m-0 !text-[10px]"
+              :color="
+                record.cloneStatus === 'ready'
+                  ? 'green'
+                  : record.cloneStatus === 'cloning'
+                    ? 'blue'
+                    : record.cloneError
+                      ? 'red'
+                      : 'default'
+              "
+              >{{ record.cloneStatus }}</a-tag
+            >
+          </span>
+        </div>
+        <div class="text-[11px] text-ink-faint truncate" :title="String(record.localPath)">
+          {{ record.localPath }}
+        </div>
+        <div class="faw-project-card__actions">
+          <a-button
+            size="small"
+            :disabled="record.isActive"
+            @click="activate(record.id)"
+            >Active</a-button
           >
-        </template>
-        <template v-else-if="column.key === 'actions'">
-          <div class="flex flex-wrap gap-1">
-            <a-button
-              size="small"
-              :disabled="record.isActive"
-              @click="activate(record.id)"
-              >Active</a-button
-            >
-            <a-button size="small" @click="openEdit(record)">Edit</a-button>
-            <a-button
-              size="small"
-              :loading="cloningId === record.id"
-              @click="startClone(record.id)"
-              >Clone</a-button
-            >
-            <a-button size="small" danger @click="remove(record.id)"
-              >Delete</a-button
-            >
-          </div>
-        </template>
-      </template>
-    </a-table>
+          <a-button size="small" @click="openEdit(record)">Edit</a-button>
+          <a-button
+            size="small"
+            :loading="cloningId === record.id"
+            @click="startClone(record.id)"
+            >Clone</a-button
+          >
+          <a-button size="small" danger @click="remove(record.id)"
+            >Delete</a-button
+          >
+        </div>
+      </div>
+      <a-empty v-if="!tableRows.length" description="No projects yet" />
+    </div>
 
     <a-modal
       v-model:open="wizardOpen"
       :title="editId ? 'Edit project' : 'Add project'"
       :footer="null"
-      width="640px"
+      :width="wizardWidth"
+      wrap-class-name="faw-settings-modal"
       destroy-on-close
       @cancel="wizardOpen = false"
     >
       <a-steps
         size="small"
-        class="mb-5"
+        class="mb-5 faw-wizard-steps"
         :current="wizardStep"
         :items="steps.map((t) => ({ title: t }))"
       />

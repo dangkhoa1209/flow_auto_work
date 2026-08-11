@@ -3,6 +3,17 @@ import { getConfig } from "../config.js";
 
 export type CloneStatus = "pending" | "cloning" | "ready" | "failed";
 
+/** Platform capability roles (QC is independent of GitLab membership role). */
+export type UserRole = "dev" | "pm" | "admin" | "qc" | "ba" | "pd";
+
+/** Roles selectable at registration (admin is seed-only). */
+export const REGISTERABLE_ROLES: readonly UserRole[] = [
+  "dev",
+  "qc",
+  "pd",
+  "ba",
+] as const;
+
 export type WorkspaceUser = {
   /** Lowercase username id */
   id: string;
@@ -14,6 +25,8 @@ export type WorkspaceUser = {
   gitlabTokenEnc?: string;
   cursorApiKeyEnc?: string;
   cursorModel?: string;
+  /** Capability roles — include `"qc"` for QC Automation APIs */
+  roles?: UserRole[];
   /**
    * Labels & handoff prefs per project (synced across devices).
    * Key = workspace project id.
@@ -41,6 +54,7 @@ export type WorkspaceUserPublic = {
   hasCursorApiKey: boolean;
   hasPassword: boolean;
   cursorModel: string;
+  roles: UserRole[];
   createdAt: string;
   updatedAt: string;
 };
@@ -94,6 +108,69 @@ export type MembershipWithProject = WorkspaceMembership & {
   project: WorkspaceProject;
 };
 
+export function normalizeUserRoles(roles?: UserRole[] | null): UserRole[] {
+  const set = new Set<UserRole>();
+  for (const r of roles || []) {
+    if (
+      r === "dev" ||
+      r === "pm" ||
+      r === "admin" ||
+      r === "qc" ||
+      r === "ba" ||
+      r === "pd"
+    ) {
+      set.add(r);
+    }
+  }
+  return [...set];
+}
+
+export function userHasRole(
+  u: Pick<WorkspaceUser, "roles"> | null | undefined,
+  role: UserRole,
+): boolean {
+  return normalizeUserRoles(u?.roles).includes(role);
+}
+
+/** BA Chat audience: ba / pd / qc-only (not Dev who also toggled QC). */
+export function isBaAudience(
+  roles?: UserRole[] | null | Pick<WorkspaceUser, "roles">,
+): boolean {
+  const list = Array.isArray(roles)
+    ? roles
+    : normalizeUserRoles(
+        (roles as Pick<WorkspaceUser, "roles"> | null | undefined)?.roles,
+      );
+  const r = normalizeUserRoles(list as UserRole[]);
+  if (r.includes("admin")) return false;
+  if (r.includes("ba") || r.includes("pd")) return true;
+  if (r.includes("qc") && !r.includes("dev")) return true;
+  return false;
+}
+
+export function isAdminRole(roles?: UserRole[] | null): boolean {
+  return normalizeUserRoles(roles).includes("admin");
+}
+
+/** Post-login / guard home path. */
+export function primaryHomePath(roles?: UserRole[] | null): string {
+  const r = normalizeUserRoles(roles);
+  if (r.includes("admin")) return "/admin";
+  if (isBaAudience(r)) return "/ba";
+  return "/work";
+}
+
+export function isRegisterableRole(role: string): role is UserRole {
+  return (REGISTERABLE_ROLES as readonly string[]).includes(role);
+}
+
+/** Shared BA catalog clone path: `project/_ba/<slug>/source` */
+export function baProjectLocalPath(slug: string): string {
+  const name =
+    slug.trim().replace(/[/\\]+/g, "-").replace(/^\.+|\.+$/g, "") || "project";
+  return path.join(resolveProjectRoot(), "_ba", name, "source");
+}
+
 export function toPublicUser(u: WorkspaceUser): WorkspaceUserPublic {
   return {
     id: u.id,
@@ -103,6 +180,7 @@ export function toPublicUser(u: WorkspaceUser): WorkspaceUserPublic {
     hasCursorApiKey: Boolean(u.cursorApiKeyEnc),
     hasPassword: Boolean(u.passwordHash),
     cursorModel: u.cursorModel?.trim() || "auto",
+    roles: normalizeUserRoles(u.roles),
     createdAt: u.createdAt,
     updatedAt: u.updatedAt,
   };
