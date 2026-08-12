@@ -9,6 +9,7 @@ import {
 } from "./db/mongo.js";
 import type { CompletionActions, IssueJob, JobRecord } from "./types.js";
 import {
+  busyIssueKey,
   isJobBusy,
   jobIdForIssue,
   newAdhocJobId,
@@ -23,6 +24,24 @@ import {
   SEED_USERNAME,
   seedWorkspaceProjectId,
 } from "./workspace/seed.js";
+import { AppError } from "./utils/AppError.js";
+
+/** Reject when job is pinned to a different Flow project than the active one. */
+export function assertJobInActiveWorkspace(
+  job: Pick<JobRecord, "id" | "workspaceProjectId">,
+): void {
+  const rt = getRuntimeContext();
+  const active = rt?.projectId?.trim();
+  if (!active) return;
+  const pinned = job.workspaceProjectId?.trim();
+  if (!pinned) return;
+  if (pinned !== active) {
+    throw new AppError(
+      "Job belongs to another project — switch project to open it",
+      404,
+    );
+  }
+}
 
 /** Project default for new jobs — missing → auto. */
 async function projectDefaultCommitMode(): Promise<"manual" | "auto"> {
@@ -57,7 +76,7 @@ export async function saveJob(
   });
 }
 
-/** Stamp Flow user + workspace project + flowTaskId from current runtime. */
+/** Stamp Flow user + workspace project + flowTaskId once (never rebind project). */
 export function applyJobOwnership(
   job: JobRecord,
   opts?: { force?: boolean },
@@ -73,11 +92,10 @@ export function applyJobOwnership(
       changed = true;
     }
   }
-  if (force || !job.workspaceProjectId) {
-    if (job.workspaceProjectId !== rt.projectId) {
-      job.workspaceProjectId = rt.projectId;
-      changed = true;
-    }
+  // Pin workspace project on first stamp only — switching project must not steal jobs.
+  if (!job.workspaceProjectId?.trim()) {
+    job.workspaceProjectId = rt.projectId;
+    changed = true;
   }
   if (job.id && job.flowTaskId !== job.id) {
     job.flowTaskId = job.id;
@@ -119,14 +137,19 @@ export async function loadJob(id: string): Promise<JobRecord | null> {
 export async function loadJobByIssue(
   projectId: number,
   issueIid: number,
+  workspaceProjectId?: string,
 ): Promise<JobRecord | null> {
-  const doc = await getJobDocByIssue(projectId, issueIid);
+  const ws =
+    workspaceProjectId?.trim() ||
+    getRuntimeContext()?.projectId?.trim() ||
+    undefined;
+  const doc = await getJobDocByIssue(projectId, issueIid, ws);
   if (!doc) return null;
   return normalizeJob(doc);
 }
 
 /**
- * One task → one job. Creates `draft` if missing; refreshes issue snapshot.
+ * One task → one job **per Flow project**. Creates `draft` if missing; refreshes issue snapshot.
  * Does not enqueue.
  */
 export async function ensureJob(
@@ -138,10 +161,26 @@ export async function ensureJob(
     requireDocsFirst?: boolean;
   },
 ): Promise<JobRecord> {
-  const existing = await loadJobByIssue(issue.projectId, issue.issueIid);
+  const rt = getRuntimeContext();
+  const workspaceProjectId = rt?.projectId?.trim();
+  const existing = await loadJobByIssue(
+    issue.projectId,
+    issue.issueIid,
+    workspaceProjectId,
+  );
   const now = new Date().toISOString();
 
   if (existing) {
+    if (
+      workspaceProjectId &&
+      existing.workspaceProjectId?.trim() &&
+      existing.workspaceProjectId.trim() !== workspaceProjectId
+    ) {
+      throw new AppError(
+        "Job belongs to another project — switch project to open it",
+        404,
+      );
+    }
     existing.issue = issue;
     existing.kind = "issue";
     if (opts?.completion) existing.completion = opts.completion;
@@ -156,7 +195,7 @@ export async function ensureJob(
     return existing;
   }
 
-  const id = jobIdForIssue(issue.projectId, issue.issueIid);
+  const id = jobIdForIssue(issue.projectId, issue.issueIid, workspaceProjectId);
   const commitMode = await projectDefaultCommitMode();
   const job: JobRecord = {
     id,
@@ -173,7 +212,7 @@ export async function ensureJob(
     createdAt: now,
     updatedAt: now,
   };
-  applyJobOwnership(job, { force: true });
+  applyJobOwnership(job);
   await saveJob(job, { source: opts?.source ?? "ensure" });
   logger.info("Ensured draft job", {
     jobId: job.id,
@@ -263,7 +302,11 @@ export async function migrateAdhocJobToIssue(
   adhocJob: JobRecord,
   issue: IssueJob,
 ): Promise<JobRecord> {
-  const newId = jobIdForIssue(issue.projectId, issue.issueIid);
+  const newId = jobIdForIssue(
+    issue.projectId,
+    issue.issueIid,
+    adhocJob.workspaceProjectId,
+  );
   if (await loadJob(newId)) {
     throw new Error(`Job already exists for #${issue.issueIid}`);
   }
@@ -314,14 +357,24 @@ export async function listActiveIssueKeys(): Promise<Set<string>> {
   const active = new Set<string>();
   for (const job of jobs) {
     if (isJobBusy(job.status)) {
-      active.add(`${job.issue.projectId}:${job.issue.issueIid}`);
+      active.add(
+        busyIssueKey(
+          job.workspaceProjectId,
+          job.issue.projectId,
+          job.issue.issueIid,
+        ),
+      );
     }
   }
   return active;
 }
 
-export function issueKey(projectId: number, issueIid: number): string {
-  return `${projectId}:${issueIid}`;
+export function issueKey(
+  projectId: number,
+  issueIid: number,
+  workspaceProjectId?: string,
+): string {
+  return busyIssueKey(workspaceProjectId, projectId, issueIid);
 }
 
 /** Mark interrupted RUNNING jobs failed after restart (queued jobs are re-queued by JobQueue.restoreQueuedJobs). */

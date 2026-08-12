@@ -27,10 +27,11 @@ function submit() {
 }
 
 function onKeydown(e: KeyboardEvent) {
-  if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-    e.preventDefault();
-    submit();
-  }
+  if (e.key !== "Enter") return;
+  if (e.isComposing) return;
+  if (e.shiftKey) return; // Shift+Enter → newline
+  e.preventDefault();
+  submit();
 }
 </script>
 
@@ -40,7 +41,7 @@ function onKeydown(e: KeyboardEvent) {
       <a-textarea
         v-model:value="text"
         :rows="2"
-        :auto-size="{ minRows: 2, maxRows: 6 }"
+        :auto-size="{ minRows: 2, maxRows: 12 }"
         :disabled="disabled || loading"
         :placeholder="
           loading
@@ -52,7 +53,7 @@ function onKeydown(e: KeyboardEvent) {
     </a-tooltip>
     <div class="faw-console-input__row faw-ba-input-row">
       <span class="faw-ba-input-hint">
-        URL hoặc điểm neo UI · ⌘/Ctrl+Enter gửi
+        Enter gửi · Shift+Enter xuống dòng
       </span>
       <div class="faw-ba-input-actions">
         <a-popconfirm

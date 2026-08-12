@@ -35,9 +35,28 @@ export type IssueJob = {
   milestone?: IssueMilestone | null;
 };
 
-/** Stable id: one GitLab issue → one job document forever */
-export function jobIdForIssue(projectId: number, issueIid: number): string {
+/** Pre-workspace id: one GitLab issue → one job (legacy docs still use this). */
+export function legacyJobIdForIssue(
+  projectId: number,
+  issueIid: number,
+): string {
   return `issue-${projectId}-${issueIid}`;
+}
+
+/**
+ * Stable id: GitLab issue scoped to a Flow workspace project.
+ * With `workspaceProjectId` → `issue-{glProject}-{iid}--{workspaceProjectId}`
+ * so the same GitLab issue can have one job per Flow project.
+ * Without workspace → legacy id (boot / migrate only).
+ */
+export function jobIdForIssue(
+  projectId: number,
+  issueIid: number,
+  workspaceProjectId?: string,
+): string {
+  const ws = workspaceProjectId?.trim();
+  if (ws) return `issue-${projectId}-${issueIid}--${ws}`;
+  return legacyJobIdForIssue(projectId, issueIid);
 }
 
 /** Ad-hoc / hotfix session id (not tied to a GitLab issue yet) */
@@ -231,6 +250,26 @@ export type JobRecord = {
   createdAt: string;
   updatedAt: string;
 };
+
+/** Queue / busy key: workspace + GitLab issue (not shared across Flow projects). */
+export function busyIssueKey(
+  workspaceProjectId: string | undefined | null,
+  projectId: number,
+  issueIid: number,
+): string {
+  const ws = (workspaceProjectId || "").trim() || "default";
+  return `${ws}:${projectId}:${issueIid}`;
+}
+
+export function busyIssueKeyForJob(
+  job: Pick<JobRecord, "workspaceProjectId" | "issue">,
+): string {
+  return busyIssueKey(
+    job.workspaceProjectId,
+    job.issue.projectId,
+    job.issue.issueIid,
+  );
+}
 
 /** Trimmed Dev Notes from job (UI / Mongo). */
 export function resolveDevNotes(job: Pick<JobRecord, "devNotes">): string {

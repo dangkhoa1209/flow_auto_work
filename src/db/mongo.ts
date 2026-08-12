@@ -2,7 +2,12 @@ import { MongoClient, type Collection, type Db } from "mongodb";
 import { buildMongoUri, getConfig } from "../config.js";
 import { logger } from "../logger.js";
 import { publishRealtime } from "../plugins/realtime/hub.js";
-import { jobIdForIssue, type JobRecord, type JobStatus } from "../types.js";
+import {
+  jobIdForIssue,
+  legacyJobIdForIssue,
+  type JobRecord,
+  type JobStatus,
+} from "../types.js";
 
 export type JobDoc = JobRecord & {
   _id: string;
@@ -39,14 +44,30 @@ export async function connectMongo(): Promise<Db> {
   await client.connect();
   db = client.db(cfg.DB_DATABASE);
   await db.collection("jobs").createIndex({ "issue.issueIid": 1, updatedAt: -1 });
+  // Legacy unique (gitlab project + iid only) blocked one job per Flow project.
+  try {
+    await db.collection("jobs").dropIndex("issue.projectId_1_issue.issueIid_1");
+  } catch {
+    /* index may not exist */
+  }
   try {
     await db.collection("jobs").createIndex(
-      { "issue.projectId": 1, "issue.issueIid": 1 },
-      { unique: true },
+      {
+        workspaceProjectId: 1,
+        "issue.projectId": 1,
+        "issue.issueIid": 1,
+      },
+      {
+        unique: true,
+        name: "ws_project_issue_unique",
+        partialFilterExpression: {
+          workspaceProjectId: { $type: "string" },
+        },
+      },
     );
   } catch (err) {
     logger.warn(
-      "Unique jobs index (projectId+issueIid) skipped — dedupe legacy jobs if needed",
+      "Unique jobs index (workspace+projectId+issueIid) skipped — dedupe if needed",
       { err: String(err) },
     );
   }
@@ -183,14 +204,43 @@ export async function rekeyJobSideDocs(opts: {
   };
 }
 
-/** One issue → one job: prefer stable id, else latest legacy doc for that issue */
+/**
+ * One GitLab issue → one job **per Flow workspace project**.
+ * Prefers scoped id, then legacy id when it already belongs to this workspace.
+ */
 export async function getJobDocByIssue(
   projectId: number,
   issueIid: number,
+  workspaceProjectId?: string,
 ): Promise<JobDoc | null> {
   await connectMongo();
+  const ws = workspaceProjectId?.trim();
+  if (ws) {
+    const scoped = await jobs().findOne({
+      _id: jobIdForIssue(projectId, issueIid, ws),
+    });
+    if (scoped) return scoped;
+
+    const legacy = await jobs().findOne({
+      _id: legacyJobIdForIssue(projectId, issueIid),
+    });
+    if (legacy) {
+      const legacyWs = (legacy.workspaceProjectId || "").trim();
+      if (!legacyWs || legacyWs === ws) return legacy;
+    }
+
+    return jobs().findOne(
+      {
+        workspaceProjectId: ws,
+        "issue.projectId": projectId,
+        "issue.issueIid": issueIid,
+      },
+      { sort: { updatedAt: -1 } },
+    );
+  }
+
   const stable = await jobs().findOne({
-    _id: jobIdForIssue(projectId, issueIid),
+    _id: legacyJobIdForIssue(projectId, issueIid),
   });
   if (stable) return stable;
   return jobs().findOne(

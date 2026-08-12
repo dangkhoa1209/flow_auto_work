@@ -23,7 +23,7 @@ function isEditableTarget(el: EventTarget | null): boolean {
 
 /**
  * Pro keyboard shortcuts for Workbench (IDE-style).
- * - ⌘/Ctrl+Enter → Run
+ * - ⌘/Ctrl+Enter → Run (skipped while focus is in an input/textarea — chat uses Enter to send)
  * - ⌘/Ctrl+S → save Dev Notes (works even inside textarea)
  * - Esc → close modal
  */
@@ -41,8 +41,8 @@ export function useWorkbenchShortcuts(opts: WorkbenchShortcutsOpts): void {
     }
 
     if (meta && e.key === "Enter") {
-      // Allow Run from anywhere except when a modal confirm might want Enter —
-      // still fire Run as primary Work action.
+      // Don't steal Enter/Cmd+Enter from chat composers or other fields.
+      if (isEditableTarget(e.target)) return;
       e.preventDefault();
       void opts.run();
       return;

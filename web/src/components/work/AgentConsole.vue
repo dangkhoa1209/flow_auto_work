@@ -50,6 +50,16 @@ const emit = defineEmits<{
   resetWindow: [];
 }>();
 
+/** Enter → Send; Shift+Enter → newline (IME composition ignored). */
+function onChatKeydown(e: KeyboardEvent) {
+  if (e.key !== "Enter") return;
+  if (e.isComposing) return;
+  if (e.shiftKey) return;
+  e.preventDefault();
+  if (props.busy || props.agentTyping) return;
+  emit("sendChat", "continue");
+}
+
 const rootEl = ref<HTMLElement | null>(null);
 const headerEl = ref<HTMLElement | null>(null);
 const chatBox = ref<HTMLElement | null>(null);
@@ -510,6 +520,7 @@ watch(chatBox, (el, prev) => {
         <a-textarea
           :value="chatInput"
           :rows="2"
+          :auto-size="{ minRows: 2, maxRows: 12 }"
           :autofocus="false"
           :disabled="busy || agentTyping"
           :placeholder="
@@ -520,27 +531,32 @@ watch(chatBox, (el, prev) => {
                 : 'Gửi lệnh (sửa / làm / phân tích) → xếp queue…'
           "
           @update:value="(v: string) => emit('update:chatInput', v)"
-          @keydown.meta.enter="emit('sendChat', 'continue')"
+          @keydown="onChatKeydown"
         />
-        <div class="faw-console-input__row">
-          <button
-            type="button"
-            class="faw-btn faw-btn--run faw-btn--send"
-            :disabled="busy || agentTyping"
-            title="Xếp lệnh vào queue — agent chạy nền (không chờ HTTP)"
-            @click="emit('sendChat', 'continue')"
-          >
-            Send
-          </button>
-          <button
-            type="button"
-            class="faw-btn faw-btn--ask"
-            :disabled="busy || agentTyping"
-            title="Hỏi nhanh (Q&A, không sửa code) → xếp queue"
-            @click="emit('sendChat', 'ask')"
-          >
-            Ask only
-          </button>
+        <div class="faw-console-input__row faw-ba-input-row">
+          <span class="faw-ba-input-hint">
+            Enter gửi · Shift+Enter xuống dòng
+          </span>
+          <div class="faw-ba-input-actions">
+            <button
+              type="button"
+              class="faw-btn faw-btn--run faw-btn--send"
+              :disabled="busy || agentTyping"
+              title="Xếp lệnh vào queue — agent chạy nền (không chờ HTTP)"
+              @click="emit('sendChat', 'continue')"
+            >
+              Send
+            </button>
+            <button
+              type="button"
+              class="faw-btn faw-btn--ask"
+              :disabled="busy || agentTyping"
+              title="Hỏi nhanh (Q&A, không sửa code) → xếp queue"
+              @click="emit('sendChat', 'ask')"
+            >
+              Ask only
+            </button>
+          </div>
         </div>
       </div>
     </template>

@@ -2,6 +2,7 @@ import { getConfig } from "../../config.js";
 import { listJobs } from "../../job-store.js";
 import { logger } from "../../logger.js";
 import { jobQueue } from "../../queue.js";
+import { busyIssueKey } from "../../types.js";
 import { getRuntimeContext } from "../../workspace/runtime.js";
 import { listAssignedOpenIssues } from "./client.js";
 
@@ -40,7 +41,11 @@ export async function scanExistingAssignedIssues(
   });
 
   const issues = await listAssignedOpenIssues();
-  const jobs = await listJobs();
+  const rt = getRuntimeContext();
+  const jobs = await listJobs({
+    workspaceProjectId: rt?.projectId,
+    ownerUsername: rt?.gitlabUsername,
+  });
   const includeSucceeded =
     opts.includeSucceeded ?? config.STARTUP_SCAN_INCLUDE_SUCCEEDED;
   const doneKeys = new Set(
@@ -49,7 +54,13 @@ export async function scanExistingAssignedIssues(
         (j) =>
           j.status === "succeeded" || j.status === "awaiting_handoff",
       )
-      .map((j) => `${j.issue.projectId}:${j.issue.issueIid}`),
+      .map((j) =>
+        busyIssueKey(
+          j.workspaceProjectId || rt?.projectId,
+          j.issue.projectId,
+          j.issue.issueIid,
+        ),
+      ),
   );
 
   let enqueued = 0;
@@ -61,7 +72,7 @@ export async function scanExistingAssignedIssues(
       continue;
     }
 
-    const key = `${issue.projectId}:${issue.issueIid}`;
+    const key = busyIssueKey(rt?.projectId, issue.projectId, issue.issueIid);
     if (!includeSucceeded && doneKeys.has(key)) {
       skipped += 1;
       continue;

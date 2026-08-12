@@ -50,7 +50,7 @@ import {
   parseDocsReadyPaths,
 } from "./plugins/docs/analysis.js";
 import type { CompletionActions, IssueJob, JobRecord, JobStatus } from "./types.js";
-import { isJobBusy, resolveDevNotes } from "./types.js";
+import { busyIssueKey, busyIssueKeyForJob, isJobBusy, resolveDevNotes } from "./types.js";
 import { getRuntimeContext } from "./workspace/runtime.js";
 import { withWorkspaceContext } from "./workspace/context.js";
 
@@ -199,7 +199,7 @@ export class JobQueue {
     let restored = 0;
     for (const job of jobs) {
       if (job.status !== "queued") continue;
-      const key = `${job.issue.projectId}:${job.issue.issueIid}`;
+      const key = busyIssueKeyForJob(job);
       if (
         this.activeIssueKeys.has(key) ||
         this.queue.some((q) => q.job.id === job.id)
@@ -253,12 +253,17 @@ export class JobQueue {
       forceCodePhase?: boolean;
     },
   ): Promise<{ enqueued: boolean; reason?: string; jobId?: string }> {
-    const key = `${issue.projectId}:${issue.issueIid}`;
+    const rt = getRuntimeContext();
+    const key = busyIssueKey(
+      rt?.projectId,
+      issue.projectId,
+      issue.issueIid,
+    );
     if (this.activeIssueKeys.has(key)) {
       logger.warn("enqueue rejected — activeIssueKeys", { key, iid: issue.issueIid });
       return { enqueued: false, reason: "Issue already queued or running" };
     }
-    if (this.queue.some((q) => `${q.job.issue.projectId}:${q.job.issue.issueIid}` === key)) {
+    if (this.queue.some((q) => busyIssueKeyForJob(q.job) === key)) {
       logger.warn("enqueue rejected — already in memory queue", { key, iid: issue.issueIid });
       return { enqueued: false, reason: "Issue already queued or running" };
     }
@@ -271,6 +276,17 @@ export class JobQueue {
       devNotes: notes,
       requireDocsFirst: opts?.requireDocsFirst,
     });
+
+    if (
+      rt?.projectId &&
+      job.workspaceProjectId?.trim() &&
+      job.workspaceProjectId.trim() !== rt.projectId
+    ) {
+      return {
+        enqueued: false,
+        reason: "Job belongs to another project — switch project to run it",
+      };
+    }
 
     if (notes !== undefined) {
       job.devNotes = notes || undefined;
@@ -300,16 +316,22 @@ export class JobQueue {
     job.lastQuestion = undefined;
     job.handedOffAt = undefined;
 
-    const rt = getRuntimeContext();
+    // Pin ownership once — do not rebind workspace/base when switching projects.
     if (rt) {
-      job.ownerUsername = rt.gitlabUsername;
-      job.workspaceProjectId = rt.projectId;
+      if (!job.ownerUsername) job.ownerUsername = rt.gitlabUsername;
+      if (!job.workspaceProjectId?.trim()) {
+        job.workspaceProjectId = rt.projectId;
+      }
       job.flowTaskId = job.id;
-      job.baseBranch = rt.baseBranch;
-      job.workBranch = rt.workBranch;
+      if (!job.baseBranch?.trim() && rt.baseBranch) {
+        job.baseBranch = rt.baseBranch;
+      }
+      if (!job.workBranch?.trim() && rt.workBranch?.trim()) {
+        job.workBranch = rt.workBranch.trim();
+      }
     }
 
-    this.activeIssueKeys.add(key);
+    this.activeIssueKeys.add(busyIssueKeyForJob(job));
     this.rememberJobScope(job);
     if (opts?.source) this.sources.set(job.id, opts.source);
     this.queue.push({
@@ -322,7 +344,7 @@ export class JobQueue {
     const snap = this.snapshot();
     logger.info("Enqueued job", {
       jobId: job.id,
-      key,
+      key: busyIssueKeyForJob(job),
       iid: job.issue.issueIid,
       source: opts?.source,
       runCount: job.runCount,
@@ -429,7 +451,7 @@ export class JobQueue {
       );
     }
 
-    const key = `${job.issue.projectId}:${job.issue.issueIid}`;
+    const key = busyIssueKeyForJob(job);
     if (this.activeIssueKeys.has(key) || this.queue.some((q) => q.job.id === job.id)) {
       throw new Error(
         "Agent is running on this job — wait for it to finish or Force Stop, then send again",
@@ -573,7 +595,7 @@ export class JobQueue {
       );
     }
 
-    const key = `${job.issue.projectId}:${job.issue.issueIid}`;
+    const key = busyIssueKeyForJob(job);
     if (
       this.activeIssueKeys.has(key) ||
       this.queue.some((q) => q.job.id === job.id)
@@ -645,7 +667,7 @@ export class JobQueue {
           : "draft");
     const wasDone =
       prevStatus === "awaiting_handoff" || prevStatus === "succeeded";
-    const key = `${job.issue.projectId}:${job.issue.issueIid}`;
+    const key = busyIssueKeyForJob(job);
 
     job.pendingFollowUpMessage = undefined;
     job.pendingFollowUpKind = undefined;
@@ -888,7 +910,7 @@ export class JobQueue {
         : job.completedAt
           ? "awaiting_handoff"
           : "draft");
-    const key = `${job.issue.projectId}:${job.issue.issueIid}`;
+    const key = busyIssueKeyForJob(job);
 
     job.pendingFollowUpMessage = undefined;
     job.pendingFollowUpKind = undefined;
@@ -1012,7 +1034,7 @@ export class JobQueue {
     const queuedIdx = this.queue.findIndex((q) => q.job.id === jobId);
     if (queuedIdx >= 0) {
       const [item] = this.queue.splice(queuedIdx, 1);
-      const key = `${item.job.issue.projectId}:${item.job.issue.issueIid}`;
+      const key = busyIssueKeyForJob(item.job);
       const restore =
         item.followUpRestoreStatus || item.job.followUpRestoreStatus;
       if ((item.followUpMessage || item.askOnlyMessage) && restore) {
@@ -1074,9 +1096,7 @@ export class JobQueue {
         // Detach Cursor window — resume after Force Stop often fails
         job.agentId = undefined;
         await saveJob(job);
-        this.activeIssueKeys.delete(
-          `${job.issue.projectId}:${job.issue.issueIid}`,
-        );
+        this.activeIssueKeys.delete(busyIssueKeyForJob(job));
       }
     }
 
@@ -1488,7 +1508,7 @@ export class JobQueue {
           err: err instanceof Error ? err.message : String(err),
           remaining: this.queue.length,
         });
-        const key = `${item.job.issue.projectId}:${item.job.issue.issueIid}`;
+        const key = busyIssueKeyForJob(item.job);
         this.activeIssueKeys.delete(key);
         this.clearCurrent(item.job.id);
       }
@@ -1650,7 +1670,7 @@ export class JobQueue {
     opts?: { forceCodePhase?: boolean },
   ) {
     const config = getConfig();
-    const key = `${job.issue.projectId}:${job.issue.issueIid}`;
+    const key = busyIssueKeyForJob(job);
     this.setCurrent(job);
     this.publishStatus();
 

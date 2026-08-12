@@ -24,6 +24,7 @@ import {
   loadJobByIssue,
   migrateAdhocJobToIssue,
   saveJob,
+  assertJobInActiveWorkspace,
 } from "../../job-store.js";
 import { logger } from "../../logger.js";
 import { jobQueue } from "../../queue.js";
@@ -42,6 +43,7 @@ import { AppError } from "../../utils/AppError.js";
 export async function requireJobDoc(id: string) {
   const job = await getJobDoc(id);
   if (!job) throw new AppError("not found", 404);
+  assertJobInActiveWorkspace(job);
   return job;
 }
 
@@ -52,6 +54,7 @@ export async function requireJobRecord(
 ): Promise<JobRecord> {
   const job = await loadJob(id);
   if (!job) throw new AppError(message, 404);
+  assertJobInActiveWorkspace(job);
   return job;
 }
 
@@ -77,8 +80,15 @@ export async function ensureJobForIssue(
     issue = await fetchIssueAsJob(iid);
   }
   if (!issue) {
-    const existing = (await listJobs()).find((j) => j.issue.issueIid === iid);
+    const rt = getRuntimeContext();
+    const existing = (
+      await listJobs({
+        workspaceProjectId: rt?.projectId,
+        ownerUsername: rt?.gitlabUsername,
+      })
+    ).find((j) => j.issue.issueIid === iid);
     if (!existing) throw new AppError(`Issue #${iid} not found`, 404);
+    assertJobInActiveWorkspace(existing);
     if (input.devNotes !== undefined) {
       existing.devNotes = input.devNotes.trim() || undefined;
     }
@@ -284,13 +294,23 @@ export async function findJobByIssueIid(iid: number) {
   if (!Number.isFinite(iid) || iid <= 0) {
     throw new AppError("invalid iid", 400);
   }
+  const rt = getRuntimeContext();
   const all = await listAssignedOpenIssues();
   const issue = all.find((i) => i.issueIid === iid);
   if (issue) {
-    const job = await loadJobByIssue(issue.projectId, iid);
+    const job = await loadJobByIssue(
+      issue.projectId,
+      iid,
+      rt?.projectId,
+    );
     return { job };
   }
-  const fallback = (await listJobs()).find((j) => j.issue.issueIid === iid);
+  const fallback = (
+    await listJobs({
+      workspaceProjectId: rt?.projectId,
+      ownerUsername: rt?.gitlabUsername,
+    })
+  ).find((j) => j.issue.issueIid === iid);
   return { job: fallback ?? null };
 }
 

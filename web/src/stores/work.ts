@@ -216,6 +216,14 @@ export const useWorkStore = defineStore("work", () => {
           // Mid-run after reload — show thinking again
           agentTyping.value = true;
         }
+      } else {
+        // Job not in this project's list (e.g. switched project) — clear selection
+        selectedJobId.value = null;
+        currentJob.value = null;
+        chat.value = [];
+        progressLines.value = [];
+        taskDetail.value = null;
+        agentTyping.value = false;
       }
     }
   }
