@@ -8,7 +8,7 @@ const ba = useBaChatStore();
 const STEPS: Array<{ id: BaProgressStep; short: string }> = [
   { id: "pull", short: "Đồng bộ" },
   { id: "start", short: "Khởi động" },
-  { id: "read", short: "Đọc UI" },
+  { id: "read", short: "Tra cứu" },
   { id: "write", short: "Soạn trả lời" },
   { id: "done", short: "Xong" },
 ];

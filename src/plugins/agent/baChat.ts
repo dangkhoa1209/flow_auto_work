@@ -261,8 +261,8 @@ export async function runBaChatAgent(opts: {
         messageId: opts.assistantMessageId,
         step: "read",
         label: opts.analysisMode
-          ? "Đang đối chiếu UI / nghiệp vụ…"
-          : "Đang đọc UI / locale…",
+          ? "Đang đối chiếu nghiệp vụ trên giao diện…"
+          : "Đang tra cứu / tiếng Việt…",
         detail: project.displayName,
       });
 
