@@ -56,7 +56,7 @@ function onKeydown(e: KeyboardEvent) {
         :readonly="inputReadonly"
         :placeholder="
           loading
-            ? 'Đang suy nghĩ… đợi xong rồi hỏi tiếp'
+            ? 'Đang suy nghĩ…'
             : analysisMode
               ? 'Hỏi bình thường hoặc nhờ phân tích nghiệp vụ (kèm URL / màn hình nếu có)…'
               : 'Hỏi về dự án — nên kèm URL hoặc tên màn hình / nút trên UI'
