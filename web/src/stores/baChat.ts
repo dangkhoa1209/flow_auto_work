@@ -71,6 +71,15 @@ export const useBaChatStore = defineStore("baChat", () => {
   const errorText = ref("");
   const progress = ref<BaProgressItem[]>([]);
   const progressVisible = ref(false);
+  /** BA analysis mode — agent acts as real BA for requirements analysis */
+  const analysisMode = ref(
+    localStorage.getItem("flow_ba_analysis_mode") === "1",
+  );
+
+  function setAnalysisMode(on: boolean) {
+    analysisMode.value = on;
+    localStorage.setItem("flow_ba_analysis_mode", on ? "1" : "0");
+  }
 
   const selectedProject = computed(() =>
     projects.value.find((p) => p.id === selectedProjectId.value) || null,
@@ -271,7 +280,10 @@ export const useBaChatStore = defineStore("baChat", () => {
     try {
       const data = await api<{ message?: BaMessage }>(API.ba.messages(threadId), {
         method: "POST",
-        body: JSON.stringify({ content: text }),
+        body: JSON.stringify({
+          content: text,
+          analysisMode: analysisMode.value,
+        }),
       });
       if (data.message) {
         const exists = messages.value.some((m) => m.id === data.message!.id);
@@ -468,6 +480,8 @@ export const useBaChatStore = defineStore("baChat", () => {
     errorText,
     progress,
     progressVisible,
+    analysisMode,
+    setAnalysisMode,
     currentProgressLabel,
     progressPct,
     projectReady,

@@ -61,6 +61,13 @@ async function onStop() {
         </div>
         <div class="faw-console-actions">
           <span
+            v-if="ba.analysisMode && !ba.streaming"
+            class="faw-idle text-[11px]"
+            title="BA mode: phân tích nghiệp vụ"
+          >
+            BA mode
+          </span>
+          <span
             v-if="ba.streaming"
             class="faw-idle text-[11px]"
           >
@@ -97,6 +104,8 @@ async function onStop() {
           :disabled-reason="disabledReason"
           :loading="ba.streaming"
           :stop-busy="ba.stopBusy"
+          :analysis-mode="ba.analysisMode"
+          @update:analysis-mode="ba.setAnalysisMode($event)"
           @send="onSend"
           @stop="onStop"
         />

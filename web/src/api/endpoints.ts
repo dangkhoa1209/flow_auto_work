@@ -19,6 +19,8 @@ export const API = {
     qcRole: "/api/me/qc-role",
     project: (projectId: string) =>
       `/api/me/projects/${encodeURIComponent(projectId)}`,
+    projectMilestones: (projectId: string) =>
+      `/api/me/projects/${encodeURIComponent(projectId)}/milestones`,
   },
   qc: {
     projects: "/api/qc/projects",

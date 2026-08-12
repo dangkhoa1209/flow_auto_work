@@ -352,6 +352,7 @@ export async function createUserProject(opts: {
   mainBranch?: string;
   workingBranch?: string;
   defaultCommitMode?: "manual" | "auto";
+  allowedMilestones?: string[];
   displayName?: string;
   gitlabProjectId?: number;
   isActive?: boolean;
@@ -397,6 +398,9 @@ export async function createUserProject(opts: {
     workingBranch: opts.workingBranch?.trim() || undefined,
     defaultCommitMode:
       opts.defaultCommitMode === "manual" ? "manual" : "auto",
+    allowedMilestones: opts.allowedMilestones?.length
+      ? opts.allowedMilestones
+      : undefined,
     isActive: Boolean(opts.isActive),
     cloneStatus: "pending",
     gitlabProjectId: opts.gitlabProjectId,
@@ -476,6 +480,7 @@ export async function updateProjectFields(
     mainBranch: string;
     workingBranch: string;
     defaultCommitMode: "manual" | "auto";
+    allowedMilestones?: string[];
     displayName: string;
     projectName: string;
     gitlabHost: string;
@@ -530,6 +535,16 @@ export async function updateProjectFields(
   if (patch.defaultCommitMode !== undefined) {
     existing.defaultCommitMode =
       patch.defaultCommitMode === "manual" ? "manual" : "auto";
+  }
+  if (patch.allowedMilestones !== undefined) {
+    const titles = [
+      ...new Set(
+        (patch.allowedMilestones || [])
+          .map((t) => String(t).trim())
+          .filter(Boolean),
+      ),
+    ].sort((a, b) => a.localeCompare(b));
+    existing.allowedMilestones = titles.length ? titles : undefined;
   }
   if (patch.displayName !== undefined) {
     existing.displayName = patch.displayName.trim() || existing.projectName;

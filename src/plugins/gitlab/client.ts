@@ -727,9 +727,10 @@ export async function listProjectLabels(
   return labels;
 }
 
-/** Active + closed project milestones (titles for Work filter). */
+/** Active + closed project milestones (titles for Work / project setup). */
 export async function listProjectMilestones(
   projectIdOrPath?: number | string,
+  token?: string,
 ): Promise<Array<{ id: number; title: string; state?: string }>> {
   const project = encodeURIComponent(
     String(projectIdOrPath ?? resolveGitlabProjectPath()),
@@ -740,6 +741,8 @@ export async function listProjectMilestones(
     const res = await gitlabFetch(
       "GET",
       `/projects/${project}/milestones?state=all&per_page=100&page=${page}`,
+      undefined,
+      token,
     );
     if (!res.ok) break;
     const batch = (await res.json()) as Array<{

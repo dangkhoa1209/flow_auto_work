@@ -82,6 +82,11 @@ export type WorkspaceProject = {
    * Per-job `commitMode` can still override. Missing → auto.
    */
   defaultCommitMode?: "manual" | "auto";
+  /**
+   * When non-empty, Workbench Open tasks only show issues whose
+   * milestone title is in this list. Empty / missing → no restriction.
+   */
+  allowedMilestones?: string[];
   /** Verify command run after agent code phase (e.g. "npm run typecheck") */
   verifyCommand?: string;
   isActive: boolean;

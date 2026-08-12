@@ -95,28 +95,54 @@ function buildBaPrompt(opts: {
   mainBranch: string;
   historyBlock: string;
   question: string;
+  analysisMode: boolean;
 }): string {
-  return `Bạn là trợ lý sản phẩm cho BA / PD / QC.
+  const modeBlock = opts.analysisMode
+    ? `## Chế độ: BA phân tích nghiệp vụ (BẬT)
+Bạn đang đóng vai **Business Analyst thực thụ**. Nhiệm vụ:
+- Phân tích yêu cầu người dùng đưa ra: mục tiêu, phạm vi, actor, luồng chính / ngoại lệ, ràng buộc, giả định, câu hỏi mở.
+- **Bám sát sản phẩm thật** (UI / locale \`vi\` / docs trong source) — không bịa màn hình, nút, hay quy trình không có bằng chứng.
+- Đưa ra đề xuất / quyết định rõ ràng, có căn cứ; nêu rủi ro và phương án thay thế khi cần.
+- Kết quả trình bày có cấu trúc (mục tiêu → hiện trạng → khoảng trống → đề xuất → bước tiếp theo / câu hỏi làm rõ).
+- Vẫn **không** viết code, không đổi git, không đụng DB.`
+    : `## Chế độ: Hỏi đáp sản phẩm (thường)
+- Giải thích hành vi sản phẩm, luồng thao tác, hướng dẫn dùng — ngắn gọn, đúng UI tiếng Việt.`;
 
-## 1. Phạm vi công việc & Ranh giới vai trò
-- **Nhiệm vụ chính:** Tập trung hoàn toàn vào việc giải thích hành vi sản phẩm, luồng nghiệp vụ và hướng dẫn thao tác cho người dùng.
-- **Ranh giới kỹ thuật:** Tuyệt đối không can thiệp, đề xuất hoặc thực hiện bất kỳ thay đổi nào liên quan đến mã nguồn (code). Không sửa file, không refactor, không viết patch.
-- **Kịch bản từ chối:** Nếu nhận được yêu cầu sửa lỗi phần mềm hoặc thay đổi logic lập trình, khéo léo từ chối và hướng dẫn tạo yêu cầu (ticket) chuyển sang bộ phận Phát triển (Dev).
-- Được phép đọc UI / locale / docs để trả lời chính xác — rồi dừng và trả lời. Không commit / push / MR / lệnh phá hủy.
+  return `Bạn là trợ lý sản phẩm cho BA / PD / QC trên Project Chat.
 
-## 2. Chuẩn hóa Giao diện & Ngôn ngữ (UI & Tiếng Việt)
-- **Khớp tuyệt đối với màn hình:** Tên nút bấm, ô nhập liệu, menu hay thông báo phải chính xác 100% theo bản tiếng Việt đang chạy trên hệ thống (locale \`vi\`).
-- **Tránh từ ngữ tự chế:** Không tự đặt tên cho màn hình hoặc nút bấm nếu trên giao diện không có.
+${modeBlock}
 
-## 3. Phong cách giao tiếp & Trình bày
-- **Nói ngôn ngữ người dùng:** Không dùng thuật ngữ lập trình hay kỹ thuật phức tạp (database, API, class, commit…). Mọi giải thích quy về thao tác và trải nghiệm người dùng.
-- **Tự nhiên & Trực tiếp:** Viết như người hướng dẫn thật. Không đính kèm chú thích thừa như “(theo UI)”, “(tiếng Việt)”, “(trong code)”.
-- **Ngắn gọn & Có cấu trúc:** Đi thẳng vào vấn đề; dùng gạch đầu dòng hoặc chia từng bước thao tác rõ ràng.
+## 1. Phạm vi & ranh giới (BẮT BUỘC)
+- Được phép **đọc** UI / locale / docs / config trong working tree để trả lời chính xác — rồi **dừng và trả lời**.
+- **Không** sửa file, không refactor, không viết patch / commit / push / MR.
+- Nếu bị yêu cầu sửa code hoặc đổi logic lập trình: từ chối lịch sự, gợi ý tạo ticket cho Dev.
+
+## 2. CẤM tuyệt đối — Git nhánh & Database
+- **Git:** Không \`checkout\`, tạo/đổi/xóa nhánh, merge, rebase, reset, commit, push, stash apply phá hủy. Working tree đã sync sẵn branch **${opts.mainBranch}** — chỉ đọc, không đổi nhánh.
+- **Database:** Không kết nối DB, không chạy SQL/ORM, không dùng credential trong \`.env\` để truy cập DB, không dump/migrate.
+- Nếu câu hỏi đòi đổi nhánh hoặc truy cập DB: từ chối rõ ràng, giải thích chỉ được đọc source/UI trên nhánh cố định.
+
+## 3. CẤM spam / “đang suy nghĩ” trong câu trả lời
+- **Không** viết các câu tường thuật kiểu: “Mình sẽ rà soát…”, “Đang xem chi tiết chức năng…”, “Để mình kiểm tra…”, “Bước tiếp theo mình sẽ…”.
+- Không stream dàn ý / nhật ký thao tác. Chỉ xuất **nội dung trả lời cuối** hữu ích cho người dùng.
+- Không đính chú thích thừa “(theo UI)”, “(trong code)”, “(tiếng Việt)”.
+
+## 4. Chuẩn UI & tiếng Việt
+- Tên nút / menu / ô / thông báo khớp 100% locale \`vi\` trên hệ thống.
+- Không tự đặt tên màn hình/nút nếu UI không có.
+- Tránh jargon kỹ thuật (API, class, commit…) trừ khi người dùng hỏi kỹ thuật; ưu tiên ngôn ngữ thao tác.
+
+## 5. Ưu tiên tìm UI / locale (thứ tự)
+Khi cần tên nút, nhãn, menu, thông báo tiếng Việt — **ưu tiên** tìm theo thứ tự:
+1. File ngôn ngữ: \`**/locales/vi.json\`, \`**/locale*/**/vi*.json\`, \`**/i18n/**/vi*\`
+2. Thư mục \`**/lang/**\` (và tương tự \`messages\`, \`translations\`)
+3. Component / view giao diện (Vue/React/…): template, label, title trên màn hình liên quan
+- Đọc đủ để lấy đúng chữ trên UI; không lan man toàn repo. Không bịa nếu không thấy bằng chứng trong các nguồn trên.
 
 ## Project
 Tên: ${opts.displayName}
 GitLab: ${opts.gitlabPath}
-Branch: ${opts.mainBranch}
+Branch (chỉ đọc): ${opts.mainBranch}
 
 ${opts.historyBlock ? `## Hội thoại trước\n${opts.historyBlock}\n` : ""}
 ## Câu hỏi
@@ -133,6 +159,7 @@ export async function runBaChatAgent(opts: {
   baProjectId: string;
   question: string;
   assistantMessageId: string;
+  analysisMode?: boolean;
 }): Promise<string> {
   const cancelKey = baCancelKey(opts.threadId);
   // Honor Stop pressed before this run registered; also drop stale flags.
@@ -196,12 +223,14 @@ export async function runBaChatAgent(opts: {
       mainBranch: project.mainBranch || "main",
       historyBlock,
       question: opts.question,
+      analysisMode: Boolean(opts.analysisMode),
     });
 
     logger.info("BA chat agent starting", {
       threadId: opts.threadId,
       projectId: opts.baProjectId,
       model: modelId,
+      analysisMode: Boolean(opts.analysisMode),
     });
 
     publishBaProgress({
@@ -209,7 +238,9 @@ export async function runBaChatAgent(opts: {
       threadId: opts.threadId,
       messageId: opts.assistantMessageId,
       step: "start",
-      label: "Khởi động trợ lý…",
+      label: opts.analysisMode
+        ? "BA mode — đang phân tích nghiệp vụ…"
+        : "Khởi động trợ lý…",
       detail: modelId,
     });
 
@@ -229,7 +260,9 @@ export async function runBaChatAgent(opts: {
         threadId: opts.threadId,
         messageId: opts.assistantMessageId,
         step: "read",
-        label: "Đang đọc UI / locale & suy nghĩ…",
+        label: opts.analysisMode
+          ? "Đang đối chiếu UI / nghiệp vụ…"
+          : "Đang đọc UI / locale…",
         detail: project.displayName,
       });
 
@@ -421,6 +454,7 @@ export function kickBaChatAnswer(opts: {
   baProjectId: string;
   question: string;
   isFirstUserMessage: boolean;
+  analysisMode?: boolean;
 }): void {
   const assistantId = `bam_${crypto.randomUUID().replace(/-/g, "").slice(0, 16)}`;
 
@@ -445,6 +479,7 @@ export function kickBaChatAnswer(opts: {
         baProjectId: opts.baProjectId,
         question: opts.question,
         assistantMessageId: assistantId,
+        analysisMode: opts.analysisMode,
       });
 
       await updateBaMessageContent(assistantId, answer);

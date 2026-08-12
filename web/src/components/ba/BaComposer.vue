@@ -6,11 +6,13 @@ const props = defineProps<{
   disabledReason?: string;
   loading?: boolean;
   stopBusy?: boolean;
+  analysisMode?: boolean;
 }>();
 
 const emit = defineEmits<{
   send: [content: string];
   stop: [];
+  "update:analysisMode": [boolean];
 }>();
 
 const text = ref("");
@@ -46,15 +48,39 @@ function onKeydown(e: KeyboardEvent) {
         :placeholder="
           loading
             ? 'Đang suy nghĩ… đợi xong rồi hỏi tiếp'
-            : 'Hỏi về dự án — nên kèm URL hoặc tên màn hình / nút trên UI'
+            : analysisMode
+              ? 'Mô tả yêu cầu / bài toán cần BA phân tích (kèm URL hoặc màn hình nếu có)…'
+              : 'Hỏi về dự án — nên kèm URL hoặc tên màn hình / nút trên UI'
         "
         @keydown="onKeydown"
       />
     </a-tooltip>
     <div class="faw-console-input__row faw-ba-input-row">
-      <span class="faw-ba-input-hint">
-        Enter gửi · Shift+Enter xuống dòng
-      </span>
+      <div class="faw-ba-input-hint flex items-center gap-2 flex-wrap min-w-0">
+        <a-tooltip
+          title="Bật: agent đóng vai BA phân tích nghiệp vụ (bám UI thật, quyết định rõ). Tắt: hỏi đáp sản phẩm thường."
+        >
+          <label
+            class="inline-flex items-center gap-1.5 cursor-pointer select-none shrink-0 text-[11px] text-[var(--app-muted)]"
+          >
+            <a-switch
+              size="small"
+              :checked="analysisMode"
+              :disabled="loading"
+              @change="(v: boolean) => emit('update:analysisMode', v)"
+            />
+            <span
+              :class="
+                analysisMode
+                  ? 'text-[var(--app-ink)] font-medium'
+                  : undefined
+              "
+              >BA mode</span
+            >
+          </label>
+        </a-tooltip>
+        <span class="opacity-70">Enter gửi · Shift+Enter xuống dòng</span>
+      </div>
       <div class="faw-ba-input-actions">
         <a-popconfirm
           v-if="loading"

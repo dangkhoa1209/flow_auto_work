@@ -230,24 +230,19 @@ export const useWorkStore = defineStore("work", () => {
 
   async function loadMeta() {
     hydrateMilestoneFilter();
-    const [m, l, ms] = await Promise.all([
+    const [m, l] = await Promise.all([
       api<{ members: Array<{ username: string; name?: string }> }>(
         API.meta.members,
       ).catch(() => ({ members: [] })),
       api<{ labels: Array<string | { name?: string }> }>(API.meta.labels).catch(
         () => ({ labels: [] }),
       ),
-      api<{ milestones: string[] }>(API.meta.milestones).catch(() => ({
-        milestones: [],
-      })),
     ]);
     members.value = m.members || [];
     labels.value = (l.labels || [])
       .map((x) => (typeof x === "string" ? x : x?.name)?.trim())
       .filter((n): n is string => Boolean(n));
-    projectMilestones.value = (ms.milestones || [])
-      .map((t) => t?.trim())
-      .filter((t): t is string => Boolean(t));
+    projectMilestones.value = [];
   }
 
   async function loadStatus() {
@@ -874,6 +869,20 @@ export const useWorkStore = defineStore("work", () => {
     }
   }
 
+  /** Close open issue / job when switching Flow project. */
+  function clearOpenSelection() {
+    selectedTaskIid.value = null;
+    taskDetail.value = null;
+    selectedJobId.value = null;
+    currentJob.value = null;
+    chat.value = [];
+    progressLines.value = [];
+    progressAfterId.value = 0;
+    progressLive.value = false;
+    agentTyping.value = false;
+    jobLoading.value = false;
+  }
+
   /** After SSE reconnect / tab wake — catch up status, jobs, open job progress+chat. */
   let resyncTimer: ReturnType<typeof setTimeout> | undefined;
   let resyncInFlight = false;
@@ -963,5 +972,6 @@ export const useWorkStore = defineStore("work", () => {
     fetchIssueDraft,
     createGitlabIssue,
     refreshAll,
+    clearOpenSelection,
   };
 });

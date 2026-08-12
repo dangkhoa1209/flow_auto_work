@@ -29,7 +29,6 @@ export function useWorkbench() {
     loading,
     jobLoading,
     labels,
-    projectMilestones,
     milestoneFilter,
     agentTyping,
   } = storeToRefs(work);
@@ -80,21 +79,54 @@ export function useWorkbench() {
 
   const isCurrentAdhoc = computed(() => isAdhocJob(currentJob.value));
 
-  const milestones = computed(() => {
-    const set = new Set<string>(projectMilestones.value);
-    for (const t of tasks.value) {
-      const title = t.milestone?.title?.trim();
-      if (title) set.add(title);
-    }
-    const selected = milestoneFilter.value?.trim();
-    if (selected && selected !== "all" && selected !== "__none__") {
-      set.add(selected);
-    }
-    return ["all", ...Array.from(set).sort((a, b) => a.localeCompare(b)), "__none__"];
+  /** Project setup allowlist — empty = show all assigned open tasks. */
+  const allowedMilestoneSet = computed(() => {
+    const list =
+      session.currentMembership?.project?.allowedMilestones || [];
+    const titles = list.map((t) => String(t).trim()).filter(Boolean);
+    if (!titles.length) return null;
+    return new Set(titles);
   });
 
-  const filteredTasks = computed(() => {
+  const projectScopedTasks = computed(() => {
+    const allow = allowedMilestoneSet.value;
+    if (!allow) return tasks.value;
     return tasks.value.filter((t) => {
+      const title = t.milestone?.title?.trim();
+      return Boolean(title && allow.has(title));
+    });
+  });
+
+  /** Dropdown: All + milestones present on currently visible tasks only. */
+  const milestones = computed(() => {
+    const set = new Set<string>();
+    let hasNone = false;
+    for (const t of projectScopedTasks.value) {
+      const title = t.milestone?.title?.trim();
+      if (title) set.add(title);
+      else hasNone = true;
+    }
+    const opts = [
+      "all",
+      ...Array.from(set).sort((a, b) => a.localeCompare(b)),
+    ];
+    if (hasNone) opts.push("__none__");
+    return opts;
+  });
+
+  watch(
+    milestones,
+    (opts) => {
+      const cur = milestoneFilter.value?.trim() || "all";
+      if (!opts.includes(cur)) {
+        work.setMilestoneFilter("all");
+      }
+    },
+    { flush: "post" },
+  );
+
+  const filteredTasks = computed(() => {
+    return projectScopedTasks.value.filter((t) => {
       if (milestoneFilter.value === "all") return true;
       if (milestoneFilter.value === "__none__") return !t.milestone?.title;
       return t.milestone?.title === milestoneFilter.value;
@@ -243,6 +275,23 @@ export function useWorkbench() {
   watch(selectedJobId, () => {
     midTab.value = "detail";
   });
+
+  // Switching Flow project closes open issue / job UI (selection cleared in work store).
+  watch(
+    () => session.projectId,
+    (pid, prev) => {
+      if (!prev || pid === prev) return;
+      selectedIids.value = [];
+      relatedPreviewOpen.value = false;
+      relatedPreview.value = null;
+      relatedPreviewError.value = null;
+      relatedPreviewFallback.value = null;
+      mobilePane.value = "tasks";
+      midTab.value = "detail";
+      openIidDraft.value = "";
+      chatInput.value = "";
+    },
+  );
 
   let notesDebounce: ReturnType<typeof setTimeout> | null = null;
   function scheduleNotesAutosave() {

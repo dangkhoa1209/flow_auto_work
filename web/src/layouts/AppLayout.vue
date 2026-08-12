@@ -115,6 +115,7 @@ async function onSwitchProject(projectId: string) {
   }
   switching.value = true;
   try {
+    work.clearOpenSelection();
     await session.activateProject(projectId);
     selectedProjectId.value = projectId;
     projectPickerOpen.value = false;

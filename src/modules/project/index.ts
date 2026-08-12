@@ -6,6 +6,7 @@ import {
   fetchGitlabProject,
   listGitlabBranches,
   listMyGitlabProjects,
+  listProjectMilestones,
   verifyGitlabTokenUser,
 } from "../../plugins/gitlab/client.js";
 import {
@@ -45,6 +46,11 @@ export function publicProject(project: Awaited<ReturnType<typeof getProject>>) {
     workingBranch: project.workingBranch ?? null,
     defaultCommitMode:
       project.defaultCommitMode === "manual" ? "manual" : "auto",
+    allowedMilestones: Array.isArray(project.allowedMilestones)
+      ? project.allowedMilestones
+          .map((t) => String(t).trim())
+          .filter(Boolean)
+      : [],
     isActive: project.isActive,
     cloneStatus: project.cloneStatus,
     cloneError: project.cloneError ?? null,
@@ -93,6 +99,20 @@ function asAppError(err: unknown, status = 400): AppError {
   return new AppError(err instanceof Error ? err.message : String(err), status);
 }
 
+/** Empty array clears restriction; omit/undefined leaves unchanged at call sites. */
+export function normalizeAllowedMilestones(
+  raw?: string[] | null,
+): string[] | undefined {
+  if (raw === undefined || raw === null) return undefined;
+  if (!Array.isArray(raw)) return undefined;
+  const titles = [
+    ...new Set(
+      raw.map((t) => String(t).trim()).filter(Boolean),
+    ),
+  ].sort((a, b) => a.localeCompare(b));
+  return titles;
+}
+
 /** Resolve default clone path without creating a project. */
 export function getDefaultProjectPath(username: string, projectName?: string) {
   const user = requireUser(username);
@@ -110,6 +130,7 @@ export type CreateProjectBody = {
   mainBranch?: string;
   workingBranch?: string;
   defaultCommitMode?: "manual" | "auto";
+  allowedMilestones?: string[];
   displayName?: string;
   activate?: boolean;
 };
@@ -146,6 +167,7 @@ export async function createProject(username: string, body: CreateProjectBody) {
       workingBranch: body.workingBranch,
       defaultCommitMode:
         body.defaultCommitMode === "manual" ? "manual" : "auto",
+      allowedMilestones: normalizeAllowedMilestones(body.allowedMilestones),
       displayName: projectName,
       gitlabProjectId,
       isActive: body.activate !== false,
@@ -371,6 +393,8 @@ export type UpdateProjectBody = {
   projectName?: string;
   /** Default Auto/Manual commit for new jobs in this project */
   defaultCommitMode?: "manual" | "auto";
+  /** Milestone titles allowed in Workbench; empty clears restriction */
+  allowedMilestones?: string[];
 };
 
 /** Update branches / path / token / Flow name (+ rename folder) for owned project */
@@ -427,6 +451,13 @@ export async function updateOwnedProject(
       ...(body.defaultCommitMode === "manual" ||
       body.defaultCommitMode === "auto"
         ? { defaultCommitMode: body.defaultCommitMode }
+        : {}),
+      ...(Object.prototype.hasOwnProperty.call(body, "allowedMilestones")
+        ? {
+            allowedMilestones: normalizeAllowedMilestones(
+              body.allowedMilestones ?? [],
+            ),
+          }
         : {}),
       ...(body.gitlabToken?.trim()
         ? { gitlabToken: body.gitlabToken.trim() }
@@ -520,7 +551,7 @@ export async function listProjectBranches(opts: {
   }
 }
 
-/** Preview GitLab projects/branches with a raw PAT (wizard, before project saved). */
+/** Preview GitLab projects/branches/milestones with a raw PAT (wizard, before project saved). */
 export async function previewGitlab(
   username: string,
   body: { gitlabToken?: string; gitlabPath?: string },
@@ -533,12 +564,50 @@ export async function previewGitlab(
     const projects = await listMyGitlabProjects(token);
     let branches: Array<{ name: string; default?: boolean }> = [];
     let defaultBranch: string | null = null;
+    let milestones: string[] = [];
     const gitlabPath = body.gitlabPath?.trim();
     if (gitlabPath) {
       branches = await listGitlabBranches(gitlabPath, token);
       defaultBranch = branches.find((b) => b.default)?.name ?? null;
+      const ms = await listProjectMilestones(gitlabPath, token);
+      milestones = [
+        ...new Set(ms.map((m) => m.title.trim()).filter(Boolean)),
+      ].sort((a, b) => a.localeCompare(b));
     }
-    return { projects, branches, defaultBranch };
+    return { projects, branches, defaultBranch, milestones };
+  } catch (err) {
+    throw asAppError(err, 400);
+  }
+}
+
+/** Milestone titles for an owned project (uses project PAT). */
+export async function listOwnedProjectMilestones(
+  username: string,
+  projectIdRaw: string,
+) {
+  const user = requireUser(username);
+  const projectId = projectIdRaw.trim();
+  if (!projectId) throw new AppError("projectId required", 400);
+  const project = await getProject(projectId);
+  if (!project || project.userId !== user.toLowerCase()) {
+    throw new AppError("Project not found", 404);
+  }
+  const secrets = await getUserSecrets(user, projectId);
+  if (!secrets?.gitlabToken) {
+    throw new AppError(
+      "Add GitLab PAT on the project (Settings → Project)",
+      401,
+    );
+  }
+  try {
+    const ms = await listProjectMilestones(
+      project.gitlabPath,
+      secrets.gitlabToken,
+    );
+    const milestones = [
+      ...new Set(ms.map((m) => m.title.trim()).filter(Boolean)),
+    ].sort((a, b) => a.localeCompare(b));
+    return { milestones };
   } catch (err) {
     throw asAppError(err, 400);
   }

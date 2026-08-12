@@ -7,6 +7,7 @@ import {
   getProjectCloneStatus,
   joinProject,
   listMyGitlabProjectsForUser,
+  listOwnedProjectMilestones,
   listProjectBranches,
   previewGitlab,
   removeUserProject,
@@ -89,6 +90,15 @@ export const projectController = {
         headerUserFromExpress(req),
         projectIdParam(req),
         body,
+      ),
+    );
+  }),
+
+  ownedMilestones: asyncHandler(async (req: Request, res: Response) => {
+    res.json(
+      await listOwnedProjectMilestones(
+        headerUserFromExpress(req),
+        projectIdParam(req),
       ),
     );
   }),

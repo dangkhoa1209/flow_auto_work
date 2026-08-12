@@ -15,5 +15,9 @@ export function createMeRoutes(): Router {
   router.delete("/cursor-key", meController.clearCursorKey);
   router.put("/qc-role", meController.setQcRole);
   router.put("/projects/:projectId", projectController.updateOwned);
+  router.get(
+    "/projects/:projectId/milestones",
+    projectController.ownedMilestones,
+  );
   return router;
 }

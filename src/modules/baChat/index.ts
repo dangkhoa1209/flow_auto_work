@@ -73,7 +73,7 @@ export async function baGetMessages(userId: string, threadId: string) {
 export async function baSendMessage(
   userId: string,
   threadId: string,
-  body: { content?: string },
+  body: { content?: string; analysisMode?: boolean },
 ) {
   const content = body.content?.trim();
   if (!content) throw new AppError("content required", 400);
@@ -115,7 +115,12 @@ export async function baSendMessage(
     baProjectId: thread.baProjectId,
     question: content,
     isFirstUserMessage: existing.filter((m) => m.role === "user").length === 0,
+    analysisMode: Boolean(body.analysisMode),
   });
 
-  return { message: userMsg, streaming: true };
+  return {
+    message: userMsg,
+    streaming: true,
+    analysisMode: Boolean(body.analysisMode),
+  };
 }

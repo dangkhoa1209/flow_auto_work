@@ -29,6 +29,9 @@ export type Membership = {
     hasGitlabToken?: boolean;
     mainBranch?: string | null;
     workingBranch?: string | null;
+    defaultCommitMode?: "manual" | "auto" | null;
+    /** When non-empty, Open tasks limited to these milestone titles */
+    allowedMilestones?: string[];
   };
 };
 
