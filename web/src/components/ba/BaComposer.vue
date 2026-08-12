@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, nextTick, ref } from "vue";
 
 const props = defineProps<{
   disabled?: boolean;
@@ -21,10 +21,17 @@ const canSend = computed(
   () => Boolean(text.value.trim()) && !props.disabled && !props.loading,
 );
 
-function submit() {
+/** While streaming, keep input readonly (not disabled) so clear still paints. */
+const inputDisabled = computed(
+  () => Boolean(props.disabled) && !props.loading,
+);
+const inputReadonly = computed(() => Boolean(props.loading));
+
+async function submit() {
   if (!canSend.value) return;
   const content = text.value;
   text.value = "";
+  await nextTick();
   emit("send", content);
 }
 
@@ -32,8 +39,9 @@ function onKeydown(e: KeyboardEvent) {
   if (e.key !== "Enter") return;
   if (e.isComposing) return;
   if (e.shiftKey) return; // Shift+Enter → newline
+  if (props.loading || props.disabled) return;
   e.preventDefault();
-  submit();
+  void submit();
 }
 </script>
 
@@ -44,7 +52,8 @@ function onKeydown(e: KeyboardEvent) {
         v-model:value="text"
         :rows="2"
         :auto-size="{ minRows: 2, maxRows: 12 }"
-        :disabled="disabled || loading"
+        :disabled="inputDisabled"
+        :readonly="inputReadonly"
         :placeholder="
           loading
             ? 'Đang suy nghĩ… đợi xong rồi hỏi tiếp'
