@@ -118,8 +118,18 @@ export const useAuthStore = defineStore("auth", () => {
       await refreshAccessTokenRaw();
       syncFromBridge();
       return true;
-    } catch {
-      clearLocal();
+    } catch (err) {
+      const status =
+        err && typeof err === "object" && "status" in err
+          ? Number((err as { status?: number }).status)
+          : 0;
+      const code =
+        err && typeof err === "object" && "code" in err
+          ? String((err as { code?: string }).code || "")
+          : "";
+      if (status === 401 || code === "SESSION_EXPIRED") {
+        clearLocal();
+      }
       return false;
     }
   }

@@ -40,6 +40,8 @@ type QueueItem = {
 
 let isRefreshing = false;
 let failedQueue: QueueItem[] = [];
+/** Single-flight: SSE reconnect + HTTP 401 share one refresh. */
+let refreshInFlight: Promise<string> | null = null;
 
 function processQueue(error: unknown, token: string | null) {
   for (const p of failedQueue) {
@@ -61,6 +63,18 @@ function isPublicPath(url?: string): boolean {
   return PUBLIC_AUTH_PATHS.has(path);
 }
 
+function isSessionExpiredError(err: unknown): boolean {
+  if (err instanceof ApiError) {
+    return err.status === 401 || err.code === "SESSION_EXPIRED";
+  }
+  if (axios.isAxiosError(err)) {
+    const status = err.response?.status;
+    const code = (err.response?.data as { code?: string } | undefined)?.code;
+    return status === 401 || code === "SESSION_EXPIRED";
+  }
+  return false;
+}
+
 /** Bare client — no interceptors (refresh must not recurse). */
 const rawHttp = axios.create({
   timeout: 120_000,
@@ -68,31 +82,56 @@ const rawHttp = axios.create({
 });
 
 export async function refreshAccessTokenRaw(): Promise<string> {
-  const refreshToken = getRefreshToken();
-  if (!refreshToken) {
-    throw new ApiError("No refresh token", 401, "SESSION_EXPIRED");
-  }
-  const res = await rawHttp.post<{
-    accessToken: string;
-    refreshToken?: string;
-    expiresIn?: number;
-    accessExpiresAt?: number;
-    user?: { gitlabUsername?: string };
-  }>(API.auth.refresh, { refreshToken });
+  if (refreshInFlight) return refreshInFlight;
 
-  const data = res.data;
-  if (!data.accessToken) {
-    throw new ApiError("Refresh missing accessToken", 401, "SESSION_EXPIRED");
-  }
-  const persisted = loadPersistedAuth();
-  applyTokenPair({
-    accessToken: data.accessToken,
-    refreshToken: data.refreshToken || refreshToken,
-    expiresIn: data.expiresIn,
-    accessExpiresAt: data.accessExpiresAt,
-    username: data.user?.gitlabUsername || persisted.username,
-  });
-  return data.accessToken;
+  refreshInFlight = (async () => {
+    const refreshToken = getRefreshToken();
+    if (!refreshToken) {
+      throw new ApiError("No refresh token", 401, "SESSION_EXPIRED");
+    }
+    try {
+      const res = await rawHttp.post<{
+        accessToken: string;
+        refreshToken?: string;
+        expiresIn?: number;
+        accessExpiresAt?: number;
+        user?: { gitlabUsername?: string };
+      }>(API.auth.refresh, { refreshToken });
+
+      const data = res.data;
+      if (!data.accessToken) {
+        throw new ApiError(
+          "Refresh missing accessToken",
+          401,
+          "SESSION_EXPIRED",
+        );
+      }
+      const persisted = loadPersistedAuth();
+      applyTokenPair({
+        accessToken: data.accessToken,
+        refreshToken: data.refreshToken || refreshToken,
+        expiresIn: data.expiresIn,
+        accessExpiresAt: data.accessExpiresAt,
+        username: data.user?.gitlabUsername || persisted.username,
+      });
+      return data.accessToken;
+    } catch (err) {
+      if (isSessionExpiredError(err)) {
+        throw err instanceof ApiError
+          ? err
+          : new ApiError(
+              "Session expired — please sign in again",
+              401,
+              "SESSION_EXPIRED",
+            );
+      }
+      throw err;
+    } finally {
+      refreshInFlight = null;
+    }
+  })();
+
+  return refreshInFlight;
 }
 
 export const http: AxiosInstance = axios.create({
@@ -166,23 +205,22 @@ http.interceptors.response.use(
       processQueue(null, token);
       original.headers.Authorization = `Bearer ${token}`;
       return http(original);
-    } catch {
-      processQueue(
-        new ApiError(
-          "Session expired — please sign in again",
-          401,
-          "SESSION_EXPIRED",
-        ),
-        null,
-      );
-      clearAuthAndNotify();
-      return Promise.reject(
-        new ApiError(
-          "Session expired — please sign in again",
-          401,
-          "SESSION_EXPIRED",
-        ),
-      );
+    } catch (err) {
+      const apiErr = isSessionExpiredError(err)
+        ? err instanceof ApiError
+          ? err
+          : new ApiError(
+              "Session expired — please sign in again",
+              401,
+              "SESSION_EXPIRED",
+            )
+        : toApiError(err as AxiosError<{ error?: string; code?: string }>);
+      processQueue(apiErr, null);
+      // Only force logout on real auth failure — not network / 5xx blips
+      if (isSessionExpiredError(apiErr)) {
+        clearAuthAndNotify();
+      }
+      return Promise.reject(apiErr);
     } finally {
       isRefreshing = false;
     }

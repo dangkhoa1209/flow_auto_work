@@ -6,7 +6,7 @@ import {
 } from "node:crypto";
 import { getSecretsKey } from "../plugins/crypto/secrets.js";
 
-export const ACCESS_TTL_SEC = 10 * 60; // 10 minutes
+export const ACCESS_TTL_SEC = 2 * 60 * 60; // 2 hours — fewer refresh races
 export const REFRESH_TTL_SEC = 30 * 24 * 60 * 60; // 30 days
 
 export type AccessClaims = {

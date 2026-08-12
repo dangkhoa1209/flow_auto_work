@@ -99,10 +99,13 @@ export async function refreshAccessToken(): Promise<boolean> {
     if (!getRefreshToken()) return false;
     await refreshAccessTokenRaw();
     return true;
-  } catch {
-    clearAuthSession();
-    if (typeof window !== "undefined") {
-      window.dispatchEvent(new CustomEvent("flow:session-expired"));
+  } catch (err) {
+    // Network blips must not wipe the session — only hard auth failures
+    if (err instanceof ApiError && (err.status === 401 || err.code === "SESSION_EXPIRED")) {
+      clearAuthSession();
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("flow:session-expired"));
+      }
     }
     return false;
   }

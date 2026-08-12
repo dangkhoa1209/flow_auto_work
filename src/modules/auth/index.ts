@@ -8,6 +8,7 @@ import {
   saveRefreshSession,
 } from "../../auth/sessions.js";
 import {
+  issueAccessToken,
   newTokenPair,
   verifyRefreshToken,
   REFRESH_TTL_SEC,
@@ -200,7 +201,7 @@ export async function loginUser(body: LoginBody) {
   };
 }
 
-/** Exchange refresh token → new access (+ rotated refresh). */
+/** Exchange refresh token → new access (refresh token is reused — no rotate race). */
 export async function refreshAuthTokens(body: { refreshToken?: string }) {
   const raw = body.refreshToken?.trim();
   if (!raw) throw new AppError("refreshToken required", 400);
@@ -223,12 +224,21 @@ export async function refreshAuthTokens(body: { refreshToken?: string }) {
       await revokeRefreshSession(claims.jti);
       throw new AppError("User not found", 401, "SESSION_EXPIRED");
     }
-    // Issue new pair first, then revoke old (avoid locking user out if issue fails)
-    const tokens = await issueAuthTokens(claims.sub);
-    await revokeRefreshSession(claims.jti);
+    // Reuse the same refresh session so concurrent SSE + API refresh cannot
+    // invalidate each other (rotation races were logging users out).
+    const access = issueAccessToken(claims.sub);
+    const refreshLeftSec = Math.max(
+      0,
+      claims.exp - Math.floor(Date.now() / 1000),
+    );
     return {
       user: toPublicUser(user),
-      ...tokens,
+      accessToken: access.token,
+      refreshToken: raw,
+      expiresIn: access.expiresIn,
+      accessExpiresAt: access.expiresAt,
+      refreshExpiresIn: refreshLeftSec,
+      tokenType: "Bearer" as const,
     };
   } catch (err) {
     if (err instanceof AppError) throw err;

@@ -112,7 +112,7 @@ export function applyTokenPair(opts: {
 }): void {
   const expiresAt =
     opts.accessExpiresAt ||
-    Date.now() + (opts.expiresIn || 600) * 1000;
+    Date.now() + (opts.expiresIn || 2 * 60 * 60) * 1000;
   setAccessToken(opts.accessToken, expiresAt);
   const patch: Partial<PersistedAuth> = {
     refreshToken: opts.refreshToken,
