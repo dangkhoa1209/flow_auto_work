@@ -130,19 +130,23 @@ Trả lời theo cấu trúc gọn (gia giảm theo ngữ cảnh, bỏ mục kh�
   const dbBlock = opts.dbAccess.allowed
     ? opts.dbAccess.dialect === "mongodb"
       ? `## 3b. Database (ĐƯỢC PHÉP — MongoDB read-only, đã cấu hình admin)
-- Project này đã bật MongoDB tra cứu (\`${opts.dbAccess.database || "?"}\`).
-- Khi cần dữ liệu/schema thật: **chỉ** dùng tool \`query_readonly_mongo\` với JSON:
+- **Chỉ một database:** \`${opts.dbAccess.database || "?"}\` (admin setup). Tool luôn gắn đúng DB này.
+- **Cấm tuyệt đối:** chuyển/truy cập DB Mongo khác (kể cả tên tenant kiểu YKKSUB nếu đó là DB khác), \`use\` DB khác, shell \`mongosh\`, credential \`.env\`, tự nối URI.
+- Nếu người dùng nói tenant/mã công ty (vd. YKKSUB): **lọc trong cùng DB đã setup** (field tenant/company/org trong collection) — không được hiểu là đổi sang database khác. Không tìm thấy field lọc → nói rõ, hỏi BA/admin; không tự nhảy DB.
+- Khi cần dữ liệu: **chỉ** tool \`query_readonly_mongo\` với JSON:
   - \`{"op":"listCollections"}\`
-  - \`{"op":"find","collection":"…","filter":{},"limit":20}\`
+  - \`{"op":"find","collection":"…","filter":{}}\`
   - \`{"op":"aggregate","collection":"…","pipeline":[…]}\`
   - \`{"op":"count","collection":"…","filter":{}}\`
-- **Cấm:** insert/update/delete, \`$out\`/\`$merge\`, dump, dùng credential trong \`.env\`, shell \`mongosh\`, tự nối URI.
-- Không ghi password/URI vào câu trả lời. Chỉ trích kết quả cần thiết, không dump hàng loạt.`
+- **Cấm:** insert/update/delete, \`$out\`/\`$merge\`, dump; không truyền \`database\`/\`db\` trong JSON.
+- Không ghi password/URI vào câu trả lời.`
       : `## 3b. Database (ĐƯỢC PHÉP — SQL read-only, đã cấu hình admin)
-- Project này đã bật DB tra cứu (${opts.dbAccess.dialect || "sql"} / \`${opts.dbAccess.database || "?"}\`).
-- Khi cần dữ liệu/schema thật: **chỉ** dùng tool \`query_readonly_sql\` (SELECT / WITH / SHOW / DESCRIBE / EXPLAIN).
-- **Cấm:** INSERT/UPDATE/DELETE/DDL, dump, migrate, dùng credential trong \`.env\`, shell \`mysql\`/\`psql\`, tự nối connection string.
-- Không ghi password/URI vào câu trả lời. Chỉ trích kết quả cần thiết (bảng/cột/số liệu), không dump hàng loạt.`
+- **Chỉ một database:** \`${opts.dbAccess.database || "?"}\` (${opts.dbAccess.dialect || "sql"}). Connection đã gắn DB này.
+- **Cấm tuyệt đối:** \`USE\` DB khác, query \`otherdb.table\`, shell \`mysql\`/\`psql\`, credential \`.env\`.
+- Tenant/mã công ty trong câu hỏi → lọc bằng cột trong **cùng** DB đã setup, không đổi database.
+- Khi cần dữ liệu: **chỉ** tool \`query_readonly_sql\` (SELECT / WITH / SHOW / DESCRIBE / EXPLAIN).
+- **Cấm:** INSERT/UPDATE/DELETE/DDL, dump, migrate.
+- Không ghi password/URI vào câu trả lời.`
     : `## 3b. Database (CẤM — project chưa bật DB)
 - Không kết nối DB, không chạy SQL/ORM/Mongo, không dùng credential trong \`.env\`, không dump/migrate.
 - Nếu người dùng hỏi dữ liệu DB: nói rõ project chưa được admin cấu hình/bật DB tra cứu.`;
@@ -300,7 +304,10 @@ export async function runBaChatAgent(opts: {
         local: {
           cwd: project.localPath,
           ...(dbCfg
-            ? { customTools: buildBaDbCustomTools(dbCfg) }
+            ? {
+                // SDKCustomTool typing is strict; our tools match runtime shape.
+                customTools: buildBaDbCustomTools(dbCfg) as never,
+              }
             : {}),
         },
       });

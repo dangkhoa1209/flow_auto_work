@@ -26,6 +26,11 @@ export function assertReadonlySql(sqlRaw: string): string {
   if (sql.includes(";")) {
     throw new Error("Multiple statements are not allowed");
   }
+  if (/\buse\b/i.test(sql)) {
+    throw new Error(
+      "USE / switching database is not allowed — only the admin-configured database",
+    );
+  }
   if (FORBIDDEN.test(sql)) {
     throw new Error(
       "Only read-only queries are allowed (SELECT / WITH / SHOW / DESCRIBE / EXPLAIN)",
@@ -44,6 +49,34 @@ export function assertReadonlySql(sqlRaw: string): string {
     );
   }
   return sql;
+}
+
+/** Reject SQL that clearly targets another database name (db.table / `db`.table). */
+export function assertSqlStaysInDatabase(sql: string, allowedDb: string): void {
+  const allowed = allowedDb.trim();
+  if (!allowed) return;
+  // Match identifier.identifier where first part looks like a DB qualifier
+  // (not a common schema like public/information_schema for postgres discovery).
+  const re =
+    /(?:from|join|update|into|table|describe|desc|explain)\s+[`"]?([a-zA-Z_][\w$]*)[`"]?\s*\.\s*[`"]?[a-zA-Z_]/gi;
+  let m: RegExpExecArray | null;
+  const allowSchemas = new Set([
+    allowed.toLowerCase(),
+    "public",
+    "information_schema",
+    "pg_catalog",
+    "mysql",
+    "performance_schema",
+    "sys",
+  ]);
+  while ((m = re.exec(sql)) !== null) {
+    const first = m[1].toLowerCase();
+    if (!allowSchemas.has(first)) {
+      throw new Error(
+        `Cross-database reference "${m[1]}" is not allowed — only database "${allowed}"`,
+      );
+    }
+  }
 }
 
 export type BaMongoQuery =
@@ -82,6 +115,14 @@ export function parseMongoQuery(raw: string): BaMongoQuery {
     throw new Error("MongoDB query must be a JSON object");
   }
   const q = parsed as Record<string, unknown>;
+
+  // Hard lock: tool always uses the admin-configured database — never switch.
+  if (q.database != null || q.db != null || q.dbName != null) {
+    throw new Error(
+      "Cannot specify database/db — only the admin-configured database is allowed",
+    );
+  }
+
   const op = String(q.op || "").trim();
   if (op === "listCollections") return { op: "listCollections" };
 
@@ -402,6 +443,7 @@ export async function runBaReadonlyQuery(
 ): Promise<BaDbQueryResult> {
   if (cfg.dialect === "mongodb") return queryMongo(cfg, queryRaw);
   const sql = assertReadonlySql(queryRaw);
+  assertSqlStaysInDatabase(sql, cfg.database);
   if (cfg.dialect === "mysql") return queryMysql(cfg, sql);
   if (cfg.dialect === "postgres") return queryPostgres(cfg, sql);
   throw new Error(`Unsupported dialect: ${cfg.dialect}`);

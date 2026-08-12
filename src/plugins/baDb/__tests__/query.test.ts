@@ -47,7 +47,7 @@ describe("parseMongoQuery", () => {
     ).toMatchObject({ op: "aggregate", collection: "users" });
   });
 
-  it("rejects write stages and bad ops", () => {
+  it("rejects write stages, other-db fields, and bad ops", () => {
     expect(() =>
       parseMongoQuery(
         '{"op":"aggregate","collection":"u","pipeline":[{"$out":"x"}]}',
@@ -58,6 +58,19 @@ describe("parseMongoQuery", () => {
         '{"op":"aggregate","collection":"u","pipeline":[{"$merge":{}}]}',
       ),
     ).toThrow(/read-only/i);
-    expect(() => parseMongoQuery('{"op":"insert"}')).toThrow(/op must be/i);
+    expect(() =>
+      parseMongoQuery(
+        '{"op":"find","database":"YKKSUB","collection":"users"}',
+      ),
+    ).toThrow(/database/i);
+    expect(() =>
+      parseMongoQuery('{"op":"insert","collection":"users"}'),
+    ).toThrow(/op must be/i);
+  });
+});
+
+describe("assertReadonlySql database lock", () => {
+  it("rejects USE", () => {
+    expect(() => assertReadonlySql("USE otherdb")).toThrow(/USE|admin-configured/i);
   });
 });
