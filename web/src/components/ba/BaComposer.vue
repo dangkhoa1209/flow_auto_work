@@ -49,7 +49,7 @@ function onKeydown(e: KeyboardEvent) {
           loading
             ? 'Đang suy nghĩ… đợi xong rồi hỏi tiếp'
             : analysisMode
-              ? 'Mô tả yêu cầu / bài toán cần BA phân tích (kèm URL hoặc màn hình nếu có)…'
+              ? 'Hỏi bình thường hoặc nhờ phân tích nghiệp vụ (kèm URL / màn hình nếu có)…'
               : 'Hỏi về dự án — nên kèm URL hoặc tên màn hình / nút trên UI'
         "
         @keydown="onKeydown"
@@ -58,7 +58,7 @@ function onKeydown(e: KeyboardEvent) {
     <div class="faw-console-input__row faw-ba-input-row">
       <div class="faw-ba-input-hint flex items-center gap-2 flex-wrap min-w-0">
         <a-tooltip
-          title="Bật: agent đóng vai BA phân tích nghiệp vụ (bám UI thật, quyết định rõ). Tắt: hỏi đáp sản phẩm thường."
+          title="Bật: sẵn sàng phân tích BA khi bạn yêu cầu phân tích; hỏi thường vẫn trả lời bình thường. Tắt: chỉ hỏi đáp sản phẩm."
         >
           <label
             class="inline-flex items-center gap-1.5 cursor-pointer select-none shrink-0 text-[11px] text-[var(--app-muted)]"

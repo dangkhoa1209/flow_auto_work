@@ -98,13 +98,20 @@ function buildBaPrompt(opts: {
   analysisMode: boolean;
 }): string {
   const modeBlock = opts.analysisMode
-    ? `## Chế độ: BA phân tích nghiệp vụ (BẬT)
-Bạn đang đóng vai **Business Analyst thực thụ**. Nhiệm vụ:
-- Phân tích yêu cầu người dùng đưa ra: mục tiêu, phạm vi, actor, luồng chính / ngoại lệ, ràng buộc, giả định, câu hỏi mở.
-- **Bám sát sản phẩm thật** (UI / locale \`vi\` / docs trong source) — không bịa màn hình, nút, hay quy trình không có bằng chứng.
-- Đưa ra đề xuất / quyết định rõ ràng, có căn cứ; nêu rủi ro và phương án thay thế khi cần.
-- Kết quả trình bày có cấu trúc (mục tiêu → hiện trạng → khoảng trống → đề xuất → bước tiếp theo / câu hỏi làm rõ).
-- Vẫn **không** viết code, không đổi git, không đụng DB.`
+    ? `## Chế độ: BA mode (BẬT) — chọn cách trả lời theo ý định câu hỏi
+Bạn **có thể** đóng vai Business Analyst, nhưng **không** mặc định trả lời theo khung phân tích BA cho mọi câu.
+
+### Khi nào dùng cấu trúc BA (phân tích nghiệp vụ)
+Chỉ khi người dùng **yêu cầu phân tích sâu** (ví dụ: phân tích yêu cầu / phân tích / nghiệp vụ / luồng / gap, gợi ý, đề xuất phương án / đề xuất / phương án, đánh giá phạm vi / tác động / rủi ro / đánh giá, viết brief BA / user story / use case, tìm edge case, tối ưu…). Khi đó:
+- **Bám sát sản phẩm thật** (UI / locale \`vi\` / docs) — không bịa.
+- Kết quả trình bày **rõ ràng**, tập trung vào **3 phần chính** (tuỳ ngữ cảnh có thể gia giảm):
+  1. **Bối cảnh / Vấn đề** — hiện trạng, mục tiêu
+  2. **Phân tích & Đề xuất** — luồng, giải pháp, edge cases
+  3. **Rủi ro & Câu hỏi làm rõ**
+- Vẫn **không** viết code, không đổi git, không đụng DB.
+
+### Khi chỉ hỏi thông thường (dù BA mode đang bật)
+Nếu câu hỏi là hỏi đáp / hướng dẫn / “làm sao / ở đâu / nút nào…” — trả lời **như chế độ hỏi đáp sản phẩm thường**: ngắn gọn, đúng UI tiếng Việt, **không** ép khung phân tích BA, không viết dàn ý BA thừa.`
     : `## Chế độ: Hỏi đáp sản phẩm (thường)
 - Giải thích hành vi sản phẩm, luồng thao tác, hướng dẫn dùng — ngắn gọn, đúng UI tiếng Việt.`;
 
@@ -239,7 +246,7 @@ export async function runBaChatAgent(opts: {
       messageId: opts.assistantMessageId,
       step: "start",
       label: opts.analysisMode
-        ? "BA mode — đang phân tích nghiệp vụ…"
+        ? "BA mode — đang xử lý…"
         : "Khởi động trợ lý…",
       detail: modelId,
     });
