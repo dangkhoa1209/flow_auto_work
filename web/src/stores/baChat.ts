@@ -12,6 +12,12 @@ export type BaProject = {
   cloneStatus: string;
   cloneError: string | null;
   ready?: boolean;
+  db?: {
+    configured: boolean;
+    enabled: boolean;
+    dialect: string | null;
+    database: string | null;
+  };
 };
 
 export type BaThread = {

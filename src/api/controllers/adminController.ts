@@ -37,6 +37,10 @@ export const adminController = {
     res.json(await admin.adminGetBaCloneStatus(String(req.params.id || "")));
   }),
 
+  testDb: asyncHandler(async (req: Request, res: Response) => {
+    res.json(await admin.adminTestBaProjectDb(String(req.params.id || "")));
+  }),
+
   getCursor: asyncHandler(async (_req: Request, res: Response) => {
     res.json(await admin.adminGetCursorSettings());
   }),

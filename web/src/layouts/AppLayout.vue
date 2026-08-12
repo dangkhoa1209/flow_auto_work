@@ -11,6 +11,7 @@ import {
 import { useSessionStore } from "@/stores/session";
 import { useSettingsStore } from "@/stores/settings";
 import { useWorkStore } from "@/stores/work";
+import { useThemeStore } from "@/stores/theme";
 import { connectRealtime } from "@/realtime/client";
 import MobileBottomNav from "@/components/MobileBottomNav.vue";
 
@@ -19,6 +20,7 @@ const router = useRouter();
 const session = useSessionStore();
 const work = useWorkStore();
 const settings = useSettingsStore();
+const themeStore = useThemeStore();
 
 const nav = computed(() => {
   const items = [
@@ -260,6 +262,18 @@ async function onKillAll() {
           <span class="faw-avatar" />
           @{{ session.session.username }}
         </div>
+        <button
+          type="button"
+          class="faw-icon-btn"
+          :title="
+            themeStore.mode === 'dark'
+              ? 'Switch to light mode'
+              : 'Switch to dark mode'
+          "
+          @click="themeStore.toggle()"
+        >
+          {{ themeStore.mode === "dark" ? "☀" : "☾" }}
+        </button>
         <button
           type="button"
           class="faw-icon-btn"

@@ -2,10 +2,12 @@
 import { useRoute, useRouter, RouterLink, RouterView } from "vue-router";
 import { message } from "ant-design-vue";
 import { useSessionStore } from "@/stores/session";
+import { useThemeStore } from "@/stores/theme";
 
 const route = useRoute();
 const router = useRouter();
 const session = useSessionStore();
+const themeStore = useThemeStore();
 
 const tabs = [
   { to: "/admin", label: "Projects", exact: true },
@@ -50,6 +52,18 @@ async function logout() {
         </RouterLink>
       </nav>
       <div class="flex items-center gap-3 text-sm text-ink-muted">
+        <button
+          type="button"
+          class="px-2 py-1 rounded-md hover:text-ink hover:bg-surface transition"
+          :title="
+            themeStore.mode === 'dark'
+              ? 'Switch to light mode'
+              : 'Switch to dark mode'
+          "
+          @click="themeStore.toggle()"
+        >
+          {{ themeStore.mode === "dark" ? "☀" : "☾" }}
+        </button>
         <span class="truncate max-w-[10rem]">{{ session.me?.gitlabUsername }}</span>
         <button
           type="button"
