@@ -138,10 +138,12 @@ function confirmMergeFromMenu() {
               :job-branch="wb.jobBranch"
               :can-quick-merge="wb.canQuickMerge"
               :can-create-mr="wb.canCreateMr"
+              :can-generate-testcases="wb.canGenerateTestcases"
               :can-quick-handoff="wb.canQuickHandoff"
               :can-sync-base="wb.canSyncBase"
               :merge-busy="wb.mergeBusy"
               :create-mr-busy="wb.createMrBusy"
+              :testcases-busy="wb.testcasesBusy"
               :handoff-busy="wb.handoffBusy"
               :sync-base-busy="wb.syncBaseBusy"
               @update:mid-tab="wb.midTab = $event"
@@ -157,6 +159,7 @@ function confirmMergeFromMenu() {
               @run-selected="wb.runCurrentJob"
               @quick-merge="wb.quickMerge"
               @create-mr="wb.createMr"
+              @generate-testcases="wb.generateTestcases"
               @diff-updated="wb.onDiffUpdated"
               @quick-handoff="wb.quickHandoff"
               @sync-base="wb.syncBase"
@@ -320,10 +323,12 @@ function confirmMergeFromMenu() {
           :job-branch="wb.jobBranch"
           :can-quick-merge="wb.canQuickMerge"
           :can-create-mr="wb.canCreateMr"
+          :can-generate-testcases="wb.canGenerateTestcases"
           :can-quick-handoff="wb.canQuickHandoff"
           :can-sync-base="wb.canSyncBase"
           :merge-busy="wb.mergeBusy"
           :create-mr-busy="wb.createMrBusy"
+          :testcases-busy="wb.testcasesBusy"
           :handoff-busy="wb.handoffBusy"
           :sync-base-busy="wb.syncBaseBusy"
           @update:mid-tab="wb.midTab = $event"
@@ -339,6 +344,7 @@ function confirmMergeFromMenu() {
           @run-selected="wb.runCurrentJob"
           @quick-merge="wb.quickMerge"
           @create-mr="wb.createMr"
+          @generate-testcases="wb.generateTestcases"
           @diff-updated="wb.onDiffUpdated"
           @quick-handoff="wb.quickHandoff"
           @sync-base="wb.syncBase"
@@ -439,6 +445,13 @@ function confirmMergeFromMenu() {
               @click="confirmMergeFromMenu"
             >
               {{ wb.mergeBusy ? "Merging…" : "Merge → base" }}
+            </a-menu-item>
+            <a-menu-item
+              key="testcases"
+              :disabled="!wb.canGenerateTestcases || wb.testcasesBusy"
+              @click="wb.generateTestcases()"
+            >
+              {{ wb.testcasesBusy ? "TC…" : "Generate Testcase" }}
             </a-menu-item>
           </a-menu>
         </template>

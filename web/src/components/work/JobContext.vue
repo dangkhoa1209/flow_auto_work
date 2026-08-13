@@ -39,10 +39,12 @@ const props = defineProps<{
   jobBranch: (j: { branch?: string; workBranch?: string }) => string;
   canQuickMerge: boolean;
   canCreateMr: boolean;
+  canGenerateTestcases: boolean;
   canQuickHandoff: boolean;
   canSyncBase: boolean;
   mergeBusy: boolean;
   createMrBusy: boolean;
+  testcasesBusy: boolean;
   handoffBusy: boolean;
   syncBaseBusy: boolean;
   /** Larger touch targets + gap for mobile sticky bar */
@@ -65,6 +67,7 @@ const emit = defineEmits<{
   runSelected: [];
   quickMerge: [];
   createMr: [];
+  generateTestcases: [];
   quickHandoff: [];
   syncBase: [];
   diffUpdated: [];
@@ -794,7 +797,7 @@ onUnmounted(() => {
         </button>
       </a-tooltip>
       <a-popconfirm
-        title="Merge work → base (không tạo MR). Có open MR thì accept; không thì merge local + push."
+        title="Merge work → base (không tạo MR) + comment tổng hợp lên task. Có open MR thì accept; không thì merge local + push."
         ok-text="Merge"
         cancel-text="Cancel"
         :disabled="!canQuickMerge || mergeBusy"
@@ -803,7 +806,7 @@ onUnmounted(() => {
         <a-tooltip
           :title="
             canQuickMerge
-              ? 'Merge work → base — không tạo MR (dùng Create MR nếu cần)'
+              ? 'Merge work → base + cmt tổng hợp lên task (không tạo MR)'
               : 'Only when job is Awaiting handoff / Done'
           "
         >
@@ -817,6 +820,23 @@ onUnmounted(() => {
           </button>
         </a-tooltip>
       </a-popconfirm>
+      <a-tooltip
+        :title="
+          canGenerateTestcases
+            ? 'Sinh testcase Manual QC từ task + code và comment lên GitLab'
+            : 'Chỉ khi job Awaiting handoff / Done và có GitLab issue'
+        "
+      >
+        <button
+          type="button"
+          class="faw-btn"
+          :class="mobileTouch ? '!min-h-[44px]' : ''"
+          :disabled="!canGenerateTestcases || testcasesBusy"
+          @click="emit('generateTestcases')"
+        >
+          {{ testcasesBusy ? "TC…" : "Testcase" }}
+        </button>
+      </a-tooltip>
       <a-popconfirm
         title="Handoff with Settings prefs (assignee / labels)?"
         ok-text="Handoff"

@@ -47,6 +47,21 @@ export async function askJobQuestion(
   }
 }
 
+/** Senior QC testcases from task + code → comment on GitLab issue. */
+export async function enqueueJobTestcases(jobId: string) {
+  const job = await requireJobDoc(jobId);
+  try {
+    return await jobQueue.enqueueGenerateTestcases(job.id);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    logger.error("Generate testcases enqueue failed", {
+      jobId: job.id,
+      err: msg,
+    });
+    throw new AppError(msg, /running|Force Stop|issue/i.test(msg) ? 409 : 500);
+  }
+}
+
 export async function getJobChat(jobId: string) {
   const job = await requireJobDoc(jobId);
   const chat = await listChatMessages({ jobId: job.id, limit: 200 });

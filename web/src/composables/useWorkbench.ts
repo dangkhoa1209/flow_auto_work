@@ -47,6 +47,7 @@ export function useWorkbench() {
   const approveDocsBusy = ref(false);
   const mergeBusy = ref(false);
   const createMrBusy = ref(false);
+  const testcasesBusy = ref(false);
   const handoffBusy = ref(false);
   const syncBaseBusy = ref(false);
   const syncBaseOpen = ref(false);
@@ -225,6 +226,13 @@ export function useWorkbench() {
     if (!jobBranch(j)) return false;
     if (j.hasPendingChanges) return false;
     return true;
+  });
+
+  /** Same status gate as Merge; also need a real GitLab issue to comment. */
+  const canGenerateTestcases = computed(() => {
+    if (!canQuickMerge.value || !currentJob.value) return false;
+    const iid = currentJob.value.issue?.issueIid ?? selectedTaskIid.value ?? 0;
+    return Boolean(iid && iid > 0);
   });
 
   const canQuickHandoff = computed(() => {
@@ -784,6 +792,26 @@ export function useWorkbench() {
     }
   }
 
+  async function generateTestcases() {
+    if (!selectedJobId.value || !canGenerateTestcases.value) return;
+    if (!(await ensureCursorKey())) return;
+    testcasesBusy.value = true;
+    work.watchProgress();
+    try {
+      const { jobApi } = await import("@/api/jobApi");
+      await jobApi.generateTestcases(selectedJobId.value);
+      message.success(
+        "Đã xếp hàng sinh testcase — sẽ comment lên GitLab khi xong",
+      );
+      mobilePane.value = "chat";
+      await work.loadJobs().catch(() => undefined);
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : String(e));
+    } finally {
+      testcasesBusy.value = false;
+    }
+  }
+
   async function onDiffUpdated() {
     if (selectedJobId.value) {
       await work.selectJob(selectedJobId.value);
@@ -1076,6 +1104,7 @@ export function useWorkbench() {
     approveDocsBusy,
     mergeBusy,
     createMrBusy,
+    testcasesBusy,
     handoffBusy,
     adhocOpen,
     adhocTitle,
@@ -1110,6 +1139,7 @@ export function useWorkbench() {
     awaitingDocsApproval,
     canQuickMerge,
     canCreateMr,
+    canGenerateTestcases,
     canQuickHandoff,
     canSyncBase,
     syncBaseBusy,
@@ -1133,6 +1163,7 @@ export function useWorkbench() {
     approveDocs,
     quickMerge,
     createMr,
+    generateTestcases,
     onDiffUpdated,
     quickHandoff,
     syncBase,

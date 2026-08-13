@@ -74,6 +74,85 @@ export async function applyCompletionActions(
 
 const MR_CONFLICT_RE = /cannot_be_merged|conflict|Branch cannot be merged/i;
 
+function buildMergeIssueComment(opts: {
+  issueTitle: string;
+  summary?: string;
+  source: string;
+  target: string;
+  commitSha?: string | null;
+  mrUrl?: string | null;
+}): string {
+  const change =
+    opts.summary?.trim() ||
+    (opts.issueTitle
+      ? `Đã merge: ${opts.issueTitle}`
+      : "Đã merge thay đổi từ nhánh work vào base.");
+  const lines = [
+    `## Thay đổi`,
+    ``,
+    change,
+    ``,
+    `## Merge`,
+    ``,
+    `- \`${opts.source}\` → \`${opts.target}\``,
+  ];
+  if (opts.commitSha) {
+    lines.push(`- Commit: \`${opts.commitSha.slice(0, 12)}\``);
+  }
+  if (opts.mrUrl) {
+    lines.push(`- MR: ${opts.mrUrl}`);
+  }
+  lines.push(
+    ``,
+    `## Testcase`,
+    ``,
+    `1. Pull nhánh \`${opts.target}\` và kiểm tra diff / hành vi đúng scope`,
+    `2. Verify chức năng liên quan issue vẫn hoạt động`,
+    `3. Regression nhanh các flow chính bị ảnh hưởng`,
+  );
+  return lines.join("\n");
+}
+
+/** Best-effort summary comment on the GitLab issue after a successful Merge. */
+async function postMergeSummaryComment(
+  job: Awaited<ReturnType<typeof requireJobDoc>>,
+  opts: {
+    source: string;
+    target: string;
+    commitSha?: string | null;
+    mrUrl?: string | null;
+  },
+): Promise<void> {
+  const iid = job.issue?.issueIid ?? 0;
+  if (iid <= 0) return;
+  try {
+    const { commentOnIssue } = await import("../../plugins/gitlab/client.js");
+    const { withAiGeneratedMarker } = await import(
+      "../../plugins/gitlab/agent-comment.js"
+    );
+    await commentOnIssue(
+      job.issue.projectId,
+      iid,
+      withAiGeneratedMarker(
+        buildMergeIssueComment({
+          issueTitle: job.issue.title || "",
+          summary: job.summary,
+          source: opts.source,
+          target: opts.target,
+          commitSha: opts.commitSha,
+          mrUrl: opts.mrUrl,
+        }),
+      ),
+    );
+  } catch (err) {
+    logger.warn("Merge ok but issue summary comment failed", {
+      jobId: job.id,
+      iid,
+      err: String(err),
+    });
+  }
+}
+
 export type PullBaseResult = {
   summary: string;
   aiResolved: boolean;
@@ -375,6 +454,13 @@ export async function mergeJobBranch(
       }
       await saveJob(job);
 
+      await postMergeSummaryComment(job, {
+        source,
+        target,
+        commitSha: mergeSha,
+        mrUrl: merged.webUrl || existingMr.webUrl,
+      });
+
       logger.info("Job branch merged via existing MR", {
         jobId: job.id,
         source,
@@ -485,6 +571,13 @@ export async function mergeJobBranch(
         job.commitShas = [...(job.commitShas ?? []), commitSha].slice(-20);
       }
       await saveJob(job);
+
+      await postMergeSummaryComment(job, {
+        source,
+        target,
+        commitSha,
+        mrUrl: null,
+      });
 
       logger.info("Job branch merged locally (no MR)", {
         jobId: job.id,

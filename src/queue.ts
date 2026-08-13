@@ -25,6 +25,7 @@ import {
 } from "./plugins/agent/run.js";
 import { runVerifyCommand } from "./plugins/verify/run.js";
 import { answerTaskQuestion } from "./plugins/agent/qa.js";
+import { generateTestcasesForIssue } from "./plugins/agent/testcases.js";
 import { appendJobProgress, getJobTokenUsage } from "./plugins/agent/progress.js";
 import { cancelDiffApproval } from "./plugins/review/diff-wait.js";
 import { addChatMessage, listChatMessages } from "./db/mongo.js";
@@ -60,6 +61,8 @@ type QueueItem = {
   followUpMessage?: string;
   /** Chat Ask only — Q&A / review, no coding Run */
   askOnlyMessage?: string;
+  /** Generate QC testcases + comment on GitLab issue */
+  generateTestcases?: boolean;
   /** Status before this follow-up/ask was queued (restore if no code change) */
   followUpRestoreStatus?: JobStatus;
 };
@@ -642,6 +645,96 @@ export class JobQueue {
   }
 
   /**
+   * Enqueue Senior QC testcase generation + GitLab issue comment.
+   * Same async queue as Ask/Send — HTTP returns immediately.
+   */
+  async enqueueGenerateTestcases(jobId: string): Promise<{
+    ok: boolean;
+    queued?: boolean;
+    job: JobRecord;
+    kind: string;
+  }> {
+    const loaded = await loadJob(jobId);
+    if (!loaded) throw new Error("Job not found");
+    let job: JobRecord = loaded;
+
+    if (!job.issue?.issueIid || job.issue.issueIid <= 0) {
+      throw new Error(
+        "Adhoc job chưa có GitLab issue — tạo issue trước khi sinh testcase",
+      );
+    }
+
+    if (isJobBusy(job.status) && !hasActiveAgentRun(jobId)) {
+      const reclaimTo: JobStatus = job.handedOffAt
+        ? "succeeded"
+        : job.completedAt
+          ? "awaiting_handoff"
+          : "draft";
+      job.status = reclaimTo;
+      job.pendingFollowUpMessage = undefined;
+      await saveJob(job);
+      if (this.isCurrent(jobId)) {
+        this.clearCurrent(jobId);
+        this.publishStatus();
+      }
+    }
+
+    if (hasActiveAgentRun(jobId) || isJobBusy(job.status)) {
+      throw new Error(
+        "Agent is running on this job — wait for it to finish or Force Stop, then try again",
+      );
+    }
+
+    const key = busyIssueKeyForJob(job);
+    if (
+      this.activeIssueKeys.has(key) ||
+      this.queue.some((q) => q.job.id === job.id)
+    ) {
+      throw new Error(
+        "Agent is running on this job — wait for it to finish or Force Stop, then try again",
+      );
+    }
+
+    const userLine =
+      "Sinh bộ Test Case (Manual QC) từ task + code và comment lên GitLab issue.";
+    await addChatMessage({
+      jobId: job.id,
+      issueIid: job.issue.issueIid,
+      role: "user",
+      kind: "qa",
+      body: userLine,
+    });
+
+    const restoreStatus = job.status;
+    job.pendingFollowUpMessage = userLine;
+    job.pendingFollowUpKind = "ask";
+    job.followUpRestoreStatus = restoreStatus;
+    job.status = "queued";
+    job.error = undefined;
+    await saveJob(job);
+
+    this.activeIssueKeys.add(key);
+    this.rememberJobScope(job);
+    this.sources.set(job.id, "generate_testcases");
+    this.queue.push({
+      job,
+      source: "generate_testcases",
+      generateTestcases: true,
+      followUpRestoreStatus: restoreStatus,
+    });
+    this.publishStatus("enqueue-testcases");
+    appendJobProgress(job.id, "status", "Generate testcases queued");
+
+    logger.info("Enqueued generate-testcases", {
+      jobId: job.id,
+      iid: job.issue.issueIid,
+      queueLength: this.queue.length,
+    });
+    void this.pump();
+    return { ok: true, queued: true, job, kind: "queued" };
+  }
+
+  /**
    * Run a queued chat follow-up (called from pump — not from HTTP).
    */
   private async executeFollowUpChat(
@@ -1011,6 +1104,120 @@ export class JobQueue {
     }
   }
 
+  /** Run queued QC testcase generation from pump. */
+  private async executeGenerateTestcases(
+    jobIn: JobRecord,
+    opts?: { restoreStatus?: JobStatus },
+  ): Promise<void> {
+    const loaded = await loadJob(jobIn.id);
+    if (!loaded) throw new Error("Job not found");
+    let job: JobRecord = loaded;
+
+    const prevStatus: JobStatus =
+      opts?.restoreStatus ||
+      job.followUpRestoreStatus ||
+      (job.handedOffAt
+        ? "succeeded"
+        : job.completedAt
+          ? "awaiting_handoff"
+          : "draft");
+    const key = busyIssueKeyForJob(job);
+
+    job.pendingFollowUpMessage = undefined;
+    job.pendingFollowUpKind = undefined;
+    job.followUpRestoreStatus = undefined;
+    this.activeIssueKeys.add(key);
+    this.setCurrent(job);
+    this.publishStatus();
+    job.status = "running";
+    job.error = undefined;
+    await saveJob(job);
+
+    const runGen = async (): Promise<void> => {
+      const result = await this.runAgentWithRetry(job, () =>
+        generateTestcasesForIssue({
+          issue: job.issue,
+          jobId: job.id,
+          branch: job.branch || job.workBranch,
+          baseBranch: job.baseBranch,
+          commitSha: job.commitSha,
+        }),
+      );
+      applyTokenUsageToJob(job, result.usage);
+      job.status = prevStatus;
+      job.error = undefined;
+      await saveJob(job);
+      await addChatMessage({
+        jobId: job.id,
+        issueIid: job.issue.issueIid,
+        role: "agent",
+        kind: "qa",
+        body: result.commented
+          ? `Đã sinh testcase và comment lên GitLab #${job.issue.issueIid}.\n\n${result.body}`
+          : `Đã sinh testcase (comment GitLab thất bại — xem nội dung bên dưới).\n\n${result.body}`,
+      });
+      logger.info("Generate testcases finished", {
+        jobId: job.id,
+        commented: result.commented,
+        status: job.status,
+      });
+    };
+
+    try {
+      if (job.ownerUsername && job.workspaceProjectId) {
+        await withWorkspaceContext(
+          job.ownerUsername,
+          job.workspaceProjectId,
+          runGen,
+        );
+      } else {
+        await runGen();
+      }
+    } catch (err) {
+      const errMsg = isStartupError(err)
+        ? `Cursor SDK startup error: ${err.message}`
+        : err instanceof Error
+          ? err.message
+          : String(err);
+
+      if (/Force-stopped|force stop|cancelled \(force/i.test(errMsg)) {
+        const fresh = await loadJob(job.id);
+        if (fresh && !isJobBusy(fresh.status)) {
+          job = fresh;
+        } else {
+          job.status = prevStatus;
+          job.agentId = undefined;
+          job.error = "Force-stopped from UI";
+          await saveJob(job);
+        }
+        await this.notifyJobChat(
+          job,
+          "Đã Force Stop — sinh testcase dừng giữa chừng.",
+        );
+        return;
+      }
+
+      job.status = prevStatus;
+      job.error = errMsg;
+      await saveJob(job);
+      await this.notifyJobChat(job, `Sinh testcase lỗi:\n${errMsg}`);
+      logger.error("Generate testcases failed", { jobId: job.id, err: errMsg });
+    } finally {
+      job.pendingFollowUpMessage = undefined;
+      job.pendingFollowUpKind = undefined;
+      job.followUpRestoreStatus = undefined;
+      this.activeIssueKeys.delete(key);
+      if (this.isCurrent(job.id)) {
+        this.clearCurrent(job.id);
+        this.publishStatus();
+      }
+      this.killedJobs.delete(job.id);
+      const { clearJobKillRequested } = await import("./plugins/agent/run.js");
+      clearJobKillRequested(job.id);
+      publishRealtime({ type: "jobs", reason: "testcases-done" });
+    }
+  }
+
   /**
    * Force-stop: cancel Cursor run, reject waiters, mark failed, free queue slot.
    */
@@ -1034,7 +1241,7 @@ export class JobQueue {
       const key = busyIssueKeyForJob(item.job);
       const restore =
         item.followUpRestoreStatus || item.job.followUpRestoreStatus;
-      if ((item.followUpMessage || item.askOnlyMessage) && restore) {
+      if ((item.followUpMessage || item.askOnlyMessage || item.generateTestcases) && restore) {
         item.job.status = restore;
         item.job.error = reason;
       } else {
@@ -1482,6 +1689,10 @@ export class JobQueue {
       try {
         if (item.followUpMessage) {
           await this.executeFollowUpChat(item.job, item.followUpMessage, {
+            restoreStatus: item.followUpRestoreStatus,
+          });
+        } else if (item.generateTestcases) {
+          await this.executeGenerateTestcases(item.job, {
             restoreStatus: item.followUpRestoreStatus,
           });
         } else if (item.askOnlyMessage) {

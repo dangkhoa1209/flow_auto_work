@@ -202,6 +202,14 @@ export const jobApi = {
     });
   },
 
+  generateTestcases(id: string) {
+    return request<{ ok: boolean; queued?: boolean; kind?: string }>({
+      url: API.jobs.generateTestcases(id),
+      method: "POST",
+      data: {},
+    });
+  },
+
   completionActions(id: string, body: Record<string, unknown>) {
     return request({
       url: API.jobs.completionActions(id),

@@ -79,6 +79,8 @@ export const API = {
     continue: (id: string) =>
       `/api/jobs/${encodeURIComponent(id)}/continue`,
     ask: (id: string) => `/api/jobs/${encodeURIComponent(id)}/ask`,
+    generateTestcases: (id: string) =>
+      `/api/jobs/${encodeURIComponent(id)}/generate-testcases`,
     kill: (id: string) => `/api/jobs/${encodeURIComponent(id)}/kill`,
     killAll: "/api/jobs/kill-all",
     resetWindow: (id: string) =>

@@ -61,6 +61,7 @@ export function createJobRoutes(): Router {
 
   router.post("/:id/continue", jobController.continueChat);
   router.post("/:id/ask", jobController.ask);
+  router.post("/:id/generate-testcases", jobController.generateTestcases);
   router.get("/:id/chat", jobController.chat);
   router.post("/:id/chat", jobController.appendChat);
   router.post("/:id/notes", jobController.addNote);

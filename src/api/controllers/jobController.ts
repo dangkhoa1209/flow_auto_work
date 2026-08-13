@@ -7,6 +7,7 @@ import {
   approveJobDiff,
   approveJobDocs,
   askJobQuestion,
+  enqueueJobTestcases,
   buildIssueDraft,
   commitJobManual,
   continueJobChat,
@@ -340,6 +341,11 @@ export const jobController = {
     res.json(
       await askJobQuestion(jobId(req), body<{ question?: string }>(req)),
     );
+  }),
+
+  /** POST /api/jobs/:id/generate-testcases — QC testcases + GitLab comment */
+  generateTestcases: asyncHandler(async (req: Request, res: Response) => {
+    res.json(await enqueueJobTestcases(jobId(req)));
   }),
 
   /** GET /api/jobs/:id/chat */
