@@ -11,6 +11,16 @@
       rel="stylesheet"
     />
     <title>Flow Auto WorkBench</title>
+    <script>
+      // Apply persisted theme before first paint (default: dark).
+      try {
+        var t = localStorage.getItem("flow_theme");
+        document.documentElement.dataset.theme =
+          t === "light" ? "light" : "dark";
+      } catch (e) {
+        document.documentElement.dataset.theme = "dark";
+      }
+    </script>
   </head>
   <body>
     <div id="app"></div>

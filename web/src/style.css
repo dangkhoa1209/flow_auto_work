@@ -2,18 +2,102 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ===== Theme tokens — dark (default) ===== */
 :root {
   color-scheme: dark;
-  --app-bg: #0d0f14;
-  --app-ink: #e7e9ee;
-  --app-muted: #9aa2b1;
-  --app-faint: #5e6576;
-  --app-accent: #5b8def;
-  --app-panel: #12151c;
-  --app-panel-soft: #171b24;
-  --app-border: #232833;
+  /* RGB channels (consumed by Tailwind palette with alpha support) */
+  --c-surface: 13 15 20;
+  --c-surface-raised: 18 21 28;
+  --c-surface-soft: 23 27 36;
+  --c-surface-muted: 26 31 42;
+  --c-ink: 231 233 238;
+  --c-ink-muted: 154 162 177;
+  --c-ink-faint: 94 101 118;
+  --c-line: 35 40 51;
+  --c-line-strong: 46 53 68;
+  --c-accent: 91 141 239;
+  --c-accent-bright: 122 162 247;
+
+  --app-bg: rgb(var(--c-surface));
+  --app-ink: rgb(var(--c-ink));
+  --app-muted: rgb(var(--c-ink-muted));
+  --app-faint: rgb(var(--c-ink-faint));
+  --app-accent: rgb(var(--c-accent));
+  --app-accent-bright: rgb(var(--c-accent-bright));
+  --app-accent-soft: rgb(var(--c-accent) / 0.12);
+  --app-panel: rgb(var(--c-surface-raised));
+  --app-panel-soft: rgb(var(--c-surface-soft));
+  --app-panel-muted: rgb(var(--c-surface-muted));
+  --app-panel-hover: #1f2430;
+  --app-panel-alt: #151821;
+  --app-deep: #0a0c10;
+  --app-border: rgb(var(--c-line));
+  --app-border-strong: #333a48;
+  --app-ghost: #3d4454;
+  --app-code-ink: #c9d1d9;
+  --app-scroll: #2a303d;
+  --app-scroll-hover: #3a4150;
+  --app-hover-weak: rgba(255, 255, 255, 0.04);
+  --app-hover: rgba(255, 255, 255, 0.06);
+  --app-glass: rgba(18, 21, 28, 0.93);
+  --app-grid: rgba(35, 40, 51, 0.45);
+  --app-danger-bg: #2a1518;
+  --app-danger-border: #5c2a2a;
+  --app-danger-border-strong: #7f3a3a;
+  --app-danger-ink: #f87171;
+  --app-danger-ink-strong: #fca5a5;
+  --shadow-panel:
+    0 1px 0 rgba(255, 255, 255, 0.03), 0 8px 24px rgba(0, 0, 0, 0.28);
+  --shadow-float: 0 12px 32px rgba(0, 0, 0, 0.4);
   --font-ui: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+
+/* ===== Theme tokens — light ===== */
+:root[data-theme="light"] {
+  color-scheme: light;
+  --c-surface: 243 245 248;
+  --c-surface-raised: 255 255 255;
+  --c-surface-soft: 246 247 250;
+  --c-surface-muted: 235 239 245;
+  --c-ink: 31 36 46;
+  --c-ink-muted: 90 100 115;
+  --c-ink-faint: 148 156 170;
+  --c-line: 221 226 234;
+  --c-line-strong: 198 205 217;
+  --c-accent: 59 111 209;
+  --c-accent-bright: 44 88 184;
+
+  --app-panel-hover: #e8ecf3;
+  --app-panel-alt: #eef1f6;
+  --app-deep: #e9edf3;
+  --app-border-strong: #c6cdd9;
+  --app-ghost: #b7bfcc;
+  --app-code-ink: #3b4664;
+  --app-scroll: #c4cbd6;
+  --app-scroll-hover: #a8b1c0;
+  --app-hover-weak: rgba(15, 23, 42, 0.04);
+  --app-hover: rgba(15, 23, 42, 0.07);
+  --app-glass: rgba(255, 255, 255, 0.92);
+  --app-grid: rgba(30, 41, 59, 0.1);
+  --app-danger-bg: #fdecec;
+  --app-danger-border: #f2b8b8;
+  --app-danger-border-strong: #e39a9a;
+  --app-danger-ink: #d33b4e;
+  --app-danger-ink-strong: #b02a3c;
+  --shadow-panel:
+    0 1px 2px rgba(16, 24, 40, 0.05), 0 8px 24px rgba(16, 24, 40, 0.08);
+  --shadow-float: 0 12px 32px rgba(16, 24, 40, 0.18);
+
+  /* Workbench status tokens (dark defaults live in the workbench block) */
+  --line-soft: #e7ebf1;
+  --done: #0ea56e;
+  --done-dim: #0ea56e22;
+  --wip: #c4880a;
+  --wip-dim: #c4880a22;
+  --bug: #d63a54;
+  --bug-dim: #d63a5422;
+  --accent-dim: #3b6fd140;
 }
 
 html,
@@ -42,7 +126,7 @@ a {
 /* —— Scrollbars (match mockup) —— */
 * {
   scrollbar-width: thin;
-  scrollbar-color: #2a303d transparent;
+  scrollbar-color: var(--app-scroll) transparent;
 }
 *::-webkit-scrollbar {
   width: 9px;
@@ -52,11 +136,11 @@ a {
   background: transparent;
 }
 *::-webkit-scrollbar-thumb {
-  background: #2a303d;
+  background: var(--app-scroll);
   border-radius: 8px;
 }
 *::-webkit-scrollbar-thumb:hover {
-  background: #3a4150;
+  background: var(--app-scroll-hover);
 }
 
 /* Elevation / stacking */
@@ -71,8 +155,8 @@ a {
 code {
   font-family: var(--font-mono);
   font-size: 0.88em;
-  color: #7aa2f7;
-  background: rgba(91, 141, 239, 0.12);
+  color: var(--app-accent-bright);
+  background: var(--app-accent-soft);
   padding: 0.08em 0.32em;
   border-radius: 4px;
 }
@@ -83,7 +167,7 @@ code {
   line-height: 1.3;
   white-space: pre-wrap;
   word-break: break-word;
-  color: #c9d1d9;
+  color: var(--app-code-ink);
 }
 
 /* List morph (TransitionGroup) */
@@ -119,9 +203,9 @@ code {
   border-radius: 4px;
   background: linear-gradient(
     90deg,
-    #171b24 0%,
-    #1f2430 45%,
-    #171b24 90%
+    var(--app-panel-soft) 0%,
+    var(--app-panel-hover) 45%,
+    var(--app-panel-soft) 90%
   );
   background-size: 200% 100%;
   animation: skel-shimmer 1.2s ease-in-out infinite;
@@ -215,7 +299,7 @@ code {
 
 /* Glass panels */
 .panel-glass {
-  background: rgba(18, 21, 28, 0.92);
+  background: var(--app-glass);
   backdrop-filter: blur(10px);
   border: 1px solid var(--app-border);
 }
@@ -255,7 +339,7 @@ code {
   font-size: 10.5px;
 }
 .meta-line__sep {
-  color: #3d4454;
+  color: var(--app-ghost);
   user-select: none;
   padding: 0 0.05rem;
 }
@@ -298,7 +382,7 @@ code {
   font-size: 10px;
   line-height: 1;
   color: var(--app-muted);
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--app-hover-weak);
   border: 1px solid var(--app-border);
   white-space: nowrap;
 }
@@ -315,26 +399,26 @@ code {
 .status-dot--queued,
 .status-dot--running,
 .status-dot--wait {
-  background: #5b8def;
+  background: var(--app-accent);
   box-shadow: 0 0 6px rgba(91, 141, 239, 0.45);
 }
 .status-dot--done,
 .status-dot--success {
-  background: #34d399;
+  background: var(--done);
 }
 .status-dot--wip,
 .status-dot--warn,
 .status-dot--clarify {
-  background: #f0b429;
+  background: var(--wip);
 }
 .status-dot--bug,
 .status-dot--danger,
 .status-dot--stopped {
-  background: #f0576b;
+  background: var(--bug);
 }
 .status-dot--idle,
 .status-dot--draft {
-  background: #5e6576;
+  background: var(--app-faint);
 }
 
 /* Sticky group headers (task lists, etc.) */
@@ -347,7 +431,7 @@ code {
   gap: 0.4rem;
   padding: 0.35rem 0.5rem;
   margin: 0 -0.15rem 0.25rem;
-  background: rgba(18, 21, 28, 0.94);
+  background: var(--app-glass);
   backdrop-filter: blur(6px);
   border-bottom: 1px solid var(--app-border);
   font-size: 10px;
@@ -361,7 +445,7 @@ code {
   height: 1.15rem;
   padding: 0 0.3rem;
   border-radius: 999px;
-  background: var(--app-panel-2, #171b24);
+  background: var(--app-panel-soft);
   border: 1px solid var(--app-border);
   color: var(--app-muted);
   font-size: 9px;
@@ -377,7 +461,7 @@ code {
   position: sticky;
   top: 0;
   z-index: var(--z-sticky);
-  background: rgba(18, 21, 28, 0.94);
+  background: var(--app-glass);
   backdrop-filter: blur(6px);
   border-bottom: 1px solid var(--app-border);
   padding: 6px 8px;
@@ -396,7 +480,7 @@ code {
   }
 }
 .brand-mark {
-  background: linear-gradient(105deg, #5b8def 0%, #7aa2f7 45%, #5b8def 100%);
+  background: linear-gradient(105deg, var(--app-accent) 0%, var(--app-accent-bright) 45%, var(--app-accent) 100%);
   background-size: 200% 200%;
   -webkit-background-clip: text;
   background-clip: text;
@@ -440,9 +524,18 @@ code {
 /* Agent chat markdown (narrow panel, dark) */
 .chat-md-rich {
   white-space: normal;
-  line-height: 1.4;
-  font-size: 12.5px;
+  line-height: 1.45;
+  font-size: 13.5px;
   color: var(--app-muted);
+}
+/* Light mode: muted gray is too pale for chat body text — darken it */
+:root[data-theme="light"] .chat-md-rich,
+:root[data-theme="light"] .chat-md-rich :where(table td),
+:root[data-theme="light"] .faw-msg__bubble {
+  color: #3a4353;
+}
+:root[data-theme="light"] .chat-md-rich :where(blockquote) {
+  color: #4b5566;
 }
 .chat-md-rich :where(p, ul, ol) {
   margin: 0.25em 0;
@@ -461,8 +554,8 @@ code {
   font-size: 0.76rem;
   padding: 0.04rem 0.28rem;
   border-radius: 3px;
-  background: rgba(91, 141, 239, 0.1);
-  color: #9ec0ff;
+  background: rgb(var(--c-accent) / 0.1);
+  color: var(--app-accent-bright);
 }
 .chat-md-rich :where(pre) {
   margin: 0.3em 0;
@@ -470,13 +563,13 @@ code {
   border-radius: 4px;
   overflow-x: auto;
   font-size: 0.72rem;
-  background: #0a0c10;
+  background: var(--app-deep);
   border: 1px solid var(--app-border);
 }
 .chat-md-rich :where(pre code) {
   padding: 0;
   background: transparent;
-  color: #c9d1d9;
+  color: var(--app-code-ink);
 }
 .chat-md-rich .chat-md-table-wrap {
   margin: 0.45em 0;
@@ -553,7 +646,7 @@ code {
 
 /* Agent console — Progress collapse rail */
 .console-progress {
-  background: #0a0c10;
+  background: var(--app-deep);
   border-top: 1px solid var(--app-border);
 }
 .console-progress__rail {
@@ -565,7 +658,7 @@ code {
   padding: 0 0.5rem;
   margin: 0;
   border: 0;
-  background: linear-gradient(180deg, #12151c 0%, #0a0c10 100%);
+  background: linear-gradient(180deg, var(--app-panel) 0%, var(--app-deep) 100%);
   color: var(--app-faint);
   font-size: 9px;
   font-weight: 650;
@@ -579,11 +672,11 @@ code {
   transition: background-color 0.2s ease, color 0.2s ease;
 }
 .console-progress__rail:hover {
-  background: #171b24;
+  background: var(--app-panel-soft);
   color: var(--app-muted);
 }
 .console-progress.is-dragging .console-progress__rail {
-  background: #1a1f2a;
+  background: var(--app-panel-muted);
   color: var(--app-accent);
 }
 .console-progress__rail.is-collapsed {
@@ -595,7 +688,7 @@ code {
   touch-action: auto;
 }
 .console-progress__rail.is-static:hover {
-  background: linear-gradient(180deg, #12151c 0%, #0a0c10 100%);
+  background: linear-gradient(180deg, var(--app-panel) 0%, var(--app-deep) 100%);
   color: var(--app-faint);
 }
 .console-progress.is-dragging {
@@ -621,7 +714,7 @@ code {
   width: 5px;
   height: 5px;
   border-radius: 999px;
-  background: #34d399;
+  background: var(--done);
   box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.5);
   animation: console-progress-pulse 1.6s ease-out infinite;
 }
@@ -630,7 +723,7 @@ code {
   height: 1rem;
   padding: 0 0.3rem;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--app-hover);
   color: var(--app-faint);
   font-size: 9px;
   font-weight: 600;
@@ -654,7 +747,7 @@ code {
   font-family: var(--font-mono);
   max-height: none;
   overflow-y: auto;
-  background: #080a0e;
+  background: var(--app-deep);
   margin: 0 12px 10px;
   border: 1px solid var(--app-border);
   border-radius: var(--r);
@@ -691,7 +784,7 @@ code {
   margin: 0;
   border: 0;
   border-bottom: 1px solid var(--app-border);
-  background: linear-gradient(180deg, #171b24 0%, #12151c 100%);
+  background: linear-gradient(180deg, var(--app-panel-soft) 0%, var(--app-panel) 100%);
   color: var(--app-faint);
   font-size: 9px;
   font-weight: 650;
@@ -709,11 +802,11 @@ code {
   cursor: pointer;
 }
 .jobs-panel__rail:hover {
-  background: #1a1f2a;
+  background: var(--app-panel-muted);
   color: var(--app-muted);
 }
 .jobs-panel.is-dragging .jobs-panel__rail {
-  background: #1f2430;
+  background: var(--app-panel-hover);
   color: var(--app-accent);
 }
 .jobs-panel__grip {
@@ -737,7 +830,7 @@ code {
   height: 1rem;
   padding: 0 0.3rem;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--app-hover);
   color: var(--app-faint);
   font-size: 9px;
   font-weight: 600;
@@ -820,7 +913,7 @@ code {
 }
 .faw-icon-btn:hover {
   color: var(--app-ink);
-  border-color: #333a48;
+  border-color: var(--app-border-strong);
 }
 .faw-icon-btn:disabled {
   opacity: 0.45;
@@ -885,7 +978,7 @@ code {
   flex: none;
 }
 .faw-btn:hover:not(:disabled) {
-  border-color: #333a48;
+  border-color: var(--app-border-strong);
   color: var(--app-ink);
 }
 .faw-btn:disabled {
@@ -904,13 +997,13 @@ code {
   color: #04150e;
 }
 .faw-btn--danger {
-  border-color: #5c2a2a;
-  background: #2a1518;
-  color: #f87171;
+  border-color: var(--app-danger-border);
+  background: var(--app-danger-bg);
+  color: var(--app-danger-ink);
 }
 .faw-btn--danger:hover:not(:disabled) {
-  border-color: #7f3a3a;
-  color: #fca5a5;
+  border-color: var(--app-danger-border-strong);
+  color: var(--app-danger-ink-strong);
 }
 
 .faw-list-scroll {
@@ -959,7 +1052,7 @@ code {
   background: var(--app-panel-soft);
 }
 .faw-task-row.active {
-  background: #161b26;
+  background: var(--app-panel-alt);
   border-left-color: var(--app-accent);
 }
 .faw-task-row__id {
@@ -1027,7 +1120,7 @@ code {
   background: var(--app-panel-soft);
 }
 .faw-job-row.active {
-  background: #161b26;
+  background: var(--app-panel-alt);
   border-left-color: var(--app-accent);
 }
 .faw-job-row.flash {
@@ -1249,7 +1342,7 @@ code {
 .faw-seg__btn {
   background: transparent;
   border: 0;
-  color: #9aa2b1;
+  color: var(--app-muted);
   font: 600 12px var(--font-ui);
   padding: 5px 12px;
   border-radius: 4px;
@@ -1258,11 +1351,11 @@ code {
   line-height: 1.2;
 }
 .faw-seg__btn:hover {
-  color: #e7e9ee;
+  color: var(--app-ink);
   text-decoration: none;
 }
 .faw-seg__btn.active {
-  background: #5b8def;
+  background: var(--app-accent);
   color: #fff;
 }
 .faw-topbar__spacer {
@@ -1365,7 +1458,7 @@ code {
   cursor: not-allowed;
 }
 .faw-crumb-tap:active:not(:disabled) {
-  background: #1c212c;
+  background: var(--app-panel-hover);
 }
 .faw-crumb-tap__flow {
   font-size: 13px;
@@ -1423,8 +1516,8 @@ code {
   inset-inline: 0;
   bottom: 0;
   z-index: 40;
-  background: #1a1d27;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--app-panel-soft);
+  border-top: 1px solid var(--app-border);
   box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.35);
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
@@ -1462,12 +1555,12 @@ code {
 
 /* —— Mobile project sheet —— */
 .faw-project-sheet-root .ant-drawer-content {
-  background: #151821 !important;
+  background: var(--app-panel-alt) !important;
   border-radius: 16px 16px 0 0 !important;
   overflow: hidden;
 }
 .faw-project-sheet-root .ant-drawer-body {
-  background: #151821;
+  background: var(--app-panel-alt);
 }
 .faw-project-sheet__head {
   display: flex;
@@ -1475,7 +1568,7 @@ code {
   justify-content: space-between;
   gap: 12px;
   padding: 16px 16px 12px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid var(--app-hover);
 }
 .faw-project-sheet__eyebrow {
   margin: 0;
@@ -1511,7 +1604,7 @@ code {
   margin-bottom: 4px;
 }
 .faw-project-sheet__item:active {
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--app-hover-weak);
 }
 .faw-project-sheet__item.is-active {
   background: rgba(52, 211, 153, 0.1);
@@ -1557,7 +1650,7 @@ code {
 }
 .faw-m-detail-bar__back:active {
   color: var(--app-ink);
-  background: #1c212c;
+  background: var(--app-panel-hover);
 }
 .faw-m-detail-bar__title {
   flex: 1;
@@ -1595,7 +1688,7 @@ code {
   cursor: pointer;
 }
 .faw-m-seg__btn.is-active {
-  background: #1f2736;
+  background: var(--app-panel-hover);
   color: var(--app-accent);
 }
 
@@ -1609,8 +1702,8 @@ code {
   align-items: center;
   gap: 6px;
   padding: 6px 10px;
-  background: #151821;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--app-panel-alt);
+  border-top: 1px solid var(--app-border);
   box-shadow: 0 -6px 18px rgba(0, 0, 0, 0.28);
 }
 .faw-m-dock__pair {
@@ -1660,9 +1753,9 @@ code {
   color: var(--app-muted);
 }
 .faw-m-btn--handoff:active:not(:disabled) {
-  border-color: #333a48;
+  border-color: var(--app-border-strong);
   color: var(--app-ink);
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--app-hover-weak);
 }
 .faw-m-btn--docs {
   flex: 0 0 auto;
@@ -1683,7 +1776,7 @@ code {
 }
 .faw-m-btn--more:active {
   color: var(--app-ink);
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--app-hover-weak);
 }
 
 /* Mobile Chat | Logs tabs */
@@ -2121,8 +2214,8 @@ code {
 .faw-msg__bubble {
   border-radius: var(--r);
   padding: 10px 12px;
-  font-size: 12px;
-  line-height: 1.6;
+  font-size: 13.5px;
+  line-height: 1.55;
   color: var(--app-muted);
   background: var(--app-panel-soft);
   border: 1px solid var(--app-border);
@@ -2130,7 +2223,7 @@ code {
 }
 .faw-msg.user .faw-msg__bubble {
   background: var(--accent-dim);
-  border-color: #5b8def44;
+  border-color: var(--accent-dim);
   color: var(--app-ink);
   padding: 9px 11px;
 }
@@ -2176,7 +2269,7 @@ code {
   font-weight: 600;
 }
 .faw-console-input__row .faw-btn--ask:hover:not(:disabled) {
-  border-color: #333a48;
+  border-color: var(--app-border-strong);
   color: var(--app-ink);
 }
 
@@ -2212,8 +2305,8 @@ code {
   position: absolute;
   inset: 0;
   background-image:
-    linear-gradient(rgba(35, 40, 51, 0.45) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(35, 40, 51, 0.45) 1px, transparent 1px);
+    linear-gradient(var(--app-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--app-grid) 1px, transparent 1px);
   background-size: 48px 48px;
   mask-image: radial-gradient(ellipse 70% 60% at 50% 40%, #000 20%, transparent 75%);
   -webkit-mask-image: radial-gradient(
@@ -2280,7 +2373,7 @@ code {
 .faw-login__tagline {
   margin: 0 0 22px;
   font-size: 12.5px;
-  color: #9aa2b1;
+  color: var(--app-muted);
   line-height: 1.45;
 }
 .faw-login__panel {
@@ -2344,7 +2437,7 @@ code {
 .faw-login__field .ant-input-affix-wrapper:hover,
 .faw-login__field .ant-input:focus,
 .faw-login__field .ant-input-affix-wrapper-focused {
-  border-color: #333a48 !important;
+  border-color: var(--app-border-strong) !important;
   box-shadow: none !important;
 }
 .faw-login__field .ant-input::placeholder {
@@ -2406,7 +2499,7 @@ code {
 .faw-run-all-confirm__hint {
   margin: 0 0 10px;
   font-size: 12.5px;
-  color: #9aa2b1;
+  color: var(--app-muted);
   line-height: 1.45;
 }
 .faw-run-all-confirm__list {
@@ -2415,16 +2508,16 @@ code {
   list-style: none;
   max-height: min(50vh, 360px);
   overflow-y: auto;
-  border: 1px solid #232833;
+  border: 1px solid var(--app-border);
   border-radius: 6px;
-  background: #0d0f14;
+  background: var(--app-bg);
 }
 .faw-run-all-confirm__list li {
   display: flex;
   align-items: baseline;
   gap: 8px;
   padding: 7px 10px;
-  border-bottom: 1px solid #1b1f29;
+  border-bottom: 1px solid var(--line-soft);
   font-size: 12.5px;
   line-height: 1.35;
 }
@@ -2435,11 +2528,11 @@ code {
   flex-shrink: 0;
   font-family: var(--font-mono, ui-monospace, monospace);
   font-size: 11px;
-  color: #5b8def;
+  color: var(--app-accent);
   background: transparent;
 }
 .faw-run-all-confirm__title {
-  color: #e7e9ee;
+  color: var(--app-ink);
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2535,13 +2628,13 @@ code {
 }
 .faw-settings__tab:hover {
   color: var(--app-ink);
-  border-color: #333a48;
+  border-color: var(--app-border-strong);
   text-decoration: none;
 }
 .faw-settings__tab.is-active {
   border-color: var(--app-accent);
   color: var(--app-accent);
-  background: var(--accent-dim, rgba(91, 141, 239, 0.14));
+  background: var(--accent-dim);
 }
 .faw-settings__panel {
   border: 1px solid var(--app-border);
@@ -2696,7 +2789,7 @@ code {
   text-align: left;
   padding: 8px 10px;
   border: 0;
-  border-bottom: 1px solid var(--line-soft, #1b1f29);
+  border-bottom: 1px solid var(--line-soft);
   border-left: 2px solid transparent;
   background: transparent;
   color: var(--app-ink);
@@ -2706,7 +2799,7 @@ code {
   background: var(--app-panel-soft);
 }
 .faw-ba-thread.active {
-  background: #161b26;
+  background: var(--app-panel-alt);
   border-left-color: var(--app-accent);
 }
 .faw-ba-thread__main {
@@ -2748,7 +2841,7 @@ code {
   padding: 0 0 8px;
 }
 .faw-ba-progress.is-error .faw-ba-progress__fill {
-  background: var(--bug, #f0576b);
+  background: var(--bug);
 }
 .faw-ba-progress__bar {
   height: 2px;
@@ -2757,7 +2850,7 @@ code {
 }
 .faw-ba-progress__fill {
   height: 100%;
-  background: var(--done, #34d399);
+  background: var(--done);
   transition: width 0.25s ease;
 }
 .faw-ba-progress__row {
@@ -2817,7 +2910,7 @@ code {
 .faw-ba-progress__chip.is-active {
   color: var(--app-accent);
   border-color: rgba(91, 141, 239, 0.45);
-  background: rgba(91, 141, 239, 0.12);
+  background: var(--app-accent-soft);
 }
 
 .faw-ba-input-row {

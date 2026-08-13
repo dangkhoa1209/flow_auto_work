@@ -14,6 +14,7 @@ export function createAdminRoutes(): Router {
   router.delete("/ba-projects/:id", adminController.deleteProject);
   router.post("/ba-projects/:id/clone", adminController.cloneProject);
   router.get("/ba-projects/:id/clone-status", adminController.cloneStatus);
+  router.post("/ba-projects/:id/test-db", adminController.testDb);
 
   router.get("/settings/cursor", adminController.getCursor);
   router.put("/settings/cursor", adminController.putCursor);

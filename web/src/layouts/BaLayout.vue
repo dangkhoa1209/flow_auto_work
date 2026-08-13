@@ -5,11 +5,13 @@ import { message } from "ant-design-vue";
 import { MenuOutlined } from "@ant-design/icons-vue";
 import { useSessionStore } from "@/stores/session";
 import { useBaChatStore } from "@/stores/baChat";
+import { useThemeStore } from "@/stores/theme";
 import { connectRealtime } from "@/realtime/client";
 
 const router = useRouter();
 const session = useSessionStore();
 const ba = useBaChatStore();
+const themeStore = useThemeStore();
 const sideOpen = ref(false);
 
 let disconnect: (() => void) | undefined;
@@ -114,6 +116,18 @@ async function logout() {
           <span class="faw-avatar" />
           <span class="faw-ba-user__name">@{{ session.session.username }}</span>
         </div>
+        <button
+          type="button"
+          class="faw-icon-btn"
+          :title="
+            themeStore.mode === 'dark'
+              ? 'Chuyển giao diện sáng'
+              : 'Chuyển giao diện tối'
+          "
+          @click="themeStore.toggle()"
+        >
+          {{ themeStore.mode === "dark" ? "☀" : "☾" }}
+        </button>
         <RouterLink
           v-if="session.isAdmin"
           to="/admin"

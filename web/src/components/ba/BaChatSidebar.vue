@@ -8,13 +8,17 @@ const ba = useBaChatStore();
 const closeSide = inject<() => void>("baCloseSide", () => undefined);
 
 const projectOptions = computed(() =>
-  ba.projects.map((p) => ({
-    value: p.id,
-    label: p.ready
-      ? p.displayName
-      : `${p.displayName} (${p.cloneStatus})`,
-    disabled: !p.ready,
-  })),
+  ba.projects.map((p) => {
+    const dbTag = p.db?.enabled ? " · DB" : "";
+    const base = p.ready
+      ? `${p.displayName}${dbTag}`
+      : `${p.displayName} (${p.cloneStatus})`;
+    return {
+      value: p.id,
+      label: base,
+      disabled: !p.ready,
+    };
+  }),
 );
 
 async function onProjectChange(id: string) {

@@ -26,28 +26,36 @@ export default {
         xl: "8px",
         "2xl": "8px",
       },
+      // Palette reads theme CSS variables (see src/style.css :root /
+      // [data-theme="light"]) so light/dark switching retints utilities.
       colors: {
         surface: {
-          DEFAULT: "#0D0F14",
-          raised: "#12151C",
-          soft: "#171B24",
-          muted: "#1A1F2A",
+          DEFAULT: "rgb(var(--c-surface) / <alpha-value>)",
+          raised: "rgb(var(--c-surface-raised) / <alpha-value>)",
+          soft: "rgb(var(--c-surface-soft) / <alpha-value>)",
+          muted: "rgb(var(--c-surface-muted) / <alpha-value>)",
         },
         ink: {
-          DEFAULT: "#E7E9EE",
-          soft: "#E7E9EE",
-          muted: "#9AA2B1",
-          faint: "#5E6576",
+          DEFAULT: "rgb(var(--c-ink) / <alpha-value>)",
+          soft: "rgb(var(--c-ink) / <alpha-value>)",
+          muted: "rgb(var(--c-ink-muted) / <alpha-value>)",
+          faint: "rgb(var(--c-ink-faint) / <alpha-value>)",
         },
         line: {
-          DEFAULT: "#232833",
-          strong: "#2E3544",
+          DEFAULT: "rgb(var(--c-line) / <alpha-value>)",
+          strong: "rgb(var(--c-line-strong) / <alpha-value>)",
         },
         accent: {
-          DEFAULT: "#5B8DEF",
-          bright: "#7AA2F7",
-          soft: "rgba(91, 141, 239, 0.14)",
-          glow: "#5B8DEF",
+          DEFAULT: "rgb(var(--c-accent) / <alpha-value>)",
+          bright: "rgb(var(--c-accent-bright) / <alpha-value>)",
+          // Translucent by default (0.14); an explicit /NN modifier overrides.
+          soft: ({ opacityValue }) => {
+            const alpha = Number(opacityValue);
+            return Number.isFinite(alpha)
+              ? `rgb(var(--c-accent) / ${opacityValue})`
+              : "rgb(var(--c-accent) / 0.14)";
+          },
+          glow: "rgb(var(--c-accent) / <alpha-value>)",
         },
         status: {
           done: "#34D399",
@@ -57,8 +65,8 @@ export default {
         },
       },
       boxShadow: {
-        panel: "0 1px 0 rgba(255,255,255,0.03), 0 8px 24px rgba(0,0,0,0.28)",
-        float: "0 12px 32px rgba(0,0,0,0.4)",
+        panel: "var(--shadow-panel)",
+        float: "var(--shadow-float)",
       },
     },
   },

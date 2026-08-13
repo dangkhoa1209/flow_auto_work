@@ -5,14 +5,18 @@ import {
   getBaProjectGitlabToken,
   getSystemSettings,
   listBaProjects,
+  resolveBaProjectDbForTest,
   toPublicBaProject,
   toPublicSystemSettings,
   updateBaProject,
   updateSystemCursorSettings,
+  type BaDbConnectionPatch,
+  type BaDbDialect,
 } from "../../workspace/baStore.js";
 import { buildOauthCloneUrl, isGitRepo, runGitClone } from "../../workspace/clone.js";
 import { AppError } from "../../utils/AppError.js";
 import { logger } from "../../logger.js";
+import { testBaDbConnection } from "../../plugins/baDb/query.js";
 
 export async function adminListBaProjects() {
   return (await listBaProjects()).map(toPublicBaProject);
@@ -51,6 +55,37 @@ export async function adminCreateBaProject(body: {
   }
 }
 
+function parseDbPatch(raw: unknown): BaDbConnectionPatch | undefined {
+  if (raw === undefined) return undefined;
+  if (raw === null) return { clear: true };
+  if (typeof raw !== "object") {
+    throw new AppError("db must be an object", 400);
+  }
+  const b = raw as Record<string, unknown>;
+  if (b.clear === true) return { clear: true };
+
+  const patch: BaDbConnectionPatch = {};
+  if (b.enabled !== undefined) patch.enabled = Boolean(b.enabled);
+  if (b.dialect !== undefined) {
+    patch.dialect = String(b.dialect) as BaDbDialect;
+  }
+  if (b.host !== undefined) patch.host = String(b.host);
+  if (b.port !== undefined) {
+    const n = Number(b.port);
+    if (!Number.isFinite(n) || n <= 0) {
+      throw new AppError("db.port invalid", 400);
+    }
+    patch.port = Math.floor(n);
+  }
+  if (b.database !== undefined) patch.database = String(b.database);
+  if (b.username !== undefined) patch.username = String(b.username);
+  if (b.password !== undefined && String(b.password).length > 0) {
+    patch.password = String(b.password);
+  }
+  if (b.ssl !== undefined) patch.ssl = Boolean(b.ssl);
+  return patch;
+}
+
 export async function adminUpdateBaProject(
   idRaw: string,
   body: {
@@ -60,16 +95,51 @@ export async function adminUpdateBaProject(
     gitlabToken?: string;
     mainBranch?: string;
     localPath?: string;
+    db?: unknown;
   },
 ) {
   const id = idRaw.trim();
   try {
-    const project = await updateBaProject(id, body);
+    const db = parseDbPatch(body.db);
+    const project = await updateBaProject(id, {
+      displayName: body.displayName,
+      gitlabPath: body.gitlabPath,
+      gitlabHost: body.gitlabHost,
+      gitlabToken: body.gitlabToken,
+      mainBranch: body.mainBranch,
+      localPath: body.localPath,
+      ...(db !== undefined ? { db } : {}),
+    });
     return { project: toPublicBaProject(project) };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    const notFound = /not found/i.test(msg);
+    throw new AppError(msg, notFound ? 404 : 400);
+  }
+}
+
+export async function adminTestBaProjectDb(idRaw: string) {
+  const id = idRaw.trim();
+  const cfg = await resolveBaProjectDbForTest(id);
+  if (!cfg) {
+    throw new AppError(
+      "DB chưa được cấu hình — lưu host/database (và password nếu cần) trước",
+      400,
+      "ba_db_not_configured",
+    );
+  }
+  try {
+    const result = await testBaDbConnection(cfg);
+    return {
+      ok: true as const,
+      dialect: result.dialect,
+      elapsedMs: result.elapsedMs,
+    };
   } catch (err) {
     throw new AppError(
       err instanceof Error ? err.message : String(err),
-      404,
+      400,
+      "ba_db_test_failed",
     );
   }
 }
