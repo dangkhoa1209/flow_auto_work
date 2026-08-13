@@ -213,15 +213,18 @@ export const useWorkStore = defineStore("work", () => {
         if (wasBusy && !isJobStatusBusy(j.status)) {
           onSelectedJobBecameIdle(selectedJobId.value);
         } else if (isJobStatusBusy(j.status)) {
-          // Mid-run after reload — show thinking again
+          // Mid-run after reload — show thinking again + keep progress catch-up
           agentTyping.value = true;
+          watchProgress();
         }
       } else {
         // Job not in this project's list (e.g. switched project) — clear selection
+        stopProgressPolling();
         selectedJobId.value = null;
         currentJob.value = null;
         chat.value = [];
         progressLines.value = [];
+        progressLive.value = false;
         taskDetail.value = null;
         agentTyping.value = false;
       }
@@ -283,6 +286,25 @@ export const useWorkStore = defineStore("work", () => {
           : s.queueLength
             ? `Queue ${s.queueLength}`
             : "Idle";
+
+    // If open job is no longer in the running set, don't leave UI stuck on
+    // "Waiting for Cursor stream…" when SSE progress end was dropped.
+    const openId = selectedJobId.value;
+    if (
+      openId &&
+      (progressLive.value || agentTyping.value) &&
+      !runningIds.includes(openId) &&
+      !s.queueLength
+    ) {
+      const st =
+        (jobs.value.find((j) => j.id === openId) || currentJob.value)?.status;
+      if (!isJobStatusBusy(st)) {
+        onSelectedJobBecameIdle(openId);
+      } else {
+        // Status may be stale in memory — arm debounce poll to reconcile
+        scheduleProgressPollDebounce();
+      }
+    }
   }
 
   /** Debounced jobs list refresh (SSE can fire often during a run). */
@@ -301,8 +323,12 @@ export const useWorkStore = defineStore("work", () => {
   }) {
     if (selectedJobId.value !== ev.jobId) return;
     progressLive.value = ev.live;
-    if (!ev.line?.id) {
-      if (!ev.live) progressLive.value = false;
+    // id 0 = end-of-stream marker from untrackRun — do not treat as a real line
+    if (!ev.line || !(ev.line.id > 0)) {
+      if (!ev.live) {
+        progressLive.value = false;
+        stopProgressPolling();
+      }
       return;
     }
     const idx = progressLines.value.findIndex((l) => l.id === ev.line.id);
@@ -314,11 +340,16 @@ export const useWorkStore = defineStore("work", () => {
       progressLines.value = [...progressLines.value, ev.line];
     }
     progressAfterId.value = Math.max(progressAfterId.value, ev.line.id);
+    // SSE đang chảy → lùi poll safety-net thêm 1.5s
+    if (ev.live) scheduleProgressPollDebounce();
   }
 
   function applyRealtimeJob(ev: { jobId: string; status?: string }) {
     if (!ev.status) return;
     const j = jobs.value.find((x) => x.id === ev.jobId);
+    const touchesOpen =
+      selectedJobId.value === ev.jobId || currentJob.value?.id === ev.jobId;
+
     if (j) {
       const wasBusy = isJobStatusBusy(j.status);
       const nowBusy = isJobStatusBusy(ev.status);
@@ -338,9 +369,22 @@ export const useWorkStore = defineStore("work", () => {
         agentTyping.value = true;
         watchProgress();
       }
-    } else {
-      scheduleLoadJobs();
+      return;
     }
+
+    // Job not in list yet — still update open console if this is the selected job
+    if (touchesOpen && currentJob.value?.id === ev.jobId) {
+      const prev = currentJob.value.status;
+      const nowBusy = isJobStatusBusy(ev.status);
+      currentJob.value = { ...currentJob.value, status: ev.status };
+      if (isJobStatusBusy(prev) && !nowBusy) {
+        onSelectedJobBecameIdle(ev.jobId);
+      } else if (!isJobStatusBusy(prev) && nowBusy) {
+        agentTyping.value = true;
+        watchProgress();
+      }
+    }
+    scheduleLoadJobs();
   }
 
   /** SSE chat event — append message to the open console without refetch. */
@@ -391,7 +435,10 @@ export const useWorkStore = defineStore("work", () => {
   function onSelectedJobBecameIdle(jobId: string) {
     if (selectedJobId.value !== jobId) return;
     agentTyping.value = false;
+    progressLive.value = false;
+    stopProgressPolling();
     void refreshJobChat(jobId).catch(() => undefined);
+    void pollProgress(false).catch(() => undefined);
   }
 
   /** Soft refresh: job + chat only — does not clear UI or re-fetch GitLab issue. */
@@ -569,6 +616,7 @@ export const useWorkStore = defineStore("work", () => {
 
   async function pollProgress(reset = false) {
     if (!selectedJobId.value) return;
+    const jobId = selectedJobId.value;
     if (reset) progressAfterId.value = 0;
     const q = reset ? "" : `?after=${progressAfterId.value}`;
     const data = await api<{
@@ -576,25 +624,61 @@ export const useWorkStore = defineStore("work", () => {
       latestId: number;
       live: boolean;
       status?: string;
-    }>(`/api/jobs/${selectedJobId.value}/progress${q}`);
+    }>(`/api/jobs/${jobId}/progress${q}`);
+    if (selectedJobId.value !== jobId) return;
     if (reset) progressLines.value = [];
     if (data.lines?.length) {
       progressLines.value = [...progressLines.value, ...data.lines];
     }
     progressAfterId.value = data.latestId || progressAfterId.value;
     progressLive.value = Boolean(data.live);
-    if (data.status && currentJob.value?.id === selectedJobId.value) {
+    if (data.status && currentJob.value?.id === jobId) {
       const wasBusy = isJobStatusBusy(currentJob.value.status);
       currentJob.value = { ...currentJob.value, status: data.status };
       if (wasBusy && !isJobStatusBusy(data.status)) {
-        onSelectedJobBecameIdle(selectedJobId.value);
+        onSelectedJobBecameIdle(jobId);
+        return;
       }
+    }
+    if (!data.live && !isJobStatusBusy(data.status || currentJob.value?.status)) {
+      agentTyping.value = false;
+      progressLive.value = false;
+      stopProgressPolling();
+    } else if (shouldPollProgress()) {
+      // After a silent gap poll, wait another 1.5s (SSE can reset this)
+      scheduleProgressPollDebounce();
+    } else {
+      stopProgressPolling();
     }
   }
 
-  /** Call when starting Run / Send so Progress polls immediately */
+  const PROGRESS_POLL_DEBOUNCE_MS = 1500;
+  let progressPollTimer: ReturnType<typeof setTimeout> | undefined;
+
+  function stopProgressPolling() {
+    if (!progressPollTimer) return;
+    clearTimeout(progressPollTimer);
+    progressPollTimer = undefined;
+  }
+
+  /**
+   * Debounced safety-net: only hit /progress if no SSE for 1.5s.
+   * Each SSE progress (or watchProgress) resets the timer.
+   */
+  function scheduleProgressPollDebounce() {
+    stopProgressPolling();
+    if (!shouldPollProgress()) return;
+    progressPollTimer = setTimeout(() => {
+      progressPollTimer = undefined;
+      if (!shouldPollProgress()) return;
+      void pollProgress(false).catch(() => undefined);
+    }, PROGRESS_POLL_DEBOUNCE_MS);
+  }
+
+  /** Call when starting Run / Send — arm debounce; SSE will keep postponing poll. */
   function watchProgress() {
     progressLive.value = true;
+    scheduleProgressPollDebounce();
     // Do not fake status=running — stale SSE status can be misread as busy→idle and wipe chat
   }
 
@@ -614,6 +698,7 @@ export const useWorkStore = defineStore("work", () => {
   function shouldPollProgress() {
     if (!selectedJobId.value) return false;
     if (progressLive.value) return true;
+    if (agentTyping.value) return true;
     const j =
       jobs.value.find((x) => x.id === selectedJobId.value) || currentJob.value;
     return isJobStatusBusy(j?.status);
@@ -763,12 +848,30 @@ export const useWorkStore = defineStore("work", () => {
 
   /** PM approves docs-first phase → enqueue code. */
   async function approveDocs(jobId: string) {
-    const res = await jobApi.approveDocs(jobId);
-    if (selectedJobId.value === jobId && res.job) {
-      currentJob.value = { ...currentJob.value, ...(res.job as Job) };
+    agentTyping.value = true;
+    progressAfterId.value = 0;
+    progressLines.value = [];
+    watchProgress();
+    try {
+      const res = await jobApi.approveDocs(jobId);
+      if (selectedJobId.value === jobId && res.job) {
+        currentJob.value = { ...currentJob.value, ...(res.job as Job) };
+        if (isJobStatusBusy(res.job.status)) {
+          agentTyping.value = true;
+          watchProgress();
+        }
+      }
+      await loadJobs();
+      if (selectedJobId.value === jobId) {
+        await pollProgress(true).catch(() => undefined);
+      }
+      return res;
+    } catch (e) {
+      agentTyping.value = false;
+      progressLive.value = false;
+      stopProgressPolling();
+      throw e;
     }
-    await loadJobs();
-    return res;
   }
 
   /** Stop if busy + clear agentId → next Run/chat opens a fresh Cursor window. */
@@ -871,6 +974,7 @@ export const useWorkStore = defineStore("work", () => {
 
   /** Close open issue / job when switching Flow project. */
   function clearOpenSelection() {
+    stopProgressPolling();
     selectedTaskIid.value = null;
     taskDetail.value = null;
     selectedJobId.value = null;

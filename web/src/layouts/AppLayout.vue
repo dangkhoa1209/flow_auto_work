@@ -79,14 +79,8 @@ const projectSheetHeight = computed(() => {
 
 let disconnectRealtime: (() => void) | undefined;
 
-onMounted(async () => {
-  selectedProjectId.value = session.session.projectId || "";
-  try {
-    await work.refreshAll();
-    await settings.loadHandoffPrefs(session.projectId);
-  } catch (e) {
-    message.error(e instanceof Error ? e.message : String(e));
-  }
+function bindRealtime() {
+  disconnectRealtime?.();
   disconnectRealtime = connectRealtime({
     onOpen: () => {
       void work.resyncRealtime();
@@ -103,6 +97,17 @@ onMounted(async () => {
     onJob: (ev) => work.applyRealtimeJob(ev),
     onChat: (ev) => work.applyRealtimeChat(ev),
   });
+}
+
+onMounted(async () => {
+  selectedProjectId.value = session.session.projectId || "";
+  try {
+    await work.refreshAll();
+    await settings.loadHandoffPrefs(session.projectId);
+  } catch (e) {
+    message.error(e instanceof Error ? e.message : String(e));
+  }
+  bindRealtime();
 });
 
 onUnmounted(() => {
@@ -121,6 +126,8 @@ async function onSwitchProject(projectId: string) {
     await session.activateProject(projectId);
     selectedProjectId.value = projectId;
     projectPickerOpen.value = false;
+    // SSE URL embeds project id — reconnect so events aren't filtered for the old project
+    bindRealtime();
     await work.refreshAll();
     await settings.loadHandoffPrefs(projectId);
     message.success("Project switched");
