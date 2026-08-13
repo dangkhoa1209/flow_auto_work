@@ -11,6 +11,7 @@ import {
   findOpenMergeRequest,
   getProjectDefaultBranch,
 } from "../../plugins/gitlab/client.js";
+import { withAiGeneratedMarker } from "../../plugins/gitlab/agent-comment.js";
 import { AppError } from "../../utils/AppError.js";
 import { resolveGitlabProjectPath } from "../../workspace/creds.js";
 import { getRuntimeContext } from "../../workspace/runtime.js";
@@ -248,11 +249,13 @@ export async function createJobMergeRequest(
         issueIid: iid,
         labels: [READY_LABEL],
         labelMode: "add",
-        comment: buildIssueComment({
-          issueTitle: job.issue.title || "",
-          summary: job.summary,
-          mrUrl: mr.webUrl,
-        }),
+        comment: withAiGeneratedMarker(
+          buildIssueComment({
+            issueTitle: job.issue.title || "",
+            summary: job.summary,
+            mrUrl: mr.webUrl,
+          }),
+        ),
       });
     } catch (err) {
       logger.warn("Create MR ok but Issue label/comment failed", {

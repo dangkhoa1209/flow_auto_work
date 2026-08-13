@@ -242,8 +242,9 @@ export async function syncJobBranchWithBase(
 }
 
 /**
- * Merge job work branch into project/base via GitLab MR API (PAT identity).
- * Same spirit as Commits API — no local git user.name / user.email required.
+ * Merge job work branch into project/base.
+ * - If an open MR already exists → accept it (never creates a new MR).
+ * - Otherwise → local git merge work → base + push (no MR).
  */
 export async function mergeJobBranch(
   jobId: string,
@@ -260,7 +261,6 @@ export async function mergeJobBranch(
   const { resolveGitlabProjectPath } = await import("../../workspace/creds.js");
   const { getRuntimeContext } = await import("../../workspace/runtime.js");
   const {
-    createMergeRequest,
     findOpenMergeRequest,
     acceptMergeRequest,
     getProjectDefaultBranch,
@@ -298,140 +298,233 @@ export async function mergeJobBranch(
   await saveJob(job);
 
   try {
-    let mr = await findOpenMergeRequest({
+    const existingMr = await findOpenMergeRequest({
       projectId: projectIdOrPath,
       sourceBranch: source,
       targetBranch: target,
     });
-    let createdMr = false;
-    if (!mr) {
-      const iid = job.issue?.issueIid;
-      const title = iid
-        ? `Merge #${iid}: ${job.issue?.title || source}`
-        : `Merge ${source} into ${target}`;
-      const description = [
-        iid ? `Closes #${iid}` : null,
-        job.summary ? `\n${job.summary}` : null,
-        `\n_Merged by Flow Auto Work via GitLab API_`,
-      ]
-        .filter(Boolean)
-        .join("");
-      mr = await createMergeRequest({
-        projectId: projectIdOrPath,
-        sourceBranch: source,
-        targetBranch: target,
-        title,
-        description,
-        issueIid: iid,
-      });
-      createdMr = true;
-    }
 
-    let aiResolved = false;
-    let aiSummary: string | undefined;
-    let merged;
-    try {
-      merged = await acceptMergeRequest({
-        projectId: projectIdOrPath,
-        mergeRequestIid: mr.iid,
-        mergeCommitMessage: `Merge branch '${source}' into ${target}`,
-        shouldRemoveSourceBranch: false,
-      });
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (!MR_CONFLICT_RE.test(msg) || !repoPath) throw err;
-
-      logger.warn("MR has conflicts — trying AI auto-resolve locally", {
-        jobId: job.id,
-        mrIid: mr.iid,
-        source,
-        target,
-      });
-      const fix = await pullBaseIntoWorkBranch({
-        repoPath,
-        source,
-        target,
-        issue: job.issue,
-      });
-      aiResolved = fix.aiResolved;
-      aiSummary = fix.summary;
-
-      // Work branch updated on origin — GitLab re-checks and the MR can merge now
-      merged = await acceptMergeRequest({
-        projectId: projectIdOrPath,
-        mergeRequestIid: mr.iid,
-        mergeCommitMessage: `Merge branch '${source}' into ${target}`,
-        shouldRemoveSourceBranch: false,
-      });
-    }
-
-    const mergeSha = merged.mergeCommitSha;
-    let localSynced = false;
-    let syncError: string | undefined;
-    if (mergeSha && repoPath) {
+    // Prefer accepting an already-open MR — never create one here (use Create MR).
+    if (existingMr) {
+      let aiResolved = false;
+      let aiSummary: string | undefined;
+      let merged;
       try {
-        await syncLocalToRemoteCommit(repoPath, target, mergeSha);
-        localSynced = true;
+        merged = await acceptMergeRequest({
+          projectId: projectIdOrPath,
+          mergeRequestIid: existingMr.iid,
+          mergeCommitMessage: `Merge branch '${source}' into ${target}`,
+          shouldRemoveSourceBranch: false,
+        });
       } catch (err) {
-        syncError = err instanceof Error ? err.message : String(err);
-        logger.warn("GitLab merge ok but local sync failed", {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (!MR_CONFLICT_RE.test(msg) || !repoPath) throw err;
+
+        logger.warn("MR has conflicts — trying AI auto-resolve locally", {
           jobId: job.id,
+          mrIid: existingMr.iid,
+          source,
           target,
-          sha: mergeSha,
-          err: syncError,
+        });
+        const fix = await pullBaseIntoWorkBranch({
+          repoPath,
+          source,
+          target,
+          issue: job.issue,
+        });
+        aiResolved = fix.aiResolved;
+        aiSummary = fix.summary;
+
+        merged = await acceptMergeRequest({
+          projectId: projectIdOrPath,
+          mergeRequestIid: existingMr.iid,
+          mergeCommitMessage: `Merge branch '${source}' into ${target}`,
+          shouldRemoveSourceBranch: false,
         });
       }
-    }
 
-    job.mergedAt = new Date().toISOString();
-    job.mergeTarget = target;
-    job.mergeSource = source;
-    job.mergeSha = mergeSha ?? undefined;
-    job.mergeAiResolved = aiResolved;
-    job.mergeError = undefined;
-    job.mergePushedAt = new Date().toISOString();
-    job.mergePushError = syncError;
-    if (mergeSha) {
-      job.commitSha = mergeSha;
-      job.commitShas = [...(job.commitShas ?? []), mergeSha].slice(-20);
-    }
-    await saveJob(job);
+      const mergeSha = merged.mergeCommitSha;
+      let localSynced = false;
+      let syncError: string | undefined;
+      if (mergeSha && repoPath) {
+        try {
+          await syncLocalToRemoteCommit(repoPath, target, mergeSha);
+          localSynced = true;
+        } catch (err) {
+          syncError = err instanceof Error ? err.message : String(err);
+          logger.warn("GitLab merge ok but local sync failed", {
+            jobId: job.id,
+            target,
+            sha: mergeSha,
+            err: syncError,
+          });
+        }
+      }
 
-    logger.info("Job branch merged via GitLab API", {
-      jobId: job.id,
-      source,
-      target,
-      sha: mergeSha,
-      mrIid: mr.iid,
-      createdMr,
-      alreadyMerged: merged.alreadyMerged ?? false,
-      localSynced,
-      aiResolved,
-    });
+      job.mergedAt = new Date().toISOString();
+      job.mergeTarget = target;
+      job.mergeSource = source;
+      job.mergeSha = mergeSha ?? undefined;
+      job.mergeAiResolved = aiResolved;
+      job.mergeError = undefined;
+      job.mergePushedAt = new Date().toISOString();
+      job.mergePushError = syncError;
+      if (mergeSha) {
+        job.commitSha = mergeSha;
+        job.commitShas = [...(job.commitShas ?? []), mergeSha].slice(-20);
+      }
+      await saveJob(job);
 
-    return {
-      ok: true,
-      job,
-      merge: {
+      logger.info("Job branch merged via existing MR", {
+        jobId: job.id,
         source,
         target,
-        commitSha: mergeSha,
-        alreadyUpToDate: merged.alreadyMerged ?? false,
-        via: "gitlab_api",
-        mergeRequestIid: mr.iid,
-        mergeRequestUrl: merged.webUrl || mr.webUrl,
-        createdMr,
+        sha: mergeSha,
+        mrIid: existingMr.iid,
         localSynced,
-        syncError: syncError ?? null,
         aiResolved,
-        aiSummary: aiSummary ?? null,
-      },
-    };
+      });
+
+      return {
+        ok: true,
+        job,
+        merge: {
+          source,
+          target,
+          commitSha: mergeSha,
+          alreadyUpToDate: merged.alreadyMerged ?? false,
+          via: "gitlab_mr_accept",
+          mergeRequestIid: existingMr.iid,
+          mergeRequestUrl: merged.webUrl || existingMr.webUrl,
+          createdMr: false,
+          localSynced,
+          syncError: syncError ?? null,
+          aiResolved,
+          aiSummary: aiSummary ?? null,
+        },
+      };
+    }
+
+    // No open MR — local merge work → base + push (does not create MR)
+    if (!repoPath) {
+      throw new AppError(
+        "Chưa có open MR và không có local repo để merge trực tiếp. Bấm Create MR trước, hoặc gắn project clone.",
+        409,
+      );
+    }
+
+    const {
+      attemptMergeIntoBase,
+      abortMerge,
+      finalizeMergeCommit,
+      tryCheckoutBranch,
+      restoreWipAfterMerge,
+    } = await import("../../plugins/git/merge.js");
+    const { pushBranch } = await import("../../plugins/git/prep.js");
+    const { resolveMergeConflictsWithAi } = await import(
+      "../../plugins/agent/merge-resolve.js"
+    );
+
+    const attempt = await attemptMergeIntoBase({
+      repoPath,
+      sourceBranch: source,
+      targetBranch: target,
+    });
+    const previousBranch = attempt.previousBranch;
+    const wipStashMarker = attempt.wipStashMarker;
+    let aiResolved = false;
+    let aiSummary: string | undefined;
+    let wipWarning: string | undefined;
+
+    try {
+      if (attempt.status === "conflict") {
+        let files = attempt.conflictedFiles;
+        let text = "";
+        for (let round = 0; round < 2 && files.length; round++) {
+          const resolved = await resolveMergeConflictsWithAi({
+            sourceBranch: source,
+            targetBranch: target,
+            conflictedFiles: files,
+            issue: job.issue,
+          });
+          text = text ? `${text}\n---\n${resolved.text}` : resolved.text;
+          files = resolved.remaining;
+        }
+        if (files.length) {
+          await abortMerge(repoPath).catch(() => undefined);
+          throw new AppError(
+            `AI could not clear conflicts: ${files.join(", ")}`,
+            409,
+          );
+        }
+        aiResolved = true;
+        aiSummary = text || "(resolved)";
+      }
+
+      const alreadyUpToDate =
+        attempt.status === "merged" && Boolean(attempt.alreadyUpToDate);
+      const commitSha = await finalizeMergeCommit(
+        repoPath,
+        `Merge branch '${source}' into ${target}` +
+          (aiResolved ? " (AI conflict resolve)" : ""),
+      );
+      if (!alreadyUpToDate) {
+        await pushBranch(repoPath, target);
+      }
+
+      job.mergedAt = new Date().toISOString();
+      job.mergeTarget = target;
+      job.mergeSource = source;
+      job.mergeSha = commitSha ?? undefined;
+      job.mergeAiResolved = aiResolved;
+      job.mergeError = undefined;
+      job.mergePushedAt = new Date().toISOString();
+      job.mergePushError = undefined;
+      if (commitSha) {
+        job.commitSha = commitSha;
+        job.commitShas = [...(job.commitShas ?? []), commitSha].slice(-20);
+      }
+      await saveJob(job);
+
+      logger.info("Job branch merged locally (no MR)", {
+        jobId: job.id,
+        source,
+        target,
+        sha: commitSha,
+        alreadyUpToDate,
+        aiResolved,
+      });
+
+      return {
+        ok: true,
+        job,
+        merge: {
+          source,
+          target,
+          commitSha,
+          alreadyUpToDate,
+          via: "local_git",
+          mergeRequestIid: null,
+          mergeRequestUrl: null,
+          createdMr: false,
+          localSynced: true,
+          syncError: null,
+          aiResolved,
+          aiSummary: aiSummary ?? null,
+          wipWarning: wipWarning ?? null,
+        },
+      };
+    } finally {
+      if (previousBranch) await tryCheckoutBranch(repoPath, previousBranch);
+      const wip = await restoreWipAfterMerge(repoPath, wipStashMarker);
+      if (wip.warning) wipWarning = wip.warning;
+    }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     job.mergeError = msg;
     await saveJob(job);
-    logger.warn("Merge via GitLab API failed", { jobId: job.id, err: msg });
+    logger.warn("Merge failed", { jobId: job.id, err: msg });
+    if (err instanceof AppError) throw err;
     throw new AppError(msg, MR_CONFLICT_RE.test(msg) ? 409 : 500);
   }
 }

@@ -32,6 +32,13 @@ setMaxListeners(100);
 
 /** Cursor HTTP/2 rate-limit / stream kill / hang / auth exchange — must not crash the Node process. */
 export function isTransientCursorTransportError(err: unknown): boolean {
+  if (
+    err &&
+    typeof err === "object" &&
+    (err as { cursorTransient?: boolean }).cursorTransient === true
+  ) {
+    return true;
+  }
   const msg =
     err instanceof Error
       ? `${err.message} ${String((err as Error & { cause?: unknown }).cause ?? "")}`
@@ -46,8 +53,92 @@ export function isTransientCursorTransportError(err: unknown): boolean {
     /timed out after/i.test(msg) ||
     /waiting for first (event|message)/i.test(msg) ||
     /already has active run/i.test(msg) ||
-    /Cursor API unreachable/i.test(msg)
+    /Cursor API unreachable/i.test(msg) ||
+    /Cursor cắt .+ run/i.test(msg) ||
+    /Cursor tạm ngắt/i.test(msg)
   );
+}
+
+/** Mark an Error so queue retry treats it as a transient Cursor transport failure. */
+export function markCursorTransient(err: Error): Error {
+  (err as Error & { cursorTransient?: boolean }).cursorTransient = true;
+  return err;
+}
+
+export type CursorRunErrorDetail = {
+  id: string;
+  result?: string;
+  durationMs?: number;
+  errorCode?: string;
+  requestId?: string;
+};
+
+function isRetryableCursorResultText(text: string): boolean {
+  return (
+    /ENHANCE_YOUR_CALM|ERR_HTTP2|stream closed|timed out|timeout|fetch failed|API key exchange|rate.?limit|overloaded|unavailable|temporar|ECONNRESET|ETIMEDOUT|socket hang up/i.test(
+      text,
+    )
+  );
+}
+
+/**
+ * Turn Cursor SDK `status=error` into a VI-readable Error.
+ * Opaque empty failures (common after long runs) are marked transient for auto-retry.
+ */
+export function errorFromCursorRunStatus(
+  detail: CursorRunErrorDetail,
+  opts?: { label?: string },
+): Error {
+  const label = opts?.label ?? "Agent";
+  const resultText = detail.result?.trim() || "";
+  const durationMs = detail.durationMs ?? 0;
+  const metaBits = [
+    detail.errorCode && `code=${detail.errorCode}`,
+    detail.requestId && `req=${detail.requestId}`,
+    durationMs > 0 && `${Math.round(durationMs / 1000)}s`,
+  ].filter(Boolean) as string[];
+
+  // Short empty → never connected
+  if (!resultText && durationMs > 0 && durationMs < 15_000) {
+    return markCursorTransient(
+      new Error(
+        formatCursorAgentFailure(
+          new Error(
+            "Failed to connect to API key exchange endpoint: fetch failed",
+          ),
+          `${label} run failed (${detail.id})`,
+        ),
+      ),
+    );
+  }
+
+  // Empty body (often long runs ~15min) — Cursor cut stream without details
+  if (!resultText) {
+    const when =
+      durationMs >= 60_000
+        ? `~${Math.max(1, Math.round(durationMs / 60_000))} phút`
+        : durationMs > 0
+          ? `~${Math.round(durationMs / 1000)}s`
+          : "không rõ thời gian";
+    const meta = metaBits.length ? ` (${metaBits.join(" · ")})` : "";
+    return markCursorTransient(
+      new Error(
+        `Cursor cắt ${label.toLowerCase()} run sau ${when}${meta}. ` +
+          `Thường do timeout / mất stream phía Cursor — hệ thống sẽ tự thử lại nếu còn lượt; không thì Gửi/Run lại.`,
+      ),
+    );
+  }
+
+  const raw = `${label} run failed (${detail.id}): ${[
+    ...metaBits,
+    resultText.slice(0, 500),
+  ].join(" · ")}`;
+  const msg = formatCursorAgentFailure(new Error(resultText), raw);
+  const err = new Error(msg);
+  if (isRetryableCursorResultText(resultText) || isRetryableCursorResultText(msg)) {
+    markCursorTransient(err);
+  }
+  return err;
 }
 
 /** Human-readable Cursor connectivity / auth failures */
@@ -67,6 +158,20 @@ export function formatCursorAgentFailure(err: unknown, fallback: string): string
   }
   if (/ENHANCE_YOUR_CALM|ERR_HTTP2/i.test(msg)) {
     return "Cursor giới hạn tốc độ / HTTP2 đóng — đợi vài giây rồi Gửi lại.";
+  }
+  if (/Cursor cắt .+ run/i.test(msg)) {
+    return msg.trim();
+  }
+  // Opaque English "Agent run failed (run-…): req=… · Nms"
+  if (
+    /Agent run failed/i.test(msg) &&
+    !/\bcode=/i.test(msg) &&
+    !/: .{30,}/.test(msg.replace(/req=[^\s·]+/g, "").replace(/\d+ms/g, ""))
+  ) {
+    return (
+      "Cursor cắt agent run (không có chi tiết lỗi). " +
+      "Thường do timeout / mất stream — thử Gửi/Run lại."
+    );
   }
   return fallback;
 }
@@ -270,39 +375,18 @@ async function collectAssistantText(
     throw new Error("Agent run cancelled (force stop)");
   }
   if (result.status === "error") {
-    const detail = result as {
-      id: string;
-      result?: string;
-      durationMs?: number;
-      errorCode?: string;
-      requestId?: string;
-    };
-    const bits = [
-      detail.errorCode && `code=${detail.errorCode}`,
-      detail.requestId && `req=${detail.requestId}`,
-      detail.durationMs != null && `${detail.durationMs}ms`,
-      detail.result?.trim()?.slice(0, 500),
-    ].filter(Boolean);
-    const raw = bits.length
-      ? `Agent run failed (${detail.id}): ${bits.join(" · ")}`
-      : `Agent run failed: ${detail.id}`;
-    // Short-lived errors often mean Cursor never connected (see unhandled ConnectError)
-    const msg =
-      detail.durationMs != null && detail.durationMs < 15_000 && !detail.result?.trim()
-        ? formatCursorAgentFailure(
-            new Error("Failed to connect to API key exchange endpoint: fetch failed"),
-            raw,
-          )
-        : formatCursorAgentFailure(new Error(detail.result || raw), raw);
-    appendJobProgress(jobId, "status", msg);
+    const detail = result as CursorRunErrorDetail;
+    const err = errorFromCursorRunStatus(detail, { label: "Agent" });
+    appendJobProgress(jobId, "status", err.message);
     logger.error("Cursor run status=error", {
       runId: detail.id,
       errorCode: detail.errorCode,
       requestId: detail.requestId,
       durationMs: detail.durationMs,
       resultPreview: detail.result?.slice(0, 800),
+      transient: isTransientCursorTransportError(err),
     });
-    throw new Error(msg);
+    throw err;
   }
   const text = (result.result ?? streamed).trim();
   if (text) {

@@ -5,7 +5,6 @@ import {
   prepareRepoForIssue,
 } from "./plugins/git/prep.js";
 import {
-  commentOnIssue,
   getProjectDefaultBranch,
 } from "./plugins/gitlab/client.js";
 import {
@@ -13,10 +12,7 @@ import {
   markPendingChangesIfDirty,
   resolveCommitMode,
 } from "./modules/job/commit.js";
-import {
-  postAgentGitlabComments,
-  withAiGeneratedMarker,
-} from "./plugins/gitlab/agent-comment.js";
+import { postAgentGitlabComments } from "./plugins/gitlab/agent-comment.js";
 import { ensureJob, listJobs, loadJob, saveJob } from "./job-store.js";
 import { logger } from "./logger.js";
 import {
@@ -2047,61 +2043,20 @@ export class JobQueue {
       job.error = undefined;
       await saveJob(job);
 
-      if (hasChange && resolveCommitMode(job) === "auto") {
-        const defaultComment = withAiGeneratedMarker(
-          result.summary?.trim() || "(AI run completed — see commit)",
-        );
-        const extraComment = job.completion?.comment?.trim();
-        const finalComment = [defaultComment, extraComment]
-          .filter(Boolean)
-          .join("\n\n");
-
-        await commentOnIssue(
-          job.issue.projectId,
-          job.issue.issueIid,
-          finalComment,
-        );
-      } else if (hasChange && resolveCommitMode(job) === "manual") {
+      if (hasChange && resolveCommitMode(job) === "manual") {
         logger.info("Manual commit mode — pending local changes", {
           jobId: job.id,
           headBefore,
         });
-      } else {
-        logger.info("No code changes this run — skip GitLab comment", {
+      } else if (!hasChange) {
+        logger.info("No code changes this run — skip commit", {
           jobId: job.id,
           headBefore,
           commitSha,
         });
       }
-
-      // Explicit <<<GITLAB_COMMENT>>> from agent (comment-only or extra notes)
-      try {
-        const posted = await postAgentGitlabComments({
-          projectId: job.issue.projectId,
-          issueIid: job.issue.issueIid,
-          agentText: result.text,
-          jobId: job.id,
-        });
-        if (posted.posted > 0) {
-          await addChatMessage({
-            jobId: job.id,
-            issueIid: job.issue.issueIid,
-            role: "system",
-            kind: "note",
-            body: `Đã đăng ${posted.posted} comment lên GitLab #${job.issue.issueIid} (AI-Generated).`,
-          });
-        }
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        logger.warn("Agent GITLAB_COMMENT post failed", {
-          jobId: job.id,
-          err: msg,
-        });
-        await this.notifyJobChat(
-          job,
-          `Đăng comment GitLab thất bại:\n${msg}`,
-        );
-      }
+      // No auto GitLab comment after code Run — only when chat asks (GITLAB_COMMENT)
+      // or on Create MR (summary).
 
       logger.info("Job awaiting handoff (no auto assign/labels)", {
         jobId: job.id,

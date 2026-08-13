@@ -35,6 +35,7 @@ export function stripGitlabCommentBlocks(text: string): string {
 
 /**
  * Post any <<<GITLAB_COMMENT>>> blocks from agent output onto the issue.
+ * Used when the human asks in chat to comment — not for auto “code done” spam.
  * Always prefixes AI-Generated. No-op for adhoc (issueIid <= 0).
  */
 export async function postAgentGitlabComments(opts: {

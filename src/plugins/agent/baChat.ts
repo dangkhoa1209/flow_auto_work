@@ -6,6 +6,7 @@ import {
   beginCancellableJob,
   cancelActiveAgentRun,
   clearJobKillRequested,
+  errorFromCursorRunStatus,
   formatCursorAgentFailure,
   isJobKillRequested,
   isTransientCursorTransportError,
@@ -432,13 +433,15 @@ export async function runBaChatAgent(opts: {
         throw stopped;
       }
       if (result.status === "error") {
-        throw new Error(
-          formatCursorAgentFailure(
-            new Error(
-              String((result as { result?: string }).result || "error"),
-            ),
-            "BA agent failed",
-          ),
+        throw errorFromCursorRunStatus(
+          result as {
+            id: string;
+            result?: string;
+            durationMs?: number;
+            errorCode?: string;
+            requestId?: string;
+          },
+          { label: "BA" },
         );
       }
 

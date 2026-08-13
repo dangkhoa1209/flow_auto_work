@@ -24,10 +24,10 @@ import {
 import {
   beginCancellableJob,
   cancelActiveAgentRun,
+  errorFromCursorRunStatus,
 } from "./run.js";
 import { gitlabCommentInstructions } from "./prompt.js";
 import { addChatMessage } from "../../db/mongo.js";
-
 setMaxListeners(50);
 
 export type QaHistoryTurn = {
@@ -243,13 +243,15 @@ ${opts.question}`;
           throw new Error("Q&A cancelled (force stop)");
         }
         if (result.status === "error") {
-          const detail = result as {
-            id: string;
-            result?: string;
-            errorCode?: string;
-          };
-          throw new Error(
-            `Q&A failed (${detail.id})${detail.errorCode ? ` · ${detail.errorCode}` : ""}${detail.result ? `: ${detail.result.slice(0, 300)}` : ""}`,
+          throw errorFromCursorRunStatus(
+            result as {
+              id: string;
+              result?: string;
+              durationMs?: number;
+              errorCode?: string;
+              requestId?: string;
+            },
+            { label: "Q&A" },
           );
         }
         const text = (result.result ?? streamed).trim() || "(no answer)";
@@ -275,8 +277,7 @@ ${opts.question}`;
           : null;
         appendJobProgress(jobId, "status", "Q&A finished");
 
-        // Post any <<<GITLAB_COMMENT>>> blocks Flow-side
-        let commentsPosted = 0;
+        // User asked to comment → post <<<GITLAB_COMMENT>>> blocks
         try {
           const posted = await postAgentGitlabComments({
             projectId: opts.issue.projectId,
@@ -284,14 +285,13 @@ ${opts.question}`;
             agentText: text,
             jobId,
           });
-          commentsPosted = posted.posted;
-          if (commentsPosted > 0 && jobId) {
+          if (posted.posted > 0 && jobId) {
             await addChatMessage({
               jobId,
               issueIid: opts.issue.issueIid,
               role: "system",
               kind: "note",
-              body: `Đã đăng ${commentsPosted} comment lên GitLab #${opts.issue.issueIid} (AI-Generated).`,
+              body: `Đã đăng ${posted.posted} comment lên GitLab #${opts.issue.issueIid} (AI-Generated).`,
             });
           }
         } catch (err) {
