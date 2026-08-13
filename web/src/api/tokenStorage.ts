@@ -2,6 +2,7 @@
  * Token bridge — accessToken lives in memory only (anti-XSS).
  * refreshToken + identity persist to localStorage.
  */
+import { safeGetItem, safeRemoveItem, safeSetItem } from "@/utils/safeStorage";
 
 const PERSIST_KEY = "flow_auto_work_session";
 const LAST_LOGIN_KEY = "flow_auto_work_last_login";
@@ -38,7 +39,7 @@ export function setAccessToken(
 
 export function loadPersistedAuth(): PersistedAuth {
   try {
-    const raw = localStorage.getItem(PERSIST_KEY);
+    const raw = safeGetItem(PERSIST_KEY);
     if (!raw) {
       return { username: null, projectId: null, refreshToken: null };
     }
@@ -55,7 +56,7 @@ export function loadPersistedAuth(): PersistedAuth {
 }
 
 /** Persist identity + refresh only — never write accessToken. */
-export function savePersistedAuth( partial: Partial<PersistedAuth>): void {
+export function savePersistedAuth(partial: Partial<PersistedAuth>): void {
   const cur = loadPersistedAuth();
   const next: PersistedAuth = {
     username:
@@ -67,25 +68,21 @@ export function savePersistedAuth( partial: Partial<PersistedAuth>): void {
         ? partial.refreshToken
         : cur.refreshToken,
   };
-  localStorage.setItem(PERSIST_KEY, JSON.stringify(next));
+  safeSetItem(PERSIST_KEY, JSON.stringify(next));
 }
 
 export function clearPersistedAuth(): void {
   const prev = loadPersistedAuth();
   if (prev.username) {
-    try {
-      localStorage.setItem(
-        LAST_LOGIN_KEY,
-        JSON.stringify({
-          username: prev.username,
-          projectId: prev.projectId,
-        }),
-      );
-    } catch {
-      /* ignore */
-    }
+    safeSetItem(
+      LAST_LOGIN_KEY,
+      JSON.stringify({
+        username: prev.username,
+        projectId: prev.projectId,
+      }),
+    );
   }
-  localStorage.removeItem(PERSIST_KEY);
+  safeRemoveItem(PERSIST_KEY);
   memoryAccessToken = null;
   memoryAccessExpiresAt = null;
 }

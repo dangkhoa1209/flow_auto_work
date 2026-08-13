@@ -60,13 +60,20 @@ chrome.runtime.onMessage.addListener(
   },
 );
 
-void chrome.runtime.sendMessage({ type: "CONTENT_READY" });
-
-chrome.storage.session.get(["qcPlayEnv"]).then((data) => {
-  if (data.qcPlayEnv && typeof data.qcPlayEnv === "object") {
-    playEnv = data.qcPlayEnv as PlaybackEnv;
-  }
+void chrome.runtime.sendMessage({ type: "CONTENT_READY" }).catch(() => {
+  /* extension reloading / no receiver */
 });
+
+void chrome.storage.session
+  .get(["qcPlayEnv"])
+  .then((data) => {
+    if (data.qcPlayEnv && typeof data.qcPlayEnv === "object") {
+      playEnv = data.qcPlayEnv as PlaybackEnv;
+    }
+  })
+  .catch(() => {
+    /* chrome.storage.session may be blocked in some page contexts */
+  });
 
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area === "session" && changes.qcPlayEnv) {

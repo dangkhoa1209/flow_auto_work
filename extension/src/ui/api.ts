@@ -25,13 +25,17 @@ export async function loadConfig(): Promise<ExtConfig> {
 
 export async function saveConfig(cfg: ExtConfig): Promise<void> {
   await chrome.storage.local.set({ [CFG_KEY]: cfg });
-  await chrome.storage.session.set({
-    qcPlayEnv: {
-      apiBase: API_BASE,
-      accessToken: cfg.accessToken,
-      qcProjectId: cfg.qcProjectId,
-    },
-  });
+  try {
+    await chrome.storage.session.set({
+      qcPlayEnv: {
+        apiBase: API_BASE,
+        accessToken: cfg.accessToken,
+        qcProjectId: cfg.qcProjectId,
+      },
+    });
+  } catch {
+    /* session storage blocked in some contexts — content can still get env via messages */
+  }
 }
 
 async function rawFetch<T>(path: string, init?: RequestInit): Promise<T> {

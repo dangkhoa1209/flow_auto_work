@@ -3,6 +3,7 @@ import { computed, ref } from "vue";
 import { api } from "@/api/client";
 import { API } from "@/api/endpoints";
 import { useSessionStore } from "@/stores/session";
+import { safeGetItem, safeSetItem, safeRemoveItem } from "@/utils/safeStorage";
 
 export type BaProject = {
   id: string;
@@ -65,7 +66,7 @@ export const useBaChatStore = defineStore("baChat", () => {
 
   const projects = ref<BaProject[]>([]);
   const selectedProjectId = ref<string | null>(
-    localStorage.getItem("flow_ba_project_id"),
+    safeGetItem("flow_ba_project_id"),
   );
   const threads = ref<BaThread[]>([]);
   const activeThreadId = ref<string | null>(null);
@@ -78,13 +79,11 @@ export const useBaChatStore = defineStore("baChat", () => {
   const progress = ref<BaProgressItem[]>([]);
   const progressVisible = ref(false);
   /** BA analysis mode — agent acts as real BA for requirements analysis */
-  const analysisMode = ref(
-    localStorage.getItem("flow_ba_analysis_mode") === "1",
-  );
+  const analysisMode = ref(safeGetItem("flow_ba_analysis_mode") === "1");
 
   function setAnalysisMode(on: boolean) {
     analysisMode.value = on;
-    localStorage.setItem("flow_ba_analysis_mode", on ? "1" : "0");
+    safeSetItem("flow_ba_analysis_mode", on ? "1" : "0");
   }
 
   const selectedProject = computed(() =>
@@ -120,8 +119,8 @@ export const useBaChatStore = defineStore("baChat", () => {
 
   function persistProjectId(id: string | null) {
     selectedProjectId.value = id;
-    if (id) localStorage.setItem("flow_ba_project_id", id);
-    else localStorage.removeItem("flow_ba_project_id");
+    if (id) safeSetItem("flow_ba_project_id", id);
+    else safeRemoveItem("flow_ba_project_id");
   }
 
   async function loadProjects() {
