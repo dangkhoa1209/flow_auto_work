@@ -24,6 +24,8 @@ function isPublicApiPath(path: string): boolean {
   if (path === "/admin" || path.startsWith("/admin/")) return true;
   // Google OAuth browser redirect (no Bearer / project headers)
   if (path === "/google/callback") return true;
+  // Workbench terminal status (flag/loopback gate; no project ALS)
+  if (path === "/terminal" || path.startsWith("/terminal/")) return true;
   return false;
 }
 

@@ -23,6 +23,15 @@ export async function startHttpServer(): Promise<ListenResult> {
     logger.info(`Server OK — http://${host}:${port}/ (Express)`);
   });
 
+  if (config.WORKBENCH_TERMINAL) {
+    const { attachWorkbenchTerminal } = await import(
+      "./plugins/terminal/ws.js"
+    );
+    attachWorkbenchTerminal(server);
+  } else {
+    logger.info("Workbench terminal off (set WORKBENCH_TERMINAL=1 for local PTY)");
+  }
+
   return { server, host, port };
 }
 

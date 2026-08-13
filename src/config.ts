@@ -71,6 +71,14 @@ const envSchema = z.object({
   GOOGLE_OAUTH_CLIENT_ID: z.string().optional(),
   GOOGLE_OAUTH_CLIENT_SECRET: z.string().optional(),
   GOOGLE_OAUTH_REDIRECT_URI: z.string().optional(),
+  /**
+   * Internal Workbench PTY terminal (local only).
+   * Requires loopback HOST or loopback client — never expose publicly.
+   */
+  WORKBENCH_TERMINAL: z
+    .string()
+    .optional()
+    .transform((v) => v === "true" || v === "1"),
 });
 
 export type AppConfig = z.infer<typeof envSchema> & {
@@ -81,6 +89,7 @@ export type AppConfig = z.infer<typeof envSchema> & {
   onCompleteLabels: string[];
   STARTUP_SCAN: boolean;
   STARTUP_SCAN_INCLUDE_SUCCEEDED: boolean;
+  WORKBENCH_TERMINAL: boolean;
   isProd: boolean;
   corsOrigins: string[];
   rateLimitWindowMs: number;
@@ -153,6 +162,7 @@ export function getConfig(): AppConfig {
       .map((s) => s.trim())
       .filter(Boolean),
     isProd,
+    WORKBENCH_TERMINAL: Boolean(env.WORKBENCH_TERMINAL),
     corsOrigins: resolvedCors,
     rateLimitWindowMs: env.RATE_LIMIT_WINDOW_MS ?? 15 * 60 * 1000,
     rateLimitMax: env.RATE_LIMIT_MAX ?? 0, //1000,

@@ -143,6 +143,9 @@ export const API = {
   },
   status: "/api/status",
   events: "/api/events",
+  terminal: {
+    status: "/api/terminal/status",
+  },
   stats: {
     daily: "/api/stats/daily",
   },

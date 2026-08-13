@@ -2,7 +2,10 @@
 import { nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { DownOutlined } from "@ant-design/icons-vue";
 import ChatMessageBody from "@/components/ChatMessageBody.vue";
+import RepoTerminal from "@/components/work/RepoTerminal.vue";
 import { useAutoScroll } from "@/composables/useAutoScroll";
+import { api } from "@/api/client";
+import { API } from "@/api/endpoints";
 import {
   statusLabel,
   contextQualityLabel,
@@ -64,7 +67,10 @@ const rootEl = ref<HTMLElement | null>(null);
 const headerEl = ref<HTMLElement | null>(null);
 const chatBox = ref<HTMLElement | null>(null);
 const progressBox = ref<HTMLElement | null>(null);
-const mobileConsoleTab = ref<"chat" | "logs">("chat");
+const mobileConsoleTab = ref<"chat" | "logs" | "terminal">("chat");
+/** Desktop bottom panel: Process logs vs Terminal */
+const bottomTab = ref<"logs" | "terminal">("logs");
+const terminalEnabled = ref(false);
 const progressOpen = ref(false);
 const progressHeight = ref(PROGRESS_H_DEFAULT);
 const progressMaxPx = ref(PROGRESS_H_DEFAULT);
@@ -77,6 +83,15 @@ let dragPointerId: number | null = null;
 let rootResizeObserver: ResizeObserver | null = null;
 let chatResizeObserver: ResizeObserver | null = null;
 
+async function loadTerminalStatus() {
+  try {
+    const res = await api<{ enabled?: boolean }>(API.terminal.status);
+    terminalEnabled.value = Boolean(res?.enabled);
+  } catch {
+    terminalEnabled.value = false;
+  }
+}
+
 onMounted(() => {
   try {
     const raw = localStorage.getItem(PROGRESS_OPEN_KEY);
@@ -88,6 +103,7 @@ onMounted(() => {
   } catch {
     /* ignore */
   }
+  void loadTerminalStatus();
   void nextTick(() => {
     reclampProgressHeight();
     if (rootEl.value && typeof ResizeObserver !== "undefined") {
@@ -273,6 +289,19 @@ watch(chatBox, (el, prev) => {
           <div v-else class="faw-console-head__win">No window linked</div>
         </div>
         <div class="faw-console-actions">
+          <button
+            v-if="terminalEnabled"
+            type="button"
+            class="faw-btn"
+            title="Mở terminal project"
+            @click="
+              progressOpen = true;
+              bottomTab = 'terminal';
+              if (mobileTabs) mobileConsoleTab = 'terminal';
+            "
+          >
+            Terminal
+          </button>
           <a-popconfirm
             v-if="canForceStop"
             title="Force Stop agent?"
@@ -330,7 +359,7 @@ watch(chatBox, (el, prev) => {
         </div>
       </div>
 
-      <!-- Mobile: Chat | Logs switcher -->
+      <!-- Mobile: Chat | Logs | Terminal switcher -->
       <div
         v-if="mobileTabs"
         class="faw-m-console-tabs shrink-0"
@@ -355,6 +384,17 @@ watch(chatBox, (el, prev) => {
           @click="mobileConsoleTab = 'logs'"
         >
           Logs
+        </button>
+        <button
+          v-if="terminalEnabled"
+          type="button"
+          role="tab"
+          class="faw-m-console-tabs__btn touch-manipulation fx-colors"
+          :class="{ 'is-active': mobileConsoleTab === 'terminal' }"
+          :aria-selected="mobileConsoleTab === 'terminal'"
+          @click="mobileConsoleTab = 'terminal'"
+        >
+          Terminal
         </button>
       </div>
 
@@ -417,9 +457,13 @@ watch(chatBox, (el, prev) => {
         />
       </div>
 
-      <!-- Progress / Logs — collapse + drag-resize (desktop) -->
+      <!-- Progress / Logs / Terminal — collapse + drag-resize (desktop) -->
       <div
-        v-show="mobileTabs ? mobileConsoleTab === 'logs' : true"
+        v-show="
+          mobileTabs
+            ? mobileConsoleTab === 'logs' || mobileConsoleTab === 'terminal'
+            : true
+        "
         class="console-progress relative z-[1] flex flex-col min-h-0 overflow-hidden"
         :class="{
           'flex-1': mobileTabs,
@@ -448,7 +492,7 @@ watch(chatBox, (el, prev) => {
               ? undefined
               : progressOpen
                 ? 'Drag to resize · click to collapse'
-                : 'Open Progress'
+                : 'Open Progress / Terminal'
           "
           :aria-expanded="mobileTabs ? undefined : progressOpen"
           @pointerdown="onProgressRailPointerDown"
@@ -456,11 +500,29 @@ watch(chatBox, (el, prev) => {
           <span class="console-progress__grip" aria-hidden="true">
             <i /><i /><i />
           </span>
-          <span class="console-progress__label">{{
-            mobileTabs ? "Logs" : "Progress"
+          <template v-if="!mobileTabs && terminalEnabled && progressOpen">
+            <span
+              class="console-progress__label console-progress__label--tab"
+              :class="{ 'is-on': bottomTab === 'logs' }"
+              @click.stop="bottomTab = 'logs'"
+              >Process</span
+            >
+            <span
+              class="console-progress__label console-progress__label--tab"
+              :class="{ 'is-on': bottomTab === 'terminal' }"
+              @click.stop="bottomTab = 'terminal'"
+              >Terminal</span
+            >
+          </template>
+          <span v-else class="console-progress__label">{{
+            mobileTabs
+              ? mobileConsoleTab === "terminal"
+                ? "Terminal"
+                : "Logs"
+              : "Progress"
           }}</span>
           <span
-            v-if="progressLive"
+            v-if="progressLive && (!terminalEnabled || bottomTab === 'logs')"
             class="console-progress__live"
             aria-label="live"
           />
@@ -478,7 +540,12 @@ watch(chatBox, (el, prev) => {
         </button>
 
         <div
-          v-show="mobileTabs || progressOpen"
+          v-show="
+            (mobileTabs || progressOpen) &&
+            (mobileTabs
+              ? mobileConsoleTab === 'logs'
+              : !terminalEnabled || bottomTab === 'logs')
+          "
           ref="progressBox"
           class="console-progress__body flex-1 min-h-0 overflow-y-auto space-y-0"
           :class="mobileTabs ? 'text-xs' : ''"
@@ -509,6 +576,22 @@ watch(chatBox, (el, prev) => {
           >
             {{ progressLive ? "Waiting for Cursor stream…" : "No progress yet" }}
           </div>
+        </div>
+
+        <div
+          v-if="terminalEnabled"
+          v-show="
+            (mobileTabs && mobileConsoleTab === 'terminal') ||
+            (!mobileTabs && progressOpen && bottomTab === 'terminal')
+          "
+          class="flex-1 min-h-0 overflow-hidden"
+        >
+          <RepoTerminal
+            :active="
+              (mobileTabs && mobileConsoleTab === 'terminal') ||
+              (!mobileTabs && progressOpen && bottomTab === 'terminal')
+            "
+          />
         </div>
       </div>
 
