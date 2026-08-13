@@ -657,9 +657,9 @@ export function useWorkbench() {
     }
     if (!(await ensureCursorKey())) return;
     chatInput.value = "";
+    await nextTick();
     busy.value = true;
     work.watchProgress();
-    await nextTick();
     try {
       // Clarification replies always go through continue (same chat)
       const useContinue =

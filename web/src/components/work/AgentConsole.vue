@@ -605,7 +605,8 @@ watch(chatBox, (el, prev) => {
           :rows="2"
           :auto-size="{ minRows: 2, maxRows: 12 }"
           :autofocus="false"
-          :disabled="busy || agentTyping"
+          :disabled="false"
+          :readonly="busy || agentTyping"
           :placeholder="
             agentTyping || busy
               ? 'Agent đang suy nghĩ… đợi xong hoặc Force Stop'
