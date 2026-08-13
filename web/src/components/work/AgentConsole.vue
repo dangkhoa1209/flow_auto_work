@@ -153,16 +153,42 @@ function reclampProgressHeight() {
   }
 }
 
-function toggleProgress() {
-  progressOpen.value = !progressOpen.value;
+function openProcessPanel() {
+  progressOpen.value = true;
+  bottomTab.value = "logs";
+  if (props.mobileTabs) mobileConsoleTab.value = "logs";
+}
+
+function openTerminalPanel() {
+  progressOpen.value = true;
+  bottomTab.value = "terminal";
+  if (props.mobileTabs) mobileConsoleTab.value = "terminal";
+}
+
+function closeProgressPanel() {
+  progressOpen.value = false;
+}
+
+/** Process / Terminal tabs — switch only (never toggle-close). */
+function onBottomTabPointerDown(e: PointerEvent, tab: "logs" | "terminal") {
+  e.preventDefault();
+  e.stopPropagation();
+  if (tab === "logs") openProcessPanel();
+  else openTerminalPanel();
 }
 
 function onProgressRailPointerDown(e: PointerEvent) {
   if (props.mobileTabs || e.button !== 0) return;
+  const el = e.target as HTMLElement | null;
+  if (el?.closest?.(".console-progress__label--tab")) return;
+
   if (!progressOpen.value) {
-    progressOpen.value = true;
+    // Collapsed + click empty rail → open Process
+    openProcessPanel();
     return;
   }
+
+  // Open: drag to resize; click (no drag) → close
   dragStartY = e.clientY;
   dragStartH = progressHeight.value;
   dragMoved = false;
@@ -190,7 +216,7 @@ function onProgressRailPointerUp(e: PointerEvent) {
   progressDragging.value = false;
   dragPointerId = null;
   if (!dragMoved) {
-    toggleProgress();
+    closeProgressPanel();
   } else {
     persistProgressHeight();
   }
@@ -289,19 +315,39 @@ watch(chatBox, (el, prev) => {
           <div v-else class="faw-console-head__win">No window linked</div>
         </div>
         <div class="faw-console-actions">
-          <button
-            v-if="terminalEnabled"
-            type="button"
-            class="faw-btn"
-            title="Mở terminal project"
-            @click="
-              progressOpen = true;
-              bottomTab = 'terminal';
-              if (mobileTabs) mobileConsoleTab = 'terminal';
-            "
-          >
-            Terminal
-          </button>
+          <template v-if="terminalEnabled">
+            <button
+              type="button"
+              class="faw-btn"
+              :class="{
+                'faw-btn--run':
+                  (!mobileTabs && progressOpen && bottomTab === 'logs') ||
+                  (mobileTabs && mobileConsoleTab === 'logs'),
+              }"
+              title="Xem Process / agent progress"
+              @click="openProcessPanel"
+            >
+              Process
+              <span
+                v-if="progressLive"
+                class="console-progress__live inline-block ml-1 align-middle"
+                aria-label="live"
+              />
+            </button>
+            <button
+              type="button"
+              class="faw-btn"
+              :class="{
+                'faw-btn--run':
+                  (!mobileTabs && progressOpen && bottomTab === 'terminal') ||
+                  (mobileTabs && mobileConsoleTab === 'terminal'),
+              }"
+              title="Terminal trong repo project"
+              @click="openTerminalPanel"
+            >
+              Terminal
+            </button>
+          </template>
           <a-popconfirm
             v-if="canForceStop"
             title="Force Stop agent?"
@@ -480,8 +526,8 @@ watch(chatBox, (el, prev) => {
             : undefined
         "
       >
-        <button
-          type="button"
+        <div
+          role="toolbar"
           class="console-progress__rail"
           :class="{
             'is-collapsed': !mobileTabs && !progressOpen,
@@ -491,8 +537,8 @@ watch(chatBox, (el, prev) => {
             mobileTabs
               ? undefined
               : progressOpen
-                ? 'Drag to resize · click to collapse'
-                : 'Open Progress / Terminal'
+                ? 'Process/Terminal để đổi · click chỗ khác để đóng · kéo để resize'
+                : 'Process / Terminal để mở'
           "
           :aria-expanded="mobileTabs ? undefined : progressOpen"
           @pointerdown="onProgressRailPointerDown"
@@ -500,19 +546,23 @@ watch(chatBox, (el, prev) => {
           <span class="console-progress__grip" aria-hidden="true">
             <i /><i /><i />
           </span>
-          <template v-if="!mobileTabs && terminalEnabled && progressOpen">
-            <span
+          <template v-if="!mobileTabs && terminalEnabled">
+            <button
+              type="button"
               class="console-progress__label console-progress__label--tab"
-              :class="{ 'is-on': bottomTab === 'logs' }"
-              @click.stop="bottomTab = 'logs'"
-              >Process</span
+              :class="{ 'is-on': progressOpen && bottomTab === 'logs' }"
+              @pointerdown="onBottomTabPointerDown($event, 'logs')"
             >
-            <span
+              Process
+            </button>
+            <button
+              type="button"
               class="console-progress__label console-progress__label--tab"
-              :class="{ 'is-on': bottomTab === 'terminal' }"
-              @click.stop="bottomTab = 'terminal'"
-              >Terminal</span
+              :class="{ 'is-on': progressOpen && bottomTab === 'terminal' }"
+              @pointerdown="onBottomTabPointerDown($event, 'terminal')"
             >
+              Terminal
+            </button>
           </template>
           <span v-else class="console-progress__label">{{
             mobileTabs
@@ -537,7 +587,7 @@ watch(chatBox, (el, prev) => {
             class="console-progress__chevron"
             :class="{ 'is-open': progressOpen }"
           />
-        </button>
+        </div>
 
         <div
           v-show="
