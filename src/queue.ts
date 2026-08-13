@@ -47,6 +47,7 @@ import {
 } from "./plugins/agent/context-quality.js";
 import {
   docsReadySummaryText,
+  formatDocsReadyChatBody,
   parseDocsReadyPaths,
 } from "./plugins/docs/analysis.js";
 import type { CompletionActions, IssueJob, JobRecord, JobStatus } from "./types.js";
@@ -1987,9 +1988,7 @@ export class JobQueue {
             issueIid: job.issue.issueIid,
             role: "agent",
             kind: "qa",
-            body: `DOCS READY:\n${summary}${
-              paths.length ? `\n\nPaths:\n${paths.map((p) => `- ${p}`).join("\n")}` : ""
-            }`,
+            body: formatDocsReadyChatBody(body, paths),
           });
         }
 

@@ -92,6 +92,54 @@ function rewriteUploadHtml(html: string, issueUrl?: string | null): string {
   );
 }
 
+/** Count GFM table cells in a pipe row. */
+function countPipeCells(line: string): number {
+  const t = line.trim();
+  if (!t.includes("|")) return 0;
+  const parts = t.split("|");
+  // "| a | b |" → ["", " a ", " b ", ""] → 2 cells
+  const inner =
+    t.startsWith("|") && t.endsWith("|")
+      ? parts.slice(1, -1)
+      : parts.filter((p) => p.length);
+  return inner.length;
+}
+
+/**
+ * Fix common LLM table mistakes: separator with fewer columns than the header
+ * (e.g. `|---|` under a 2-column header) so marked can render a real table.
+ */
+export function repairMarkdownTables(s: string): string {
+  const lines = s.split("\n");
+  const out: string[] = [];
+  for (const line of lines) {
+    const prev = out[out.length - 1];
+    const trimmed = line.trim();
+    if (
+      prev &&
+      /^\|.+\|$/.test(prev.trim()) &&
+      /^\|[\s:|-]+\|$/.test(trimmed)
+    ) {
+      const headerCells = countPipeCells(prev);
+      const sepCells = countPipeCells(line);
+      if (headerCells >= 2 && sepCells > 0 && sepCells < headerCells) {
+        out.push(
+          `|${Array.from({ length: headerCells }, () => " --- ").join("|")}|`,
+        );
+        continue;
+      }
+    }
+    out.push(line);
+  }
+  return out.join("\n");
+}
+
+function wrapChatTables(html: string): string {
+  return html
+    .replace(/<table\b/gi, '<div class="chat-md-table-wrap"><table')
+    .replace(/<\/table>/gi, "</table></div>");
+}
+
 /** Strip machine markers + GitLab markdown quirks. */
 export function cleanMarkdownBody(raw: string, issueUrl?: string | null): string {
   let s = String(raw || "");
@@ -101,6 +149,7 @@ export function cleanMarkdownBody(raw: string, issueUrl?: string | null): string
   // GitLab image size suffix: ![x](/uploads/…){width="362" height="343"}
   s = s.replace(/\{width="?\d+"?\s*height="?\d+"?\}/gi, "");
   s = rewriteUploadMarkdown(s, issueUrl);
+  s = repairMarkdownTables(s);
   s = s.replace(/\n{3,}/g, "\n\n").trim();
   return s;
 }
@@ -138,6 +187,7 @@ export function renderChatHtml(
     return escapeHtml(cleaned).replace(/\n/g, "<br>");
   }
   let html = marked.parse(cleaned, { async: false }) as string;
+  html = wrapChatTables(html);
   html = rewriteUploadHtml(html, opts?.issueUrl);
   return sanitizeHtml(html);
 }

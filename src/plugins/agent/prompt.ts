@@ -156,13 +156,15 @@ ${linkedBlock}${sheetsBlock}
 8. When docs are ready, end with EXACTLY this block (paths = feature docs you created/updated; may include \`.md\` / \`.mdc\`):
 
 <<<DOCS_READY>>>
-SUMMARY: Tóm tắt ngắn tiếng Việt (1–3 câu): đã đọc/sửa docs feature nào, điểm chính.
+ANALYZED: Tiếng Việt — đã phân tích gì (2–5 gạch đầu dòng hoặc đoạn ngắn): scope issue, hành vi/flow chính, docs/rules đã đọc, giả định hoặc gap nổi bật. Không chỉ liệt kê path.
+SUMMARY: Tiếng Việt (1–3 câu): đã tạo/cập nhật docs feature nào và điểm chính đã ghi.
 DOCS:
 - docs/modules/<module>/<feature>/README.md
 - docs/modules/<module>/<feature>/overview.md
 <<<END_DOCS_READY>>>
 
 List every \`docs/**/*.{md,mdc}\` file you created or substantially updated under DOCS.
+Both ANALYZED and SUMMARY are required — Flow shows them in chat for the PM.
 9. If blocked, use NEED_CLARIFICATION for the Flow Auto Work UI.
 ${gitlabCommentInstructions(issue)}`;
 }

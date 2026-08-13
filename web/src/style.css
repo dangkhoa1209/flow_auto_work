@@ -141,7 +141,7 @@ code {
   background: var(--app-bg);
 }
 .work-split.splitpanes--vertical > .splitpanes__splitter {
-  width: 2px;
+  width: 1px;
   margin: 0;
   background: var(--app-border);
   border: none;
@@ -478,24 +478,45 @@ code {
   background: transparent;
   color: #c9d1d9;
 }
-.chat-md-rich :where(table) {
-  display: block;
-  width: 100%;
+.chat-md-rich .chat-md-table-wrap {
+  margin: 0.45em 0;
   overflow-x: auto;
+  border: 1px solid var(--app-border);
+  border-radius: 6px;
+  background: var(--app-panel-soft, rgba(255, 255, 255, 0.02));
+}
+.chat-md-rich :where(table) {
+  width: 100%;
+  min-width: max-content;
   border-collapse: collapse;
-  font-size: 0.72rem;
-  margin: 0.35em 0;
+  font-size: 0.75rem;
+  margin: 0;
 }
 .chat-md-rich :where(th, td) {
-  border: 1px solid var(--app-border);
-  padding: 0.2rem 0.35rem;
+  border-bottom: 1px solid var(--app-border);
+  border-right: 1px solid var(--app-border);
+  padding: 0.35rem 0.55rem;
   text-align: left;
   vertical-align: top;
 }
+.chat-md-rich :where(th:last-child, td:last-child) {
+  border-right: none;
+}
+.chat-md-rich :where(tr:last-child td) {
+  border-bottom: none;
+}
 .chat-md-rich :where(th) {
-  background: rgba(91, 141, 239, 0.08);
-  font-weight: 600;
+  background: rgba(91, 141, 239, 0.1);
+  font-weight: 650;
   color: var(--app-ink);
+  white-space: nowrap;
+}
+.chat-md-rich :where(tbody tr:nth-child(even) td) {
+  background: rgba(255, 255, 255, 0.02);
+}
+.chat-md-rich :where(td:first-child) {
+  color: var(--app-ink);
+  font-weight: 500;
 }
 .chat-md-rich :where(blockquote) {
   margin: 0.3em 0;
@@ -2165,11 +2186,15 @@ code {
   font-size: 10px !important;
   text-transform: uppercase;
   letter-spacing: 0.4px;
-  padding: 6px 9px !important;
+  padding: 7px 10px !important;
 }
 .chat-md-rich :where(table td) {
-  padding: 7px 9px !important;
+  padding: 8px 10px !important;
   color: var(--app-muted);
+}
+.chat-md-rich :where(table td:first-child) {
+  color: var(--app-ink) !important;
+  font-weight: 550;
 }
 
 /* —— Login (match workbench) —— */

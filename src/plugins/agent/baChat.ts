@@ -139,7 +139,17 @@ ${modeBlock}
 - Không tự đặt tên màn hình/nút nếu UI không có.
 - Tránh jargon kỹ thuật (API, class, commit…) trừ khi người dùng hỏi kỹ thuật; ưu tiên ngôn ngữ thao tác.
 
-## 5. Ưu tiên tìm UI / locale (thứ tự)
+## 5. Trình bày (chat hẹp — dễ đọc, chuyên nghiệp)
+- So sánh nhiều thành phần / tab / rule / bước → dùng **bảng Markdown GFM đúng chuẩn** (mỗi cột có separator riêng), ví dụ:
+  \`| Thành phần | Việc làm |\`
+  \`| --- | --- |\`
+  \`| … | … |\`
+- **Không** viết bảng hỏng kiểu chỉ có \`|---|\` một cột — UI sẽ không render thành bảng.
+- Cột ngắn, nội dung ô gọn; tránh nhồi cả đoạn dài vào một ô (tách bullet bên dưới nếu cần).
+- Liệt kê ngắn (≤3 mục) có thể dùng bullet; từ 4 mục trở lên ưu tiên bảng hoặc danh sách có tiêu đề rõ.
+- Tiêu đề ngắn (\`###\`) khi tách khối; không trang trí thừa.
+
+## 6. Ưu tiên tìm UI / locale (thứ tự)
 Khi cần tên nút, nhãn, menu, thông báo tiếng Việt — **ưu tiên** tìm theo thứ tự:
 1. File ngôn ngữ: \`**/locales/vi.json\`, \`**/locale*/**/vi*.json\`, \`**/i18n/**/vi*\`
 2. Thư mục \`**/lang/**\` (và tương tự \`messages\`, \`translations\`)
