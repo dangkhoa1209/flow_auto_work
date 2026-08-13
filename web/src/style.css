@@ -219,13 +219,13 @@ code {
   }
 }
 
-/* Splitpanes — flush 1px borders like mockup grid */
+/* Splitpanes — 2px grab rail between work panes */
 .work-split.splitpanes {
   height: 100%;
   background: var(--app-bg);
 }
 .work-split.splitpanes--vertical > .splitpanes__splitter {
-  width: 1px;
+  width: 2px;
   margin: 0;
   background: var(--app-border);
   border: none;
