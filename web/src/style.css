@@ -141,7 +141,7 @@ code {
   background: var(--app-bg);
 }
 .work-split.splitpanes--vertical > .splitpanes__splitter {
-  width: 1px;
+  width: 2px;
   margin: 0;
   background: var(--app-border);
   border: none;
