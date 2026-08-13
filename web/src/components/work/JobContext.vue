@@ -797,7 +797,7 @@ onUnmounted(() => {
         </button>
       </a-tooltip>
       <a-popconfirm
-        title="Merge work → base (không tạo MR) + comment tổng hợp lên task. Có open MR thì accept; không thì merge local + push."
+        title="Merge work → base (không tạo MR) + comment tổng hợp. Conflict thì AI tự fix như Sync base."
         ok-text="Merge"
         cancel-text="Cancel"
         :disabled="!canQuickMerge || mergeBusy"
@@ -806,7 +806,7 @@ onUnmounted(() => {
         <a-tooltip
           :title="
             canQuickMerge
-              ? 'Merge work → base + cmt tổng hợp lên task (không tạo MR)'
+              ? 'Merge work → base + cmt tổng hợp (AI tự fix conflict nếu có)'
               : 'Only when job is Awaiting handoff / Done'
           "
         >

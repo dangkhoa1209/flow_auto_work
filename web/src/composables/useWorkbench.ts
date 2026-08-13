@@ -746,16 +746,28 @@ export function useWorkbench() {
     }
   }
 
-  /** Quick merge work→base (same as Handoff page). */
+  /** Quick merge work→base (AI auto-fix conflicts like Sync base). */
   async function quickMerge() {
     if (!selectedJobId.value || !canQuickMerge.value) return;
+    if (!(await ensureCursorKey())) return;
     mergeBusy.value = true;
+    work.watchProgress();
     try {
-      await api(`/api/jobs/${selectedJobId.value}/merge`, {
+      const res = await api<{
+        merge?: { aiResolved?: boolean; target?: string; wipWarning?: string };
+      }>(`/api/jobs/${selectedJobId.value}/merge`, {
         method: "POST",
         body: JSON.stringify({}),
       });
-      message.success("Merge OK");
+      const m = res?.merge;
+      if (m?.aiResolved) {
+        message.success(
+          `Merge OK → ${m.target || "base"} — AI đã tự resolve conflict`,
+        );
+      } else {
+        message.success("Merge OK");
+      }
+      if (m?.wipWarning) message.warning(m.wipWarning, 8);
       await work.loadJobs();
       if (selectedJobId.value) await work.selectJob(selectedJobId.value);
     } catch (e) {

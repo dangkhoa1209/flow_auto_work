@@ -85,11 +85,21 @@ async function mergeBranch() {
   if (!selectedId.value) return;
   busy.value = true;
   try {
-    await api(`/api/jobs/${selectedId.value}/merge`, {
+    const res = await api<{
+      merge?: { aiResolved?: boolean; target?: string; wipWarning?: string };
+    }>(`/api/jobs/${selectedId.value}/merge`, {
       method: "POST",
       body: JSON.stringify({}),
     });
-    message.success("Merge OK");
+    const m = res?.merge;
+    if (m?.aiResolved) {
+      message.success(
+        `Merge OK → ${m.target || "base"} — AI đã tự resolve conflict`,
+      );
+    } else {
+      message.success("Merge OK");
+    }
+    if (m?.wipWarning) message.warning(m.wipWarning, 8);
     await work.loadJobs();
   } catch (e) {
     message.error(e instanceof Error ? e.message : String(e));

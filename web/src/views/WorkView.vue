@@ -58,6 +58,7 @@ function confirmMergeFromMenu() {
   if (!wb.canQuickMerge || wb.mergeBusy || wb.handoffBusy) return;
   Modal.confirm({
     title: "Merge work → base?",
+    content: "Conflict thì AI tự fix như Sync base. Có open MR thì accept; không thì merge local + push.",
     okText: "Merge",
     cancelText: "Cancel",
     onOk: () => wb.quickMerge(),

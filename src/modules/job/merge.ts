@@ -343,6 +343,7 @@ export async function mergeJobBranch(
     findOpenMergeRequest,
     acceptMergeRequest,
     getProjectDefaultBranch,
+    waitUntilMrReady,
   } = await import("../../plugins/gitlab/client.js");
   const { syncLocalToRemoteCommit } = await import(
     "../../plugins/git/changes-for-api.js"
@@ -387,6 +388,75 @@ export async function mergeJobBranch(
     if (existingMr) {
       let aiResolved = false;
       let aiSummary: string | undefined;
+      const { appendJobProgress } = await import(
+        "../../plugins/agent/progress.js"
+      );
+
+      /** Sync base → work + AI clear conflicts, then GitLab can accept the MR. */
+      const aiFixMrConflicts = async (reason: string) => {
+        if (!repoPath) {
+          throw new AppError(
+            "MR đang conflict nhưng không có local repo để AI auto-fix — gắn project clone hoặc Sync base thủ công",
+            409,
+          );
+        }
+        logger.warn("MR conflicts — AI auto-resolve (same as Sync base)", {
+          jobId: job.id,
+          mrIid: existingMr.iid,
+          source,
+          target,
+          reason,
+        });
+        appendJobProgress(
+          job.id,
+          "status",
+          "MR conflict — AI đang resolve (như Sync base)…",
+        );
+        const fix = await pullBaseIntoWorkBranch({
+          repoPath,
+          source,
+          target,
+          issue: job.issue,
+        });
+        aiResolved = aiResolved || fix.aiResolved || !fix.alreadyUpToDate;
+        aiSummary = fix.summary;
+        appendJobProgress(
+          job.id,
+          "status",
+          fix.aiResolved
+            ? "AI đã resolve conflict — thử accept MR lại"
+            : "Đã sync base vào work — thử accept MR lại",
+        );
+      };
+
+      // Proactive: GitLab already marks conflicts → fix before first accept
+      if (repoPath) {
+        try {
+          const ready = await waitUntilMrReady({
+            projectId: projectIdOrPath,
+            mergeRequestIid: existingMr.iid,
+            timeoutMs: 45_000,
+          });
+          const st = (
+            ready.detailed_merge_status ||
+            ready.merge_status ||
+            ""
+          ).toLowerCase();
+          if (
+            ready.state !== "merged" &&
+            (ready.has_conflicts || st === "cannot_be_merged")
+          ) {
+            await aiFixMrConflicts("precheck");
+          }
+        } catch (err) {
+          // Soft — still attempt accept; conflict path below will retry with AI
+          logger.warn("MR precheck failed — will accept and retry on conflict", {
+            jobId: job.id,
+            err: String(err),
+          });
+        }
+      }
+
       let merged;
       try {
         merged = await acceptMergeRequest({
@@ -397,23 +467,8 @@ export async function mergeJobBranch(
         });
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        if (!MR_CONFLICT_RE.test(msg) || !repoPath) throw err;
-
-        logger.warn("MR has conflicts — trying AI auto-resolve locally", {
-          jobId: job.id,
-          mrIid: existingMr.iid,
-          source,
-          target,
-        });
-        const fix = await pullBaseIntoWorkBranch({
-          repoPath,
-          source,
-          target,
-          issue: job.issue,
-        });
-        aiResolved = fix.aiResolved;
-        aiSummary = fix.summary;
-
+        if (!MR_CONFLICT_RE.test(msg)) throw err;
+        await aiFixMrConflicts("accept-failed");
         merged = await acceptMergeRequest({
           projectId: projectIdOrPath,
           mergeRequestIid: existingMr.iid,
@@ -524,6 +579,14 @@ export async function mergeJobBranch(
 
     try {
       if (attempt.status === "conflict") {
+        const { appendJobProgress } = await import(
+          "../../plugins/agent/progress.js"
+        );
+        appendJobProgress(
+          job.id,
+          "status",
+          "Merge conflict — AI đang resolve (như Sync base)…",
+        );
         let files = attempt.conflictedFiles;
         let text = "";
         for (let round = 0; round < 2 && files.length; round++) {
@@ -545,6 +608,7 @@ export async function mergeJobBranch(
         }
         aiResolved = true;
         aiSummary = text || "(resolved)";
+        appendJobProgress(job.id, "status", "AI đã resolve conflict — finalize merge");
       }
 
       const alreadyUpToDate =
