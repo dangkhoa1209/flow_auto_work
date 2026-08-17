@@ -26,6 +26,22 @@ import { isGitRepo } from "../../workspace/clone.js";
 import { pullBaProjectLatest } from "../git/ba-pull.js";
 import { buildBaDbCustomTools } from "../baDb/tools.js";
 
+/**
+ * Temporary gate: BA / PD / QC chat must not create GitLab issues, comments,
+ * labels, or MRs. Flip to `true` when that workflow is ready again.
+ */
+export const BA_GITLAB_INTERACTION_ENABLED = false;
+
+export function baGitlabBoundaryInstructions(): string {
+  if (BA_GITLAB_INTERACTION_ENABLED) {
+    return `- Bị yêu cầu sửa code → từ chối lịch sự, gợi ý tạo ticket cho Dev.`;
+  }
+  return `- Bị yêu cầu sửa code → từ chối lịch sự; nếu cần ticket thì **chỉ viết draft** (title + mô tả) ngay trong chat để người dùng tự dán lên GitLab.
+- **GitLab (TẠM CẤM):** không tạo/sửa issue, work item, task; không comment / note / label / assign / close; không MR; không gọi GitLab API, \`glab\`, MCP GitLab, hay curl/wget tới GitLab.
+- Không đọc hay dùng \`GITLAB_TOKEN\`, PAT, token trong git remote / \`.env\` / biến môi trường.
+- Nếu người dùng nhờ lên task / comment GitLab: **từ chối**, giải thích đang tạm khóa, rồi đưa nội dung draft trong chat. Không tự đăng.`;
+}
+
 /** Cancel key for BA runs (reuse Force Stop registry). */
 export function baCancelKey(threadId: string): string {
   return `ba:${threadId}`;
@@ -169,7 +185,8 @@ ${modeBlock}
 - Tránh jargon kỹ thuật (API, class, commit…) trừ khi người dùng chủ động hỏi kỹ thuật; ưu tiên ngôn ngữ thao tác của người dùng cuối.
 
 ## 3. Ranh giới (BẮT BUỘC)
-- Chỉ **đọc** working tree để trả lời — **không** sửa file, refactor, patch, commit, push, MR. Bị yêu cầu sửa code → từ chối lịch sự, gợi ý tạo ticket cho Dev.
+- Chỉ **đọc** working tree để trả lời — **không** sửa file, refactor, patch, commit, push, MR.
+${baGitlabBoundaryInstructions()}
 - **Git:** không checkout / tạo-đổi-xóa nhánh / merge / rebase / reset / stash. Working tree đã ở sẵn branch **${opts.mainBranch}**, chỉ đọc.
 
 ${dbBlock}
@@ -191,7 +208,7 @@ ${dbBlock}
 
 ## Project
 Tên: ${opts.displayName}
-GitLab: ${opts.gitlabPath}
+GitLab (định danh dự án — không gọi API): ${opts.gitlabPath}
 Branch (chỉ đọc): ${opts.mainBranch}
 DB tra cứu: ${opts.dbAccess.allowed ? `ON (${opts.dbAccess.dialect} / ${opts.dbAccess.database})` : "OFF"}
 
@@ -312,8 +329,17 @@ export async function runBaChatAgent(opts: {
       const agent = await Agent.create({
         apiKey,
         model: { id: modelId },
+        ...(BA_GITLAB_INTERACTION_ENABLED
+          ? {}
+          : {
+              // Empty MCP map so Cursor GitLab plugin tools are not attached.
+              mcpServers: {},
+            }),
         local: {
           cwd: project.localPath,
+          ...(BA_GITLAB_INTERACTION_ENABLED
+            ? {}
+            : { settingSources: [] }),
           ...(dbCfg
             ? {
                 // SDKCustomTool typing is strict; our tools match runtime shape.
