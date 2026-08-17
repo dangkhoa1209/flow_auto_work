@@ -14,6 +14,7 @@ import {
 import {
   appendBaMessage,
   getBaProject,
+  getBaProjectGitlabToken,
   isBaDbAccessAllowed,
   listBaMessages,
   resolveBaProjectDb,
@@ -25,6 +26,7 @@ import {
 import { isGitRepo } from "../../workspace/clone.js";
 import { pullBaProjectLatest } from "../git/ba-pull.js";
 import { buildBaDbCustomTools } from "../baDb/tools.js";
+import { loadBaGitlabTaskBlock } from "../gitlab/ba-issue-read.js";
 
 /**
  * Temporary gate: BA / PD / QC chat must not create GitLab issues, comments,
@@ -37,9 +39,10 @@ export function baGitlabBoundaryInstructions(): string {
     return `- Bị yêu cầu sửa code → từ chối lịch sự, gợi ý tạo ticket cho Dev.`;
   }
   return `- Bị yêu cầu sửa code → từ chối lịch sự; nếu cần ticket thì **chỉ viết draft** (title + mô tả) ngay trong chat để người dùng tự dán lên GitLab.
-- **GitLab (TẠM CẤM):** không tạo/sửa issue, work item, task; không comment / note / label / assign / close; không MR; không gọi GitLab API, \`glab\`, MCP GitLab, hay curl/wget tới GitLab.
+- **GitLab ghi (TẠM CẤM, cả BA mode):** không tạo/sửa issue, work item, task; không comment / note / label / assign / close; không MR; không gọi GitLab API, \`glab\`, MCP GitLab, hay curl/wget tới GitLab.
 - Không đọc hay dùng \`GITLAB_TOKEN\`, PAT, token trong git remote / \`.env\` / biến môi trường.
-- Nếu người dùng nhờ lên task / comment GitLab: **từ chối**, giải thích đang tạm khóa, rồi đưa nội dung draft trong chat. Không tự đăng.`;
+- **GitLab đọc (được phép):** chỉ khi người dùng dán **link issue** hoặc **#id / issue 123**. Hệ thống đã kéo sẵn vào mục "GitLab task (chỉ đọc)" — dùng block đó, **không** tự gọi GitLab.
+- Nếu nhờ đọc task mà chưa có link/#id: hỏi họ dán link hoặc mã issue. Nếu nhờ lên task / comment GitLab: **từ chối ghi**, giải thích đang tạm khóa, đưa draft trong chat.`;
 }
 
 /** Cancel key for BA runs (reuse Force Stop registry). */
@@ -114,6 +117,7 @@ function buildBaPrompt(opts: {
   gitlabPath: string;
   mainBranch: string;
   historyBlock: string;
+  gitlabTaskBlock: string;
   question: string;
   analysisMode: boolean;
   dbAccess: {
@@ -212,8 +216,7 @@ GitLab (định danh dự án — không gọi API): ${opts.gitlabPath}
 Branch (chỉ đọc): ${opts.mainBranch}
 DB tra cứu: ${opts.dbAccess.allowed ? `ON (${opts.dbAccess.dialect} / ${opts.dbAccess.database})` : "OFF"}
 
-${opts.historyBlock ? `## Hội thoại trước\n${opts.historyBlock}\n` : ""}
-## Câu hỏi
+${opts.historyBlock ? `## Hội thoại trước\n${opts.historyBlock}\n` : ""}${opts.gitlabTaskBlock ? `${opts.gitlabTaskBlock}\n\n` : ""}## Câu hỏi
 ${opts.question}`;
 }
 
@@ -295,11 +298,35 @@ export async function runBaChatAgent(opts: {
       database: dbCfg?.database,
     };
 
+    session.check();
+    const historyUserTexts = history
+      .filter((m) => m.role === "user" && m.content?.trim())
+      .slice(-8)
+      .map((m) => m.content.trim());
+    const gitlabToken = await getBaProjectGitlabToken(project.id);
+    const gitlabTask = await loadBaGitlabTaskBlock({
+      gitlabHost: project.gitlabHost,
+      gitlabPath: project.gitlabPath,
+      token: gitlabToken,
+      texts: [opts.question, ...historyUserTexts],
+    });
+    session.check();
+    if (gitlabTask.refs.length) {
+      publishBaProgress({
+        userId: opts.userId,
+        threadId: opts.threadId,
+        messageId: opts.assistantMessageId,
+        step: "read",
+        label: `Đang đọc task GitLab ${gitlabTask.refs.map((r) => `#${r.iid}`).join(", ")}…`,
+      });
+    }
+
     const prompt = buildBaPrompt({
       displayName: project.displayName,
       gitlabPath: project.gitlabPath,
       mainBranch: project.mainBranch || "main",
       historyBlock,
+      gitlabTaskBlock: gitlabTask.block,
       question: opts.question,
       analysisMode: Boolean(opts.analysisMode),
       dbAccess,
@@ -311,6 +338,7 @@ export async function runBaChatAgent(opts: {
       model: modelId,
       analysisMode: Boolean(opts.analysisMode),
       dbAccess: dbAccess.allowed,
+      gitlabIssueIids: gitlabTask.refs.map((r) => r.iid),
     });
 
     publishBaProgress({
