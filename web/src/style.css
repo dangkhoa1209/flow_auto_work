@@ -123,6 +123,16 @@ a {
   color: var(--app-accent);
 }
 
+/* Clickable GitLab #iid — always Ant primary, even inside muted wrappers */
+a.issue-iid-link,
+span.issue-iid-link {
+  color: var(--ant-color-primary, var(--app-accent));
+  font-weight: 600;
+}
+a.issue-iid-link:hover {
+  color: var(--ant-color-primary-hover, var(--app-accent-bright));
+}
+
 /* —— Scrollbars (match mockup) —— */
 * {
   scrollbar-width: thin;
@@ -1077,7 +1087,7 @@ code {
 }
 .faw-task-row__id {
   font-family: var(--font-mono);
-  color: var(--app-faint);
+  color: var(--ant-color-primary, var(--app-accent));
   font-size: 10.5px;
 }
 .faw-task-row__title {
@@ -1110,6 +1120,16 @@ code {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.faw-chip--gl {
+  border-color: transparent;
+}
+.faw-label-swatch {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  flex-shrink: 0;
+  display: inline-block;
 }
 .faw-chip--good {
   border: 0;
@@ -1177,7 +1197,7 @@ code {
 .faw-job-id {
   font-family: var(--font-mono) !important;
   font-size: 10.5px !important;
-  color: var(--app-accent) !important;
+  color: var(--ant-color-primary, var(--app-accent)) !important;
   flex-shrink: 0;
 }
 .faw-job-t {
@@ -2128,7 +2148,7 @@ code {
 }
 .faw-issue-head__num {
   font-family: var(--font-mono);
-  color: var(--app-faint);
+  color: var(--ant-color-primary, var(--app-accent));
   font-size: 14px;
 }
 .faw-issue-head h1,
@@ -2548,7 +2568,7 @@ code {
   flex-shrink: 0;
   font-family: var(--font-mono, ui-monospace, monospace);
   font-size: 11px;
-  color: var(--app-accent);
+  color: var(--ant-color-primary, var(--app-accent));
   background: transparent;
 }
 .faw-run-all-confirm__title {

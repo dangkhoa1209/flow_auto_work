@@ -3,6 +3,7 @@ import { computed } from "vue";
 import type { TaskDetail } from "@/stores/work";
 import ChatMessageBody from "@/components/ChatMessageBody.vue";
 import IssueIidLink from "@/components/IssueIidLink.vue";
+import GitlabLabelChip from "@/components/GitlabLabelChip.vue";
 import { gitlabIssueUrl } from "@/utils/gitlabIssueUrl";
 import { useSessionStore } from "@/stores/session";
 
@@ -113,7 +114,11 @@ const meta = computed(() => {
           v-if="detail?.labels?.length"
           class="flex flex-wrap gap-1 mb-3"
         >
-          <a-tag v-for="l in detail.labels" :key="l" class="m-0">{{ l }}</a-tag>
+          <GitlabLabelChip
+            v-for="l in detail.labels"
+            :key="l"
+            :name="l"
+          />
         </div>
 
         <div

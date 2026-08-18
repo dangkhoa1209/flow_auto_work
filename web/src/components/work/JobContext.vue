@@ -4,6 +4,7 @@ import { message } from "ant-design-vue";
 import { CopyOutlined } from "@ant-design/icons-vue";
 import ChatMessageBody from "@/components/ChatMessageBody.vue";
 import IssueIidLink from "@/components/IssueIidLink.vue";
+import GitlabLabelChip from "@/components/GitlabLabelChip.vue";
 import JobDiffPanel from "@/components/JobDiffPanel.vue";
 import { jobApi } from "@/api/jobApi";
 import { useWorkStore } from "@/stores/work";
@@ -410,7 +411,7 @@ onUnmounted(() => {
                       selectedTaskIid
                     "
                     :url="taskDetail?.url || currentJob?.issue?.url"
-                    link-class="!text-[14px] !font-mono !text-ink-faint"
+                    link-class="!text-[14px] !font-mono"
                   />
                 </span>
                 <h1 class="faw-issue-head__title">{{ detailTitle }}</h1>
@@ -471,12 +472,11 @@ onUnmounted(() => {
                 View standards
               </button>
               <template v-if="!isCurrentAdhoc && taskDetail?.labels?.length">
-                <span
+                <GitlabLabelChip
                   v-for="l in taskDetail.labels"
                   :key="l"
-                  class="faw-chip"
-                  >{{ l }}</span
-                >
+                  :name="l"
+                />
               </template>
             </div>
 

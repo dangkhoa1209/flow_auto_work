@@ -695,12 +695,23 @@ export async function applyIssueCompletionActions(
 
 export async function listProjectLabels(
   projectIdOrPath?: number | string,
-): Promise<Array<{ name: string; color?: string; description?: string }>> {
+): Promise<
+  Array<{
+    name: string;
+    color?: string;
+    textColor?: string;
+    description?: string;
+  }>
+> {
   const project = encodeURIComponent(
     String(projectIdOrPath ?? resolveGitlabProjectPath()),
   );
-  const labels: Array<{ name: string; color?: string; description?: string }> =
-    [];
+  const labels: Array<{
+    name: string;
+    color?: string;
+    textColor?: string;
+    description?: string;
+  }> = [];
   let page = 1;
   while (page <= 10) {
     const res = await gitlabFetch(
@@ -711,6 +722,7 @@ export async function listProjectLabels(
     const batch = (await res.json()) as Array<{
       name: string;
       color?: string;
+      text_color?: string;
       description?: string;
     }>;
     if (!batch.length) break;
@@ -718,6 +730,7 @@ export async function listProjectLabels(
       ...batch.map((l) => ({
         name: l.name,
         color: l.color,
+        textColor: l.text_color,
         description: l.description,
       })),
     );

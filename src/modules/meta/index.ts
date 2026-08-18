@@ -21,8 +21,17 @@ export async function listMembers() {
 
 export async function listLabels() {
   const labels = (await listProjectLabels())
-    .map((l) => (typeof l === "string" ? l : l?.name)?.trim())
-    .filter((n): n is string => Boolean(n));
+    .map((l) => {
+      const name = (typeof l === "string" ? l : l?.name)?.trim();
+      if (!name) return null;
+      if (typeof l === "string") return { name };
+      return {
+        name,
+        color: l.color,
+        textColor: l.textColor,
+      };
+    })
+    .filter((row): row is NonNullable<typeof row> => Boolean(row));
   return { labels };
 }
 

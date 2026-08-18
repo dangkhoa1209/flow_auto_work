@@ -5,27 +5,36 @@ import { api } from "@/api/client";
 import { getProjectId } from "@/api/tokenStorage";
 import { jobApi } from "@/api/jobApi";
 import { useSettingsStore } from "./settings";
+import type { GitlabLabelColor } from "@/utils/gitlabLabel";
 
 const MILESTONE_FILTER_KEY = "faw.milestoneFilter";
+const LABEL_FILTER_KEY = "faw.labelFilter";
 
-function milestoneFilterStorageKey(projectId: string): string {
-  return `${MILESTONE_FILTER_KEY}:${projectId}`;
+function persistedFilterKey(prefix: string, projectId: string): string {
+  return `${prefix}:${projectId}`;
 }
 
-function readMilestoneFilter(projectId: string | null): string {
+function readPersistedFilter(prefix: string, projectId: string | null): string {
   if (!projectId) return "all";
   try {
-    const v = localStorage.getItem(milestoneFilterStorageKey(projectId));
+    const v = localStorage.getItem(persistedFilterKey(prefix, projectId));
     return (v || "all").trim() || "all";
   } catch {
     return "all";
   }
 }
 
-function writeMilestoneFilter(projectId: string | null, value: string): void {
+function writePersistedFilter(
+  prefix: string,
+  projectId: string | null,
+  value: string,
+): void {
   if (!projectId) return;
   try {
-    localStorage.setItem(milestoneFilterStorageKey(projectId), value || "all");
+    localStorage.setItem(
+      persistedFilterKey(prefix, projectId),
+      value || "all",
+    );
   } catch {
     /* ignore quota / private mode */
   }
@@ -155,10 +164,17 @@ export const useWorkStore = defineStore("work", () => {
   const progressLive = ref(false);
   const members = ref<Array<{ username: string; name?: string }>>([]);
   const labels = ref<string[]>([]);
+  /** GitLab label name → color (matches GitLab UI) */
+  const labelCatalog = ref<Record<string, GitlabLabelColor>>({});
   /** GitLab project milestone titles (stable across task refresh) */
   const projectMilestones = ref<string[]>([]);
   /** Persisted per active project — survives F5 */
-  const milestoneFilter = ref<string>(readMilestoneFilter(getProjectId()));
+  const milestoneFilter = ref<string>(
+    readPersistedFilter(MILESTONE_FILTER_KEY, getProjectId()),
+  );
+  const labelFilter = ref<string>(
+    readPersistedFilter(LABEL_FILTER_KEY, getProjectId()),
+  );
   const loading = ref(false);
   const jobLoading = ref(false);
   const statusText = ref("");
@@ -177,15 +193,25 @@ export const useWorkStore = defineStore("work", () => {
   const canKillAll = computed(() => activeJobCount.value >= 1);
 
   watch(milestoneFilter, (v) => {
-    writeMilestoneFilter(getProjectId(), v);
+    writePersistedFilter(MILESTONE_FILTER_KEY, getProjectId(), v);
   });
 
-  function hydrateMilestoneFilter() {
-    milestoneFilter.value = readMilestoneFilter(getProjectId());
+  watch(labelFilter, (v) => {
+    writePersistedFilter(LABEL_FILTER_KEY, getProjectId(), v);
+  });
+
+  function hydrateTaskFilters() {
+    const pid = getProjectId();
+    milestoneFilter.value = readPersistedFilter(MILESTONE_FILTER_KEY, pid);
+    labelFilter.value = readPersistedFilter(LABEL_FILTER_KEY, pid);
   }
 
   function setMilestoneFilter(value: string) {
     milestoneFilter.value = (value || "all").trim() || "all";
+  }
+
+  function setLabelFilter(value: string) {
+    labelFilter.value = (value || "all").trim() || "all";
   }
 
   const selectedJob = computed(
@@ -232,19 +258,42 @@ export const useWorkStore = defineStore("work", () => {
   }
 
   async function loadMeta() {
-    hydrateMilestoneFilter();
+    hydrateTaskFilters();
     const [m, l] = await Promise.all([
       api<{ members: Array<{ username: string; name?: string }> }>(
         API.meta.members,
       ).catch(() => ({ members: [] })),
-      api<{ labels: Array<string | { name?: string }> }>(API.meta.labels).catch(
-        () => ({ labels: [] }),
-      ),
+      api<{
+        labels: Array<
+          | string
+          | {
+              name?: string;
+              color?: string;
+              textColor?: string;
+              text_color?: string;
+            }
+        >;
+      }>(API.meta.labels).catch(() => ({ labels: [] })),
     ]);
     members.value = m.members || [];
-    labels.value = (l.labels || [])
-      .map((x) => (typeof x === "string" ? x : x?.name)?.trim())
-      .filter((n): n is string => Boolean(n));
+    const catalog: Record<string, GitlabLabelColor> = {};
+    const names: string[] = [];
+    for (const x of l.labels || []) {
+      const name = (typeof x === "string" ? x : x?.name)?.trim();
+      if (!name) continue;
+      names.push(name);
+      if (typeof x === "string") {
+        catalog[name] = { name };
+      } else {
+        catalog[name] = {
+          name,
+          color: x.color,
+          textColor: x.textColor || x.text_color,
+        };
+      }
+    }
+    labels.value = names;
+    labelCatalog.value = catalog;
     projectMilestones.value = [];
   }
 
@@ -1032,10 +1081,13 @@ export const useWorkStore = defineStore("work", () => {
     progressLive,
     members,
     labels,
+    labelCatalog,
     projectMilestones,
     milestoneFilter,
+    labelFilter,
     setMilestoneFilter,
-    hydrateMilestoneFilter,
+    setLabelFilter,
+    hydrateTaskFilters,
     loading,
     jobLoading,
     statusText,

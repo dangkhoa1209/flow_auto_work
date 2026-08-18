@@ -46,17 +46,14 @@ const label = computed(() => {
     :href="href"
     target="_blank"
     rel="noopener noreferrer"
-    class="issue-iid-link text-accent font-semibold hover:underline"
+    class="issue-iid-link hover:underline"
     :class="linkClass"
     :title="`Open GitLab ${label}`"
     @click.stop
   >
     {{ label }}
   </a>
-  <span
-    v-else-if="label"
-    class="text-accent font-semibold"
-    :class="linkClass"
-    >{{ label }}</span
-  >
+  <span v-else-if="label" class="issue-iid-link" :class="linkClass">{{
+    label
+  }}</span>
 </template>

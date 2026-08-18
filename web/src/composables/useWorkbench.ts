@@ -30,6 +30,7 @@ export function useWorkbench() {
     jobLoading,
     labels,
     milestoneFilter,
+    labelFilter,
     agentTyping,
   } = storeToRefs(work);
 
@@ -115,9 +116,27 @@ export function useWorkbench() {
     return opts;
   });
 
+  /** Dropdown: All + labels present on currently visible tasks only. */
+  const taskLabels = computed(() => {
+    const set = new Set<string>();
+    let hasNone = false;
+    for (const t of projectScopedTasks.value) {
+      const names = (t.labels || []).map((n) => n.trim()).filter(Boolean);
+      if (!names.length) hasNone = true;
+      for (const n of names) set.add(n);
+    }
+    const opts = [
+      "all",
+      ...Array.from(set).sort((a, b) => a.localeCompare(b)),
+    ];
+    if (hasNone) opts.push("__none__");
+    return opts;
+  });
+
   watch(
     milestones,
     (opts) => {
+      if (!projectScopedTasks.value.length) return;
       const cur = milestoneFilter.value?.trim() || "all";
       if (!opts.includes(cur)) {
         work.setMilestoneFilter("all");
@@ -126,11 +145,33 @@ export function useWorkbench() {
     { flush: "post" },
   );
 
+  watch(
+    taskLabels,
+    (opts) => {
+      if (!projectScopedTasks.value.length) return;
+      const cur = labelFilter.value?.trim() || "all";
+      if (!opts.includes(cur)) {
+        work.setLabelFilter("all");
+      }
+    },
+    { flush: "post" },
+  );
+
   const filteredTasks = computed(() => {
     return projectScopedTasks.value.filter((t) => {
-      if (milestoneFilter.value === "all") return true;
-      if (milestoneFilter.value === "__none__") return !t.milestone?.title;
-      return t.milestone?.title === milestoneFilter.value;
+      if (milestoneFilter.value === "__none__") {
+        if (t.milestone?.title) return false;
+      } else if (
+        milestoneFilter.value !== "all" &&
+        t.milestone?.title !== milestoneFilter.value
+      ) {
+        return false;
+      }
+
+      const names = (t.labels || []).map((n) => n.trim()).filter(Boolean);
+      if (labelFilter.value === "all") return true;
+      if (labelFilter.value === "__none__") return names.length === 0;
+      return names.includes(labelFilter.value);
     });
   });
 
@@ -1108,7 +1149,9 @@ export function useWorkbench() {
     notesDraft,
     requireDocsFirst,
     milestoneFilter,
+    labelFilter,
     setMilestoneFilter: work.setMilestoneFilter,
+    setLabelFilter: work.setLabelFilter,
     openIidDraft,
     mobilePane,
     backToMobileList,
@@ -1135,6 +1178,7 @@ export function useWorkbench() {
     relatedPreviewFallback,
     isCurrentAdhoc,
     milestones,
+    taskLabels,
     filteredTasks,
     sortedJobs,
     humanComments,

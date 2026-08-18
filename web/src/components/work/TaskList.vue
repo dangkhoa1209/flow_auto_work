@@ -13,8 +13,11 @@ import {
   DownOutlined,
 } from "@ant-design/icons-vue";
 import IssueIidLink from "@/components/IssueIidLink.vue";
+import GitlabLabelChip from "@/components/GitlabLabelChip.vue";
 import { statusLabel, MANUAL_JOB_STATUSES } from "@/utils/status";
 import type { Job, Task } from "@/stores/work";
+import { useWorkStore } from "@/stores/work";
+import { gitlabLabelChipStyle } from "@/utils/gitlabLabel";
 
 const JOBS_OPEN_KEY = "flow.tasklist.jobsOpen";
 const JOBS_H_KEY = "flow.tasklist.jobsHeight";
@@ -29,6 +32,8 @@ const props = defineProps<{
   selectedIids: number[];
   milestones: string[];
   milestoneFilter: string;
+  taskLabels: string[];
+  labelFilter: string;
   openIidDraft: string;
   loading: boolean;
   busy: boolean;
@@ -42,6 +47,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   "update:milestoneFilter": [string];
+  "update:labelFilter": [string];
   "update:openIidDraft": [string];
   "update:selectedIids": [number[]];
   refresh: [];
@@ -56,6 +62,18 @@ const emit = defineEmits<{
   deleteJob: [jobId: string];
   killAll: [];
 }>();
+
+const work = useWorkStore();
+
+function filterOptionLabel(kind: "milestone" | "label", v: string) {
+  if (v === "all") return kind === "milestone" ? "All milestones" : "All labels";
+  if (v === "__none__") return kind === "milestone" ? "No milestone" : "No labels";
+  return v;
+}
+
+function labelSwatchBg(name: string): string | undefined {
+  return gitlabLabelChipStyle(work.labelCatalog[name])?.background;
+}
 
 const rootEl = ref<HTMLElement | null>(null);
 const jobsOpen = ref(true);
@@ -279,16 +297,41 @@ watch(
             :options="
               milestones.map((m) => ({
                 value: m,
-                label:
-                  m === 'all'
-                    ? 'All milestones'
-                    : m === '__none__'
-                      ? 'No milestone'
-                      : m,
+                label: filterOptionLabel('milestone', m),
               }))
             "
             @update:value="(v: string) => emit('update:milestoneFilter', v)"
           />
+        </div>
+        <div class="faw-field">
+          <a-select
+            :value="labelFilter"
+            size="small"
+            class="w-full faw-select-ghost"
+            :bordered="false"
+            :options="
+              taskLabels.map((m) => ({
+                value: m,
+                label: filterOptionLabel('label', m),
+              }))
+            "
+            @update:value="(v: string) => emit('update:labelFilter', v)"
+          >
+            <template #option="{ value, label }">
+              <span class="inline-flex items-center gap-1.5 min-w-0">
+                <i
+                  v-if="
+                    value !== 'all' &&
+                    value !== '__none__' &&
+                    labelSwatchBg(String(value))
+                  "
+                  class="faw-label-swatch"
+                  :style="{ background: labelSwatchBg(String(value)) }"
+                />
+                <span class="truncate">{{ label }}</span>
+              </span>
+            </template>
+          </a-select>
         </div>
       </div>
       <div class="faw-filters__row">
@@ -404,13 +447,11 @@ watch(
                 <span v-if="t.milestone?.title" class="faw-chip" :title="t.milestone.title">{{
                   t.milestone.title
                 }}</span>
-                <span
+                <GitlabLabelChip
                   v-for="l in t.labels || []"
                   :key="l"
-                  class="faw-chip"
-                  :title="l"
-                  >{{ l }}</span
-                >
+                  :name="l"
+                />
               </div>
             </div>
           </div>
