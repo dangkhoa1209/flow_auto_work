@@ -81,6 +81,20 @@ async function confirmHandoff() {
   }
 }
 
+async function skipHandoff() {
+  if (!selectedId.value) return;
+  busy.value = true;
+  try {
+    await work.setJobStatus(selectedId.value, "succeeded");
+    message.success("Marked Done — skipped GitLab handoff");
+    selectedId.value = null;
+  } catch (e) {
+    message.error(e instanceof Error ? e.message : String(e));
+  } finally {
+    busy.value = false;
+  }
+}
+
 async function mergeBranch() {
   if (!selectedId.value) return;
   busy.value = true;
@@ -192,6 +206,16 @@ async function mergeBranch() {
               <a-button :loading="busy" @click="mergeBranch"
                 >Merge → project</a-button
               >
+              <a-popconfirm
+                title="Mark Done without GitLab assign/labels?"
+                description="Không gán assignee / label trên GitLab. Dùng cho hotfix hoặc task không cần handoff."
+                ok-text="Mark Done"
+                cancel-text="Cancel"
+                :disabled="busy"
+                @confirm="skipHandoff"
+              >
+                <a-button :disabled="busy">Done — skip handoff</a-button>
+              </a-popconfirm>
               <a-button type="primary" :loading="busy" @click="confirmHandoff"
                 >Confirm handoff</a-button
               >
@@ -304,6 +328,22 @@ async function mergeBranch() {
                 >
                   {{ busy ? "…" : "Merge" }}
                 </button>
+                <a-popconfirm
+                  title="Mark Done without GitLab assign/labels?"
+                  description="Không gán assignee / label trên GitLab."
+                  ok-text="Mark Done"
+                  cancel-text="Cancel"
+                  :disabled="busy"
+                  @confirm="skipHandoff"
+                >
+                  <button
+                    type="button"
+                    class="faw-m-btn faw-m-btn--handoff touch-manipulation"
+                    :disabled="busy"
+                  >
+                    {{ busy ? "…" : "Skip handoff" }}
+                  </button>
+                </a-popconfirm>
                 <button
                   type="button"
                   class="faw-m-btn faw-m-btn--primary touch-manipulation"

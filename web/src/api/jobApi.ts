@@ -102,8 +102,8 @@ export const jobApi = {
   setStatus(id: string, status: string, opts?: { force?: boolean }) {
     return request<{ job: unknown }>({
       url: API.jobs.status(id),
-      method: "POST",
-      data: { status, force: opts?.force },
+      method: "PATCH",
+      data: { status, force: opts?.force === true },
     });
   },
 

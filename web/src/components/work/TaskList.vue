@@ -14,7 +14,7 @@ import {
 } from "@ant-design/icons-vue";
 import IssueIidLink from "@/components/IssueIidLink.vue";
 import GitlabLabelChip from "@/components/GitlabLabelChip.vue";
-import { statusLabel, MANUAL_JOB_STATUSES } from "@/utils/status";
+import { statusLabel, MANUAL_JOB_STATUSES, manualStatusMenuLabel } from "@/utils/status";
 import type { Job, Task } from "@/stores/work";
 import { useWorkStore } from "@/stores/work";
 import { gitlabLabelChipStyle } from "@/utils/gitlabLabel";
@@ -526,13 +526,16 @@ watch(
               >
                 <button
                   type="button"
-                  class="faw-job-dot-btn"
-                  :title="statusLabel(j.status)"
+                  class="faw-job-status"
+                  :title="`Change status · ${statusLabel(j.status)}`"
                 >
                   <span
                     class="faw-job-dot"
                     :class="statusDotClass(j.status)"
                   />
+                  <span class="faw-job-status__lbl">{{
+                    statusLabel(j.status)
+                  }}</span>
                 </button>
                 <template #overlay>
                   <a-menu
@@ -554,7 +557,7 @@ watch(
                       {{ statusLabel(j.status) }}
                     </a-menu-item>
                     <a-menu-item v-for="s in MANUAL_JOB_STATUSES" :key="s">
-                      {{ statusLabel(s) }}
+                      {{ manualStatusMenuLabel(s) }}
                     </a-menu-item>
                   </a-menu>
                 </template>

@@ -1174,6 +1174,31 @@ code {
   display: inline-flex;
   align-items: center;
 }
+.faw-job-status {
+  border: 0;
+  background: transparent;
+  padding: 1px 4px 1px 2px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  max-width: 6.25rem;
+  color: var(--app-muted);
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  line-height: 1.2;
+  border-radius: 3px;
+}
+.faw-job-status:hover {
+  color: var(--app-ink);
+  background: var(--app-hover);
+}
+.faw-job-status__lbl {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .faw-job-dot {
   width: 6px;
   height: 6px;
@@ -2616,12 +2641,16 @@ code {
 }
 .faw-handoff-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
   margin-top: 4px;
 }
-.faw-handoff-actions .faw-m-btn {
-  flex: 1;
+.faw-handoff-actions > * {
+  flex: 1 1 30%;
   min-width: 0;
+}
+.faw-handoff-actions .faw-m-btn {
+  width: 100%;
 }
 .faw-handoff-form .ant-form-item {
   margin-bottom: 12px;

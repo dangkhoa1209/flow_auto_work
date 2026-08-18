@@ -430,13 +430,22 @@ export async function setJobStatus(
     await jobQueue.killJob(jobId, "Stopped before manual status change");
   }
   job.status = next;
+  const now = new Date().toISOString();
   if (next === "succeeded" || next === "awaiting_handoff") {
     job.error = undefined;
+  }
+  if (next === "succeeded" && !job.completedAt) {
+    job.completedAt = now;
   }
   if (next === "failed" && !job.error) {
     job.error = "Marked failed from UI";
   }
   await saveJob(job, { source: "manual-status" });
+  logger.info("job status set manually", {
+    jobId,
+    status: next,
+    force: Boolean(input.force),
+  });
   return { ok: true, job };
 }
 

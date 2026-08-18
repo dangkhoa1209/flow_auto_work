@@ -22,6 +22,12 @@ export const MANUAL_JOB_STATUSES = [
 
 export type ManualJobStatus = (typeof MANUAL_JOB_STATUSES)[number];
 
+/** Menu copy — Done is skip-handoff, not GitLab assign. */
+export function manualStatusMenuLabel(status: string): string {
+  if (status === "succeeded") return "Done — skip handoff";
+  return statusLabel(status);
+}
+
 /** succeeded → Done; others Title case / spaced */
 export function statusLabel(status: string | null | undefined): string {
   if (!status) return "—";

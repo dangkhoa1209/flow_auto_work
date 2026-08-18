@@ -472,22 +472,47 @@ export function useWorkbench() {
     }
   }
 
-  async function onJobStatusChange(jobId: string, status: string) {
-    if (!status) return;
+  async function applyJobStatus(jobId: string, status: string) {
     jobStatusBusy.value = jobId;
     try {
       const job = jobs.value.find((j) => j.id === jobId);
-      const isBusy = ["queued", "running"].includes(
-        job?.status || "",
-      );
+      const isBusy = ["queued", "running"].includes(job?.status || "");
       await work.setJobStatus(jobId, status, { force: isBusy });
-      message.success(`Status changed → ${statusLabel(status)}`);
+      message.success(`Status → ${statusLabel(status)}`);
     } catch (e) {
       message.error(e instanceof Error ? e.message : String(e));
       await work.loadJobs();
     } finally {
       jobStatusBusy.value = null;
     }
+  }
+
+  async function onJobStatusChange(jobId: string, status: string) {
+    if (!status) return;
+    const current = jobs.value.find((j) => j.id === jobId)?.status;
+    if (current === status) return;
+    if (status === "succeeded") {
+      Modal.confirm({
+        title: "Mark Done — skip GitLab handoff?",
+        content:
+          "Không gán assignee / label trên GitLab. Dùng cho hotfix hoặc task không cần handoff.",
+        okText: "Mark Done",
+        cancelText: "Cancel",
+        onOk: () => applyJobStatus(jobId, status),
+      });
+      return;
+    }
+    if (status === "failed") {
+      Modal.confirm({
+        title: "Mark this job Failed?",
+        okText: "Mark Failed",
+        okType: "danger",
+        cancelText: "Cancel",
+        onOk: () => applyJobStatus(jobId, status),
+      });
+      return;
+    }
+    await applyJobStatus(jobId, status);
   }
 
   async function onDeleteJob(jobId: string) {
