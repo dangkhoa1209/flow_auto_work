@@ -137,13 +137,17 @@ function pctDelta(cur: number, prev: number): number | null {
 
 function monthCrumb(key: string): string {
   const [y, m] = key.split("-");
-  return `Tháng ${Number(m)}/${y}`;
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    year: "numeric",
+  }).format(new Date(Number(y), Number(m) - 1, 1));
 }
 
 function ymdShort(ymd?: string): string {
   if (!ymd) return "—";
-  const [, m, d] = ymd.split("-");
-  return `${d}/${m}`;
+  const [y, m, d] = ymd.split("-");
+  if (!y || !m || !d) return ymd;
+  return `${m}/${d}`;
 }
 
 async function load(silent = false) {
@@ -192,7 +196,7 @@ async function runAnalyze(force = false) {
       method: "POST",
     });
     if (analysis.value.cached && !force) {
-      message.info("Dùng kết quả phân tích đã cache (chưa có job mới).");
+      message.info("Using cached analysis (no new jobs).");
     }
   } catch (e) {
     message.error(e instanceof Error ? e.message : String(e));
@@ -250,7 +254,7 @@ const avgTasksPerDay = computed(() => {
 });
 
 const periodCompareLabel = computed(() =>
-  currentWeek.value ? "vs tuần trước" : "vs kỳ trước",
+  currentWeek.value ? "vs last week" : "vs prior period",
 );
 
 const periodComparePct = computed(() => {
@@ -357,7 +361,7 @@ const rangeValue = computed<[string, string] | undefined>(() => {
 function exportCsv() {
   const items = filteredTasks.value;
   if (!items.length) {
-    message.warning("Không có dữ liệu để xuất");
+    message.warning("Nothing to export");
     return;
   }
   const header = ["date", "issueIid", "title", "status", "url"];
@@ -430,14 +434,14 @@ watch(
       <div class="rounded-2xl panel-glass shadow-panel p-5 md:p-6">
         <div class="flex flex-wrap items-start justify-between gap-3 mb-4">
           <div>
-            <h2 class="text-lg font-semibold text-ink mt-0 mb-1">Thống kê task</h2>
+            <h2 class="text-lg font-semibold text-ink mt-0 mb-1">Task stats</h2>
             <p class="text-xs text-ink-muted m-0">
               {{ payload?.from }} → {{ payload?.to }}
               · {{ payload?.timezone }}
               <span v-if="session.me?.gitlabUsername || session.session.username">
                 · @{{ session.me?.gitlabUsername || session.session.username }}
               </span>
-              <span v-if="refreshing" class="ml-2">đang làm mới…</span>
+              <span v-if="refreshing" class="ml-2">refreshing…</span>
             </p>
           </div>
           <div class="flex flex-wrap gap-2">
@@ -449,7 +453,13 @@ watch(
               @click="runAnalyze(!!analysis)"
             >
               <template #icon><BarChartOutlined /></template>
-              {{ analysis ? "Phân tích lại" : "Phân tích hiệu suất" }}
+              {{
+                analyzing
+                  ? "Agent is analyzing…"
+                  : analysis
+                    ? "Analyze again"
+                    : "Analyze performance"
+              }}
             </a-button>
             <a-button size="small" @click="exportCsv">
               <template #icon><DownloadOutlined /></template>
@@ -470,7 +480,7 @@ watch(
           type="warning"
           show-icon
           class="mb-3"
-          :message="`Dữ liệu chưa đầy đủ: hiển thị ${payload.returnedJobs} / ${payload.totalJobsInRange} task trong kỳ.`"
+          :message="`Incomplete data: showing ${payload.returnedJobs} / ${payload.totalJobsInRange} tasks in this range.`"
         />
 
         <div class="flex flex-wrap gap-2 mb-4">
@@ -479,9 +489,9 @@ watch(
             size="small"
             @change="(e: { target?: { value?: number } } | number) => applyPreset(typeof e === 'number' ? e : Number(e.target?.value))"
           >
-            <a-radio-button :value="7">7 ngày</a-radio-button>
-            <a-radio-button :value="30">30 ngày</a-radio-button>
-            <a-radio-button :value="90">90 ngày</a-radio-button>
+            <a-radio-button :value="7">7 days</a-radio-button>
+            <a-radio-button :value="30">30 days</a-radio-button>
+            <a-radio-button :value="90">90 days</a-radio-button>
           </a-radio-group>
           <a-range-picker
             size="small"
@@ -508,8 +518,8 @@ watch(
             size="small"
             class="min-w-[130px]"
           >
-            <a-select-option value="current">Project hiện tại</a-select-option>
-            <a-select-option value="all">Mọi project</a-select-option>
+            <a-select-option value="current">Current project</a-select-option>
+            <a-select-option value="all">All projects</a-select-option>
             <a-select-option
               v-for="p in payload?.filters?.projects || []"
               :key="p"
@@ -522,7 +532,7 @@ watch(
             v-model:value="search"
             size="small"
             allow-clear
-            placeholder="Tìm #IID hoặc title"
+            placeholder="Search #IID or title"
             class="w-[200px]"
           >
             <template #prefix><SearchOutlined /></template>
@@ -539,7 +549,7 @@ watch(
             <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div class="rounded-xl border border-line bg-surface-raised/40 p-4">
                 <div class="text-[11px] text-ink-muted uppercase tracking-wide">
-                  Tổng task
+                  Total tasks
                 </div>
                 <div class="text-2xl font-semibold text-ink mt-1">
                   {{ levelCounts.jobCount || 0 }}
@@ -550,7 +560,7 @@ watch(
               </div>
               <div class="rounded-xl border border-line bg-surface-raised/40 p-4">
                 <div class="text-[11px] text-ink-muted uppercase tracking-wide">
-                  Hoàn thành
+                  Completed
                 </div>
                 <div class="text-2xl font-semibold text-ink mt-1">
                   {{ levelCounts.succeeded || 0 }}
@@ -567,20 +577,20 @@ watch(
               </div>
               <div class="rounded-xl border border-line bg-surface-raised/40 p-4">
                 <div class="text-[11px] text-ink-muted uppercase tracking-wide">
-                  TB task / ngày
+                  Avg tasks / day
                 </div>
                 <div class="text-2xl font-semibold text-ink mt-1">
                   {{ avgTasksPerDay }}
                 </div>
                 <div class="text-xs text-ink-muted mt-1">
-                  {{ activeDayCount || payload.days }} ngày có dữ liệu
+                  {{ activeDayCount || payload.days }} days with data
                 </div>
               </div>
             </div>
 
             <div class="flex items-center gap-2">
               <Sparkline :values="levelCounts.spark || []" :width="180" :height="32" />
-              <span class="text-[11px] text-ink-muted">Xu hướng task theo ngày</span>
+              <span class="text-[11px] text-ink-muted">Daily task trend</span>
             </div>
 
             <div class="text-sm text-ink">
@@ -589,7 +599,7 @@ watch(
                 class="text-accent hover:underline bg-transparent border-0 p-0 cursor-pointer"
                 @click="crumbRoot"
               >
-                Tháng
+                Months
               </button>
               <template v-if="currentMonth">
                 <span class="text-ink-muted"> › </span>
@@ -627,7 +637,7 @@ watch(
                   <Sparkline :values="m.spark || []" />
                 </div>
               </button>
-              <a-empty v-if="!months.length" description="Chưa có dữ liệu" />
+              <a-empty v-if="!months.length" description="No data yet" />
             </div>
 
             <div v-else-if="currentMonth && !drillWeek" class="space-y-2">
@@ -677,7 +687,7 @@ watch(
 
             <a-empty
               v-else-if="drillWeek && !visibleDays.length"
-              description="Tuần này không có task"
+              description="No tasks this week"
             />
 
             <div
@@ -687,8 +697,8 @@ watch(
               <div class="text-sm font-medium text-ink mb-3">
                 {{
                   search.trim()
-                    ? `Task khớp (${displayTasks.length}/${filteredTasks.length})`
-                    : `Danh sách task (${displayTasks.length}/${filteredTasks.length})`
+                    ? `Matching tasks (${displayTasks.length}/${filteredTasks.length})`
+                    : `Task list (${displayTasks.length}/${filteredTasks.length})`
                 }}
               </div>
               <div
@@ -725,14 +735,14 @@ watch(
               v-else-if="search.trim() && filteredTasks.length === 0"
               class="rounded-xl border border-line p-6 text-center text-ink-muted text-sm"
             >
-              Không có task khớp "{{ search.trim() }}"
+              No tasks match "{{ search.trim() }}"
             </div>
 
             <div
               v-if="payload.failReasons?.length"
               class="rounded-xl border border-line bg-surface-raised/30 p-4"
             >
-              <div class="text-sm font-medium text-ink mb-2">Lý do fail</div>
+              <div class="text-sm font-medium text-ink mb-2">Fail reasons</div>
               <div
                 v-for="r in payload.failReasons"
                 :key="r.reason"

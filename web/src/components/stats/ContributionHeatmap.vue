@@ -80,13 +80,13 @@ const columns = computed(() => {
       </div>
     </div>
     <div class="mt-1 flex items-center gap-1 text-[10px] text-ink-muted">
-      Ít
+      Less
       <span class="inline-block h-[10px] w-[10px] rounded-[2px] bg-line" />
       <span class="inline-block h-[10px] w-[10px] rounded-[2px] bg-accent/25" />
       <span class="inline-block h-[10px] w-[10px] rounded-[2px] bg-accent/45" />
       <span class="inline-block h-[10px] w-[10px] rounded-[2px] bg-accent/65" />
       <span class="inline-block h-[10px] w-[10px] rounded-[2px] bg-accent" />
-      Nhiều task
+      More tasks
     </div>
   </div>
 </template>

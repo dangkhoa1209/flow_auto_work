@@ -9,6 +9,7 @@ type CacheDoc = {
   to: string;
   jobCount: number;
   labelConfigAt: string;
+  engine: string;
   analyzedAt: string;
   result: DevAnalysisResult;
 };
@@ -34,12 +35,14 @@ export async function getCachedDevAnalysis(opts: {
   to: string;
   jobCount: number;
   labelConfigAt: string;
+  engine: string;
 }): Promise<DevAnalysisResult | null> {
   const col = await analysisCollection();
   const doc = await col.findOne({ _id: cacheKey(opts) });
   if (!doc) return null;
   if (doc.jobCount !== opts.jobCount) return null;
   if (doc.labelConfigAt !== opts.labelConfigAt) return null;
+  if (doc.engine !== opts.engine) return null;
   return { ...doc.result, cached: true, analyzedAt: doc.analyzedAt };
 }
 
@@ -50,6 +53,7 @@ export async function saveDevAnalysisCache(opts: {
   to: string;
   jobCount: number;
   labelConfigAt: string;
+  engine: string;
   result: DevAnalysisResult;
 }): Promise<void> {
   const col = await analysisCollection();
@@ -65,6 +69,7 @@ export async function saveDevAnalysisCache(opts: {
         to: opts.to,
         jobCount: opts.jobCount,
         labelConfigAt: opts.labelConfigAt,
+        engine: opts.engine,
         analyzedAt: opts.result.analyzedAt,
         result: opts.result,
       },

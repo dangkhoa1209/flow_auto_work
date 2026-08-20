@@ -66,7 +66,10 @@ export function monthLabel(ym: string): string {
 
 export function monthShortLabel(ym: string): string {
   const [y, m] = ym.split("-").map(Number);
-  return `Tháng ${m}/${y}`;
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    year: "numeric",
+  }).format(new Date(y, m - 1, 1));
 }
 
 /** Inclusive YYYY-MM-DD range in STATS_TZ, most recent last. */

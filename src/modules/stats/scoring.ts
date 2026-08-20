@@ -15,6 +15,7 @@ export type AnalysisJob = {
   url: string;
   status: string;
   durationMs: number | null;
+  workDurationMs: number | null;
   tokensTotal: number;
   runCount: number;
   taskType: string;
@@ -46,7 +47,7 @@ export function computeDimensions(jobs: AnalysisJob[]): SkillDimensions {
   const failed = jobs.filter((j) => j.status === "failed");
 
   const durations = succeeded
-    .map((j) => j.durationMs)
+    .map((j) => j.workDurationMs ?? j.durationMs)
     .filter((n): n is number => n != null && n > 0);
   const userMedian = median(durations) ?? 0;
   const hours = userMedian / 3_600_000;

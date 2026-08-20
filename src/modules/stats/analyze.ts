@@ -4,10 +4,8 @@ import {
 } from "../../db/mongo.js";
 import { getRuntimeContext } from "../../workspace/runtime.js";
 import { shiftYmd, STATS_TZ } from "./calendar.js";
-import {
-  classifyFailReason,
-  successRate,
-} from "./metrics.js";
+import { classifyFailReason } from "./metrics.js";
+import { workDurationMs } from "./workHours.js";
 import {
   computeDimensions,
   dimensionTrend,
@@ -20,6 +18,10 @@ import {
   getCachedDevAnalysis,
   saveDevAnalysisCache,
 } from "./analysisCache.js";
+import {
+  analyzeWithCursorSdk,
+  DEV_ANALYSIS_ENGINE,
+} from "./llmAnalyze.js";
 import type { GetDailyStatsQuery } from "./index.js";
 
 export type DevRecommendation = {
@@ -60,6 +62,8 @@ export type DevAnalysisResult = {
   trend?: Record<keyof SkillDimensions, number | null>;
   byTaskType: TaskTypeStats[];
   recommendations: DevRecommendation[];
+  narrative?: string;
+  engine?: string;
   dataGaps: string[];
 };
 
@@ -108,6 +112,7 @@ function rowToAnalysisJob(
   labelMapping: Parameters<typeof classifyTaskType>[2],
 ): AnalysisJob {
   const taskType = classifyTaskType(row.title, row.labels || [], labelMapping);
+  const workMs = workDurationMs(row.createdAt, row.completedAt);
   return {
     jobId: String(row.jobId),
     issueIid: row.issueIid,
@@ -115,6 +120,7 @@ function rowToAnalysisJob(
     url: row.url,
     status: row.status,
     durationMs: row.durationMs,
+    workDurationMs: workMs,
     tokensTotal: row.tokensTotal || 0,
     runCount: row.runCount || 0,
     taskType,
@@ -139,7 +145,7 @@ function buildTaskTypeStats(jobs: AnalysisJob[]): TaskTypeStats[] {
       const succeeded = list.filter((j) => j.status === "succeeded");
       const failed = list.filter((j) => j.status === "failed");
       const durs = succeeded
-        .map((j) => j.durationMs)
+        .map((j) => j.workDurationMs ?? j.durationMs)
         .filter((n): n is number => n != null && n > 0);
       const toks = succeeded.map((j) => j.tokensTotal).filter((n) => n > 0);
       return {
@@ -165,115 +171,6 @@ function buildTaskTypeStats(jobs: AnalysisJob[]): TaskTypeStats[] {
       };
     })
     .sort((a, b) => b.count - a.count);
-}
-
-function buildRecommendations(
-  jobs: AnalysisJob[],
-  dimensions: SkillDimensions,
-  byTaskType: TaskTypeStats[],
-): DevRecommendation[] {
-  const out: DevRecommendation[] = [];
-  const terminal = jobs.filter((j) =>
-    ["succeeded", "failed"].includes(j.status),
-  );
-  const overallFail =
-    terminal.length > 0
-      ? jobs.filter((j) => j.status === "failed").length / terminal.length
-      : 0;
-
-  for (const t of byTaskType) {
-    if (t.count < 2 || t.failRate == null) continue;
-    const fr = t.failRate / 100;
-    if (fr > overallFail + 0.15 && fr >= 0.25) {
-      const evidence = jobs
-        .filter((j) => j.taskType === t.taskType && j.status === "failed")
-        .slice(0, 3)
-        .map((j) => ({
-          jobId: j.jobId,
-          issueIid: j.issueIid,
-          title: j.title,
-          url: j.url,
-        }));
-      out.push({
-        id: `type-fail-${t.taskType}`,
-        dimension: "scope",
-        severity: fr >= 0.4 ? "high" : "medium",
-        text: `Task loại ${t.label} có tỷ lệ fail ${Math.round(t.failRate)}% (cao hơn trung bình ${Math.round(overallFail * 100)}%) — nên xem lại cách tiếp cận ở nhóm task này.`,
-        evidenceJobs: evidence,
-      });
-    }
-  }
-
-  if (dimensions.accuracy < 70 && terminal.length >= 3) {
-    out.push({
-      id: "low-accuracy",
-      dimension: "accuracy",
-      severity: dimensions.accuracy < 50 ? "high" : "medium",
-      text: `Tỷ lệ hoàn thành thấp (${dimensions.accuracy}%) — kiểm tra lại Dev Notes, test local trước Run, và pattern lỗi lặp lại.`,
-      evidenceJobs: jobs
-        .filter((j) => j.status === "failed")
-        .slice(0, 3)
-        .map((j) => ({
-          jobId: j.jobId,
-          issueIid: j.issueIid,
-          title: j.title,
-          url: j.url,
-        })),
-    });
-  }
-
-  if (dimensions.consistency < 55 && jobs.filter((j) => j.status === "succeeded").length >= 4) {
-    out.push({
-      id: "low-consistency",
-      dimension: "consistency",
-      severity: "medium",
-      text: `Thời gian xử lý biến động lớn giữa các task — thử chuẩn hóa quy trình (Dev Notes, scope rõ, chia nhỏ task).`,
-      evidenceJobs: [],
-    });
-  }
-
-  const highRetry = jobs.filter((j) => j.runCount >= 3 && j.status === "failed");
-  if (highRetry.length >= 2) {
-    out.push({
-      id: "high-retry",
-      dimension: "accuracy",
-      severity: "medium",
-      text: `${highRetry.length} task fail sau ≥3 lần Run — cân nhắc clarify sớm hoặc chia nhỏ scope trước khi chạy lại agent.`,
-      evidenceJobs: highRetry.slice(0, 3).map((j) => ({
-        jobId: j.jobId,
-        issueIid: j.issueIid,
-        title: j.title,
-        url: j.url,
-      })),
-    });
-  }
-
-  const reasonMap = new Map<string, AnalysisJob[]>();
-  for (const j of jobs.filter((j) => j.status === "failed" && j.failReason)) {
-    const r = j.failReason!;
-    const arr = reasonMap.get(r) || [];
-    arr.push(j);
-    reasonMap.set(r, arr);
-  }
-  const topReason = [...reasonMap.entries()].sort(
-    (a, b) => b[1].length - a[1].length,
-  )[0];
-  if (topReason && topReason[1].length >= 2) {
-    out.push({
-      id: "top-fail-reason",
-      dimension: "accuracy",
-      severity: topReason[1].length >= 4 ? "high" : "low",
-      text: `Lý do fail phổ biến: "${topReason[0]}" (${topReason[1].length} task) — ưu tiên xử lý root cause này.`,
-      evidenceJobs: topReason[1].slice(0, 3).map((j) => ({
-        jobId: j.jobId,
-        issueIid: j.issueIid,
-        title: j.title,
-        url: j.url,
-      })),
-    });
-  }
-
-  return out.slice(0, 5);
 }
 
 async function loadJobsForWindow(
@@ -332,11 +229,12 @@ export async function analyzeDevPerformance(
       to: toYmd,
       jobCount: current.totalInRange,
       labelConfigAt,
+      engine: DEV_ANALYSIS_ENGINE,
     });
     if (cached) return cached;
   }
 
-  const dimensions = computeDimensions(jobs);
+  const formulaDimensions = computeDimensions(jobs);
   const byTaskType = buildTaskTypeStats(jobs);
 
   const prevTo = shiftYmd(fromYmd, -1);
@@ -344,19 +242,42 @@ export async function analyzeDevPerformance(
   const previous = await loadJobsForWindow(query, prevFrom, prevTo);
   const prevJobs = previous.rows.map((r) => rowToAnalysisJob(r, labelMapping));
   const previousDimensions = computeDimensions(prevJobs);
-  const trend = dimensionTrend(dimensions, previousDimensions);
 
-  const recommendations = buildRecommendations(jobs, dimensions, byTaskType);
+  const llm = jobs.length
+    ? await analyzeWithCursorSdk({
+        ownerUsername,
+        from: fromYmd,
+        to: toYmd,
+        dimensions: formulaDimensions,
+        previousDimensions,
+        trend: dimensionTrend(formulaDimensions, previousDimensions),
+        byTaskType,
+        jobs,
+      })
+    : {
+        narrative: "Không có task trong khoảng đang xem — chưa đủ dữ liệu để đánh giá.",
+        recommendations: [] as DevAnalysisResult["recommendations"],
+        dimensions: undefined as SkillDimensions | undefined,
+      };
+
+  const dimensions = llm.dimensions ?? formulaDimensions;
+  const trend = dimensionTrend(dimensions, previousDimensions);
 
   const dataGaps: string[] = [];
   if (current.truncated) {
     dataGaps.push("Dữ liệu bị cắt ở 10k job — chỉ số có thể lệch.");
   }
   dataGaps.push(
-    "Chưa có CI/review/diff size trong DB — đánh giá dựa trên status, thời gian, token, labels GitLab (mapping do admin cấu hình).",
+    "Thời gian làm việc: T2–T7 08:30–17:30 (Asia/Ho_Chi_Minh); Chủ nhật không tính. Điểm 5 trục do agent chấm, có xét độ khó task.",
+  );
+  dataGaps.push(
+    "Chưa có CI/review/diff size trong DB — agent dựa trên status, thời gian làm việc, token, labels GitLab.",
   );
   if (jobs.every((j) => !j.tokensTotal)) {
-    dataGaps.push("Thiếu token usage trên nhiều job — trụ hiệu quả token có thể không chính xác.");
+    dataGaps.push("Thiếu token usage trên nhiều job — trụ hiệu quả có thể không chính xác.");
+  }
+  if (!llm.dimensions && jobs.length) {
+    dataGaps.push("Agent không trả điểm — đang dùng điểm công thức tạm.");
   }
 
   const result: DevAnalysisResult = {
@@ -372,7 +293,9 @@ export async function analyzeDevPerformance(
     previousDimensions,
     trend,
     byTaskType,
-    recommendations,
+    recommendations: llm.recommendations,
+    narrative: llm.narrative,
+    engine: DEV_ANALYSIS_ENGINE,
     dataGaps,
   };
 
@@ -383,6 +306,7 @@ export async function analyzeDevPerformance(
     to: toYmd,
     jobCount: current.totalInRange,
     labelConfigAt,
+    engine: DEV_ANALYSIS_ENGINE,
     result,
   });
 

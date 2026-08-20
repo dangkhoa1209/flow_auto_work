@@ -32,6 +32,8 @@ export type DevAnalysis = {
       url: string;
     }>;
   }>;
+  narrative?: string;
+  engine?: string;
   dataGaps?: string[];
 };
 
@@ -74,7 +76,7 @@ function fmtTrend(n: number | null | undefined): string {
 
 function analyzedLabel(iso: string): string {
   try {
-    return new Intl.DateTimeFormat("vi-VN", {
+    return new Intl.DateTimeFormat("en-US", {
       dateStyle: "short",
       timeStyle: "short",
     }).format(new Date(iso));
@@ -99,6 +101,7 @@ function onRecClick(rec: DevAnalysis["recommendations"][0]) {
         <div class="text-sm font-medium text-ink">Đánh giá dev</div>
         <div class="text-[11px] text-ink-muted">
           {{ analysis.jobCount }} task · {{ analysis.from }} → {{ analysis.to }}
+          <span v-if="analysis.engine"> · Agent</span>
           <span v-if="analysis.cached"> · cache</span>
         </div>
       </div>
@@ -106,6 +109,13 @@ function onRecClick(rec: DevAnalysis["recommendations"][0]) {
         Cập nhật: {{ analyzedLabel(analysis.analyzedAt) }}
       </div>
     </div>
+
+    <p
+      v-if="analysis.narrative"
+      class="text-sm text-ink-soft m-0 leading-relaxed"
+    >
+      {{ analysis.narrative }}
+    </p>
 
     <div class="grid md:grid-cols-2 gap-4 items-start">
       <DevRadar
@@ -127,7 +137,7 @@ function onRecClick(rec: DevAnalysis["recommendations"][0]) {
           </span>
         </div>
         <p class="text-[10px] text-ink-muted m-0 pt-1">
-          Viền đứt = kỳ trước · số trend = Δ điểm so kỳ trước
+          Viền đứt = kỳ trước · trend = Δ so kỳ trước
         </p>
       </div>
     </div>
