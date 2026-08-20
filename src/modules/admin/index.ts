@@ -4,12 +4,14 @@ import {
   getBaProject,
   getBaProjectGitlabToken,
   getSystemSettings,
+  getTaskTypeLabelMapping,
   listBaProjects,
   resolveBaProjectDbForTest,
   toPublicBaProject,
   toPublicSystemSettings,
   updateBaProject,
   updateSystemCursorSettings,
+  updateSystemTaskTypeLabels,
   type BaDbConnectionPatch,
   type BaDbDialect,
 } from "../../workspace/baStore.js";
@@ -239,4 +241,18 @@ export async function adminUpdateCursorSettings(body: {
 }) {
   const s = await updateSystemCursorSettings(body);
   return toPublicSystemSettings(s);
+}
+
+export async function adminGetTaskTypeLabels() {
+  const { labels, updatedAt } = await getTaskTypeLabelMapping();
+  return { taskTypeLabels: labels, updatedAt };
+}
+
+export async function adminUpdateTaskTypeLabels(body: {
+  bug?: string[];
+  feature?: string[];
+  refactor?: string[];
+  chore?: string[];
+}) {
+  return updateSystemTaskTypeLabels(body);
 }

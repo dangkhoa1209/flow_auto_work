@@ -6,6 +6,7 @@ import { jobQueue } from "../../queue.js";
 import { isJobBusy, resolveDevNotes } from "../../types.js";
 import { AppError } from "../../utils/AppError.js";
 import { requireJobRecord } from "./lifecycle.js";
+import { requireProjectLocalClone } from "../../workspace/resolve.js";
 
 /** Feature docs (.md/.mdc) for PM review while awaiting_docs_approval. */
 export async function getJobDocsForReview(jobId: string) {
@@ -38,6 +39,9 @@ export async function approveJobDocs(jobId: string) {
       409,
     );
   }
+  if (job.workspaceProjectId) {
+    await requireProjectLocalClone(job.workspaceProjectId);
+  }
   const result = await jobQueue.enqueueCodeAfterDocsApproval(job.id);
   if (!result.enqueued) {
     throw new AppError(result.reason ?? "Could not enqueue", 409);
@@ -55,6 +59,9 @@ export async function rerunJobDocs(jobId: string) {
   job.requireDocsFirst = true;
   job.docsApprovedAt = undefined;
   await saveJob(job);
+  if (job.workspaceProjectId) {
+    await requireProjectLocalClone(job.workspaceProjectId);
+  }
   const result = await jobQueue.enqueue(job.issue, {
     source: "ui_rerun_docs",
     completion: job.completion,

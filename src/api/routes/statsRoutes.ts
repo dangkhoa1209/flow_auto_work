@@ -6,5 +6,6 @@ export const routePath = "/stats";
 export function createStatsRoutes(): Router {
   const router = Router();
   router.get("/daily", statsController.daily);
+  router.post("/analyze", statsController.analyze);
   return router;
 }

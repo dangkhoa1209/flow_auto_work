@@ -71,6 +71,10 @@ const envSchema = z.object({
   GOOGLE_OAUTH_CLIENT_ID: z.string().optional(),
   GOOGLE_OAUTH_CLIENT_SECRET: z.string().optional(),
   GOOGLE_OAUTH_REDIRECT_URI: z.string().optional(),
+  /** Estimated USD per 1M input tokens (stats cost). */
+  STATS_USD_PER_MILLION_INPUT: z.coerce.number().default(1.25),
+  /** Estimated USD per 1M output tokens (stats cost). */
+  STATS_USD_PER_MILLION_OUTPUT: z.coerce.number().default(10),
   /**
    * Internal Workbench PTY terminal (local only).
    * Requires loopback HOST or loopback client — never expose publicly.

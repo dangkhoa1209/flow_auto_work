@@ -19,5 +19,8 @@ export function createAdminRoutes(): Router {
   router.get("/settings/cursor", adminController.getCursor);
   router.put("/settings/cursor", adminController.putCursor);
 
+  router.get("/settings/task-type-labels", adminController.getTaskTypeLabels);
+  router.put("/settings/task-type-labels", adminController.putTaskTypeLabels);
+
   return router;
 }

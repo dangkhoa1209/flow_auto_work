@@ -37,6 +37,11 @@ const router = createRouter({
           name: "admin-cursor",
           component: () => import("@/views/admin/AdminCursorView.vue"),
         },
+        {
+          path: "task-types",
+          name: "admin-task-types",
+          component: () => import("@/views/admin/AdminTaskTypesView.vue"),
+        },
       ],
     },
     {

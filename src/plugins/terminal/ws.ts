@@ -120,6 +120,7 @@ async function handleConnection(
     const ctx = await resolveRuntimeContext({
       gitlabUsername: username,
       projectId,
+      requireLocalClone: true,
     });
     repoPath = ctx.repoPath;
   } catch (err) {

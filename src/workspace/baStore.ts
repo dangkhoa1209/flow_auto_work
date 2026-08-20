@@ -78,16 +78,27 @@ export type BaProjectPublic = {
   updatedAt: string;
 };
 
+export type TaskTypeLabelMapping = {
+  bug: string[];
+  feature: string[];
+  refactor: string[];
+  chore: string[];
+};
+
 export type SystemSettings = {
   id: "default";
   cursorApiKeyEnc?: string;
   cursorModel?: string;
+  taskTypeLabels?: TaskTypeLabelMapping;
+  taskTypeLabelsUpdatedAt?: string;
   updatedAt: string;
 };
 
 export type SystemSettingsPublic = {
   hasCursorApiKey: boolean;
   cursorModel: string;
+  taskTypeLabels: TaskTypeLabelMapping;
+  taskTypeLabelsUpdatedAt: string | null;
   updatedAt: string;
 };
 
@@ -439,10 +450,39 @@ export async function getSystemSettings(): Promise<SystemSettings> {
   return doc;
 }
 
+function defaultTaskTypeLabels(): TaskTypeLabelMapping {
+  return {
+    bug: ["bug", "fix", "hotfix", "defect"],
+    feature: ["feature", "enhancement", "story"],
+    refactor: ["refactor", "cleanup"],
+    chore: ["chore", "maintenance", "ci", "docs"],
+  };
+}
+
+function normalizeTaskTypeLabels(
+  raw?: Partial<TaskTypeLabelMapping> | null,
+): TaskTypeLabelMapping {
+  const d = defaultTaskTypeLabels();
+  const clean = (xs: string[] | undefined, fallback: string[]) => {
+    const out = (xs ?? fallback)
+      .map((s) => String(s).trim())
+      .filter(Boolean);
+    return out.length ? [...new Set(out)] : fallback;
+  };
+  return {
+    bug: clean(raw?.bug, d.bug),
+    feature: clean(raw?.feature, d.feature),
+    refactor: clean(raw?.refactor, d.refactor),
+    chore: clean(raw?.chore, d.chore),
+  };
+}
+
 export function toPublicSystemSettings(s: SystemSettings): SystemSettingsPublic {
   return {
     hasCursorApiKey: Boolean(s.cursorApiKeyEnc),
     cursorModel: s.cursorModel?.trim() || "auto",
+    taskTypeLabels: normalizeTaskTypeLabels(s.taskTypeLabels),
+    taskTypeLabelsUpdatedAt: s.taskTypeLabelsUpdatedAt ?? null,
     updatedAt: s.updatedAt,
   };
 }
@@ -491,6 +531,41 @@ export async function resolveSystemCursorApiKey(): Promise<string> {
 export async function resolveSystemCursorModel(): Promise<string> {
   const s = await getSystemSettings();
   return s.cursorModel?.trim() || "auto";
+}
+
+export async function getTaskTypeLabelMapping(): Promise<{
+  labels: TaskTypeLabelMapping;
+  updatedAt: string;
+}> {
+  const s = await getSystemSettings();
+  const labels = normalizeTaskTypeLabels(s.taskTypeLabels);
+  return {
+    labels,
+    updatedAt: s.taskTypeLabelsUpdatedAt || s.updatedAt,
+  };
+}
+
+export async function updateSystemTaskTypeLabels(
+  body: Partial<TaskTypeLabelMapping>,
+): Promise<SystemSettingsPublic> {
+  const existing = await getSystemSettings();
+  const now = new Date().toISOString();
+  const merged = normalizeTaskTypeLabels({
+    ...(existing.taskTypeLabels ?? {}),
+    ...body,
+  });
+  await (await systemSettingsCol()).updateOne(
+    { id: "default" },
+    {
+      $set: {
+        taskTypeLabels: merged,
+        taskTypeLabelsUpdatedAt: now,
+        updatedAt: now,
+      },
+    },
+    { upsert: true },
+  );
+  return toPublicSystemSettings(await getSystemSettings());
 }
 
 /* ── BA threads / messages ── */

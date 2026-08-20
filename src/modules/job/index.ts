@@ -19,6 +19,7 @@ import {
   type JobStatus,
 } from "../../types.js";
 import { getRuntimeContext } from "../../workspace/runtime.js";
+import { requireProjectLocalClone } from "../../workspace/resolve.js";
 import { listJobs } from "../../job-store.js";
 import { AppError } from "../../utils/AppError.js";
 import { logger } from "../../logger.js";
@@ -93,6 +94,11 @@ function normalizeCompletion(
  * POST /jobs/start — enqueue selected / all / auto (unchanged business rules).
  */
 export async function startJobs(body: StartJobsInput) {
+  const rt = getRuntimeContext();
+  if (rt?.projectId) {
+    await requireProjectLocalClone(rt.projectId);
+  }
+
   const mode =
     body.mode === "selected" || body.mode === "manual"
       ? "selected"

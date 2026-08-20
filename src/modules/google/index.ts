@@ -211,6 +211,12 @@ export async function continueJobAfterGoogleAuth(jobId: string): Promise<{
     job.error = undefined;
     await saveJob(job);
   }
+  if (job.workspaceProjectId) {
+    const { requireProjectLocalClone } = await import(
+      "../../workspace/resolve.js"
+    );
+    await requireProjectLocalClone(job.workspaceProjectId);
+  }
   const result = await jobQueue.enqueueExisting(jobId, {
     source: "google_auth_continue",
   });

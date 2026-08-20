@@ -12,6 +12,7 @@ const themeStore = useThemeStore();
 const tabs = [
   { to: "/admin", label: "Projects", exact: true },
   { to: "/admin/cursor", label: "Cursor key" },
+  { to: "/admin/task-types", label: "Task labels" },
 ];
 
 async function logout() {

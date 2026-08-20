@@ -1,98 +1,199 @@
-import { listJobDocs } from "../../db/mongo.js";
+import { getConfig } from "../../config.js";
+import { aggregateJobsForStats } from "../../db/mongo.js";
 import { getRuntimeContext } from "../../workspace/runtime.js";
+import { enumerateDays, shiftYmd, STATS_TZ } from "./calendar.js";
+import { classifyFailReason, estimateUsd, pctChange, successRate } from "./metrics.js";
+import { buildMonthTree, finishDayBucket } from "./tree.js";
+import type {
+  FailReasonRow,
+  InsightJob,
+  PeriodCompare,
+  ProjectTokens,
+  StatsDayItem,
+} from "./types.js";
 
-/** Todolist / stats: only days with tasks, nested month → week → day (Asia/Ho_Chi_Minh). */
-export async function getDailyStats(daysRaw?: number) {
-  const days = Math.min(365, Math.max(1, Number(daysRaw ?? 90)));
+export type GetDailyStatsQuery = {
+  days?: number;
+  from?: string;
+  to?: string;
+  status?: string;
+  workspaceProjectId?: string;
+  ownerUsername?: string;
+  allOwners?: boolean;
+  allProjects?: boolean;
+  q?: string;
+};
+
+const RUNNING_LIKE = new Set([
+  "queued",
+  "running",
+  "awaiting_clarification",
+  "draft",
+  "awaiting_docs_approval",
+  "awaiting_google_auth",
+  "awaiting_diff_approval",
+]);
+
+function parseYmd(s: string | undefined): string | null {
+  if (!s) return null;
+  return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null;
+}
+
+/** ICT is UTC+7 year-round. */
+function ymdToUtcRange(ymd: string, endOfDay: boolean): Date {
+  const [Y, M, D] = ymd.split("-").map(Number);
+  if (!endOfDay) {
+    return new Date(Date.UTC(Y, M - 1, D) - 7 * 3600_000);
+  }
+  return new Date(Date.UTC(Y, M - 1, D, 16, 59, 59, 999));
+}
+
+function windowYmd(
+  daysRaw: number,
+  from?: string,
+  to?: string,
+): { days: number; fromYmd: string; toYmd: string } {
+  const days = Math.min(365, Math.max(1, Number(daysRaw || 90)));
+  const toYmd =
+    parseYmd(to) ||
+    new Intl.DateTimeFormat("en-CA", {
+      timeZone: STATS_TZ,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date());
+  const fromParsed = parseYmd(from);
+  const fromYmd = fromParsed || shiftYmd(toYmd, -(days - 1));
+  const span =
+    (Date.parse(`${toYmd}T00:00:00Z`) - Date.parse(`${fromYmd}T00:00:00Z`)) /
+      86400000 +
+    1;
+  return {
+    days: Math.min(365, Math.max(1, Math.round(span))),
+    fromYmd,
+    toYmd,
+  };
+}
+
+function toItem(row: {
+  dayKey: string;
+  jobId: string;
+  status: string;
+  issueIid: number;
+  title: string;
+  url: string;
+  at: string;
+  summary?: string;
+  error?: string;
+  workspaceProjectId?: string;
+  ownerUsername?: string;
+  tokensTotal: number;
+  tokensInput: number;
+  tokensOutput: number;
+  durationMs: number | null;
+}): StatsDayItem {
+  return {
+    jobId: String(row.jobId),
+    status: row.status,
+    issueIid: row.issueIid,
+    title: row.title,
+    url: row.url,
+    at: row.at,
+    summary: row.summary,
+    error: row.error || undefined,
+    workspaceProjectId: row.workspaceProjectId,
+    ownerUsername: row.ownerUsername,
+    tokensTotal: row.tokensTotal || 0,
+    tokensInput: row.tokensInput || 0,
+    tokensOutput: row.tokensOutput || 0,
+    durationMs:
+      row.durationMs != null && row.durationMs > 0 ? row.durationMs : null,
+  };
+}
+
+function toInsight(row: Parameters<typeof toItem>[0]): InsightJob {
+  const item = toItem(row);
+  return {
+    jobId: item.jobId,
+    issueIid: item.issueIid,
+    title: item.title,
+    url: item.url,
+    status: item.status,
+    tokensTotal: item.tokensTotal,
+    durationMs: item.durationMs,
+    date: row.dayKey,
+  };
+}
+
+export async function getDailyStats(query: GetDailyStatsQuery | number = 90) {
+  const q =
+    typeof query === "number"
+      ? ({ days: query } satisfies GetDailyStatsQuery)
+      : query;
   const rt = getRuntimeContext();
-  const jobs = await listJobDocs({
-    limit: 500,
-    workspaceProjectId: rt?.projectId,
-    ownerUsername: rt?.gitlabUsername,
-  });
-  const tz = "Asia/Ho_Chi_Minh";
-  const dayKey = (iso?: string) => {
-    if (!iso) return null;
-    try {
-      return new Intl.DateTimeFormat("en-CA", {
-        timeZone: tz,
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
-      }).format(new Date(iso));
-    } catch {
-      return iso.slice(0, 10);
+  const { days, fromYmd, toYmd } = windowYmd(q.days ?? 90, q.from, q.to);
+  const statuses = (q.status || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  const workspaceProjectId = q.allProjects
+    ? undefined
+    : q.workspaceProjectId || rt?.projectId;
+  const ownerUsername = q.allOwners
+    ? undefined
+    : q.ownerUsername || rt?.gitlabUsername;
+
+  const rangeStart = ymdToUtcRange(fromYmd, false);
+  const rangeEnd = ymdToUtcRange(toYmd, true);
+
+  const prevTo = shiftYmd(fromYmd, -1);
+  const prevFrom = shiftYmd(prevTo, -(days - 1));
+  const prevStart = ymdToUtcRange(prevFrom, false);
+  const prevEnd = ymdToUtcRange(prevTo, true);
+
+  const baseFilter = {
+    workspaceProjectId,
+    ownerUsername,
+    statuses: statuses.length ? statuses : undefined,
+    q: q.q,
+  };
+
+  const [current, previous] = await Promise.all([
+    aggregateJobsForStats({
+      ...baseFilter,
+      rangeStart,
+      rangeEnd,
+    }),
+    aggregateJobsForStats({
+      ...baseFilter,
+      rangeStart: prevStart,
+      rangeEnd: prevEnd,
+    }),
+  ]);
+
+  const byDay = new Map<
+    string,
+    {
+      date: string;
+      jobCount: number;
+      awaitingHandoff: number;
+      succeeded: number;
+      failed: number;
+      runningLike: number;
+      tokensTotal: number;
+      tokensInput: number;
+      tokensOutput: number;
+      items: StatsDayItem[];
     }
-  };
+  >();
 
-  const formatYmdUtc = (d: Date) => {
-    const y = d.getUTCFullYear();
-    const m = String(d.getUTCMonth() + 1).padStart(2, "0");
-    const day = String(d.getUTCDate()).padStart(2, "0");
-    return `${y}-${m}-${day}`;
-  };
-
-  const isoWeekFromYmd = (ymd: string) => {
-    const [Y, M, D] = ymd.split("-").map(Number);
-    const utc = new Date(Date.UTC(Y, M - 1, D));
-    const dayNum = utc.getUTCDay() || 7;
-    const thursday = new Date(utc);
-    thursday.setUTCDate(utc.getUTCDate() + 4 - dayNum);
-    const isoYear = thursday.getUTCFullYear();
-    const yearStart = new Date(Date.UTC(isoYear, 0, 1));
-    const week = Math.ceil(
-      ((thursday.getTime() - yearStart.getTime()) / 86400000 + 1) / 7,
-    );
-    const weekStart = new Date(utc);
-    weekStart.setUTCDate(utc.getUTCDate() - (dayNum - 1));
-    const weekEnd = new Date(weekStart);
-    weekEnd.setUTCDate(weekStart.getUTCDate() + 6);
-    const weekKey = `${isoYear}-W${String(week).padStart(2, "0")}`;
-    const ws = formatYmdUtc(weekStart);
-    const we = formatYmdUtc(weekEnd);
-    return {
-      weekKey,
-      week,
-      isoYear,
-      weekStart: ws,
-      weekEnd: we,
-      weekLabel: `Week ${week} · ${ws.slice(5).replace("-", "/")}–${we.slice(5).replace("-", "/")}`,
-    };
-  };
-
-  const monthLabel = (ym: string) => {
-    const [y, m] = ym.split("-").map(Number);
-    return `${new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric" }).format(new Date(y, m - 1, 1))}`;
-  };
-
-  type DayItem = {
-    jobId: string;
-    status: string;
-    issueIid: number;
-    title: string;
-    url: string;
-    at: string;
-    summary?: string;
-  };
-  type DayBucket = {
-    date: string;
-    awaitingHandoff: number;
-    succeeded: number;
-    failed: number;
-    runningLike: number;
-    /** Sum of job tokenUsage attributed to this day */
-    tokensTotal: number;
-    tokensInput: number;
-    tokensOutput: number;
-    items: DayItem[];
-  };
-  const byDay = new Map<string, DayBucket>();
-
-  const ensure = (d: string): DayBucket => {
+  const ensure = (d: string) => {
     let b = byDay.get(d);
     if (!b) {
       b = {
         date: d,
+        jobCount: 0,
         awaitingHandoff: 0,
         succeeded: 0,
         failed: 0,
@@ -107,39 +208,28 @@ export async function getDailyStats(daysRaw?: number) {
     return b;
   };
 
-  const windowStart = new Date();
-  windowStart.setTime(windowStart.getTime() - (days - 1) * 86400000);
-  const windowStartKey = dayKey(windowStart.toISOString())!;
-
-  // Token usage per project (whole window — tokenUsage is cumulative per job)
-  type ProjectTokens = {
-    workspaceProjectId: string;
-    jobs: number;
-    inputTokens: number;
-    outputTokens: number;
-    totalTokens: number;
-  };
   const tokensByProject = new Map<string, ProjectTokens>();
-  const tokensTotal = { inputTokens: 0, outputTokens: 0, totalTokens: 0, jobs: 0 };
+  const failMap = new Map<string, number>();
+  const tokensTotal = {
+    inputTokens: 0,
+    outputTokens: 0,
+    totalTokens: 0,
+    jobs: 0,
+  };
 
-  for (const job of jobs) {
-    const at =
-      job.completedAt || job.handedOffAt || job.updatedAt || job.createdAt;
-    const key = dayKey(at);
-    if (!key || key < windowStartKey) continue;
-
-    const bucket = ensure(key);
-
-    const usage = job.tokenUsage;
-    if (usage?.totalTokens) {
-      bucket.tokensTotal += usage.totalTokens;
-      bucket.tokensInput += usage.inputTokens ?? 0;
-      bucket.tokensOutput += usage.outputTokens ?? 0;
-      tokensTotal.totalTokens += usage.totalTokens;
-      tokensTotal.inputTokens += usage.inputTokens ?? 0;
-      tokensTotal.outputTokens += usage.outputTokens ?? 0;
+  for (const raw of current.rows) {
+    const item = toItem(raw);
+    const bucket = ensure(raw.dayKey);
+    bucket.jobCount += 1;
+    bucket.tokensTotal += item.tokensTotal;
+    bucket.tokensInput += item.tokensInput;
+    bucket.tokensOutput += item.tokensOutput;
+    if (item.tokensTotal) {
+      tokensTotal.totalTokens += item.tokensTotal;
+      tokensTotal.inputTokens += item.tokensInput;
+      tokensTotal.outputTokens += item.tokensOutput;
       tokensTotal.jobs += 1;
-      const pid = job.workspaceProjectId || "(no project)";
+      const pid = item.workspaceProjectId || "(no project)";
       let p = tokensByProject.get(pid);
       if (!p) {
         p = {
@@ -152,130 +242,130 @@ export async function getDailyStats(daysRaw?: number) {
         tokensByProject.set(pid, p);
       }
       p.jobs += 1;
-      p.inputTokens += usage.inputTokens ?? 0;
-      p.outputTokens += usage.outputTokens ?? 0;
-      p.totalTokens += usage.totalTokens;
+      p.inputTokens += item.tokensInput;
+      p.outputTokens += item.tokensOutput;
+      p.totalTokens += item.tokensTotal;
     }
-    if (job.status === "awaiting_handoff") bucket.awaitingHandoff += 1;
-    else if (job.status === "succeeded") bucket.succeeded += 1;
-    else if (job.status === "failed") bucket.failed += 1;
-    else if (
-      job.status === "queued" ||
-      job.status === "running" ||
-      job.status === "awaiting_clarification" ||
-      job.status === "draft"
-    ) {
+    if (item.status === "awaiting_handoff") bucket.awaitingHandoff += 1;
+    else if (item.status === "succeeded") bucket.succeeded += 1;
+    else if (item.status === "failed") {
+      bucket.failed += 1;
+      const reason = classifyFailReason(item.error);
+      failMap.set(reason, (failMap.get(reason) || 0) + 1);
+    } else if (RUNNING_LIKE.has(item.status)) {
       bucket.runningLike += 1;
     }
 
-    if (
-      job.status === "awaiting_handoff" ||
-      job.status === "succeeded" ||
-      job.status === "failed"
-    ) {
-      bucket.items.push({
-        jobId: job.id,
-        status: job.status,
-        issueIid: job.issue.issueIid,
-        title: job.issue.title,
-        url: job.issue.url,
-        at,
-        summary: job.summary,
-      });
-    }
+    bucket.items.push(item);
   }
 
   const daily = [...byDay.values()]
-    .filter((b) => b.items.length > 0 || b.tokensTotal > 0)
     .map((b) => {
       b.items.sort((a, c) => (a.at < c.at ? 1 : -1));
-      return b;
+      return finishDayBucket(b);
     })
     .sort((a, b) => (a.date < b.date ? 1 : -1));
 
-  type WeekNode = {
-    weekKey: string;
-    label: string;
-    weekStart: string;
-    weekEnd: string;
-    awaitingHandoff: number;
-    succeeded: number;
-    failed: number;
-    days: DayBucket[];
+  const months = buildMonthTree(daily);
+
+  const prevJobs = previous.totalInRange;
+  const prevTokens = previous.rows.reduce((s, r) => s + (r.tokensTotal || 0), 0);
+  const prevSucceeded = previous.rows.filter((r) => r.status === "succeeded")
+    .length;
+  const prevFailed = previous.rows.filter((r) => r.status === "failed").length;
+  const prevRate = successRate(prevSucceeded, prevFailed);
+  const currRate = successRate(
+    daily.reduce((s, d) => s + d.succeeded, 0),
+    daily.reduce((s, d) => s + d.failed, 0),
+  );
+
+  const compare: PeriodCompare = {
+    jobsPct: pctChange(daily.reduce((s, d) => s + d.jobCount, 0), prevJobs),
+    tokensPct: pctChange(tokensTotal.totalTokens, prevTokens),
+    successRateDelta:
+      currRate != null && prevRate != null
+        ? Math.round((currRate - prevRate) * 10) / 10
+        : null,
+    previousJobs: prevJobs,
+    previousTokens: prevTokens,
   };
-  type MonthNode = {
-    monthKey: string;
-    label: string;
-    awaitingHandoff: number;
-    succeeded: number;
-    failed: number;
-    weeks: WeekNode[];
+
+  const heatmap = enumerateDays(fromYmd, toYmd).map((date) => {
+    const b = byDay.get(date);
+    return {
+      date,
+      jobs: b?.jobCount ?? 0,
+      tokens: b?.tokensTotal ?? 0,
+    };
+  });
+
+  const insights = {
+    topTokens: [...current.rows]
+      .filter((r) => r.tokensTotal > 0)
+      .sort((a, b) => b.tokensTotal - a.tokensTotal)
+      .slice(0, 8)
+      .map(toInsight),
+    slowest: [...current.rows]
+      .filter((r) => r.durationMs != null && r.durationMs > 0)
+      .sort((a, b) => (b.durationMs || 0) - (a.durationMs || 0))
+      .slice(0, 8)
+      .map(toInsight),
   };
 
-  const monthMap = new Map<string, MonthNode>();
-  for (const day of daily) {
-    const monthKey = day.date.slice(0, 7);
-    const week = isoWeekFromYmd(day.date);
-    let month = monthMap.get(monthKey);
-    if (!month) {
-      month = {
-        monthKey,
-        label: monthLabel(monthKey),
-        awaitingHandoff: 0,
-        succeeded: 0,
-        failed: 0,
-        weeks: [],
-      };
-      monthMap.set(monthKey, month);
-    }
-    let weekNode = month.weeks.find((w) => w.weekKey === week.weekKey);
-    if (!weekNode) {
-      weekNode = {
-        weekKey: week.weekKey,
-        label: week.weekLabel,
-        weekStart: week.weekStart,
-        weekEnd: week.weekEnd,
-        awaitingHandoff: 0,
-        succeeded: 0,
-        failed: 0,
-        days: [],
-      };
-      month.weeks.push(weekNode);
-    }
-    weekNode.days.push(day);
-    weekNode.awaitingHandoff += day.awaitingHandoff;
-    weekNode.succeeded += day.succeeded;
-    weekNode.failed += day.failed;
-    month.awaitingHandoff += day.awaitingHandoff;
-    month.succeeded += day.succeeded;
-    month.failed += day.failed;
-  }
+  const failReasons: FailReasonRow[] = [...failMap.entries()]
+    .map(([reason, count]) => ({ reason, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 12);
 
-  const months = [...monthMap.values()]
-    .map((m) => {
-      m.weeks.sort((a, b) => (a.weekStart < b.weekStart ? 1 : -1));
-      for (const w of m.weeks) {
-        w.days.sort((a, b) => (a.date < b.date ? 1 : -1));
-      }
-      return m;
-    })
-    .sort((a, b) => (a.monthKey < b.monthKey ? 1 : -1));
+  const cfg = getConfig();
+  const usdIn = cfg.STATS_USD_PER_MILLION_INPUT;
+  const usdOut = cfg.STATS_USD_PER_MILLION_OUTPUT;
+  const costUsd = estimateUsd(
+    tokensTotal.inputTokens,
+    tokensTotal.outputTokens,
+    usdIn,
+    usdOut,
+  );
 
-  const pendingHandoff = jobs.filter((j) => j.status === "awaiting_handoff");
+  const totalsBucket = finishDayBucket({
+    date: `${fromYmd}…${toYmd}`,
+    jobCount: daily.reduce((s, d) => s + d.jobCount, 0),
+    awaitingHandoff: daily.reduce((s, d) => s + d.awaitingHandoff, 0),
+    succeeded: daily.reduce((s, d) => s + d.succeeded, 0),
+    failed: daily.reduce((s, d) => s + d.failed, 0),
+    runningLike: daily.reduce((s, d) => s + d.runningLike, 0),
+    tokensTotal: tokensTotal.totalTokens,
+    tokensInput: tokensTotal.inputTokens,
+    tokensOutput: tokensTotal.outputTokens,
+    items: daily.flatMap((d) => d.items),
+  });
+  const { items: _totalsItems, ...totals } = totalsBucket;
+
+  const pendingHandoff = current.rows
+    .filter((j) => j.status === "awaiting_handoff")
+    .map((j) => ({
+      jobId: String(j.jobId),
+      issueIid: j.issueIid,
+      title: j.title,
+      url: j.url,
+      completedAt: j.at,
+      summary: j.summary,
+    }));
 
   return {
-    timezone: tz,
+    timezone: STATS_TZ,
     days,
+    from: fromYmd,
+    to: toYmd,
+    truncated: current.truncated,
+    totalJobsInRange: current.totalInRange,
+    returnedJobs: current.rows.length,
     pendingHandoffCount: pendingHandoff.length,
-    pendingHandoff: pendingHandoff.map((j) => ({
-      jobId: j.id,
-      issueIid: j.issue.issueIid,
-      title: j.issue.title,
-      url: j.issue.url,
-      branch: j.branch,
-      completedAt: j.completedAt,
-      summary: j.summary,
-    })),
+    pendingHandoff,
+    totals: {
+      ...totals,
+      spark: heatmap.map((h) => h.jobs),
+    },
     daily,
     months,
     tokens: {
@@ -283,6 +373,21 @@ export async function getDailyStats(daysRaw?: number) {
       byProject: [...tokensByProject.values()].sort(
         (a, b) => b.totalTokens - a.totalTokens,
       ),
+    },
+    compare,
+    failReasons,
+    heatmap,
+    insights,
+    cost: {
+      usd: Math.round(costUsd * 10000) / 10000,
+      usdPerMillionInput: usdIn,
+      usdPerMillionOutput: usdOut,
+    },
+    filters: {
+      owners: current.owners,
+      projects: current.projects,
+      workspaceProjectId: workspaceProjectId || null,
+      ownerUsername: ownerUsername || null,
     },
   };
 }

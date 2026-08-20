@@ -9,6 +9,7 @@ import {
   getUserSecrets,
 } from "./store.js";
 import type { RuntimeContext } from "./runtime.js";
+import { AppError } from "../utils/AppError.js";
 
 async function assertRepoPath(repoPath: string): Promise<void> {
   try {
@@ -21,10 +22,14 @@ async function assertRepoPath(repoPath: string): Promise<void> {
 /**
  * Build runtime context for a logged-in user + selected project.
  * GitLab PAT comes from the **project**; Cursor key from the user.
+ *
+ * By default does **not** require a local git clone — stats/tasks/jobs list work without one.
+ * Pass `requireLocalClone: true` for agent runs, terminal, and other source-dependent flows.
  */
 export async function resolveRuntimeContext(opts: {
   gitlabUsername: string;
   projectId: string;
+  requireLocalClone?: boolean;
 }): Promise<RuntimeContext> {
   const user = await getUserByUsername(opts.gitlabUsername);
   if (!user) {
@@ -56,13 +61,13 @@ export async function resolveRuntimeContext(opts: {
     throw new Error("Project local_path missing — fix project setup");
   }
 
-  const hasGit = await isGitRepo(repoPath);
-  if (!hasGit) {
-    throw new Error(
-      `Source not cloned at ${repoPath} (cloneStatus=${project.cloneStatus}). Confirm clone in Settings → Project.`,
-    );
+  if (opts.requireLocalClone) {
+    const hasGit = await isGitRepo(repoPath);
+    if (!hasGit) {
+      throw new Error(cloneNotReadyMessage(repoPath, project.cloneStatus));
+    }
+    await assertRepoPath(repoPath);
   }
-  await assertRepoPath(repoPath);
 
   return {
     gitlabUsername: opts.gitlabUsername.trim().replace(/^@/, ""),
@@ -77,6 +82,27 @@ export async function resolveRuntimeContext(opts: {
     workBranch: project.workingBranch || membership.workBranch,
     verifyCommand: project.verifyCommand?.trim() || undefined,
   };
+}
+
+function cloneNotReadyMessage(
+  repoPath: string,
+  cloneStatus?: string,
+): string {
+  return `Source not cloned at ${repoPath} (cloneStatus=${cloneStatus ?? "unknown"}). Confirm clone in Settings → Project.`;
+}
+
+/** Throw when local source is required but the project clone is not ready. */
+export async function requireProjectLocalClone(projectId: string): Promise<void> {
+  const ready = await assertProjectCloneReady(projectId);
+  if (ready.ok && ready.level !== "bad") return;
+  const project = await getProject(projectId);
+  const repoPath =
+    ready.localPath || project?.localPath || project?.repoPath || "(unknown)";
+  throw new AppError(
+    cloneNotReadyMessage(repoPath, project?.cloneStatus),
+    409,
+    "clone_not_ready",
+  );
 }
 
 /** True when local clone is ready for agent work. */

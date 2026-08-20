@@ -7,6 +7,7 @@ import { logger } from "../../logger.js";
 import { jobQueue } from "../../queue.js";
 import { AppError } from "../../utils/AppError.js";
 import { requireJobDoc } from "./lifecycle.js";
+import { requireProjectLocalClone } from "../../workspace/resolve.js";
 
 /**
  * Enqueue IDE follow-up from chat Send (runs via job queue — HTTP returns immediately).
@@ -20,9 +21,13 @@ export async function continueJobChat(
   if (!input.message?.trim()) {
     throw new AppError("message required", 400);
   }
+  if (job.workspaceProjectId) {
+    await requireProjectLocalClone(job.workspaceProjectId);
+  }
   try {
     return await jobQueue.followUpChat(job.id, input.message);
   } catch (err) {
+    if (err instanceof AppError) throw err;
     const msg = err instanceof Error ? err.message : String(err);
     logger.error("IDE continue enqueue failed", { jobId: job.id, err: msg });
     throw new AppError(msg, /running|Force Stop|hàng chờ/i.test(msg) ? 409 : 500);
@@ -38,9 +43,13 @@ export async function askJobQuestion(
   if (!input.question?.trim()) {
     throw new AppError("question required", 400);
   }
+  if (job.workspaceProjectId) {
+    await requireProjectLocalClone(job.workspaceProjectId);
+  }
   try {
     return await jobQueue.askOnlyChat(job.id, input.question);
   } catch (err) {
+    if (err instanceof AppError) throw err;
     const msg = err instanceof Error ? err.message : String(err);
     logger.error("Ask only enqueue failed", { jobId: job.id, err: msg });
     throw new AppError(msg, /running|Force Stop|hàng chờ/i.test(msg) ? 409 : 500);
@@ -50,9 +59,13 @@ export async function askJobQuestion(
 /** Senior QC testcases from task + code → comment on GitLab issue. */
 export async function enqueueJobTestcases(jobId: string) {
   const job = await requireJobDoc(jobId);
+  if (job.workspaceProjectId) {
+    await requireProjectLocalClone(job.workspaceProjectId);
+  }
   try {
     return await jobQueue.enqueueGenerateTestcases(job.id);
   } catch (err) {
+    if (err instanceof AppError) throw err;
     const msg = err instanceof Error ? err.message : String(err);
     logger.error("Generate testcases enqueue failed", {
       jobId: job.id,

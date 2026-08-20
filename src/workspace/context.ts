@@ -10,6 +10,7 @@ export async function withWorkspaceContext<T>(
   const ctx = await resolveRuntimeContext({
     gitlabUsername: username,
     projectId,
+    requireLocalClone: true,
   });
   return runWithRuntimeContext(ctx, fn);
 }

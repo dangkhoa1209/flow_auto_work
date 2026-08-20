@@ -44,6 +44,7 @@ export const API = {
     baTestDb: (id: string) =>
       `/api/admin/ba-projects/${encodeURIComponent(id)}/test-db`,
     cursorSettings: "/api/admin/settings/cursor",
+    taskTypeLabels: "/api/admin/settings/task-type-labels",
   },
   ba: {
     projects: "/api/ba/projects",
@@ -147,7 +148,9 @@ export const API = {
     status: "/api/terminal/status",
   },
   stats: {
+    /** Query: days, from, to, status, workspaceProjectId, allProjects, q */
     daily: "/api/stats/daily",
+    analyze: "/api/stats/analyze",
   },
   gitlab: {
     preview: "/api/gitlab/preview",

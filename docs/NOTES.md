@@ -154,7 +154,7 @@ Clarify (agent hỏi giữa chừng): `NEED_CLARIFICATION` → UI → `buildResu
 |-----|----------|
 | Work | Tasks + Jobs · Issue / Progress / Chat · Related preview |
 | Handoff | `awaiting_handoff` → assignee + **add** labels |
-| Thống kê | `GET /api/stats/daily` |
+| Thống kê | `GET /api/stats/daily` — month→week→day, heatmap, compare WoW/MoM window, token/cost, filters, CSV |
 | Settings | Project, Cursor, labels |
 
 ### Cột giữa — user flow

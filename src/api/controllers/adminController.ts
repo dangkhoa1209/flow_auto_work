@@ -48,4 +48,12 @@ export const adminController = {
   putCursor: asyncHandler(async (req: Request, res: Response) => {
     res.json(await admin.adminUpdateCursorSettings(req.body || {}));
   }),
+
+  getTaskTypeLabels: asyncHandler(async (_req: Request, res: Response) => {
+    res.json(await admin.adminGetTaskTypeLabels());
+  }),
+
+  putTaskTypeLabels: asyncHandler(async (req: Request, res: Response) => {
+    res.json(await admin.adminUpdateTaskTypeLabels(req.body || {}));
+  }),
 };

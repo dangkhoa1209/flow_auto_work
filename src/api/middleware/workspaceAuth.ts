@@ -65,7 +65,7 @@ export function headerProjectFromExpress(req: Request): string {
 
 /**
  * Bind workspace secrets into AsyncLocalStorage for the rest of this request.
- * Call next() inside `als.run` so async controllers still see the store.
+ * Does not require a local git clone — that is enforced only on Run / chat / terminal.
  */
 export function requireWorkspace(
   req: Request,
