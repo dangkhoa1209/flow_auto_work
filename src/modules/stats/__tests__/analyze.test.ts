@@ -78,22 +78,22 @@ describe("parseLlmAnalysisJson", () => {
     },
   ];
 
-  it("parses fenced JSON and maps evidence jobs", () => {
+  it("parses nested dimension scores and title/detail recommendations", () => {
     const payload = {
       narrative: "Cần cải thiện độ chính xác.",
       dimensions: {
-        speed: 70,
-        accuracy: 40,
-        scope: 55,
-        consistency: 60,
-        efficiency: 80,
+        speed: { score: 70, label: "Tốt", reasoning: "workMin ổn" },
+        accuracy: { score: 40, label: "Yếu", reasoning: "fail cao" },
+        scope: { score: 55, label: "TB", reasoning: "bug fail nhiều" },
+        consistency: { score: 60, label: "TB", reasoning: "mẫu ít" },
+        efficiency: { score: 80, label: "Tốt", reasoning: "token hợp lý" },
       },
       recommendations: [
         {
-          id: "a",
-          dimension: "accuracy",
+          title: "Giảm fail bug",
+          detail: "Xem #12 — fail 50% trên bug",
+          dimension: "chinhXac",
           severity: "high",
-          text: "Xem #12",
           evidenceJobIds: ["j1", "missing"],
         },
       ],
@@ -103,7 +103,31 @@ describe("parseLlmAnalysisJson", () => {
     expect(parsed?.narrative).toBe("Cần cải thiện độ chính xác.");
     expect(parsed?.dimensions?.accuracy).toBe(40);
     expect(parsed?.recommendations).toHaveLength(1);
+    expect(parsed?.recommendations[0]?.dimension).toBe("accuracy");
+    expect(parsed?.recommendations[0]?.text).toContain("Giảm fail bug");
     expect(parsed?.recommendations[0]?.evidenceJobs[0]?.issueIid).toBe(12);
+  });
+
+  it("accepts Vietnamese dimension aliases as flat numbers", () => {
+    const payload = {
+      narrative: "Ổn.",
+      dimensions: {
+        tocDo: 71,
+        chinhXac: 72,
+        phamVi: 73,
+        nhatQuan: 74,
+        hieuQua: 75,
+      },
+      recommendations: [],
+    };
+    const parsed = parseLlmAnalysisJson(JSON.stringify(payload), jobs);
+    expect(parsed?.dimensions).toEqual({
+      speed: 71,
+      accuracy: 72,
+      scope: 73,
+      consistency: 74,
+      efficiency: 75,
+    });
   });
 
   it("returns null without narrative", () => {
