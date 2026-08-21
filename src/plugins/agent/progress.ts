@@ -4,10 +4,20 @@ import { publishRealtime } from "../realtime/hub.js";
 /** Fixed estimate for context % UI (SDK has no remaining-% API). */
 const CONTEXT_WINDOW_TOKENS = 200_000;
 
+export type ProgressKind =
+  | "prompt"
+  | "thinking"
+  | "assistant"
+  | "status"
+  | "usage"
+  | "tool"
+  | "task"
+  | "system";
+
 export type ProgressLine = {
   id: number;
   at: string;
-  kind: string;
+  kind: ProgressKind;
   text: string;
 };
 
@@ -22,51 +32,122 @@ export type JobTokenSnapshot = {
 };
 
 const MAX_LINES = 400;
+const EVICT_AT = Math.ceil(MAX_LINES * 1.5);
+const PRESERVE_MAX = 16_000;
+const COMPACT_MAX = 2000;
+/** Coalesced assistant/thinking SSE — buffer updates immediately; publish is throttled. */
+export const PROGRESS_PUBLISH_MS = 80;
+
 const buffers = new Map<string, ProgressLine[]>();
 const tokenByJob = new Map<string, JobTokenSnapshot>();
+const pendingPublish = new Map<string, ReturnType<typeof setTimeout>>();
 let seq = 0;
 
+function cancelPendingPublish(jobId: string): void {
+  const timer = pendingPublish.get(jobId);
+  if (!timer) return;
+  clearTimeout(timer);
+  pendingPublish.delete(jobId);
+}
+
+/** Push any throttled coalesced line so SSE is not left 80ms behind. */
+function flushPendingPublish(jobId: string): void {
+  if (!pendingPublish.has(jobId)) return;
+  cancelPendingPublish(jobId);
+  const list = buffers.get(jobId);
+  const last = list?.[list.length - 1];
+  if (!last) return;
+  publishRealtime({
+    type: "progress",
+    jobId,
+    line: { ...last },
+    live: true,
+  });
+}
+
+function scheduleCoalescedPublish(jobId: string, line: ProgressLine): void {
+  if (pendingPublish.has(jobId)) return;
+  pendingPublish.set(
+    jobId,
+    setTimeout(() => {
+      pendingPublish.delete(jobId);
+      publishRealtime({
+        type: "progress",
+        jobId,
+        line: { ...line },
+        live: true,
+      });
+    }, PROGRESS_PUBLISH_MS),
+  );
+}
+
+/**
+ * Collapse `\n{3,}` only at the concat boundary. Each delta is already
+ * normalized; a full-string replace on a 16k line every token is O(n²).
+ */
+function joinAtBoundary(prev: string, next: string): string {
+  let trail = 0;
+  while (
+    trail < prev.length &&
+    prev.charCodeAt(prev.length - 1 - trail) === 10
+  ) {
+    trail++;
+  }
+  let lead = 0;
+  while (lead < next.length && next.charCodeAt(lead) === 10) lead++;
+  if (trail + lead < 3) return prev + next;
+  return `${prev.slice(0, prev.length - trail)}\n\n${next.slice(lead)}`;
+}
+
 export function clearJobProgress(jobId: string): void {
+  cancelPendingPublish(jobId);
   buffers.set(jobId, []);
 }
 
 export function appendJobProgress(
   jobId: string | undefined,
-  kind: string,
+  kind: ProgressKind,
   text: string,
 ): void {
   if (!jobId) return;
-  const preserveBreaks = kind === "prompt" || kind === "thinking" || kind === "assistant";
-  const line = preserveBreaks
+  const preserveBreaks =
+    kind === "prompt" || kind === "thinking" || kind === "assistant";
+  const maxLen = preserveBreaks ? PRESERVE_MAX : COMPACT_MAX;
+  // Stream deltas already include their own spaces / punctuation. Do not trim
+  // assistant/thinking chunks — trim() + a guessed inter-token space turns
+  // `main`+`.js`, `Đ`+`ã`, `#145`+`95` into `main .js` / `Đ ã` / `# 145 95`.
+  let line = preserveBreaks
     ? text
         .replace(/\r\n/g, "\n")
         .replace(/[^\S\n]+/g, " ")
         .replace(/\n{3,}/g, "\n\n")
-        .trim()
     : text.replace(/\s+/g, " ").trim();
   if (!line) return;
-  const list = buffers.get(jobId) ?? [];
+  let list = buffers.get(jobId);
+  if (!list) {
+    list = [];
+    buffers.set(jobId, list);
+  }
   const last = list[list.length - 1];
   // Coalesce consecutive assistant/thinking chunks into one growing line
-  if (last && (kind === "assistant" || kind === "thinking") && last.kind === kind) {
-    const needsSpace =
-      !/\s$/.test(last.text) &&
-      !/^\s/.test(line) &&
-      !last.text.endsWith("\n") &&
-      !line.startsWith("\n");
-    const joined = `${last.text}${needsSpace ? " " : ""}${line}`;
-    last.text = joined.slice(0, 8000);
+  if (
+    last &&
+    (kind === "assistant" || kind === "thinking") &&
+    last.kind === kind
+  ) {
     last.at = new Date().toISOString();
-    buffers.set(jobId, list);
-    publishRealtime({
-      type: "progress",
-      jobId,
-      line: { ...last },
-      live: true,
-    });
+    if (last.text.length < maxLen) {
+      const joined = joinAtBoundary(last.text, line);
+      last.text = joined.length > maxLen ? joined.slice(0, maxLen) : joined;
+    }
+    scheduleCoalescedPublish(jobId, last);
     return;
   }
-  const maxLen = preserveBreaks ? 16_000 : 2000;
+  if (preserveBreaks) {
+    line = line.replace(/^\n+/, "");
+    if (!line) return;
+  }
+  flushPendingPublish(jobId);
   const entry: ProgressLine = {
     id: ++seq,
     at: new Date().toISOString(),
@@ -74,8 +155,9 @@ export function appendJobProgress(
     text: line.slice(0, maxLen),
   };
   list.push(entry);
-  while (list.length > MAX_LINES) list.shift();
-  buffers.set(jobId, list);
+  if (list.length > EVICT_AT) {
+    list.splice(0, list.length - MAX_LINES);
+  }
   publishRealtime({
     type: "progress",
     jobId,
@@ -201,7 +283,7 @@ export function appendSdkMessage(
         .filter((b): b is { type: "text"; text: string } => b.type === "text")
         .map((b) => b.text)
         .join("");
-      if (texts.trim()) appendJobProgress(jobId, "assistant", texts);
+      if (texts) appendJobProgress(jobId, "assistant", texts);
       for (const b of message.message.content) {
         if (b.type === "tool_use") {
           appendJobProgress(
