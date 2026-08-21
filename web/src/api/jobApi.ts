@@ -1,6 +1,66 @@
 import { API } from "./endpoints";
 import { request } from "./http";
 
+export type GoogleStatus = {
+  configured: boolean;
+  authorized: boolean;
+  email?: string;
+  sheetIds: string[];
+  scopes: string[];
+  authorizedAt?: string;
+  revokedAt?: string;
+  pendingSheetUrls: string[];
+};
+
+export type GoogleDetect = {
+  sheets: { spreadsheetId: string; url: string; gid?: string }[];
+  includeIds: string[];
+};
+
+export type GoogleSnapshot = {
+  status: GoogleStatus;
+  detected: GoogleDetect;
+};
+
+const GOOGLE_SNAPSHOT_TTL_MS = 20_000;
+const googleSnapshotCache = new Map<
+  string,
+  { at: number; value: GoogleSnapshot }
+>();
+const googleSnapshotInflight = new Map<string, Promise<GoogleSnapshot>>();
+
+function loadGoogleSnapshot(
+  id: string,
+  force: boolean,
+): Promise<GoogleSnapshot> {
+  if (!force) {
+    const cached = googleSnapshotCache.get(id);
+    if (cached && Date.now() - cached.at < GOOGLE_SNAPSHOT_TTL_MS) {
+      return Promise.resolve(cached.value);
+    }
+    const pending = googleSnapshotInflight.get(id);
+    if (pending) return pending;
+  }
+  const req = Promise.all([
+    jobApi.googleStatus(id),
+    jobApi.googleDetect(id),
+  ]).then(([status, detected]) => {
+    const value: GoogleSnapshot = { status, detected };
+    googleSnapshotCache.set(id, { at: Date.now(), value });
+    return value;
+  });
+  googleSnapshotInflight.set(id, req);
+  return req.finally(() => {
+    if (googleSnapshotInflight.get(id) === req) {
+      googleSnapshotInflight.delete(id);
+    }
+  });
+}
+
+function invalidateGoogleSnapshot(id: string) {
+  googleSnapshotCache.delete(id);
+}
+
 export const jobApi = {
   list(opts?: { limit?: number }) {
     const limit = opts?.limit ?? 40;
@@ -244,11 +304,22 @@ export const jobApi = {
     });
   },
 
+  /**
+   * One status+detect pair per job. Coalesces in-flight calls (desktop+mobile
+   * JobContext) and reuses a short TTL so job-object churn cannot spam APIs.
+   */
+  googleSnapshot(id: string, opts?: { force?: boolean }) {
+    return loadGoogleSnapshot(id, Boolean(opts?.force));
+  },
+
   googleInclude(id: string, spreadsheetIds: string[]) {
     return request<{ ok: boolean; includeIds: string[]; job?: unknown }>({
       url: API.jobs.googleInclude(id),
       method: "PUT",
       data: { spreadsheetIds },
+    }).then((res) => {
+      invalidateGoogleSnapshot(id);
+      return res;
     });
   },
 
@@ -264,6 +335,9 @@ export const jobApi = {
       url: API.jobs.googleRevoke(id),
       method: "POST",
       data: {},
+    }).then((res) => {
+      invalidateGoogleSnapshot(id);
+      return res;
     });
   },
 

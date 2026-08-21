@@ -118,7 +118,7 @@ function sheetLabel(s: { spreadsheetId: string; url: string }): string {
   return `…${s.spreadsheetId.slice(-10)}`;
 }
 
-async function refreshGoogleStatus() {
+async function refreshGoogleStatus(opts?: { force?: boolean }) {
   const id = props.selectedJobId;
   if (!id) {
     googleStatus.value = null;
@@ -127,15 +127,13 @@ async function refreshGoogleStatus() {
     return;
   }
   try {
-    const [status, detected] = await Promise.all([
-      jobApi.googleStatus(id),
-      jobApi.googleDetect(id),
-    ]);
-    googleStatus.value = status;
-    detectedSheets.value = detected.sheets || [];
-    includeSheetIds.value = [...(detected.includeIds || [])];
+    const snap = await jobApi.googleSnapshot(id, opts);
+    if (props.selectedJobId !== id) return;
+    googleStatus.value = snap.status;
+    detectedSheets.value = snap.detected.sheets || [];
+    includeSheetIds.value = [...(snap.detected.includeIds || [])];
   } catch {
-    googleStatus.value = null;
+    if (props.selectedJobId === id) googleStatus.value = null;
   }
 }
 
@@ -153,7 +151,7 @@ async function toggleIncludeSheet(spreadsheetId: string, checked: boolean) {
     await work.loadJobs().catch(() => undefined);
   } catch (e) {
     message.error(e instanceof Error ? e.message : String(e));
-    await refreshGoogleStatus();
+    await refreshGoogleStatus({ force: true });
   } finally {
     includeSaving.value = false;
   }
@@ -164,7 +162,7 @@ async function reloadJob() {
   if (props.selectedJobId) {
     await work.selectJob(props.selectedJobId).catch(() => undefined);
   }
-  await refreshGoogleStatus();
+  await refreshGoogleStatus({ force: true });
 }
 
 async function authorizeGoogle() {
@@ -252,12 +250,10 @@ function onGoogleOAuthMessage(ev: MessageEvent) {
   }
 }
 
+/** Primitive key — watching a new array each tick retriggered Google APIs. */
 watch(
-  () => [
-    props.selectedJobId,
-    props.currentJob?.status,
-    props.currentJob?.googleAuth?.email,
-  ],
+  () =>
+    `${props.selectedJobId || ""}|${props.currentJob?.status === "awaiting_google_auth" ? "1" : "0"}`,
   () => {
     void refreshGoogleStatus();
   },
@@ -267,7 +263,7 @@ watch(
 watch(
   () => props.notesSaving,
   (saving, wasSaving) => {
-    if (wasSaving && !saving) void refreshGoogleStatus();
+    if (wasSaving && !saving) void refreshGoogleStatus({ force: true });
   },
 );
 

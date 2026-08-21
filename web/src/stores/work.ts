@@ -9,6 +9,8 @@ import type { GitlabLabelColor } from "@/utils/gitlabLabel";
 
 const MILESTONE_FILTER_KEY = "faw.milestoneFilter";
 const LABEL_FILTER_KEY = "faw.labelFilter";
+const PROGRESS_POLL_MIN_MS = 1500;
+const PROGRESS_POLL_MAX_MS = 20_000;
 
 function persistedFilterKey(prefix: string, projectId: string): string {
   return `${prefix}:${projectId}`;
@@ -162,6 +164,8 @@ export const useWorkStore = defineStore("work", () => {
   >([]);
   const progressAfterId = ref(0);
   const progressLive = ref(false);
+  let progressPollDelayMs = PROGRESS_POLL_MIN_MS;
+  let progressPollTimer: ReturnType<typeof setTimeout> | undefined;
   const members = ref<Array<{ username: string; name?: string }>>([]);
   const labels = ref<string[]>([]);
   /** GitLab label name → color (matches GitLab UI) */
@@ -238,7 +242,7 @@ export const useWorkStore = defineStore("work", () => {
         // Job just finished → drop typing + refresh chat (SSE / poll)
         if (wasBusy && !isJobStatusBusy(j.status)) {
           onSelectedJobBecameIdle(selectedJobId.value);
-        } else if (isJobStatusBusy(j.status)) {
+        } else if (isJobStatusBusy(j.status) && !progressLive.value) {
           // Mid-run after reload — show thinking again + keep progress catch-up
           agentTyping.value = true;
           watchProgress();
@@ -389,8 +393,11 @@ export const useWorkStore = defineStore("work", () => {
       progressLines.value = [...progressLines.value, ev.line];
     }
     progressAfterId.value = Math.max(progressAfterId.value, ev.line.id);
-    // SSE đang chảy → lùi poll safety-net thêm 1.5s
-    if (ev.live) scheduleProgressPollDebounce();
+    // SSE đang chảy → lùi poll safety-net; reset backoff vì stream còn sống
+    if (ev.live) {
+      progressPollDelayMs = PROGRESS_POLL_MIN_MS;
+      scheduleProgressPollDebounce();
+    }
   }
 
   function applyRealtimeJob(ev: { jobId: string; status?: string }) {
@@ -405,7 +412,9 @@ export const useWorkStore = defineStore("work", () => {
       j.status = ev.status;
       if (currentJob.value?.id === ev.jobId) {
         const prev = currentJob.value.status;
-        currentJob.value = { ...currentJob.value, status: ev.status };
+        if (prev !== ev.status) {
+          currentJob.value = { ...currentJob.value, status: ev.status };
+        }
         if (isJobStatusBusy(prev) && !nowBusy) {
           onSelectedJobBecameIdle(ev.jobId);
         } else if (!isJobStatusBusy(prev) && nowBusy) {
@@ -425,7 +434,9 @@ export const useWorkStore = defineStore("work", () => {
     if (touchesOpen && currentJob.value?.id === ev.jobId) {
       const prev = currentJob.value.status;
       const nowBusy = isJobStatusBusy(ev.status);
-      currentJob.value = { ...currentJob.value, status: ev.status };
+      if (prev !== ev.status) {
+        currentJob.value = { ...currentJob.value, status: ev.status };
+      }
       if (isJobStatusBusy(prev) && !nowBusy) {
         onSelectedJobBecameIdle(ev.jobId);
       } else if (!isJobStatusBusy(prev) && nowBusy) {
@@ -683,7 +694,9 @@ export const useWorkStore = defineStore("work", () => {
     progressLive.value = Boolean(data.live);
     if (data.status && currentJob.value?.id === jobId) {
       const wasBusy = isJobStatusBusy(currentJob.value.status);
-      currentJob.value = { ...currentJob.value, status: data.status };
+      if (currentJob.value.status !== data.status) {
+        currentJob.value = { ...currentJob.value, status: data.status };
+      }
       if (wasBusy && !isJobStatusBusy(data.status)) {
         onSelectedJobBecameIdle(jobId);
         return;
@@ -692,17 +705,22 @@ export const useWorkStore = defineStore("work", () => {
     if (!data.live && !isJobStatusBusy(data.status || currentJob.value?.status)) {
       agentTyping.value = false;
       progressLive.value = false;
+      progressPollDelayMs = PROGRESS_POLL_MIN_MS;
       stopProgressPolling();
     } else if (shouldPollProgress()) {
-      // After a silent gap poll, wait another 1.5s (SSE can reset this)
+      if (!data.lines?.length) {
+        progressPollDelayMs = Math.min(
+          PROGRESS_POLL_MAX_MS,
+          Math.round(progressPollDelayMs * 2),
+        );
+      } else {
+        progressPollDelayMs = PROGRESS_POLL_MIN_MS;
+      }
       scheduleProgressPollDebounce();
     } else {
       stopProgressPolling();
     }
   }
-
-  const PROGRESS_POLL_DEBOUNCE_MS = 1500;
-  let progressPollTimer: ReturnType<typeof setTimeout> | undefined;
 
   function stopProgressPolling() {
     if (!progressPollTimer) return;
@@ -711,8 +729,8 @@ export const useWorkStore = defineStore("work", () => {
   }
 
   /**
-   * Debounced safety-net: only hit /progress if no SSE for 1.5s.
-   * Each SSE progress (or watchProgress) resets the timer.
+   * Safety-net when SSE is silent. Backs off while /progress returns no
+   * new lines (304); SSE progress / a new Run resets to 1.5s.
    */
   function scheduleProgressPollDebounce() {
     stopProgressPolling();
@@ -721,12 +739,13 @@ export const useWorkStore = defineStore("work", () => {
       progressPollTimer = undefined;
       if (!shouldPollProgress()) return;
       void pollProgress(false).catch(() => undefined);
-    }, PROGRESS_POLL_DEBOUNCE_MS);
+    }, progressPollDelayMs);
   }
 
   /** Call when starting Run / Send — arm debounce; SSE will keep postponing poll. */
   function watchProgress() {
     progressLive.value = true;
+    progressPollDelayMs = PROGRESS_POLL_MIN_MS;
     scheduleProgressPollDebounce();
     // Do not fake status=running — stale SSE status can be misread as busy→idle and wipe chat
   }
