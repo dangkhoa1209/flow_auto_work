@@ -5,6 +5,7 @@ const route = useRoute();
 
 const tabs = [
   { to: "/settings/project", label: "Project" },
+  { to: "/settings/integrations", label: "Integrations" },
   { to: "/settings/cursor", label: "Cursor" },
   { to: "/settings/labels", label: "Labels" },
   { to: "/settings/account", label: "Account" },

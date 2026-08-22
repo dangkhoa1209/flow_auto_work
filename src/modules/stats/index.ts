@@ -31,6 +31,7 @@ const RUNNING_LIKE = new Set([
   "draft",
   "awaiting_docs_approval",
   "awaiting_google_auth",
+  "awaiting_figma_auth",
   "awaiting_diff_approval",
 ]);
 

@@ -7,6 +7,7 @@ const STATUS_LABELS: Record<string, string> = {
   awaiting_docs_approval: "Awaiting docs approval",
   awaiting_diff_approval: "Awaiting diff approval",
   awaiting_google_auth: "Awaiting Google auth",
+  awaiting_figma_auth: "Awaiting Figma PAT",
   awaiting_handoff: "Awaiting handoff",
   succeeded: "Done",
   failed: "Failed",
@@ -50,7 +51,7 @@ export function statusColor(status: string | null | undefined): string {
   if (st === "failed") return "error";
   if (st === "running" || st === "queued") return "processing";
   if (st === "awaiting_clarification") return "orange";
-  if (st === "awaiting_google_auth") return "orange";
+  if (st === "awaiting_google_auth" || st === "awaiting_figma_auth") return "orange";
   if (st === "awaiting_handoff") return "cyan";
   if (st === "awaiting_docs_approval" || st === "awaiting_diff_approval") {
     return "purple";
@@ -68,7 +69,7 @@ export function statusToneClass(status: string | null | undefined): string {
   if (st === "running" || st === "queued") {
     return "bg-blue-50 text-blue-700 border-blue-200";
   }
-  if (st === "awaiting_clarification" || st === "awaiting_google_auth") {
+  if (st === "awaiting_clarification" || st === "awaiting_google_auth" || st === "awaiting_figma_auth") {
     return "bg-orange-50 text-orange-700 border-orange-200";
   }
   if (st === "awaiting_handoff") {

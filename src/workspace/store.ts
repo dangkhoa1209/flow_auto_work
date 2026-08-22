@@ -285,10 +285,19 @@ export async function getUserSecrets(
 
 export async function getProjectSecrets(projectId: string): Promise<{
   gitlabToken?: string;
+  figmaToken?: string;
 } | null> {
   const project = await getProject(projectId);
-  if (!project?.gitlabTokenEnc) return null;
-  return { gitlabToken: decryptSecret(project.gitlabTokenEnc) };
+  if (!project) return null;
+  const out: { gitlabToken?: string; figmaToken?: string } = {};
+  if (project.gitlabTokenEnc) {
+    out.gitlabToken = decryptSecret(project.gitlabTokenEnc);
+  }
+  if (project.figmaTokenEnc) {
+    out.figmaToken = decryptSecret(project.figmaTokenEnc);
+  }
+  if (!out.gitlabToken && !out.figmaToken) return null;
+  return out;
 }
 
 export async function listProjects(): Promise<WorkspaceProject[]> {
@@ -486,6 +495,8 @@ export async function updateProjectFields(
     gitlabHost: string;
     gitlabPath: string;
     gitlabToken: string;
+    /** Plaintext Figma PAT — encrypted to figmaTokenEnc; empty string clears */
+    figmaToken: string | null;
     gitlabProjectId: number;
     cloneStatus: CloneStatus;
     cloneError: string | null;
@@ -557,6 +568,11 @@ export async function updateProjectFields(
   }
   if (patch.gitlabToken?.trim()) {
     existing.gitlabTokenEnc = encryptSecret(patch.gitlabToken.trim());
+  }
+  if (patch.figmaToken === null || patch.figmaToken === "") {
+    delete existing.figmaTokenEnc;
+  } else if (typeof patch.figmaToken === "string" && patch.figmaToken.trim()) {
+    existing.figmaTokenEnc = encryptSecret(patch.figmaToken.trim());
   }
   if (patch.gitlabProjectId !== undefined) {
     existing.gitlabProjectId = patch.gitlabProjectId;

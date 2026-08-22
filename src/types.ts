@@ -109,6 +109,8 @@ export type JobStatus =
   | "awaiting_diff_approval"
   /** Need Google OAuth to read Sheets links in the task */
   | "awaiting_google_auth"
+  /** Need project Figma PAT (Settings → Integrations) to read opted-in links */
+  | "awaiting_figma_auth"
   /** Code done (GitLab API commit) — awaiting manual assign / labels */
   | "awaiting_handoff"
   | "succeeded"
@@ -177,6 +179,13 @@ export type JobRecord = {
    * Empty / unset = do not fetch Sheets (default).
    */
   googleSheetsIncludeIds?: string[];
+  /**
+   * Figma include keys (`fileKey` or `fileKey#nodeId`) opted in before Run.
+   * Empty / unset = do not fetch Figma (default).
+   */
+  figmaIncludeKeys?: string[];
+  /** Figma URLs when paused for missing project PAT */
+  pendingFigmaUrls?: string[];
   /** Latest commit SHA after a successful run (GitLab API) */
   commitSha?: string;
   /** History of commit SHAs across re-runs (newest last) */

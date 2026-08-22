@@ -70,6 +70,8 @@ export type WorkspaceProject = {
   gitlabPath: string;
   /** PAT encrypted — attached to project */
   gitlabTokenEnc?: string;
+  /** Figma Personal Access Token (encrypted) — workspace/project level */
+  figmaTokenEnc?: string;
   gitlabProjectId?: number;
   /** Absolute clone path */
   localPath: string;

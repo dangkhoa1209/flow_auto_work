@@ -27,6 +27,7 @@ export type Membership = {
     cloneStatus?: string;
     cloneError?: string | null;
     hasGitlabToken?: boolean;
+    hasFigmaToken?: boolean;
     mainBranch?: string | null;
     workingBranch?: string | null;
     defaultCommitMode?: "manual" | "auto" | null;

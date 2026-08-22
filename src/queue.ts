@@ -821,6 +821,33 @@ export class JobQueue {
       });
     }
 
+    let figmaBlock = "";
+    try {
+      const { prepareFigmaForJob } = await import("./modules/figma/index.js");
+      const figmaPrep = await prepareFigmaForJob(job, [
+        ...priorChat.map((m) => m.body || ""),
+        msg,
+      ]);
+      if (figmaPrep.gate) {
+        logger.info("follow-up pause — awaiting Figma PAT", { jobId: job.id });
+        appendJobProgress(
+          job.id,
+          "status",
+          "Awaiting Figma PAT in Settings → Integrations",
+        );
+        this.activeIssueKeys.delete(key);
+        this.clearCurrent(job.id);
+        this.publishStatus();
+        return;
+      }
+      figmaBlock = figmaPrep.promptBlock || "";
+    } catch (err) {
+      logger.warn("Figma prep failed on follow-up — continue without", {
+        jobId: job.id,
+        err: String(err),
+      });
+    }
+
     const runFollowUp = async (): Promise<void> => {
       const rt = getRuntimeContext();
       const repoPath = rt?.repoPath?.trim();
@@ -858,6 +885,7 @@ export class JobQueue {
           chatHistory: chatHistory || undefined,
           contextQualityBlock,
           googleSheetsBlock: googleSheetsBlock || undefined,
+          figmaBlock: figmaBlock || undefined,
         }),
       );
       job.agentId = result.agentId;
@@ -2043,6 +2071,33 @@ export class JobQueue {
       });
     }
 
+    let figmaBlock = "";
+    try {
+      const { prepareFigmaForJob } = await import("./modules/figma/index.js");
+      const figmaPrep = await prepareFigmaForJob(
+        job,
+        chatRows.map((m) => m.body || ""),
+      );
+      if (figmaPrep.gate) {
+        logger.info("executeJob pause — awaiting Figma PAT", { jobId: job.id });
+        appendJobProgress(
+          job.id,
+          "status",
+          "Awaiting Figma PAT in Settings → Integrations",
+        );
+        this.activeIssueKeys.delete(key);
+        this.clearCurrent(job.id);
+        this.publishStatus();
+        return;
+      }
+      figmaBlock = figmaPrep.promptBlock || "";
+    } catch (err) {
+      logger.warn("Figma prep failed — continuing without Figma", {
+        jobId: job.id,
+        err: String(err),
+      });
+    }
+
     job.status = "running";
     job.runCount = (job.runCount ?? 0) + 1;
     await saveJob(job);
@@ -2134,6 +2189,7 @@ export class JobQueue {
           chatContext: chatContext || undefined,
           contextQualityBlock,
           googleSheetsBlock: googleSheetsBlock || undefined,
+          figmaBlock: figmaBlock || undefined,
           existingAgentId: job.agentId,
           clarifyRoundsLeft: Math.max(
             0,

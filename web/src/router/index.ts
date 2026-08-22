@@ -87,6 +87,12 @@ const router = createRouter({
               component: () => import("@/views/settings/ProjectSettings.vue"),
             },
             {
+              path: "integrations",
+              name: "settings-integrations",
+              component: () =>
+                import("@/views/settings/IntegrationsSettings.vue"),
+            },
+            {
               path: "cursor",
               name: "settings-cursor",
               component: () => import("@/views/settings/CursorSettings.vue"),

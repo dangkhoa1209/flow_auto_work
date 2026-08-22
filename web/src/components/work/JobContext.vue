@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import { RouterLink } from "vue-router";
 import { message } from "ant-design-vue";
 import { CopyOutlined } from "@ant-design/icons-vue";
 import ChatMessageBody from "@/components/ChatMessageBody.vue";
@@ -90,8 +91,25 @@ const detectedSheets = ref<
 const includeSheetIds = ref<string[]>([]);
 const includeSaving = ref(false);
 
+const figmaBusy = ref(false);
+const detectedFigs = ref<
+  {
+    fileKey: string;
+    nodeId?: string;
+    url: string;
+    kind: string;
+    includeKey: string;
+  }[]
+>([]);
+const includeFigmaKeys = ref<string[]>([]);
+const figmaIncludeSaving = ref(false);
+const hasFigmaToken = ref(false);
+
 const awaitingGoogleAuth = computed(
   () => props.currentJob?.status === "awaiting_google_auth",
+);
+const awaitingFigmaAuth = computed(
+  () => props.currentJob?.status === "awaiting_figma_auth",
 );
 
 const showGoogleCard = computed(
@@ -124,17 +142,58 @@ async function refreshGoogleStatus(opts?: { force?: boolean }) {
     googleStatus.value = null;
     detectedSheets.value = [];
     includeSheetIds.value = [];
+    detectedFigs.value = [];
+    includeFigmaKeys.value = [];
+    hasFigmaToken.value = false;
     return;
   }
   try {
-    const snap = await jobApi.googleSnapshot(id, opts);
+    const [snap, figma] = await Promise.all([
+      jobApi.googleSnapshot(id, opts),
+      jobApi.figmaDetect(id).catch(() => null),
+    ]);
     if (props.selectedJobId !== id) return;
     googleStatus.value = snap.status;
     detectedSheets.value = snap.detected.sheets || [];
     includeSheetIds.value = [...(snap.detected.includeIds || [])];
+    if (figma) {
+      detectedFigs.value = figma.figs || [];
+      includeFigmaKeys.value = [...(figma.includeKeys || [])];
+      hasFigmaToken.value = Boolean(figma.hasFigmaToken);
+    }
   } catch {
     if (props.selectedJobId === id) googleStatus.value = null;
   }
+}
+
+async function toggleIncludeFigma(includeKey: string, checked: boolean) {
+  const id = props.selectedJobId;
+  if (!id) return;
+  const next = new Set(includeFigmaKeys.value);
+  if (checked) next.add(includeKey);
+  else next.delete(includeKey);
+  includeFigmaKeys.value = [...next];
+  figmaIncludeSaving.value = true;
+  try {
+    const res = await jobApi.figmaInclude(id, includeFigmaKeys.value);
+    includeFigmaKeys.value = res.includeKeys || includeFigmaKeys.value;
+    await work.loadJobs().catch(() => undefined);
+  } catch (e) {
+    message.error(e instanceof Error ? e.message : String(e));
+    await refreshGoogleStatus({ force: true });
+  } finally {
+    figmaIncludeSaving.value = false;
+  }
+}
+
+function figmaLabel(f: {
+  fileKey: string;
+  nodeId?: string;
+  kind: string;
+}): string {
+  const short = f.fileKey.slice(-6);
+  const node = f.nodeId ? ` · ${f.nodeId}` : "";
+  return `Figma ${f.kind} …${short}${node}`;
 }
 
 async function toggleIncludeSheet(spreadsheetId: string, checked: boolean) {
@@ -210,6 +269,25 @@ async function continueAfterGoogle() {
   }
 }
 
+async function continueAfterFigma() {
+  const id = props.selectedJobId;
+  if (!id) return;
+  figmaBusy.value = true;
+  try {
+    const res = await jobApi.figmaContinue(id);
+    if (!res.enqueued && !res.ok) {
+      message.warning(res.reason || "Could not enqueue job");
+    } else {
+      message.success("Continue Run — job queued");
+    }
+    await reloadJob();
+  } catch (e) {
+    message.error(e instanceof Error ? e.message : String(e));
+  } finally {
+    figmaBusy.value = false;
+  }
+}
+
 async function revokeGoogle() {
   const id = props.selectedJobId;
   if (!id) return;
@@ -253,7 +331,7 @@ function onGoogleOAuthMessage(ev: MessageEvent) {
 /** Primitive key — watching a new array each tick retriggered Google APIs. */
 watch(
   () =>
-    `${props.selectedJobId || ""}|${props.currentJob?.status === "awaiting_google_auth" ? "1" : "0"}`,
+    `${props.selectedJobId || ""}|${props.currentJob?.status === "awaiting_google_auth" ? "1" : "0"}|${props.currentJob?.status === "awaiting_figma_auth" ? "1" : "0"}`,
   () => {
     void refreshGoogleStatus();
   },
@@ -363,6 +441,30 @@ onUnmounted(() => {
                     :loading="googleBusy"
                     :disabled="!googleStatus?.authorized"
                     @click="continueAfterGoogle"
+                    >Continue Run</a-button
+                  >
+                </div>
+              </template>
+            </a-alert>
+
+            <a-alert
+              v-if="awaitingFigmaAuth"
+              type="warning"
+              show-icon
+              class="mb-3"
+              message="Thêm Figma PAT để đọc design đã chọn"
+              description="Vào Settings → Integrations, dán Personal Access Token (file_content:read), rồi Continue Run."
+            >
+              <template #action>
+                <div class="flex flex-col gap-1.5 items-end">
+                  <RouterLink to="/settings/integrations">
+                    <a-button size="small">Mở Integrations</a-button>
+                  </RouterLink>
+                  <a-button
+                    size="small"
+                    type="primary"
+                    :loading="figmaBusy"
+                    @click="continueAfterFigma"
                     >Continue Run</a-button
                   >
                 </div>
@@ -661,6 +763,56 @@ onUnmounted(() => {
                         class="block text-[10px] text-ink-faint truncate hover:underline"
                         @click.stop
                         >{{ s.url }}</a
+                      >
+                    </span>
+                  </label>
+                </div>
+              </div>
+
+              <div
+                v-if="detectedFigs.length"
+                class="mt-3 rounded-lg border border-[var(--app-border)] bg-[var(--app-panel-soft)] px-3 py-2.5"
+              >
+                <div class="flex items-center justify-between gap-2">
+                  <div class="text-[12px] text-ink-soft font-medium">
+                    Đọc Figma khi Run
+                  </div>
+                  <span
+                    class="text-[10px]"
+                    :class="
+                      hasFigmaToken ? 'text-emerald-600' : 'text-amber-600'
+                    "
+                  >
+                    {{ hasFigmaToken ? "PAT OK" : "Thiếu PAT" }}
+                  </span>
+                </div>
+                <div class="text-[11px] text-ink-muted mt-0.5 mb-2">
+                  Nguồn ngoài — mặc định tắt. Tick từng link (structure / text /
+                  variables). PAT ở Settings → Integrations.
+                </div>
+                <div class="space-y-1.5">
+                  <label
+                    v-for="f in detectedFigs"
+                    :key="f.includeKey"
+                    class="flex items-start gap-2 text-[12px] text-ink-soft cursor-pointer"
+                  >
+                    <a-checkbox
+                      :checked="includeFigmaKeys.includes(f.includeKey)"
+                      :disabled="figmaIncludeSaving || busy"
+                      @change="
+                        (e: { target: { checked: boolean } }) =>
+                          toggleIncludeFigma(f.includeKey, e.target.checked)
+                      "
+                    />
+                    <span class="min-w-0">
+                      <span class="font-medium">{{ figmaLabel(f) }}</span>
+                      <a
+                        :href="f.url"
+                        target="_blank"
+                        rel="noopener"
+                        class="block text-[10px] text-ink-faint truncate hover:underline"
+                        @click.stop
+                        >{{ f.url }}</a
                       >
                     </span>
                   </label>

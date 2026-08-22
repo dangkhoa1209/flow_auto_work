@@ -126,6 +126,14 @@ export const API = {
       `/api/jobs/${encodeURIComponent(id)}/google/revoke`,
     googleContinue: (id: string) =>
       `/api/jobs/${encodeURIComponent(id)}/google/continue`,
+    figmaStatus: (id: string) =>
+      `/api/jobs/${encodeURIComponent(id)}/figma/status`,
+    figmaDetect: (id: string) =>
+      `/api/jobs/${encodeURIComponent(id)}/figma/detect`,
+    figmaInclude: (id: string) =>
+      `/api/jobs/${encodeURIComponent(id)}/figma/include`,
+    figmaContinue: (id: string) =>
+      `/api/jobs/${encodeURIComponent(id)}/figma/continue`,
   },
   google: {
     authUrl: (jobId: string) =>

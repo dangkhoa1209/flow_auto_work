@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { jobController } from "../controllers/jobController.js";
 import { googleController } from "../controllers/googleController.js";
+import { figmaController } from "../controllers/figmaController.js";
 
 export const routePath = "/jobs";
 
@@ -54,6 +55,11 @@ export function createJobRoutes(): Router {
   router.put("/:id/google/include", googleController.include);
   router.post("/:id/google/revoke", googleController.revoke);
   router.post("/:id/google/continue", googleController.continueRun);
+
+  router.get("/:id/figma/status", figmaController.status);
+  router.get("/:id/figma/detect", figmaController.detect);
+  router.put("/:id/figma/include", figmaController.include);
+  router.post("/:id/figma/continue", figmaController.continueRun);
 
   router.post("/:id/kill", jobController.kill);
   router.post("/:id/reset-window", jobController.resetWindow);

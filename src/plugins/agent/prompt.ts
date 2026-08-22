@@ -103,6 +103,7 @@ export function buildDocsPhasePrompt(
     chatContext?: string;
     contextQualityBlock?: string;
     googleSheetsBlock?: string;
+    figmaBlock?: string;
   },
 ): string {
   const { notesBlock, description } = sharedPreamble(issue, devNotes);
@@ -117,6 +118,9 @@ export function buildDocsPhasePrompt(
     : "";
   const sheetsBlock = opts?.googleSheetsBlock?.trim()
     ? `\n${opts.googleSheetsBlock.trim()}\n`
+    : "";
+  const figmaBlock = opts?.figmaBlock?.trim()
+    ? `\n${opts.figmaBlock.trim()}\n`
     : "";
 
   return `# MISSION — DOCS PHASE ONLY (NO APP CODE)
@@ -141,7 +145,7 @@ Labels: ${issue.labels.join(", ") || "(none)"}
 
 ## Description
 ${description}
-${linkedBlock}${sheetsBlock}
+${linkedBlock}${sheetsBlock}${figmaBlock}
 
 # HARD RULES (DOCS PHASE)
 1. DO NOT modify application code (no PHP/JS/Vue/TS/CSS outside docs, no migrations, no app config).
@@ -194,6 +198,7 @@ export function buildWorkPrompt(
     chatContext?: string;
     contextQualityBlock?: string;
     googleSheetsBlock?: string;
+    figmaBlock?: string;
     /** How many NEED_CLARIFICATION rounds remain before the job hard-fails. */
     clarifyRoundsLeft?: number;
   },
@@ -212,6 +217,9 @@ export function buildWorkPrompt(
     : "";
   const sheetsBlock = opts?.googleSheetsBlock?.trim()
     ? `\n${opts.googleSheetsBlock.trim()}\n`
+    : "";
+  const figmaBlock = opts?.figmaBlock?.trim()
+    ? `\n${opts.figmaBlock.trim()}\n`
     : "";
 
   const extraBlock = extra?.trim()
@@ -255,7 +263,7 @@ Action that triggered this run: ${issue.action}
 
 ## Description
 ${description}
-${linkedBlock}${sheetsBlock}
+${linkedBlock}${sheetsBlock}${figmaBlock}
 Use linked/mentioned issues and comments above as additional requirements/context. Prefer the primary issue (#${issue.issueIid}) scope; do not expand work into unrelated linked tickets unless required.
 Ignore image/file attachments — only use text. Do not try to download or open media.
 
@@ -332,6 +340,7 @@ export function buildFollowUpPrompt(
     chatHistory?: string;
     contextQualityBlock?: string;
     googleSheetsBlock?: string;
+    figmaBlock?: string;
   },
 ): string {
   const history = opts?.chatHistory?.trim();
@@ -348,10 +357,13 @@ ${history}
   const sheetsBlock = opts?.googleSheetsBlock?.trim()
     ? `\n${opts.googleSheetsBlock.trim()}\n\n`
     : "";
+  const figmaBlock = opts?.figmaBlock?.trim()
+    ? `\n${opts.figmaBlock.trim()}\n\n`
+    : "";
 
   return `You are working on GitLab issue #${issue.issueIid} ("${issue.title}") in a Cursor agent window.
 This may be a **new** window — use prior chat + the repo (inspect if needed). Do not assume old tool state is still loaded.
-${qualityBlock}${sheetsBlock}${historyBlock}## Human follow-up (this turn)
+${qualityBlock}${sheetsBlock}${figmaBlock}${historyBlock}## Human follow-up (this turn)
 ${message.trim()}
 
 ## How to behave (IDE-like)
@@ -380,6 +392,7 @@ export function buildAdhocFollowUpPrompt(
     chatHistory?: string;
     contextQualityBlock?: string;
     googleSheetsBlock?: string;
+    figmaBlock?: string;
   },
 ): string {
   const title = sessionTitle.replace(/\s+/g, " ").trim() || "Ad-hoc session";
@@ -397,11 +410,14 @@ ${history}
   const sheetsBlock = opts?.googleSheetsBlock?.trim()
     ? `\n${opts.googleSheetsBlock.trim()}\n\n`
     : "";
+  const figmaBlock = opts?.figmaBlock?.trim()
+    ? `\n${opts.figmaBlock.trim()}\n\n`
+    : "";
 
   return `You are in a **free Cursor agent session** (hotfix / ad-hoc) titled "${title}".
 There is **no GitLab issue yet** — a human may create one later from your summary.
 This may be a **new** window — use prior chat + the repo (inspect if needed).
-${qualityBlock}${sheetsBlock}${historyBlock}## Human request (this turn)
+${qualityBlock}${sheetsBlock}${figmaBlock}${historyBlock}## Human request (this turn)
 ${message.trim()}
 
 ## How to behave (IDE-like)

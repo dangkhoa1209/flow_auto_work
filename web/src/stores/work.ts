@@ -97,6 +97,8 @@ export type Job = {
   pendingGoogleSheetUrls?: string[];
   /** Opt-in spreadsheet IDs to read on Run (default empty = skip) */
   googleSheetsIncludeIds?: string[];
+  figmaIncludeKeys?: string[];
+  pendingFigmaUrls?: string[];
 };
 
 export function isAdhocJob(job: Job | null | undefined): boolean {

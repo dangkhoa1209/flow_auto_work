@@ -353,4 +353,54 @@ export const jobApi = {
       data: {},
     });
   },
+
+  figmaStatus(id: string) {
+    return request<{
+      hasFigmaToken: boolean;
+      projectId: string | null;
+      pendingFigmaUrls: string[];
+      includeKeys: string[];
+    }>({
+      url: API.jobs.figmaStatus(id),
+      method: "GET",
+    });
+  },
+
+  figmaDetect(id: string) {
+    return request<{
+      figs: {
+        fileKey: string;
+        nodeId?: string;
+        url: string;
+        kind: string;
+        includeKey: string;
+      }[];
+      includeKeys: string[];
+      hasFigmaToken: boolean;
+    }>({
+      url: API.jobs.figmaDetect(id),
+      method: "GET",
+    });
+  },
+
+  figmaInclude(id: string, includeKeys: string[]) {
+    return request<{ ok: boolean; includeKeys: string[]; job?: unknown }>({
+      url: API.jobs.figmaInclude(id),
+      method: "PUT",
+      data: { includeKeys },
+    });
+  },
+
+  figmaContinue(id: string) {
+    return request<{
+      ok: boolean;
+      enqueued?: boolean;
+      reason?: string;
+      job?: unknown;
+    }>({
+      url: API.jobs.figmaContinue(id),
+      method: "POST",
+      data: {},
+    });
+  },
 };

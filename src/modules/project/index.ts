@@ -55,6 +55,7 @@ export function publicProject(project: Awaited<ReturnType<typeof getProject>>) {
     cloneStatus: project.cloneStatus,
     cloneError: project.cloneError ?? null,
     hasGitlabToken: Boolean(project.gitlabTokenEnc),
+    hasFigmaToken: Boolean(project.figmaTokenEnc),
     createdAt: project.createdAt,
     updatedAt: project.updatedAt,
   };
@@ -386,6 +387,8 @@ export type UpdateProjectBody = {
   repoPath?: string;
   localPath?: string;
   gitlabToken?: string;
+  /** Figma PAT; omit to keep; empty string clears */
+  figmaToken?: string | null;
   gitlabHost?: string;
   gitlabPath?: string;
   displayName?: string;
@@ -461,6 +464,14 @@ export async function updateOwnedProject(
         : {}),
       ...(body.gitlabToken?.trim()
         ? { gitlabToken: body.gitlabToken.trim() }
+        : {}),
+      ...(Object.prototype.hasOwnProperty.call(body, "figmaToken")
+        ? {
+            figmaToken:
+              body.figmaToken === null || body.figmaToken === ""
+                ? null
+                : String(body.figmaToken).trim() || null,
+          }
         : {}),
       ...(body.gitlabHost?.trim() ? { gitlabHost: body.gitlabHost } : {}),
       ...(body.gitlabPath?.trim() ? { gitlabPath: body.gitlabPath } : {}),
