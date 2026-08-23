@@ -10,10 +10,12 @@ import {
   redactJobGoogleAuthForClient,
   revokeGoogleToken,
   ensureJobGoogleAccessToken,
+  ensureGoogleAccessTokenFromAuth,
 } from "../../plugins/google/oauth.js";
 import {
   consumeGoogleOAuthState,
   createGoogleOAuthState,
+  createBaGoogleOAuthState,
 } from "../../plugins/google/oauth-state.js";
 import {
   collectSheetRefsFromTexts,
@@ -24,10 +26,19 @@ import {
 import { decryptSecret } from "../../plugins/crypto/secrets.js";
 import { addChatMessage, listChatMessages } from "../../db/mongo.js";
 import { requireJobRecord } from "../job/lifecycle.js";
-import { resolveDevNotes, type JobRecord } from "../../types.js";
+import {
+  resolveDevNotes,
+  type JobGoogleAuth,
+  type JobRecord,
+} from "../../types.js";
 import { AppError } from "../../utils/AppError.js";
 import { getRuntimeContext } from "../../workspace/runtime.js";
 import { logger } from "../../logger.js";
+import {
+  clearUserGoogleAuth,
+  getUserByUsername,
+  setUserGoogleAuth,
+} from "../../workspace/store.js";
 
 export {
   isGoogleOAuthConfigured,
@@ -94,9 +105,44 @@ export async function handleGoogleOAuthCallback(input: {
       message: "OAuth state expired or invalid — close and try Authorize again",
     };
   }
+
+  // BA Settings OAuth (Docs / Sheets / Drive)
+  if (payload.purpose === "ba") {
+    try {
+      const tokens = await exchangeGoogleCode(code);
+      const auth = buildEncryptedGoogleAuth({
+        refreshToken: tokens.refreshToken,
+        accessToken: tokens.accessToken,
+        expiresIn: tokens.expiresIn,
+        scopes: tokens.scopes,
+        email: tokens.email,
+        sheetIds: [],
+      });
+      await setUserGoogleAuth(payload.ownerUsername, auth);
+      logger.info("Google OAuth saved for BA user", {
+        user: payload.ownerUsername,
+        email: tokens.email,
+      });
+      return {
+        ok: true,
+        message:
+          "Google authorized for BA — Docs / Sheets / Excel trên Drive có thể đọc từ YC & chat.",
+      };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.warn("BA Google OAuth callback failed", { err: msg });
+      return { ok: false, message: msg };
+    }
+  }
+
+  const jobId = (payload.jobId || "").trim();
+  if (!jobId) {
+    return { ok: false, message: "OAuth state missing jobId" };
+  }
+
   try {
     const tokens = await exchangeGoogleCode(code);
-    const job = await requireJobRecord(payload.jobId);
+    const job = await requireJobRecord(jobId);
     const sheetIds = [
       ...new Set([
         ...(job.googleAuth?.sheetIds ?? []),
@@ -142,7 +188,7 @@ export async function handleGoogleOAuthCallback(input: {
     logger.warn("Google OAuth callback failed", { err: String(err) });
     const msg = err instanceof Error ? err.message : String(err);
     try {
-      const job = await requireJobRecord(payload.jobId);
+      const job = await requireJobRecord(jobId);
       await addChatMessage({
         jobId: job.id,
         issueIid: job.issue.issueIid,
@@ -155,7 +201,7 @@ export async function handleGoogleOAuthCallback(input: {
     }
     return {
       ok: false,
-      jobId: payload.jobId,
+      jobId,
       message: msg,
     };
   }
@@ -497,4 +543,71 @@ function escapeHtml(s: string): string {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+/* ── BA user Google (Docs / Sheets / Drive Excel) ── */
+
+export async function getBaGoogleAuthUrl(username: string): Promise<{
+  authUrl: string;
+  state: string;
+  configured: boolean;
+}> {
+  if (!isGoogleOAuthConfigured()) {
+    throw new AppError(
+      "Google OAuth is not configured on the server",
+      503,
+      "google_oauth_unconfigured",
+    );
+  }
+  const owner = username.trim().toLowerCase().replace(/^@/, "");
+  if (!owner) throw new AppError("Missing user", 401);
+  const state = createBaGoogleOAuthState({ ownerUsername: owner });
+  return {
+    authUrl: buildGoogleAuthUrl(state),
+    state,
+    configured: true,
+  };
+}
+
+export async function getBaGoogleStatus(username: string) {
+  const user = await getUserByUsername(username);
+  const auth = user?.googleAuth as JobGoogleAuth | undefined;
+  const authorized = Boolean(auth?.refreshTokenEnc && !auth.revokedAt);
+  return {
+    configured: isGoogleOAuthConfigured(),
+    authorized,
+    email: authorized ? auth?.email : undefined,
+    scopes: auth?.scopes ?? [],
+    authorizedAt: auth?.authorizedAt,
+  };
+}
+
+export async function revokeBaGoogleAuth(username: string) {
+  const user = await getUserByUsername(username);
+  const auth = user?.googleAuth as JobGoogleAuth | undefined;
+  if (auth?.refreshTokenEnc) {
+    try {
+      await revokeGoogleToken(decryptSecret(auth.refreshTokenEnc));
+    } catch {
+      /* ignore */
+    }
+  }
+  await clearUserGoogleAuth(username);
+  return { ok: true };
+}
+
+/** Resolve BA user Google access token (refresh + persist if needed). */
+export async function resolveBaUserGoogleAccessToken(
+  username: string,
+): Promise<string | null> {
+  const user = await getUserByUsername(username);
+  if (!user?.googleAuth) return null;
+  const result = await ensureGoogleAccessTokenFromAuth(
+    user.googleAuth as JobGoogleAuth,
+  );
+  if (!result.ok) return null;
+  if (result.refreshed) {
+    await setUserGoogleAuth(username, result.auth);
+  }
+  return result.accessToken;
 }

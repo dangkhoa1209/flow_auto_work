@@ -98,6 +98,69 @@ export type RealtimeEvent =
         | "error";
       label: string;
       detail?: string;
+    }
+  | {
+      type: "ba_issue_draft_progress";
+      userId: string;
+      threadId: string;
+      label: string;
+      step?: string;
+    }
+  | {
+      type: "ba_issue_draft_done";
+      userId: string;
+      threadId: string;
+      baProjectId: string;
+      cached: boolean;
+      draft: {
+        title: string;
+        description: string;
+        labels: string[];
+        acceptanceCriteria: string[];
+      };
+    }
+  | {
+      type: "ba_issue_draft_error";
+      userId: string;
+      threadId: string;
+      error: string;
+    }
+  | {
+      type: "ba_wf_step_progress";
+      userId: string;
+      requirementId: string;
+      step: string;
+      label: string;
+    }
+  | {
+      type: "ba_wf_step_done";
+      userId: string;
+      requirementId: string;
+      step: string;
+      requirement: {
+        id: string;
+        title: string;
+        status: string;
+        steps: Array<{ key: string; content: string; ranAt: string }>;
+      };
+      taskDrafts: Array<{
+        id: string;
+        title: string;
+        status: string;
+        gitlabIid?: number | null;
+        gitlabUrl?: string | null;
+      }>;
+      gate: {
+        status: "ok" | "blocked" | "invalid";
+        openQuestions: string[];
+      };
+    }
+  | {
+      type: "ba_wf_step_error";
+      userId: string;
+      requirementId: string;
+      step: string;
+      error: string;
     };
 
 type Listener = (event: RealtimeEvent) => void;

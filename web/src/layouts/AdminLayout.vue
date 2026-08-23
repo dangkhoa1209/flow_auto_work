@@ -13,6 +13,7 @@ const tabs = [
   { to: "/admin", label: "Projects", exact: true },
   { to: "/admin/cursor", label: "Cursor key" },
   { to: "/admin/task-types", label: "Task labels" },
+  { to: "/admin/ba-features", label: "Tính năng BA" },
 ];
 
 async function logout() {

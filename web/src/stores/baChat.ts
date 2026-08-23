@@ -21,6 +21,22 @@ export type BaProject = {
   };
 };
 
+export type BaFeatureState = "hide" | "lab" | "production";
+
+export type BaFeatureKey = "createIssue" | "workflow" | "tasks";
+
+export type BaFeatures = {
+  flags: Record<BaFeatureKey, BaFeatureState>;
+  workflowTabLabel: string;
+  devMode: boolean;
+};
+
+const DEFAULT_BA_FEATURES: BaFeatures = {
+  flags: { createIssue: "hide", workflow: "hide", tasks: "hide" },
+  workflowTabLabel: "Phân tích YC",
+  devMode: false,
+};
+
 export type BaThread = {
   id: string;
   userId: string;
@@ -80,6 +96,42 @@ export const useBaChatStore = defineStore("baChat", () => {
   const progressVisible = ref(false);
   /** BA analysis mode — agent acts as real BA for requirements analysis */
   const analysisMode = ref(safeGetItem("flow_ba_analysis_mode") === "1");
+  /** Feature flags do admin cấu hình (hide|lab|production), dev mode mở hết */
+  const features = ref<BaFeatures>({ ...DEFAULT_BA_FEATURES });
+  const featuresLoaded = ref(false);
+
+  /** Create-issue from thread: agent runs in background; modal waits on SSE */
+  const issueDrafting = ref(false);
+  const issueDraftThreadId = ref<string | null>(null);
+  const issueDraftLabel = ref("");
+  const issueDraftError = ref("");
+  const issueDraftResult = ref<{
+    threadId: string;
+    baProjectId: string;
+    cached: boolean;
+    draft: {
+      title: string;
+      description: string;
+      labels: string[];
+      acceptanceCriteria: string[];
+    };
+  } | null>(null);
+
+  function clearIssueDraft() {
+    issueDrafting.value = false;
+    issueDraftThreadId.value = null;
+    issueDraftLabel.value = "";
+    issueDraftError.value = "";
+    issueDraftResult.value = null;
+  }
+
+  function beginIssueDraft(threadId: string) {
+    issueDrafting.value = true;
+    issueDraftThreadId.value = threadId;
+    issueDraftLabel.value = "Đang review hội thoại…";
+    issueDraftError.value = "";
+    issueDraftResult.value = null;
+  }
 
   function setAnalysisMode(on: boolean) {
     analysisMode.value = on;
@@ -123,9 +175,29 @@ export const useBaChatStore = defineStore("baChat", () => {
     else safeRemoveItem("flow_ba_project_id");
   }
 
+  /** Tính năng có hiển thị với người dùng không (lab vẫn hiện, kèm nhãn). */
+  function featureVisible(key: BaFeatureKey): boolean {
+    return features.value.flags[key] !== "hide";
+  }
+
+  /** Nhãn kèm "(lab)" khi tính năng đang thử nghiệm. */
+  function featureLabel(key: BaFeatureKey, base: string): string {
+    return features.value.flags[key] === "lab" ? `${base} (lab)` : base;
+  }
+
   async function loadProjects() {
-    const data = await api<{ projects?: BaProject[] }>(API.ba.projects);
+    const data = await api<{ projects?: BaProject[]; features?: BaFeatures }>(
+      API.ba.projects,
+    );
     projects.value = data.projects || [];
+    if (data.features) {
+      features.value = {
+        ...DEFAULT_BA_FEATURES,
+        ...data.features,
+        flags: { ...DEFAULT_BA_FEATURES.flags, ...(data.features.flags || {}) },
+      };
+    }
+    featuresLoaded.value = true;
     if (
       selectedProjectId.value &&
       !projects.value.some((p) => p.id === selectedProjectId.value)
@@ -166,6 +238,8 @@ export const useBaChatStore = defineStore("baChat", () => {
   /** Clear all BA chat state (call on logout / user switch). */
   function reset() {
     projects.value = [];
+    features.value = { ...DEFAULT_BA_FEATURES };
+    featuresLoaded.value = false;
     threads.value = [];
     activeThreadId.value = null;
     messages.value = [];
@@ -175,6 +249,7 @@ export const useBaChatStore = defineStore("baChat", () => {
     loading.value = false;
     errorText.value = "";
     clearProgress();
+    clearIssueDraft();
   }
 
   async function stop() {
@@ -302,12 +377,21 @@ export const useBaChatStore = defineStore("baChat", () => {
     }
   }
 
+  /** Thread thuộc tab Chat (đã load) — bỏ qua SSE của chat workflow. */
+  function isChatTabThread(threadId: string): boolean {
+    return (
+      threadId === activeThreadId.value ||
+      threads.value.some((t) => t.id === threadId)
+    );
+  }
+
   function applyBaMessage(ev: {
     userId: string;
     threadId: string;
     message: BaMessage;
   }) {
     if (!isMyEvent(ev.userId)) return;
+    if (!isChatTabThread(ev.threadId)) return;
     if (ev.threadId !== activeThreadId.value) {
       void loadThreads();
       return;
@@ -365,6 +449,7 @@ export const useBaChatStore = defineStore("baChat", () => {
     content: string;
   }) {
     if (!isMyEvent(ev.userId)) return;
+    if (!isChatTabThread(ev.threadId)) return;
     if (ev.threadId === activeThreadId.value) {
       const idx = messages.value.findIndex((m) => m.id === ev.messageId);
       const prev = idx >= 0 ? messages.value[idx].content : "";
@@ -411,6 +496,7 @@ export const useBaChatStore = defineStore("baChat", () => {
     error: string;
   }) {
     if (!isMyEvent(ev.userId)) return;
+    if (!isChatTabThread(ev.threadId)) return;
     if (ev.threadId === activeThreadId.value) {
       errorText.value = ev.error;
       if (ev.messageId) {
@@ -436,6 +522,7 @@ export const useBaChatStore = defineStore("baChat", () => {
     detail?: string;
   }) {
     if (!isMyEvent(ev.userId)) return;
+    if (!isChatTabThread(ev.threadId)) return;
     if (ev.threadId !== activeThreadId.value) return;
     progressVisible.value = true;
     const item: BaProgressItem = {
@@ -452,6 +539,71 @@ export const useBaChatStore = defineStore("baChat", () => {
         if (!streaming.value) clearProgress();
       }, 900);
     }
+  }
+
+  function applyBaIssueDraftProgress(ev: {
+    userId: string;
+    threadId: string;
+    label: string;
+    step?: string;
+  }) {
+    if (!isMyEvent(ev.userId)) return;
+    if (
+      issueDraftThreadId.value &&
+      ev.threadId !== issueDraftThreadId.value
+    ) {
+      return;
+    }
+    issueDrafting.value = true;
+    issueDraftThreadId.value = ev.threadId;
+    issueDraftLabel.value = ev.label || "Đang soạn issue…";
+  }
+
+  function applyBaIssueDraftDone(ev: {
+    userId: string;
+    threadId: string;
+    baProjectId: string;
+    cached: boolean;
+    draft: {
+      title: string;
+      description: string;
+      labels: string[];
+      acceptanceCriteria: string[];
+    };
+  }) {
+    if (!isMyEvent(ev.userId)) return;
+    if (
+      issueDraftThreadId.value &&
+      ev.threadId !== issueDraftThreadId.value
+    ) {
+      return;
+    }
+    issueDraftResult.value = {
+      threadId: ev.threadId,
+      baProjectId: ev.baProjectId,
+      cached: ev.cached,
+      draft: ev.draft,
+    };
+    issueDrafting.value = false;
+    issueDraftLabel.value = "";
+    issueDraftError.value = "";
+  }
+
+  function applyBaIssueDraftError(ev: {
+    userId: string;
+    threadId: string;
+    error: string;
+  }) {
+    if (!isMyEvent(ev.userId)) return;
+    if (
+      issueDraftThreadId.value &&
+      ev.threadId !== issueDraftThreadId.value
+    ) {
+      return;
+    }
+    issueDraftError.value = ev.error;
+    issueDrafting.value = false;
+    issueDraftLabel.value = "";
   }
 
   async function bootstrap() {
@@ -487,6 +639,10 @@ export const useBaChatStore = defineStore("baChat", () => {
     progressVisible,
     analysisMode,
     setAnalysisMode,
+    features,
+    featuresLoaded,
+    featureVisible,
+    featureLabel,
     currentProgressLabel,
     progressPct,
     projectReady,
@@ -505,5 +661,15 @@ export const useBaChatStore = defineStore("baChat", () => {
     applyBaDone,
     applyBaError,
     applyBaProgress,
+    issueDrafting,
+    issueDraftThreadId,
+    issueDraftLabel,
+    issueDraftError,
+    issueDraftResult,
+    beginIssueDraft,
+    clearIssueDraft,
+    applyBaIssueDraftProgress,
+    applyBaIssueDraftDone,
+    applyBaIssueDraftError,
   };
 });

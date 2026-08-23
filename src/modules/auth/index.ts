@@ -14,6 +14,11 @@ import {
   REFRESH_TTL_SEC,
 } from "../../auth/tokens.js";
 import {
+  AUTH_USERNAME_HINT,
+  isValidAuthUsername,
+  normalizeAuthUsername,
+} from "../../auth/username.js";
+import {
   createOrUpdateUserPassword,
   getUserByUsername,
   upsertUserLogin,
@@ -81,7 +86,7 @@ export type RegisterBody = {
 
 /** Register new username + password, then issue tokens (same shape as login). */
 export async function registerUser(body: RegisterBody) {
-  const username = (body.username || "").trim().replace(/^@/, "");
+  const username = normalizeAuthUsername(body.username || "");
   const password = body.password ?? "";
   const displayName = body.displayName?.trim();
   const roleRaw = (body.role || "dev").trim().toLowerCase();
@@ -89,11 +94,8 @@ export async function registerUser(body: RegisterBody) {
   if (!username) {
     throw new AppError("username required", 400);
   }
-  if (!/^[a-zA-Z0-9._-]{3,32}$/.test(username)) {
-    throw new AppError(
-      "Username must be 3–32 characters: letters, numbers, dot, underscore, hyphen",
-      400,
-    );
+  if (!isValidAuthUsername(username)) {
+    throw new AppError(AUTH_USERNAME_HINT, 400);
   }
   if (password.length < 6) {
     throw new AppError("Password must be at least 6 characters", 400);
@@ -142,9 +144,9 @@ export type LoginBody = {
  * If AUTH_BYPASS_PASSWORD is set and matches, skip passwordHash check.
  */
 export async function loginUser(body: LoginBody) {
-  const username = (body.username || body.gitlabUsername || "")
-    .trim()
-    .replace(/^@/, "");
+  const username = normalizeAuthUsername(
+    body.username || body.gitlabUsername || "",
+  );
   const password = body.password ?? "";
   if (!username) {
     throw new AppError("username required", 400);

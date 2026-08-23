@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   BA_GITLAB_INTERACTION_ENABLED,
   baGitlabBoundaryInstructions,
+  baIntentTriageGate,
 } from "../baChat.js";
 import {
   extractBaIssueRefs,
@@ -18,6 +19,17 @@ describe("baGitlabBoundaryInstructions", () => {
     expect(text).toMatch(/GitLab đọc \(được phép\)/);
     expect(text).toMatch(/link issue/);
     expect(text).not.toMatch(/gợi ý tạo ticket cho Dev/);
+  });
+});
+
+describe("baIntentTriageGate", () => {
+  it("requires triage before codebase scan and BA templates", () => {
+    const text = baIntentTriageGate();
+    expect(text).toMatch(/INTENT TRIAGE & SANITY CHECK/);
+    expect(text).toMatch(/GREETING \/ CASUAL \/ NOISE/);
+    expect(text).toMatch(/INSUFFICIENT CONTEXT/);
+    expect(text).toMatch(/FULL BA PIPELINE/);
+    expect(text).toMatch(/KHÔNG scan codebase/);
   });
 });
 

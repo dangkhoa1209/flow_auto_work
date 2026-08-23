@@ -56,4 +56,12 @@ export const adminController = {
   putTaskTypeLabels: asyncHandler(async (req: Request, res: Response) => {
     res.json(await admin.adminUpdateTaskTypeLabels(req.body || {}));
   }),
+
+  getBaFeatures: asyncHandler(async (_req: Request, res: Response) => {
+    res.json(await admin.adminGetBaFeatures());
+  }),
+
+  putBaFeatures: asyncHandler(async (req: Request, res: Response) => {
+    res.json(await admin.adminUpdateBaFeatures(req.body || {}));
+  }),
 };

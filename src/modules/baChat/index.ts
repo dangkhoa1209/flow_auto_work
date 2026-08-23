@@ -4,6 +4,7 @@ import {
   deleteBaThread,
   getBaProject,
   getBaThread,
+  getEffectiveBaFeatures,
   listBaMessages,
   listBaProjects,
   listBaThreads,
@@ -13,6 +14,7 @@ import { isGitRepo } from "../../workspace/clone.js";
 import { AppError } from "../../utils/AppError.js";
 import { publishRealtime } from "../../plugins/realtime/hub.js";
 import { kickBaChatAnswer, stopBaThreadAgent } from "../../plugins/agent/baChat.js";
+import { getWorkflowChatContext } from "../baWorkbench/index.js";
 
 export async function baStopThread(userId: string, threadId: string) {
   const thread = await getBaThread(threadId);
@@ -33,6 +35,7 @@ export async function baListProjects() {
           p.cloneStatus === "ready" && (await isGitRepo(p.localPath)),
       })),
     ),
+    features: await getEffectiveBaFeatures(),
   };
 }
 
@@ -109,6 +112,9 @@ export async function baSendMessage(
     message: userMsg,
   });
 
+  // Thread gắn YC workflow → chat có thể cập nhật thẳng Kết quả phân tích.
+  const workflowCtx = await getWorkflowChatContext(userId, threadId);
+
   kickBaChatAnswer({
     userId: userId.toLowerCase(),
     threadId,
@@ -116,6 +122,8 @@ export async function baSendMessage(
     question: content,
     isFirstUserMessage: existing.filter((m) => m.role === "user").length === 0,
     analysisMode: Boolean(body.analysisMode),
+    workflowBlock: workflowCtx?.workflowBlock,
+    postProcessAnswer: workflowCtx?.postProcessAnswer,
   });
 
   return {

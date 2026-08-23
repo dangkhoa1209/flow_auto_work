@@ -53,7 +53,7 @@ export async function updateMySecrets(
     body.cursorModel === undefined
   ) {
     throw new AppError(
-      "Provide cursorApiKey and/or cursorModel (GitLab PAT → project settings)",
+      "Provide gitlabToken, cursorApiKey and/or cursorModel",
       400,
     );
   }

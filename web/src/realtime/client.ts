@@ -93,6 +93,61 @@ export type RealtimeBaProgress = {
   detail?: string;
 };
 
+export type RealtimeBaIssueDraftProgress = {
+  type: "ba_issue_draft_progress";
+  userId: string;
+  threadId: string;
+  label: string;
+  step?: string;
+};
+
+export type RealtimeBaIssueDraftDone = {
+  type: "ba_issue_draft_done";
+  userId: string;
+  threadId: string;
+  baProjectId: string;
+  cached: boolean;
+  draft: {
+    title: string;
+    description: string;
+    labels: string[];
+    acceptanceCriteria: string[];
+  };
+};
+
+export type RealtimeBaIssueDraftError = {
+  type: "ba_issue_draft_error";
+  userId: string;
+  threadId: string;
+  error: string;
+};
+
+export type RealtimeBaWfStepProgress = {
+  type: "ba_wf_step_progress";
+  userId: string;
+  requirementId: string;
+  step: string;
+  label: string;
+};
+
+export type RealtimeBaWfStepDone = {
+  type: "ba_wf_step_done";
+  userId: string;
+  requirementId: string;
+  step: string;
+  requirement: import("@/api/baApi").BaRequirement;
+  taskDrafts: import("@/api/baApi").BaTaskDraft[];
+  gate: { status: "ok" | "blocked" | "invalid"; openQuestions: string[] };
+};
+
+export type RealtimeBaWfStepError = {
+  type: "ba_wf_step_error";
+  userId: string;
+  requirementId: string;
+  step: string;
+  error: string;
+};
+
 type Handlers = {
   onStatus?: (ev: RealtimeStatus) => void;
   onProgress?: (ev: RealtimeProgress) => void;
@@ -104,6 +159,12 @@ type Handlers = {
   onBaDone?: (ev: RealtimeBaDone) => void;
   onBaError?: (ev: RealtimeBaError) => void;
   onBaProgress?: (ev: RealtimeBaProgress) => void;
+  onBaIssueDraftProgress?: (ev: RealtimeBaIssueDraftProgress) => void;
+  onBaIssueDraftDone?: (ev: RealtimeBaIssueDraftDone) => void;
+  onBaIssueDraftError?: (ev: RealtimeBaIssueDraftError) => void;
+  onBaWfStepProgress?: (ev: RealtimeBaWfStepProgress) => void;
+  onBaWfStepDone?: (ev: RealtimeBaWfStepDone) => void;
+  onBaWfStepError?: (ev: RealtimeBaWfStepError) => void;
   onOpen?: () => void;
   onError?: () => void;
 };
@@ -222,6 +283,60 @@ export function connectRealtime(handlers: Handlers): () => void {
       try {
         handlers.onBaProgress?.(
           JSON.parse((e as MessageEvent).data) as RealtimeBaProgress,
+        );
+      } catch {
+        /* ignore */
+      }
+    });
+    source.addEventListener("ba_issue_draft_progress", (e) => {
+      try {
+        handlers.onBaIssueDraftProgress?.(
+          JSON.parse((e as MessageEvent).data) as RealtimeBaIssueDraftProgress,
+        );
+      } catch {
+        /* ignore */
+      }
+    });
+    source.addEventListener("ba_issue_draft_done", (e) => {
+      try {
+        handlers.onBaIssueDraftDone?.(
+          JSON.parse((e as MessageEvent).data) as RealtimeBaIssueDraftDone,
+        );
+      } catch {
+        /* ignore */
+      }
+    });
+    source.addEventListener("ba_issue_draft_error", (e) => {
+      try {
+        handlers.onBaIssueDraftError?.(
+          JSON.parse((e as MessageEvent).data) as RealtimeBaIssueDraftError,
+        );
+      } catch {
+        /* ignore */
+      }
+    });
+    source.addEventListener("ba_wf_step_progress", (e) => {
+      try {
+        handlers.onBaWfStepProgress?.(
+          JSON.parse((e as MessageEvent).data) as RealtimeBaWfStepProgress,
+        );
+      } catch {
+        /* ignore */
+      }
+    });
+    source.addEventListener("ba_wf_step_done", (e) => {
+      try {
+        handlers.onBaWfStepDone?.(
+          JSON.parse((e as MessageEvent).data) as RealtimeBaWfStepDone,
+        );
+      } catch {
+        /* ignore */
+      }
+    });
+    source.addEventListener("ba_wf_step_error", (e) => {
+      try {
+        handlers.onBaWfStepError?.(
+          JSON.parse((e as MessageEvent).data) as RealtimeBaWfStepError,
         );
       } catch {
         /* ignore */

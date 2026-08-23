@@ -250,6 +250,39 @@ export async function clearCursorApiKey(
   return toPublicUser(updated);
 }
 
+export async function setUserGoogleAuth(
+  username: string,
+  googleAuth: WorkspaceUser["googleAuth"],
+): Promise<WorkspaceUserPublic> {
+  const id = normUserId(username);
+  const existing = await getUserByUsername(id);
+  if (!existing) throw new Error("User not found");
+  const now = new Date().toISOString();
+  existing.googleAuth = googleAuth;
+  existing.updatedAt = now;
+  await (await usersCol()).updateOne(
+    { id },
+    { $set: { googleAuth, updatedAt: now } },
+  );
+  return toPublicUser(existing);
+}
+
+export async function clearUserGoogleAuth(
+  username: string,
+): Promise<WorkspaceUserPublic> {
+  const id = normUserId(username);
+  const existing = await getUserByUsername(id);
+  if (!existing) throw new Error("User not found");
+  const now = new Date().toISOString();
+  await (await usersCol()).updateOne(
+    { id },
+    { $unset: { googleAuth: "" }, $set: { updatedAt: now } },
+  );
+  const updated = await getUserByUsername(id);
+  if (!updated) throw new Error("User not found after clear");
+  return toPublicUser(updated);
+}
+
 /** Cursor key from user; GitLab token from project if projectId given, else user legacy / active project. */
 export async function getUserSecrets(
   username: string,

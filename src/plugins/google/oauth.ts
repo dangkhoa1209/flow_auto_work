@@ -186,16 +186,15 @@ export function buildEncryptedGoogleAuth(input: {
 }
 
 /**
- * Return a valid access token for the job, refreshing when near expiry.
- * Clears googleAuth token fields (keeps email/sheetIds metadata cleared too) on failure → caller gates.
+ * Return a valid access token from stored auth, refreshing when near expiry.
+ * Does not persist — caller must save `auth` if refreshed.
  */
-export async function ensureJobGoogleAccessToken(
-  job: JobRecord,
+export async function ensureGoogleAccessTokenFromAuth(
+  auth: JobGoogleAuth | undefined | null,
 ): Promise<
-  | { ok: true; accessToken: string; auth: JobGoogleAuth }
+  | { ok: true; accessToken: string; auth: JobGoogleAuth; refreshed: boolean }
   | { ok: false; reason: "missing" | "refresh_failed" }
 > {
-  const auth = job.googleAuth;
   if (!auth?.refreshTokenEnc || auth.revokedAt) {
     return { ok: false, reason: "missing" };
   }
@@ -213,6 +212,7 @@ export async function ensureJobGoogleAccessToken(
         ok: true,
         accessToken: decryptSecret(auth.accessTokenEnc),
         auth,
+        refreshed: false,
       };
     }
     const refreshToken = decryptSecret(auth.refreshTokenEnc);
@@ -226,15 +226,38 @@ export async function ensureJobGoogleAccessToken(
       sheetIds: auth.sheetIds,
       previous: auth,
     });
-    job.googleAuth = next;
-    return { ok: true, accessToken: refreshed.accessToken, auth: next };
+    return {
+      ok: true,
+      accessToken: refreshed.accessToken,
+      auth: next,
+      refreshed: true,
+    };
   } catch (err) {
-    logger.warn("Google access token refresh failed", {
-      jobId: job.id,
-      err: String(err),
-    });
+    logger.warn("Google access token refresh failed", { err: String(err) });
     return { ok: false, reason: "refresh_failed" };
   }
+}
+
+/**
+ * Return a valid access token for the job, refreshing when near expiry.
+ * Clears googleAuth token fields (keeps email/sheetIds metadata cleared too) on failure → caller gates.
+ */
+export async function ensureJobGoogleAccessToken(
+  job: JobRecord,
+): Promise<
+  | { ok: true; accessToken: string; auth: JobGoogleAuth }
+  | { ok: false; reason: "missing" | "refresh_failed" }
+> {
+  const result = await ensureGoogleAccessTokenFromAuth(job.googleAuth);
+  if (!result.ok) {
+    logger.warn("Google access token refresh failed", {
+      jobId: job.id,
+      reason: result.reason,
+    });
+    return result;
+  }
+  if (result.refreshed) job.googleAuth = result.auth;
+  return { ok: true, accessToken: result.accessToken, auth: result.auth };
 }
 
 /** Best-effort revoke at Google; always safe to clear local tokens after. */

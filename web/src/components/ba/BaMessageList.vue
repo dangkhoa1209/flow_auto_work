@@ -2,6 +2,7 @@
 import { ref, watch } from "vue";
 import ChatMessageBody from "@/components/ChatMessageBody.vue";
 import { useAutoScroll } from "@/composables/useAutoScroll";
+import { formatChatTime } from "@/utils/formatChatTime";
 import type { BaMessage } from "@/stores/baChat";
 
 const props = defineProps<{
@@ -81,6 +82,13 @@ function whoLabel(role: string) {
             progressHint || "đang suy nghĩ…"
           }}</span>
         </template>
+        <time
+          v-if="formatChatTime(m.createdAt)"
+          class="faw-msg__time"
+          :datetime="m.createdAt"
+        >
+          {{ formatChatTime(m.createdAt) }}
+        </time>
       </div>
     </div>
   </div>

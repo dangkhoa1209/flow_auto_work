@@ -8,7 +8,7 @@ export type GoogleSheetRef = {
 };
 
 const SHEET_URL_RE =
-  /https?:\/\/(?:docs\.google\.com\/spreadsheets\/d\/|drive\.google\.com\/open\?id=)([a-zA-Z0-9-_]+)[^\s)\]>"']*/gi;
+  /https?:\/\/(?:docs\.google\.com\/spreadsheets\/d\/|drive\.google\.com\/(?:open\?id=|file\/d\/))([a-zA-Z0-9-_]+)[^\s)\]>"']*/gi;
 
 const MAX_ROWS = 200;
 const MAX_COLS = 40;

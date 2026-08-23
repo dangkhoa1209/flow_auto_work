@@ -1,33 +1,11 @@
 <script setup lang="ts">
-import { computed, inject } from "vue";
+import { inject } from "vue";
 import { Modal, message } from "ant-design-vue";
 import { PlusOutlined, DeleteOutlined } from "@ant-design/icons-vue";
 import { useBaChatStore } from "@/stores/baChat";
 
 const ba = useBaChatStore();
 const closeSide = inject<() => void>("baCloseSide", () => undefined);
-
-const projectOptions = computed(() =>
-  ba.projects.map((p) => {
-    const dbTag = p.db?.enabled ? " · DB" : "";
-    const base = p.ready
-      ? `${p.displayName}${dbTag}`
-      : `${p.displayName} (${p.cloneStatus})`;
-    return {
-      value: p.id,
-      label: base,
-      disabled: !p.ready,
-    };
-  }),
-);
-
-async function onProjectChange(id: string) {
-  try {
-    await ba.selectProject(id);
-  } catch (e) {
-    message.error(e instanceof Error ? e.message : String(e));
-  }
-}
 
 async function onNewChat() {
   try {
@@ -82,22 +60,10 @@ function formatTime(iso: string) {
     </div>
 
     <div class="faw-filters faw-ba-filters">
-      <label class="faw-ba-label">Project</label>
-      <a-select
-        :value="ba.selectedProjectId || undefined"
-        :options="projectOptions"
-        placeholder="Select project"
-        class="w-full faw-ba-select"
-        size="small"
-        :disabled="!ba.projects.length"
-        show-search
-        option-filter-prop="label"
-        @update:value="onProjectChange"
-      />
       <a-tooltip
         :title="
           !ba.selectedProjectId
-            ? 'Chọn project trước'
+            ? 'Chọn project ở thanh trên cùng'
             : !ba.projectReady
               ? 'Project chưa sẵn sàng — liên hệ admin'
               : 'Bắt đầu hội thoại mới'

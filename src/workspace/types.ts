@@ -25,6 +25,20 @@ export type WorkspaceUser = {
   gitlabTokenEnc?: string;
   cursorApiKeyEnc?: string;
   cursorModel?: string;
+  /**
+   * Google OAuth (BA / shared) — đọc Docs, Sheets, Excel trên Drive.
+   * Shape giống JobGoogleAuth.
+   */
+  googleAuth?: {
+    email?: string;
+    refreshTokenEnc: string;
+    accessTokenEnc?: string;
+    accessExpiresAt?: string;
+    scopes: string[];
+    sheetIds?: string[];
+    authorizedAt: string;
+    revokedAt?: string;
+  };
   /** Capability roles — include `"qc"` for QC Automation APIs */
   roles?: UserRole[];
   /**
@@ -52,6 +66,8 @@ export type WorkspaceUserPublic = {
   displayName?: string;
   hasGitlabToken: boolean;
   hasCursorApiKey: boolean;
+  hasGoogleAuth: boolean;
+  googleEmail?: string;
   hasPassword: boolean;
   cursorModel: string;
   roles: UserRole[];
@@ -179,12 +195,16 @@ export function baProjectLocalPath(slug: string): string {
 }
 
 export function toPublicUser(u: WorkspaceUser): WorkspaceUserPublic {
+  const g = u.googleAuth;
+  const hasGoogleAuth = Boolean(g?.refreshTokenEnc && !g.revokedAt);
   return {
     id: u.id,
     gitlabUsername: u.gitlabUsername,
     displayName: u.displayName,
     hasGitlabToken: Boolean(u.gitlabTokenEnc),
     hasCursorApiKey: Boolean(u.cursorApiKeyEnc),
+    hasGoogleAuth,
+    googleEmail: hasGoogleAuth ? g?.email : undefined,
     hasPassword: Boolean(u.passwordHash),
     cursorModel: u.cursorModel?.trim() || "auto",
     roles: normalizeUserRoles(u.roles),

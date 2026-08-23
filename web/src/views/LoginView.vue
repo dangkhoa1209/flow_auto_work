@@ -277,11 +277,11 @@ async function onRegister(e?: Event) {
           @submit.prevent="onLogin"
         >
           <label class="faw-login__field">
-            <span>Username</span>
+            <span>Username or email</span>
             <a-input
               v-model:value="form.username"
               autocomplete="username"
-              placeholder="@username"
+              placeholder="username or you@company.com"
             />
           </label>
           <label class="faw-login__field">
@@ -310,11 +310,11 @@ async function onRegister(e?: Event) {
           @submit.prevent="onRegister"
         >
           <label class="faw-login__field">
-            <span>Username</span>
+            <span>Username or email</span>
             <a-input
               v-model:value="form.username"
               autocomplete="username"
-              placeholder="3–32 characters"
+              placeholder="username or you@company.com"
             />
           </label>
           <label class="faw-login__field">

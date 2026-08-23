@@ -4,6 +4,7 @@
  */
 export const API = {
   auth: {
+    bootstrap: "/api/auth/bootstrap",
     login: "/api/auth/login",
     register: "/api/auth/register",
     refresh: "/api/auth/refresh",
@@ -16,22 +17,10 @@ export const API = {
     secrets: "/api/me/secrets",
     cursorKey: "/api/me/cursor-key",
     cursorModels: "/api/me/cursor-models",
-    qcRole: "/api/me/qc-role",
     project: (projectId: string) =>
       `/api/me/projects/${encodeURIComponent(projectId)}`,
     projectMilestones: (projectId: string) =>
       `/api/me/projects/${encodeURIComponent(projectId)}/milestones`,
-  },
-  qc: {
-    projects: "/api/qc/projects",
-    project: (id: string) => `/api/qc/projects/${encodeURIComponent(id)}`,
-    flows: "/api/qc/flows",
-    flow: (id: string) => `/api/qc/flows/${encodeURIComponent(id)}`,
-    testCases: "/api/qc/test-cases",
-    testCase: (id: string) => `/api/qc/test-cases/${encodeURIComponent(id)}`,
-    sampleFiles: "/api/qc/sample-files",
-    sampleFile: (id: string) =>
-      `/api/qc/sample-files/${encodeURIComponent(id)}`,
   },
   admin: {
     baProjects: "/api/admin/ba-projects",
@@ -45,15 +34,38 @@ export const API = {
       `/api/admin/ba-projects/${encodeURIComponent(id)}/test-db`,
     cursorSettings: "/api/admin/settings/cursor",
     taskTypeLabels: "/api/admin/settings/task-type-labels",
+    baFeatures: "/api/admin/settings/ba-features",
   },
   ba: {
     projects: "/api/ba/projects",
+    projectGitlabMeta: (id: string) =>
+      `/api/ba/projects/${encodeURIComponent(id)}/gitlab-meta`,
     threads: "/api/ba/threads",
     thread: (id: string) => `/api/ba/threads/${encodeURIComponent(id)}`,
     messages: (id: string) =>
       `/api/ba/threads/${encodeURIComponent(id)}/messages`,
     stop: (id: string) =>
       `/api/ba/threads/${encodeURIComponent(id)}/stop`,
+    draftIssue: (id: string) =>
+      `/api/ba/threads/${encodeURIComponent(id)}/draft-issue`,
+    requirements: "/api/ba/requirements",
+    requirement: (id: string) =>
+      `/api/ba/requirements/${encodeURIComponent(id)}`,
+    requirementRunStep: (id: string) =>
+      `/api/ba/requirements/${encodeURIComponent(id)}/run-step`,
+    requirementStop: (id: string) =>
+      `/api/ba/requirements/${encodeURIComponent(id)}/stop`,
+    requirementEnsureThread: (id: string) =>
+      `/api/ba/requirements/${encodeURIComponent(id)}/ensure-thread`,
+    taskDrafts: "/api/ba/task-drafts",
+    taskDraft: (id: string) =>
+      `/api/ba/task-drafts/${encodeURIComponent(id)}`,
+    taskDraftPublish: (id: string) =>
+      `/api/ba/task-drafts/${encodeURIComponent(id)}/publish`,
+    taskDraftParseChat: "/api/ba/task-drafts/parse-chat",
+    googleStatus: "/api/ba/google/status",
+    googleAuthUrl: "/api/ba/google/auth-url",
+    googleRevoke: "/api/ba/google/revoke",
   },
   projects: {
     root: "/api/projects",
@@ -171,6 +183,7 @@ export const API = {
 
 /** Endpoints that must not attach Bearer / trigger refresh */
 export const PUBLIC_AUTH_PATHS = new Set<string>([
+  API.auth.bootstrap,
   API.auth.login,
   API.auth.register,
   API.auth.refresh,

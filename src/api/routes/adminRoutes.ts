@@ -22,5 +22,8 @@ export function createAdminRoutes(): Router {
   router.get("/settings/task-type-labels", adminController.getTaskTypeLabels);
   router.put("/settings/task-type-labels", adminController.putTaskTypeLabels);
 
+  router.get("/settings/ba-features", adminController.getBaFeatures);
+  router.put("/settings/ba-features", adminController.putBaFeatures);
+
   return router;
 }

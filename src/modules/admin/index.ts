@@ -10,10 +10,14 @@ import {
   toPublicBaProject,
   toPublicSystemSettings,
   updateBaProject,
+  updateSystemBaFeatures,
   updateSystemCursorSettings,
   updateSystemTaskTypeLabels,
+  isBaDevMode,
+  normalizeBaFeatures,
   type BaDbConnectionPatch,
   type BaDbDialect,
+  type BaFeatureState,
 } from "../../workspace/baStore.js";
 import { buildOauthCloneUrl, isGitRepo, runGitClone } from "../../workspace/clone.js";
 import { AppError } from "../../utils/AppError.js";
@@ -255,4 +259,46 @@ export async function adminUpdateTaskTypeLabels(body: {
   chore?: string[];
 }) {
   return updateSystemTaskTypeLabels(body);
+}
+
+const BA_FEATURE_STATES = new Set(["hide", "lab", "production"]);
+
+export async function adminGetBaFeatures() {
+  const s = await getSystemSettings();
+  return {
+    ...normalizeBaFeatures(s.baFeatures),
+    devMode: isBaDevMode(),
+    updatedAt: s.baFeaturesUpdatedAt ?? null,
+  };
+}
+
+export async function adminUpdateBaFeatures(body: {
+  createIssue?: string;
+  workflow?: string;
+  tasks?: string;
+  workflowTabLabel?: string;
+}) {
+  const patch: Partial<Record<"createIssue" | "workflow" | "tasks", BaFeatureState>> & {
+    workflowTabLabel?: string;
+  } = {};
+  for (const key of ["createIssue", "workflow", "tasks"] as const) {
+    const value = body[key];
+    if (value === undefined) continue;
+    if (!BA_FEATURE_STATES.has(value)) {
+      throw new AppError(
+        `${key} phải là hide | lab | production`,
+        400,
+      );
+    }
+    patch[key] = value as BaFeatureState;
+  }
+  if (body.workflowTabLabel !== undefined) {
+    patch.workflowTabLabel = String(body.workflowTabLabel);
+  }
+  const settings = await updateSystemBaFeatures(patch);
+  return {
+    ...settings.baFeatures,
+    devMode: isBaDevMode(),
+    updatedAt: settings.baFeaturesUpdatedAt,
+  };
 }

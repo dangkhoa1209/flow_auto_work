@@ -20,6 +20,21 @@ const router = createRouter({
           name: "ba-chat",
           component: () => import("@/views/BaChatView.vue"),
         },
+        {
+          path: "workflow",
+          name: "ba-workflow",
+          component: () => import("@/views/BaWorkflowView.vue"),
+        },
+        {
+          path: "tasks",
+          name: "ba-tasks",
+          component: () => import("@/views/BaTasksView.vue"),
+        },
+        {
+          path: "settings",
+          name: "ba-settings",
+          component: () => import("@/views/BaSettingsView.vue"),
+        },
       ],
     },
     {
@@ -41,6 +56,11 @@ const router = createRouter({
           path: "task-types",
           name: "admin-task-types",
           component: () => import("@/views/admin/AdminTaskTypesView.vue"),
+        },
+        {
+          path: "ba-features",
+          name: "admin-ba-features",
+          component: () => import("@/views/admin/AdminBaFeaturesView.vue"),
         },
       ],
     },
@@ -64,12 +84,6 @@ const router = createRouter({
           path: "stats",
           name: "stats",
           component: () => import("@/views/StatsView.vue"),
-        },
-        {
-          path: "qc",
-          name: "qc",
-          component: () => import("@/views/QcView.vue"),
-          meta: { requiresQc: true },
         },
         {
           path: "settings",
@@ -149,9 +163,6 @@ router.beforeEach(async (to) => {
       // Admin should use Admin / BA, not WorkBench (except we block entirely)
       return { name: "admin" };
     }
-  }
-  if (to.meta.requiresQc && !session.isQc) {
-    return { name: "settings-account" };
   }
   return true;
 });

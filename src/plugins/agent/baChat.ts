@@ -26,7 +26,8 @@ import {
 import { isGitRepo } from "../../workspace/clone.js";
 import { pullBaProjectLatest } from "../git/ba-pull.js";
 import { buildBaDbCustomTools } from "../baDb/tools.js";
-import { loadBaGitlabTaskBlock } from "../gitlab/ba-issue-read.js";
+import { loadBaLinkedContext } from "../ba/ba-linked-context.js";
+import { resolveBaUserGoogleAccessToken } from "../../modules/google/index.js";
 
 /**
  * Temporary gate: BA / PD / QC chat must not create GitLab issues, comments,
@@ -43,6 +44,62 @@ export function baGitlabBoundaryInstructions(): string {
 - Không đọc hay dùng \`GITLAB_TOKEN\`, PAT, token trong git remote / \`.env\` / biến môi trường.
 - **GitLab đọc (được phép):** chỉ khi người dùng dán **link issue** hoặc **#id / issue 123**. Hệ thống đã kéo sẵn vào mục "GitLab task (chỉ đọc)" — dùng block đó, **không** tự gọi GitLab.
 - Nếu nhờ đọc task mà chưa có link/#id: hỏi họ dán link hoặc mã issue. Nếu nhờ lên task / comment GitLab: **từ chối ghi**, giải thích đang tạm khóa, đưa draft trong chat.`;
+}
+
+/** Intent triage — always run before codebase scan or BA deliverables. */
+export function baIntentTriageGate(): string {
+  return `### 🛑 CRITICAL GATE: INTENT TRIAGE & SANITY CHECK (LUÔN THỰC HIỆN TRƯỚC TIÊN)
+
+Trước khi scan codebase hoặc sinh bất kỳ BA template nào (In/Out Scope, AC, PRD, GitLab draft…),
+hãy phân loại input của user theo 3 nhóm sau. KHÔNG được bỏ qua bước này dù user có vẻ gấp.
+
+---
+
+#### 1. GREETING / CASUAL / NOISE
+**Nhận diện:** lời chào, ping, test message, gibberish, emoji đơn lẻ, hoặc câu không mang nội dung nghiệp vụ.
+Ví dụ: "hi", "hello", "alo", "test", "...", "123", "ok bạn ơi", "👋"
+
+**Hành động:**
+- KHÔNG scan codebase.
+- KHÔNG sinh bảng Scope, AC, PRD, risk report.
+- Trả lời 1–2 câu ngắn gọn, thân thiện, mời user gửi requirement.
+
+**Ví dụ output:**
+> "Chào bạn! Mình là BA Agent. Bạn gửi requirement thô, ghi chú họp, hoặc mô tả tính năng/bug cần phân tích giúp mình nhé."
+
+---
+
+#### 2. INSUFFICIENT CONTEXT (thiếu ngữ cảnh)
+**Nhận diện:** input < ~10 từ, hoặc là 1 keyword/cụm từ mơ hồ không có actor, mục tiêu, hoặc điều kiện rõ ràng.
+Ví dụ: "export excel", "fix bug login", "thêm nút lưu"
+
+**Ngoại lệ — KHÔNG tính là thiếu context nếu:**
+- Đây là câu trả lời tiếp nối cho câu hỏi làm rõ mà Agent vừa hỏi ở lượt trước (multi-turn).
+- User đính kèm file/log/link liên quan dù câu chữ ngắn.
+
+**Hành động:**
+- Đặt 1–2 câu hỏi làm rõ, giọng casual, tập trung vào: ai dùng? mục tiêu là gì? điều kiện/luồng nào?
+- KHÔNG xuất document dài dòng, KHÔNG giả định để tự vẽ ra Scope.
+
+**Ví dụ output:**
+> "Bug login này xảy ra ở bước nào vậy bạn (nhập sai OTP, session hết hạn, hay lỗi API)? Và ảnh hưởng tới flow nào — web hay app?"
+
+---
+
+#### 3. FULL BA PIPELINE (Scan code → In/Out Scope → AC → GitLab Draft)
+**Chỉ kích hoạt khi có ĐỦ các điều kiện sau:**
+- User cung cấp requirement/feature story/bug description có đủ: actor, mục tiêu/hiện tượng, và ít nhất 1 điều kiện hoặc bối cảnh cụ thể.
+- HOẶC user ra lệnh phân tích rõ ràng (vd: "/analyze", "phân tích giúp tôi req này", "viết AC cho tính năng X").
+- HOẶC đây là lượt tiếp theo sau khi user đã trả lời đủ câu hỏi làm rõ ở bước 2.
+
+**Hành động:** thực hiện đầy đủ pipeline theo quy trình chuẩn của BA Agent.
+
+---
+
+#### Nguyên tắc chung
+- Ưu tiên hỏi lại hơn là tự suy diễn khi thiếu thông tin quan trọng (đặc biệt: actor, điều kiện, phạm vi).
+- Không trộn lẫn 2 case cùng lúc (vd: vừa hỏi lại vừa xuất Scope table).
+- Nếu user dùng lệnh tắt nhưng chưa từng cung cấp context trong hội thoại, coi như case 2.`;
 }
 
 /** Cancel key for BA runs (reuse Force Stop registry). */
@@ -120,6 +177,8 @@ function buildBaPrompt(opts: {
   gitlabTaskBlock: string;
   question: string;
   analysisMode: boolean;
+  /** Context YC + Kết quả phân tích khi thread gắn với workflow YC. */
+  workflowBlock?: string;
   dbAccess: {
     allowed: boolean;
     dialect?: string;
@@ -176,11 +235,14 @@ Trả lời theo cấu trúc gọn (gia giảm theo ngữ cảnh, bỏ mục kh�
 
 ${modeBlock}
 
+${baIntentTriageGate()}
+
 ## 1. Trả lời NHANH — quy trình bắt buộc
+0. **Thực hiện INTENT TRIAGE (mục 🛑) trước.** Case 1–2: KHÔNG scan codebase. Chỉ case 3 mới được tra cứu source.
 1. **Đọc "Hội thoại trước" trước tiên.** Nếu thông tin đã có trong hội thoại (tên màn hình, luồng, kết luận đã chốt) → dùng lại ngay, KHÔNG tìm lại trong source.
-2. Nếu cần tra cứu: **tìm có chủ đích** — grep từ khóa tiếng Việt trong câu hỏi vào locale/i18n trước, rồi mở đúng 1–3 file liên quan nhất. Không quét lan man toàn repo, không đọc file không phục vụ câu hỏi.
+2. Nếu cần tra cứu (chỉ case 3): **tìm có chủ đích** — grep từ khóa tiếng Việt trong câu hỏi vào locale/i18n trước, rồi mở đúng 1–3 file liên quan nhất. Không quét lan man toàn repo, không đọc file không phục vụ câu hỏi.
 3. **Tìm đủ bằng chứng là dừng và trả lời ngay.** Không xác minh lặp lại điều đã chắc chắn.
-4. Câu hỏi rộng/mơ hồ: trả lời phần chắc chắn trước, cuối bài hỏi lại 1 câu làm rõ — không tự mở rộng phạm vi tra cứu.
+4. Câu hỏi rộng/mơ hồ (case 2): hỏi làm rõ — không tự mở rộng phạm vi tra cứu.
 
 ## 2. Chuẩn xác — bám sát sản phẩm thật (BẮT BUỘC)
 - Mọi tên nút / menu / ô nhập / thông báo phải khớp 100% chữ trên UI (locale \`vi\`). **Không thấy bằng chứng thì nói "chưa tìm thấy trên hệ thống" — tuyệt đối không bịa.**
@@ -216,7 +278,7 @@ GitLab (định danh dự án — không gọi API): ${opts.gitlabPath}
 Branch (chỉ đọc): ${opts.mainBranch}
 DB tra cứu: ${opts.dbAccess.allowed ? `ON (${opts.dbAccess.dialect} / ${opts.dbAccess.database})` : "OFF"}
 
-${opts.historyBlock ? `## Hội thoại trước\n${opts.historyBlock}\n` : ""}${opts.gitlabTaskBlock ? `${opts.gitlabTaskBlock}\n\n` : ""}## Câu hỏi
+${opts.workflowBlock ? `${opts.workflowBlock}\n\n` : ""}${opts.historyBlock ? `## Hội thoại trước\n${opts.historyBlock}\n` : ""}${opts.gitlabTaskBlock ? `${opts.gitlabTaskBlock}\n\n` : ""}## Câu hỏi
 ${opts.question}`;
 }
 
@@ -231,6 +293,7 @@ export async function runBaChatAgent(opts: {
   question: string;
   assistantMessageId: string;
   analysisMode?: boolean;
+  workflowBlock?: string;
 }): Promise<string> {
   const cancelKey = baCancelKey(opts.threadId);
   // Honor Stop pressed before this run registered; also drop stale flags.
@@ -304,20 +367,22 @@ export async function runBaChatAgent(opts: {
       .slice(-8)
       .map((m) => m.content.trim());
     const gitlabToken = await getBaProjectGitlabToken(project.id);
-    const gitlabTask = await loadBaGitlabTaskBlock({
+    const googleAccessToken = await resolveBaUserGoogleAccessToken(opts.userId);
+    const linked = await loadBaLinkedContext({
       gitlabHost: project.gitlabHost,
       gitlabPath: project.gitlabPath,
-      token: gitlabToken,
+      gitlabToken,
+      googleAccessToken,
       texts: [opts.question, ...historyUserTexts],
     });
     session.check();
-    if (gitlabTask.refs.length) {
+    if (linked.progressLabel) {
       publishBaProgress({
         userId: opts.userId,
         threadId: opts.threadId,
         messageId: opts.assistantMessageId,
         step: "read",
-        label: `Đang đọc task GitLab ${gitlabTask.refs.map((r) => `#${r.iid}`).join(", ")}…`,
+        label: linked.progressLabel,
       });
     }
 
@@ -326,9 +391,10 @@ export async function runBaChatAgent(opts: {
       gitlabPath: project.gitlabPath,
       mainBranch: project.mainBranch || "main",
       historyBlock,
-      gitlabTaskBlock: gitlabTask.block,
+      gitlabTaskBlock: linked.block,
       question: opts.question,
       analysisMode: Boolean(opts.analysisMode),
+      workflowBlock: opts.workflowBlock,
       dbAccess,
     });
 
@@ -338,7 +404,10 @@ export async function runBaChatAgent(opts: {
       model: modelId,
       analysisMode: Boolean(opts.analysisMode),
       dbAccess: dbAccess.allowed,
-      gitlabIssueIids: gitlabTask.refs.map((r) => r.iid),
+      gitlabIssueIids: linked.gitlabRefs.map((r) => r.iid),
+      googleSheets: linked.sheetRefs.length,
+      googleDocs: linked.docRefs.length,
+      needsGoogleAuth: linked.needsGoogleAuth,
     });
 
     publishBaProgress({
@@ -582,6 +651,13 @@ export function kickBaChatAnswer(opts: {
   question: string;
   isFirstUserMessage: boolean;
   analysisMode?: boolean;
+  /** Context YC + Kết quả phân tích (thread gắn workflow). */
+  workflowBlock?: string;
+  /**
+   * Hậu xử lý câu trả lời (vd. áp dụng resultUpdate vào Kết quả phân tích).
+   * Trả về nội dung đã làm sạch để lưu/hiển thị, hoặc null nếu giữ nguyên.
+   */
+  postProcessAnswer?: (answer: string) => Promise<string | null>;
 }): void {
   const assistantId = `bam_${crypto.randomUUID().replace(/-/g, "").slice(0, 16)}`;
 
@@ -600,14 +676,28 @@ export function kickBaChatAnswer(opts: {
         message: placeholder,
       });
 
-      const answer = await runBaChatAgent({
+      const rawAnswer = await runBaChatAgent({
         userId: opts.userId,
         threadId: opts.threadId,
         baProjectId: opts.baProjectId,
         question: opts.question,
         assistantMessageId: assistantId,
         analysisMode: opts.analysisMode,
+        workflowBlock: opts.workflowBlock,
       });
+
+      let answer = rawAnswer;
+      if (opts.postProcessAnswer) {
+        try {
+          const processed = await opts.postProcessAnswer(rawAnswer);
+          if (processed?.trim()) answer = processed;
+        } catch (err) {
+          logger.warn("BA chat postProcessAnswer failed", {
+            threadId: opts.threadId,
+            err: String(err),
+          });
+        }
+      }
 
       await updateBaMessageContent(assistantId, answer);
       publishRealtime({

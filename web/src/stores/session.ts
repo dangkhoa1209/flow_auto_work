@@ -42,6 +42,8 @@ export type UserPublic = {
   username?: string;
   hasCursorApiKey?: boolean;
   hasGitlabToken?: boolean;
+  hasGoogleAuth?: boolean;
+  googleEmail?: string;
   cursorModel?: string;
   roles?: string[];
 };
@@ -93,8 +95,6 @@ export const useSessionStore = defineStore("session", () => {
   });
 
   const isLoggedIn = computed(() => auth.isAuthenticated);
-
-  const isQc = computed(() => Boolean(me.value?.roles?.includes("qc")));
 
   const isAdmin = computed(() => Boolean(me.value?.roles?.includes("admin")));
 
@@ -311,7 +311,6 @@ export const useSessionStore = defineStore("session", () => {
     loading,
     bootstrapped,
     isLoggedIn,
-    isQc,
     isAdmin,
     isBaAudience,
     homeRoute,

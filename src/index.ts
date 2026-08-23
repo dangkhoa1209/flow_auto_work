@@ -1,3 +1,4 @@
+import "./plugins/agent/abortSignalPatch.js";
 import { setMaxListeners } from "node:events";
 import { isTransientCursorTransportError } from "./plugins/agent/run.js";
 import { getConfig } from "./config.js";

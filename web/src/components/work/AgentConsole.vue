@@ -10,6 +10,7 @@ import {
   statusLabel,
   contextQualityLabel,
 } from "@/utils/status";
+import { formatChatTime } from "@/utils/formatChatTime";
 import type { Job } from "@/stores/work";
 
 const PROGRESS_OPEN_KEY = "flow.console.progressOpen";
@@ -24,7 +25,7 @@ const props = withDefaults(
   defineProps<{
     jobLoading: boolean;
     currentJob: Job | null;
-    chat: Array<{ role: string; body: string }>;
+    chat: Array<{ role: string; body: string; createdAt?: string }>;
     agentTyping: boolean;
     progressLines: Array<{
       id: number;
@@ -468,6 +469,13 @@ watch(chatBox, (el, prev) => {
             <div class="faw-msg__who">{{ m.role === 'user' ? 'You' : m.role }}</div>
             <div class="faw-msg__bubble">
               <ChatMessageBody :role="m.role" :body="m.body" />
+              <time
+                v-if="formatChatTime(m.createdAt)"
+                class="faw-msg__time"
+                :datetime="m.createdAt"
+              >
+                {{ formatChatTime(m.createdAt) }}
+              </time>
             </div>
           </div>
 
