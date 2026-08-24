@@ -329,6 +329,7 @@ function onTaskPublish(payload: {
           :streaming="ba.streaming"
           :streaming-message-id="ba.streamingMessageId"
           :progress-hint="ba.currentProgressLabel"
+          :reset-key="ba.activeThreadId"
         />
         <div
           v-if="ba.errorText"

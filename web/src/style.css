@@ -777,6 +777,7 @@ code {
   font-family: var(--font-mono);
   max-height: none;
   overflow-y: auto;
+  overflow-anchor: none;
   background: var(--app-deep);
   margin: 0 12px 10px;
   border: 1px solid var(--app-border);
@@ -2255,6 +2256,7 @@ code {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  overflow-anchor: none;
 }
 .faw-msg {
   max-width: 100%;

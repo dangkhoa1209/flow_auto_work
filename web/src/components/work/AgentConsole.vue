@@ -235,33 +235,52 @@ onUnmounted(() => {
 
 const chatScroll = useAutoScroll(chatBox, () => [
   props.chat.length,
+  props.chat.at(-1)?.body,
   props.agentTyping,
 ]);
-const progressScroll = useAutoScroll(progressBox, () => props.progressLines.length);
+const lastProgress = () => props.progressLines.at(-1);
+const progressScroll = useAutoScroll(progressBox, () => [
+  props.progressLines.length,
+  lastProgress()?.id,
+  lastProgress()?.text,
+]);
 
-/** Force bottom when opening console / switching job — chat may load while chatBox is unmounted (jobLoading). */
-async function jumpChatToLatest() {
-  await nextTick();
-  // Layout may still settle after v-show / skeleton swap
-  requestAnimationFrame(() => {
-    void chatScroll.scrollToBottom(true);
+function jumpPinnedPanes(force: boolean) {
+  void nextTick().then(() => {
+    requestAnimationFrame(() => {
+      void chatScroll.scrollToBottom(force);
+      void progressScroll.scrollToBottom(force);
+    });
   });
 }
 
 watch(
   () => [props.jobLoading, props.currentJob?.id] as const,
-  ([loading]) => {
+  ([loading, id], prev) => {
+    if (id !== prev?.[1]) {
+      chatScroll.resetPin();
+      progressScroll.resetPin();
+    }
     if (loading) return;
-    void jumpChatToLatest();
+    jumpPinnedPanes(true);
   },
   { immediate: true },
 );
 
 watch(mobileConsoleTab, (tab) => {
-  if (tab === "chat") void jumpChatToLatest();
+  if (tab === "chat") void chatScroll.scrollToBottom();
+  if (tab === "logs") void progressScroll.scrollToBottom();
 });
 
-// chatBox is inside v-if="!jobLoading" — attach observer when it mounts
+watch(progressOpen, (open) => {
+  if (open) void progressScroll.scrollToBottom();
+});
+
+watch(bottomTab, (tab) => {
+  if (tab === "logs") void progressScroll.scrollToBottom();
+});
+
+// chatBox is inside v-if="!jobLoading" — follow pin when the pane remounts / uncollapses
 watch(chatBox, (el, prev) => {
   if (prev && chatResizeObserver) {
     chatResizeObserver.disconnect();
@@ -273,11 +292,11 @@ watch(chatBox, (el, prev) => {
     const box = chatBox.value;
     if (!box) return;
     const h = box.clientHeight;
-    if (lastH === 0 && h > 0) void jumpChatToLatest();
+    if (lastH === 0 && h > 0) void chatScroll.scrollToBottom();
     lastH = h;
   });
   chatResizeObserver.observe(el);
-  if (el.clientHeight > 0) void jumpChatToLatest();
+  if (el.clientHeight > 0) void chatScroll.scrollToBottom();
 });
 </script>
 
@@ -459,6 +478,8 @@ watch(chatBox, (el, prev) => {
           ref="chatBox"
           class="faw-console-scroll flex-1 min-h-0 overflow-y-auto"
           @scroll="chatScroll.onScroll"
+          @wheel.passive="chatScroll.onWheel"
+          @touchmove.passive="chatScroll.onTouchMove"
         >
           <div
             v-for="(m, i) in chat"
@@ -608,6 +629,8 @@ watch(chatBox, (el, prev) => {
           class="console-progress__body flex-1 min-h-0 overflow-y-auto space-y-0"
           :class="mobileTabs ? 'text-xs' : ''"
           @scroll="progressScroll.onScroll"
+          @wheel.passive="progressScroll.onWheel"
+          @touchmove.passive="progressScroll.onTouchMove"
         >
           <div
             v-for="l in progressLines"

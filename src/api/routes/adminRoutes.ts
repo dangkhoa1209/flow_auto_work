@@ -17,6 +17,7 @@ export function createAdminRoutes(): Router {
   router.post("/ba-projects/:id/test-db", adminController.testDb);
 
   router.get("/settings/cursor", adminController.getCursor);
+  router.get("/settings/cursor-models", adminController.cursorModels);
   router.put("/settings/cursor", adminController.putCursor);
 
   router.get("/settings/task-type-labels", adminController.getTaskTypeLabels);

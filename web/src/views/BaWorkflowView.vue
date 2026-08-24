@@ -1114,6 +1114,7 @@ onUnmounted(() => {
                 :streaming="wfStreaming"
                 :streaming-message-id="wfStreamingMessageId"
                 :progress-hint="wfProgressLabel"
+                :reset-key="wfThreadId"
               />
               <div v-if="wfError" class="shrink-0 px-3 pb-1">
                 <a-alert type="error" show-icon :message="wfError" />

@@ -13,6 +13,7 @@ import {
   updateSystemBaFeatures,
   updateSystemCursorSettings,
   updateSystemTaskTypeLabels,
+  resolveSystemCursorApiKey,
   isBaDevMode,
   normalizeBaFeatures,
   type BaDbConnectionPatch,
@@ -23,6 +24,7 @@ import { buildOauthCloneUrl, isGitRepo, runGitClone } from "../../workspace/clon
 import { AppError } from "../../utils/AppError.js";
 import { logger } from "../../logger.js";
 import { testBaDbConnection } from "../../plugins/baDb/query.js";
+import { listCursorModelsForApiKey } from "../../plugins/cursor/modelList.js";
 
 export async function adminListBaProjects() {
   return (await listBaProjects()).map(toPublicBaProject);
@@ -237,6 +239,18 @@ export async function adminGetBaCloneStatus(idRaw: string) {
 
 export async function adminGetCursorSettings() {
   return toPublicSystemSettings(await getSystemSettings());
+}
+
+/** Cursor model list for shared BA key (same shape as /api/me/cursor-models). */
+export async function adminListCursorModels() {
+  const s = await getSystemSettings();
+  let apiKey = "";
+  try {
+    apiKey = await resolveSystemCursorApiKey();
+  } catch {
+    /* no key — fallback list */
+  }
+  return listCursorModelsForApiKey(apiKey, s.cursorModel);
 }
 
 export async function adminUpdateCursorSettings(body: {

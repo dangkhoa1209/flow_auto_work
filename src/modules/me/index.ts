@@ -1,4 +1,4 @@
-import { Cursor } from "@cursor/sdk";
+import { listCursorModelsForApiKey } from "../../plugins/cursor/modelList.js";
 import { verifyGitlabTokenUser } from "../../plugins/gitlab/client.js";
 import {
   clearCursorApiKey,
@@ -15,11 +15,6 @@ import { toPublicUser } from "../../workspace/types.js";
 import { AppError } from "../../utils/AppError.js";
 import { listPublicMemberships } from "../project/index.js";
 import { getRuntimeContext } from "../../workspace/runtime.js";
-
-const FALLBACK_MODELS = [
-  { id: "auto", displayName: "Auto (server picks)" },
-  { id: "composer-2.5", displayName: "Composer 2.5" },
-];
 
 function requireUser(username: string): string {
   const user = username.trim();
@@ -112,47 +107,11 @@ export async function setMyQcRole(username: string, enabled: boolean) {
 export async function listCursorModels(username: string) {
   const user = requireUser(username);
   const secrets = await getUserSecrets(user);
-  const apiKey = secrets?.cursorApiKey?.trim() || "";
-  if (!apiKey) {
-    return {
-      models: FALLBACK_MODELS,
-      source: "fallback",
-      selected: (await getUserByUsername(user))?.cursorModel || "auto",
-    };
-  }
-  try {
-    const listed = await Cursor.models.list({ apiKey });
-    const raw = Array.isArray(listed)
-      ? listed
-      : Array.isArray((listed as { models?: unknown }).models)
-        ? (listed as { models: unknown[] }).models
-        : [];
-    const models: { id: string; displayName: string }[] = [
-      { id: "auto", displayName: "Auto (server picks)" },
-    ];
-    const seen = new Set(["auto"]);
-    for (const item of raw) {
-      const m = item as { id?: string; displayName?: string; name?: string };
-      const id = (m.id || "").trim();
-      if (!id || seen.has(id)) continue;
-      seen.add(id);
-      models.push({ id, displayName: m.displayName || m.name || id });
-    }
-    const found = await getUserByUsername(user);
-    return {
-      models,
-      source: "cursor",
-      selected: found?.cursorModel?.trim() || "auto",
-    };
-  } catch (err) {
-    const found = await getUserByUsername(user);
-    return {
-      models: FALLBACK_MODELS,
-      source: "fallback",
-      selected: found?.cursorModel?.trim() || "auto",
-      warning: err instanceof Error ? err.message : String(err),
-    };
-  }
+  const found = await getUserByUsername(user);
+  return listCursorModelsForApiKey(
+    secrets?.cursorApiKey?.trim() || "",
+    found?.cursorModel,
+  );
 }
 
 /** Clear Cursor API key */

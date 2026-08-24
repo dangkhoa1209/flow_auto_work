@@ -33,6 +33,7 @@ export const API = {
     baTestDb: (id: string) =>
       `/api/admin/ba-projects/${encodeURIComponent(id)}/test-db`,
     cursorSettings: "/api/admin/settings/cursor",
+    cursorModels: "/api/admin/settings/cursor-models",
     taskTypeLabels: "/api/admin/settings/task-type-labels",
     baFeatures: "/api/admin/settings/ba-features",
   },

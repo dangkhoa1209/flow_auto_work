@@ -10,17 +10,22 @@ const props = defineProps<{
   streaming?: boolean;
   streamingMessageId?: string | null;
   progressHint?: string;
+  /** Change this when switching project/thread so we pin to latest again. */
+  resetKey?: string | null;
 }>();
 
 const listRef = ref<HTMLElement | null>(null);
-const { onScroll } = useAutoScroll(listRef, () =>
-  props.messages.map((m) => m.content).join(""),
-);
+const { onScroll, onWheel, onTouchMove, resetPin, scrollToBottom } =
+  useAutoScroll(listRef, () =>
+    props.messages.map((m) => m.content).join(""),
+  );
 
 watch(
-  () => props.streaming,
-  () => {
-    /* content watch drives auto-scroll */
+  () => props.resetKey,
+  (key, prev) => {
+    if (key === prev) return;
+    resetPin();
+    void scrollToBottom(true);
   },
 );
 
@@ -36,6 +41,8 @@ function whoLabel(role: string) {
     ref="listRef"
     class="faw-console-scroll flex-1 min-h-0 overflow-y-auto"
     @scroll="onScroll"
+    @wheel.passive="onWheel"
+    @touchmove.passive="onTouchMove"
   >
     <div
       v-if="!messages.length && !streaming"

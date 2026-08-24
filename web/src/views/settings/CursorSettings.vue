@@ -2,42 +2,29 @@
 import { onMounted, ref } from "vue";
 import { message } from "ant-design-vue";
 import { api } from "@/api/client";
+import { API } from "@/api/endpoints";
+import { useCursorModelSelect } from "@/composables/useCursorModelSelect";
 import { useSessionStore } from "@/stores/session";
 
 const session = useSessionStore();
 const loading = ref(false);
 const cursorKey = ref("");
-const model = ref(session.me?.cursorModel || "auto");
-const models = ref<Array<{ value: string; label: string }>>([
-  { value: "auto", label: "Auto (server picks)" },
-]);
+const {
+  model,
+  models,
+  modelsLoading,
+  modelsWarning,
+  loadModels,
+} = useCursorModelSelect(API.me.cursorModels);
 
 onMounted(async () => {
-  model.value = session.me?.cursorModel || "auto";
-  try {
-    const data = await api<{
-      models?: Array<{ id: string; displayName?: string }>;
-      selected?: string;
-    }>("/api/me/cursor-models");
-    if (data.models?.length) {
-      models.value = [
-        { value: "auto", label: "Auto (server picks)" },
-        ...data.models.map((m) => ({
-          value: m.id,
-          label: m.displayName || m.id,
-        })),
-      ];
-    }
-    if (data.selected) model.value = data.selected;
-  } catch {
-    /* keep defaults */
-  }
+  await loadModels(session.me?.cursorModel || "auto");
 });
 
 async function saveModel() {
   loading.value = true;
   try {
-    await api("/api/me/preferences", {
+    await api(API.me.preferences, {
       method: "PUT",
       body: JSON.stringify({ cursorModel: model.value }),
     });
@@ -57,12 +44,13 @@ async function saveKey() {
   }
   loading.value = true;
   try {
-    await api("/api/me/secrets", {
+    await api(API.me.secrets, {
       method: "PUT",
       body: JSON.stringify({ cursorApiKey: cursorKey.value.trim() }),
     });
     cursorKey.value = "";
     await session.refreshMe();
+    await loadModels(session.me?.cursorModel || model.value);
     message.success("Key saved (encrypted)");
   } catch (e) {
     message.error(e instanceof Error ? e.message : String(e));
@@ -74,8 +62,9 @@ async function saveKey() {
 async function clearKey() {
   loading.value = true;
   try {
-    await api("/api/me/cursor-key", { method: "DELETE" });
+    await api(API.me.cursorKey, { method: "DELETE" });
     await session.refreshMe();
+    await loadModels(session.me?.cursorModel || "auto");
     message.success("Key removed");
   } catch (e) {
     message.error(e instanceof Error ? e.message : String(e));
@@ -99,8 +88,20 @@ async function clearKey() {
     />
     <a-form layout="vertical">
       <a-form-item label="Agent model">
-        <a-select v-model:value="model" :options="models" class="w-full" />
+        <a-select
+          v-model:value="model"
+          :options="models"
+          :loading="modelsLoading"
+          class="w-full"
+        />
       </a-form-item>
+      <a-alert
+        v-if="modelsWarning"
+        type="warning"
+        show-icon
+        class="mb-3"
+        :message="modelsWarning"
+      />
       <a-button :loading="loading" @click="saveModel">Save model</a-button>
 
       <a-form-item label="New key" class="mt-4">

@@ -45,6 +45,10 @@ export const adminController = {
     res.json(await admin.adminGetCursorSettings());
   }),
 
+  cursorModels: asyncHandler(async (_req: Request, res: Response) => {
+    res.json(await admin.adminListCursorModels());
+  }),
+
   putCursor: asyncHandler(async (req: Request, res: Response) => {
     res.json(await admin.adminUpdateCursorSettings(req.body || {}));
   }),

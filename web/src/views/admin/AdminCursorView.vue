@@ -3,11 +3,18 @@ import { onMounted, ref } from "vue";
 import { message } from "ant-design-vue";
 import { api } from "@/api/client";
 import { API } from "@/api/endpoints";
+import { useCursorModelSelect } from "@/composables/useCursorModelSelect";
 
 const loading = ref(false);
 const hasKey = ref(false);
 const cursorKey = ref("");
-const model = ref("auto");
+const {
+  model,
+  models,
+  modelsLoading,
+  modelsWarning,
+  loadModels,
+} = useCursorModelSelect(API.admin.cursorModels);
 
 async function load() {
   try {
@@ -16,7 +23,7 @@ async function load() {
       cursorModel?: string;
     }>(API.admin.cursorSettings);
     hasKey.value = Boolean(data.hasCursorApiKey);
-    model.value = data.cursorModel || "auto";
+    await loadModels(data.cursorModel || "auto");
   } catch (e) {
     message.error(e instanceof Error ? e.message : String(e));
   }
@@ -120,18 +127,31 @@ onMounted(() => {
         Remove key
       </button>
 
-      <label class="flex flex-col gap-1 text-sm pt-2 border-t border-line">
-        <span class="text-ink-muted">Default model</span>
-        <a-input v-model:value="model" placeholder="auto" />
-      </label>
-      <button
-        type="button"
-        class="px-3 py-1.5 text-sm border border-line rounded-md hover:border-accent"
-        :disabled="loading"
-        @click="saveModel"
-      >
-        Save model
-      </button>
+      <div class="pt-2 border-t border-line space-y-3">
+        <label class="flex flex-col gap-1 text-sm">
+          <span class="text-ink-muted">Agent model</span>
+          <a-select
+            v-model:value="model"
+            :options="models"
+            :loading="modelsLoading"
+            class="w-full"
+          />
+        </label>
+        <a-alert
+          v-if="modelsWarning"
+          type="warning"
+          show-icon
+          :message="modelsWarning"
+        />
+        <button
+          type="button"
+          class="px-3 py-1.5 text-sm border border-line rounded-md hover:border-accent"
+          :disabled="loading"
+          @click="saveModel"
+        >
+          Save model
+        </button>
+      </div>
     </div>
   </div>
 </template>
