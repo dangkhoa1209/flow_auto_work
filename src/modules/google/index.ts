@@ -172,18 +172,36 @@ export async function handleGoogleOAuthCallback(input: {
       kind: "qa",
       body:
         `✅ **Google Sheets đã ủy quyền**${emailLabel}.` +
-        `\nĐang Continue Run để đọc nội dung sheet vào context…`,
+        `\nĐang tiếp tục Run để đọc nội dung sheet vào context…`,
     });
     logger.info("Google OAuth saved on job", {
       jobId: job.id,
       email: tokens.email,
       sheetIds: sheetIds.length,
     });
-    return {
-      ok: true,
-      jobId: job.id,
-      message: "Google Sheets authorized — you can Continue Run",
-    };
+
+    // Auto-continue — không cần nút Continue Run trên UI
+    try {
+      const cont = await continueJobAfterGoogleAuth(job.id);
+      return {
+        ok: true,
+        jobId: job.id,
+        message: cont.enqueued
+          ? "Google authorized — Run đang tiếp tục"
+          : `Google authorized — ${cont.reason || "job chưa enqueue được, thử Run lại"}`,
+      };
+    } catch (contErr) {
+      logger.warn("Google OAuth auto-continue failed", {
+        jobId: job.id,
+        err: String(contErr),
+      });
+      return {
+        ok: true,
+        jobId: job.id,
+        message:
+          "Google authorized — chưa tiếp tục Run tự động, hãy bấm Run lại",
+      };
+    }
   } catch (err) {
     logger.warn("Google OAuth callback failed", { err: String(err) });
     const msg = err instanceof Error ? err.message : String(err);
@@ -398,8 +416,8 @@ export async function prepareGoogleSheetsForJob(
       kind: "qa",
       body:
         tokenResult.reason === "refresh_failed"
-          ? "⚠️ Google token hết hạn / refresh thất bại — **chưa đọc** được Sheets đã chọn.\nBấm **Authorize Google** rồi Continue Run."
-          : "🔗 Đã chọn đọc Google Sheets/Excel. Bấm **Authorize Google** (readonly), rồi Continue Run.",
+          ? "⚠️ Google token hết hạn / refresh thất bại — **chưa đọc** được Sheets đã chọn.\nCấp quyền Google lại (popup) — hệ thống sẽ tự tiếp tục Run."
+          : "🔗 Đã chọn đọc Google Sheets/Excel. Cấp quyền Google (readonly) — hệ thống sẽ tự tiếp tục Run sau khi ủy quyền.",
     });
     return { gate: true };
   }
@@ -421,7 +439,7 @@ export async function prepareGoogleSheetsForJob(
       kind: "qa",
       body:
         "🔗 File Sheets/Excel trên Drive cần thêm quyền **Drive readonly**.\n" +
-        "Bấm **Revoke** (nếu có) → **Authorize Google** lại (chấp nhận Drive + Sheets), rồi Continue Run.\n" +
+        "Bấm **Revoke** (nếu có) → cấp quyền Google lại (chấp nhận Drive + Sheets) — hệ thống tự tiếp tục Run.\n" +
         "Nhớ Enable **Google Drive API** trên Cloud project.",
     });
     return { gate: true };

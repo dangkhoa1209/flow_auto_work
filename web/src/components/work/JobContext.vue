@@ -78,6 +78,9 @@ const emit = defineEmits<{
 const work = useWorkStore();
 const googleBusy = ref(false);
 const autoContinueAfterAuth = ref(false);
+/** Modal xin quyền — hiện 1 lần mỗi lần job vào awaiting_google_auth */
+const googleAuthModalOpen = ref(false);
+const googleAuthModalKey = ref<string | null>(null);
 const googleStatus = ref<{
   configured: boolean;
   authorized: boolean;
@@ -228,7 +231,8 @@ async function authorizeGoogle() {
   const id = props.selectedJobId;
   if (!id) return;
   googleBusy.value = true;
-  autoContinueAfterAuth.value = awaitingGoogleAuth.value;
+  autoContinueAfterAuth.value = true;
+  googleAuthModalOpen.value = false;
   try {
     const { authUrl, configured } = await jobApi.googleAuthUrl(id);
     if (!configured || !authUrl) {
@@ -259,7 +263,7 @@ async function continueAfterGoogle() {
     if (!res.enqueued && !res.ok) {
       message.warning(res.reason || "Could not enqueue job");
     } else {
-      message.success("Continue Run — job queued");
+      message.success("Run đang tiếp tục…");
     }
     await reloadJob();
   } catch (e) {
@@ -315,18 +319,54 @@ function onGoogleOAuthMessage(ev: MessageEvent) {
     return;
   }
   if (d.ok) {
-    message.success(d.message || "Google authorized");
+    message.success(d.message || "Google authorized — Run đang tiếp tục");
     void (async () => {
       await reloadJob();
-      if (autoContinueAfterAuth.value) {
+      // Backend đã auto-continue; nếu job vẫn awaiting (hiếm) thì continue từ UI
+      if (
+        autoContinueAfterAuth.value &&
+        props.currentJob?.status === "awaiting_google_auth"
+      ) {
         autoContinueAfterAuth.value = false;
         await continueAfterGoogle();
+      } else {
+        autoContinueAfterAuth.value = false;
       }
     })();
   } else {
     message.error(d.message || "Google authorization failed");
   }
 }
+
+/** Lần đầu (mỗi lần) job cần Google → modal xin quyền */
+watch(
+  () =>
+    [
+      props.selectedJobId,
+      props.currentJob?.status === "awaiting_google_auth",
+    ] as const,
+  ([jobId, awaiting]) => {
+    if (!jobId || !awaiting) {
+      googleAuthModalOpen.value = false;
+      if (jobId && googleAuthModalKey.value === `${jobId}:awaiting`) {
+        googleAuthModalKey.value = null;
+      }
+      return;
+    }
+    const key = `${jobId}:awaiting`;
+    if (googleAuthModalKey.value === key) return;
+    googleAuthModalKey.value = key;
+    googleAuthModalOpen.value = true;
+  },
+);
+
+watch(
+  () => props.selectedJobId,
+  () => {
+    googleAuthModalKey.value = null;
+    googleAuthModalOpen.value = false;
+  },
+);
 
 /** Primitive key — watching a new array each tick retriggered Google APIs. */
 watch(
@@ -424,26 +464,17 @@ onUnmounted(() => {
               type="warning"
               show-icon
               class="mb-3"
-              message="Authorize Google to read linked Sheets"
-              description="Task có link Google Sheets. Cấp quyền đọc (readonly), rồi Continue Run."
+              message="Cần ủy quyền Google để đọc Sheets/Excel"
+              description="Sau khi cấp quyền, Run sẽ tự tiếp tục — không cần bấm Continue."
             >
               <template #action>
-                <div class="flex flex-col gap-1.5 items-end">
-                  <a-button
-                    size="small"
-                    type="primary"
-                    :loading="googleBusy"
-                    @click="authorizeGoogle"
-                    >Authorize Google</a-button
-                  >
-                  <a-button
-                    size="small"
-                    :loading="googleBusy"
-                    :disabled="!googleStatus?.authorized"
-                    @click="continueAfterGoogle"
-                    >Continue Run</a-button
-                  >
-                </div>
+                <a-button
+                  size="small"
+                  type="primary"
+                  :loading="googleBusy"
+                  @click="authorizeGoogle"
+                  >Authorize Google</a-button
+                >
               </template>
             </a-alert>
 
@@ -1010,5 +1041,24 @@ onUnmounted(() => {
         </a-tooltip>
       </a-popconfirm>
     </div>
+
+    <a-modal
+      v-model:open="googleAuthModalOpen"
+      title="Ủy quyền Google để đọc Sheets / Excel"
+      ok-text="Authorize Google"
+      cancel-text="Để sau"
+      :confirm-loading="googleBusy"
+      destroy-on-close
+      @ok="authorizeGoogle"
+    >
+      <p class="m-0 text-sm text-ink-soft">
+        Task này có link Google Sheets hoặc file Excel trên Drive. Cần cấp quyền
+        đọc (readonly) một lần — sau khi ủy quyền, Run sẽ
+        <strong>tự tiếp tục</strong>, không cần bấm Continue.
+      </p>
+      <p class="m-0 mt-2 text-xs text-ink-faint">
+        Popup Google sẽ mở; hãy chấp nhận quyền Sheets + Drive nếu được hỏi.
+      </p>
+    </a-modal>
   </section>
 </template>
