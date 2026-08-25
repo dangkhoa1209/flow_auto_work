@@ -2672,6 +2672,34 @@ code {
   margin-bottom: 12px;
 }
 
+.faw-handoff-detail-summary .chat-md-rich {
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--app-muted);
+}
+
+.faw-handoff-list-summary {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
+.faw-handoff-list-summary .chat-md-rich {
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--app-faint);
+}
+
+.faw-handoff-list-summary .chat-md-rich :where(p, ul, ol) {
+  margin: 0;
+}
+
+.faw-handoff-list-summary .chat-md-rich :where(ul, ol) {
+  padding-left: 1.1em;
+}
+
 /* —— Settings mobile —— */
 .faw-settings__inner {
   max-width: 48rem;

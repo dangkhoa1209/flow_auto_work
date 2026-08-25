@@ -5,6 +5,7 @@ import { ArrowLeftOutlined } from "@ant-design/icons-vue";
 import { storeToRefs } from "pinia";
 import { api } from "@/api/client";
 import IssueIidLink from "@/components/IssueIidLink.vue";
+import ChatMessageBody from "@/components/ChatMessageBody.vue";
 import { useSessionStore } from "@/stores/session";
 import { useSettingsStore } from "@/stores/settings";
 import { useWorkStore } from "@/stores/work";
@@ -152,8 +153,16 @@ async function mergeBranch() {
             />
           </div>
           <div class="text-sm text-ink-soft">{{ j.issue?.title }}</div>
-          <div class="text-xs text-ink-faint mt-1 truncate">
-            {{ j.summary || j.branch || j.id }}
+          <div v-if="j.summary?.trim()" class="faw-handoff-list-summary mt-1">
+            <ChatMessageBody
+              role="agent"
+              :markdown="true"
+              :issue-url="j.issue?.url"
+              :body="j.summary"
+            />
+          </div>
+          <div v-else class="text-xs text-ink-faint mt-1 truncate">
+            {{ j.branch || j.id }}
           </div>
         </div>
         <a-empty
@@ -173,9 +182,15 @@ async function mergeBranch() {
             />
             — {{ selected.issue?.title }}
           </h2>
-          <p class="text-sm text-ink-muted whitespace-pre-wrap">
-            {{ selected.summary || "—" }}
-          </p>
+          <div class="faw-handoff-detail-summary mb-4">
+            <ChatMessageBody
+              role="agent"
+              :markdown="true"
+              :issue-url="selected.issue?.url"
+              :body="selected.summary || ''"
+              empty="—"
+            />
+          </div>
           <a-form layout="vertical" class="max-w-lg mt-4">
             <a-form-item label="Assign">
               <a-select
@@ -253,8 +268,16 @@ async function mergeBranch() {
           <div class="text-sm text-ink font-medium truncate mt-0.5">
             {{ j.issue?.title }}
           </div>
-          <div class="text-[11px] text-ink-faint mt-1 truncate">
-            {{ j.summary || j.branch || j.id }}
+          <div v-if="j.summary?.trim()" class="faw-handoff-list-summary mt-1">
+            <ChatMessageBody
+              role="agent"
+              :markdown="true"
+              :issue-url="j.issue?.url"
+              :body="j.summary"
+            />
+          </div>
+          <div v-else class="text-[11px] text-ink-faint mt-1 truncate">
+            {{ j.branch || j.id }}
           </div>
         </button>
         <a-empty
@@ -290,9 +313,15 @@ async function mergeBranch() {
         </div>
         <div class="flex-1 min-h-0 overflow-y-auto px-3 py-3">
           <template v-if="selected">
-            <p class="text-sm text-ink-muted whitespace-pre-wrap m-0 mb-3">
-              {{ selected.summary || "—" }}
-            </p>
+            <div class="faw-handoff-detail-summary m-0 mb-3">
+              <ChatMessageBody
+                role="agent"
+                :markdown="true"
+                :issue-url="selected.issue?.url"
+                :body="selected.summary || ''"
+                empty="—"
+              />
+            </div>
             <a-form layout="vertical" class="faw-handoff-form">
               <a-form-item label="Assign">
                 <a-select
