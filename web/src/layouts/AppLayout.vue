@@ -22,11 +22,17 @@ const work = useWorkStore();
 const settings = useSettingsStore();
 const themeStore = useThemeStore();
 
-const nav = computed(() => [
-  { to: "/work", label: "Work" },
-  { to: "/handoff", label: "Handoff" },
-  { to: "/stats", label: "Stats" },
-]);
+const nav = computed(() => {
+  const items = [
+    { to: "/work", label: "Work" },
+    { to: "/handoff", label: "Handoff" },
+    { to: "/stats", label: "Stats" },
+  ];
+  if (session.canAccessDevops) {
+    items.push({ to: "/devops", label: "Devops" });
+  }
+  return items;
+});
 
 const switching = ref(false);
 const selectedProjectId = ref(session.session.projectId || "");

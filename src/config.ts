@@ -83,6 +83,23 @@ const envSchema = z.object({
     .string()
     .optional()
     .transform((v) => v === "true" || v === "1"),
+  /**
+   * JSON array of whitelisted build scripts. Client may only send `scriptId`.
+   * Example: [{"id":"ykkuat","label":"YKK UAT","command":"bash /opt/build/YKKUAT.sh","workingDir":"/opt/build"}]
+   */
+  BUILD_SCRIPTS: z.string().optional(),
+  /** Optional JSON file path; takes precedence over BUILD_SCRIPTS when set. */
+  BUILD_SCRIPTS_FILE: z.string().optional(),
+  /** Per-job log directory (default: `<cwd>/data/build-logs`) */
+  BUILD_LOG_DIR: z.string().optional(),
+  /** Forced to 1 — sequential FIFO. Env is accepted for documentation only. */
+  BUILD_QUEUE_CONCURRENCY: z.coerce.number().default(1),
+  /** Default per-job timeout in seconds */
+  BUILD_TIMEOUT_SEC: z.coerce.number().default(1800),
+  /** SIGTERM → SIGKILL grace period (ms) */
+  BUILD_KILL_GRACE_MS: z.coerce.number().default(8000),
+  /** Max jobs waiting in the FIFO (running slot not counted) */
+  BUILD_QUEUE_MAX: z.coerce.number().default(50),
 });
 
 export type AppConfig = z.infer<typeof envSchema> & {
@@ -94,6 +111,8 @@ export type AppConfig = z.infer<typeof envSchema> & {
   STARTUP_SCAN: boolean;
   STARTUP_SCAN_INCLUDE_SUCCEEDED: boolean;
   WORKBENCH_TERMINAL: boolean;
+  /** Always 1 — builds never run in parallel. */
+  BUILD_QUEUE_CONCURRENCY: 1;
   isProd: boolean;
   corsOrigins: string[];
   rateLimitWindowMs: number;
@@ -167,6 +186,7 @@ export function getConfig(): AppConfig {
       .filter(Boolean),
     isProd,
     WORKBENCH_TERMINAL: Boolean(env.WORKBENCH_TERMINAL),
+    BUILD_QUEUE_CONCURRENCY: 1,
     corsOrigins: resolvedCors,
     rateLimitWindowMs: env.RATE_LIMIT_WINDOW_MS ?? 15 * 60 * 1000,
     rateLimitMax: env.RATE_LIMIT_MAX ?? 0, //1000,

@@ -4,7 +4,7 @@ import { getConfig } from "../config.js";
 export type CloneStatus = "pending" | "cloning" | "ready" | "failed";
 
 /** Platform capability roles (QC is independent of GitLab membership role). */
-export type UserRole = "dev" | "pm" | "admin" | "qc" | "ba" | "pd";
+export type UserRole = "dev" | "pm" | "admin" | "qc" | "ba" | "pd" | "devops";
 
 /** Roles selectable at registration (admin is seed-only). */
 export const REGISTERABLE_ROLES: readonly UserRole[] = [
@@ -12,6 +12,7 @@ export const REGISTERABLE_ROLES: readonly UserRole[] = [
   "qc",
   "pd",
   "ba",
+  "devops",
 ] as const;
 
 export type WorkspaceUser = {
@@ -140,7 +141,8 @@ export function normalizeUserRoles(roles?: UserRole[] | null): UserRole[] {
       r === "admin" ||
       r === "qc" ||
       r === "ba" ||
-      r === "pd"
+      r === "pd" ||
+      r === "devops"
     ) {
       set.add(r);
     }
@@ -175,11 +177,36 @@ export function isAdminRole(roles?: UserRole[] | null): boolean {
   return normalizeUserRoles(roles).includes("admin");
 }
 
+/** Build-script console: devops role or admin. */
+export function canAccessDevops(roles?: UserRole[] | null): boolean {
+  const r = normalizeUserRoles(roles);
+  return r.includes("admin") || r.includes("devops");
+}
+
+/**
+ * Dedicated Devops home: has devops, not admin, not BA audience, not WorkBench dev.
+ * Users with both `dev` + `devops` still land on /work and open /devops from nav.
+ */
+export function isDevopsAudience(
+  roles?: UserRole[] | null | Pick<WorkspaceUser, "roles">,
+): boolean {
+  const list = Array.isArray(roles)
+    ? roles
+    : normalizeUserRoles(
+        (roles as Pick<WorkspaceUser, "roles"> | null | undefined)?.roles,
+      );
+  const r = normalizeUserRoles(list as UserRole[]);
+  if (r.includes("admin")) return false;
+  if (isBaAudience(r)) return false;
+  return r.includes("devops") && !r.includes("dev");
+}
+
 /** Post-login / guard home path. */
 export function primaryHomePath(roles?: UserRole[] | null): string {
   const r = normalizeUserRoles(roles);
   if (r.includes("admin")) return "/admin";
   if (isBaAudience(r)) return "/ba";
+  if (isDevopsAudience(r)) return "/devops";
   return "/work";
 }
 

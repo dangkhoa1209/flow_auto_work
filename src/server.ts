@@ -32,6 +32,30 @@ export async function startHttpServer(): Promise<ListenResult> {
     logger.info("Workbench terminal off (set WORKBENCH_TERMINAL=1 for local PTY)");
   }
 
+  let shuttingDown = false;
+  const shutdown = async (signal: string) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    logger.info("Graceful shutdown", { signal });
+    try {
+      const { shutdownBuildQueue } = await import("./modules/devops/index.js");
+      await shutdownBuildQueue(15_000);
+    } catch (err) {
+      logger.warn("Build queue shutdown error", { err: String(err) });
+    }
+    await new Promise<void>((resolve) => {
+      server.close(() => resolve());
+      setTimeout(resolve, 3000).unref?.();
+    });
+    process.exit(0);
+  };
+  process.once("SIGTERM", () => {
+    void shutdown("SIGTERM");
+  });
+  process.once("SIGINT", () => {
+    void shutdown("SIGINT");
+  });
+
   return { server, host, port };
 }
 

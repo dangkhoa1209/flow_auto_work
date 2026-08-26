@@ -38,6 +38,18 @@ const router = createRouter({
       ],
     },
     {
+      path: "/devops",
+      component: () => import("@/layouts/DevopsLayout.vue"),
+      meta: { requiresDevops: true },
+      children: [
+        {
+          path: "",
+          name: "devops",
+          component: () => import("@/views/DevopsView.vue"),
+        },
+      ],
+    },
+    {
       path: "/admin",
       component: () => import("@/layouts/AdminLayout.vue"),
       meta: { requiresAdmin: true },
@@ -150,6 +162,11 @@ router.beforeEach(async (to) => {
   if (to.meta.requiresAdmin && !session.isAdmin) {
     return session.homeRoute;
   }
+  if (to.meta.requiresDevops) {
+    if (!session.canAccessDevops) {
+      return session.homeRoute;
+    }
+  }
   if (to.meta.requiresBa) {
     if (!(session.isBaAudience || session.isAdmin)) {
       return session.homeRoute;
@@ -158,6 +175,9 @@ router.beforeEach(async (to) => {
   if (to.meta.requiresDev) {
     if (session.isBaAudience) {
       return { name: "ba-chat" };
+    }
+    if (session.isDevopsAudience) {
+      return { name: "devops" };
     }
     if (session.isAdmin && !to.path.startsWith("/settings")) {
       // Admin should use Admin / BA, not WorkBench (except we block entirely)

@@ -26,6 +26,8 @@ function isPublicApiPath(path: string): boolean {
   if (path === "/google/callback") return true;
   // Workbench terminal status (flag/loopback gate; no project ALS)
   if (path === "/terminal" || path.startsWith("/terminal/")) return true;
+  // Devops build runner — gated by requireDevops (no GitLab workspace)
+  if (path === "/devops" || path.startsWith("/devops/")) return true;
   return false;
 }
 

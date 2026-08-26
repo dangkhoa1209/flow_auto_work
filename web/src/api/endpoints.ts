@@ -180,6 +180,21 @@ export const API = {
   fs: {
     browse: "/api/fs/browse",
   },
+  devops: {
+    scripts: "/api/devops/scripts",
+    script: (id: string) =>
+      `/api/devops/scripts/${encodeURIComponent(id)}`,
+    queue: "/api/devops/queue",
+    events: "/api/devops/events",
+    builds: "/api/devops/builds",
+    build: (id: string) => `/api/devops/builds/${encodeURIComponent(id)}`,
+    buildLog: (id: string) =>
+      `/api/devops/builds/${encodeURIComponent(id)}/log`,
+    buildStream: (id: string) =>
+      `/api/devops/builds/${encodeURIComponent(id)}/stream`,
+    buildCancel: (id: string) =>
+      `/api/devops/builds/${encodeURIComponent(id)}/cancel`,
+  },
 } as const;
 
 /** Endpoints that must not attach Bearer / trigger refresh */

@@ -107,9 +107,23 @@ export const useSessionStore = defineStore("session", () => {
     return false;
   });
 
+  const canAccessDevops = computed(() => {
+    const roles = me.value?.roles || [];
+    return roles.includes("admin") || roles.includes("devops");
+  });
+
+  /** Dedicated Devops home — not admin, not BA, not WorkBench dev. */
+  const isDevopsAudience = computed(() => {
+    const roles = me.value?.roles || [];
+    if (roles.includes("admin")) return false;
+    if (isBaAudience.value) return false;
+    return roles.includes("devops") && !roles.includes("dev");
+  });
+
   const homeRoute = computed(() => {
     if (isAdmin.value) return "/admin";
     if (isBaAudience.value) return "/ba";
+    if (isDevopsAudience.value) return "/devops";
     return "/work";
   });
 
@@ -313,6 +327,8 @@ export const useSessionStore = defineStore("session", () => {
     isLoggedIn,
     isAdmin,
     isBaAudience,
+    canAccessDevops,
+    isDevopsAudience,
     homeRoute,
     currentMembership,
     bootstrap,

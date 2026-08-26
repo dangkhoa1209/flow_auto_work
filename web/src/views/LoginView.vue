@@ -27,7 +27,7 @@ const form = reactive({
   password: "",
   password2: "",
   displayName: "",
-  role: "dev" as "dev" | "qc" | "pd" | "ba",
+  role: "dev" as "dev" | "qc" | "pd" | "ba" | "devops",
 });
 
 const roleOptions = [
@@ -35,6 +35,7 @@ const roleOptions = [
   { value: "ba", label: "BA — Project chat" },
   { value: "pd", label: "PD — Project chat" },
   { value: "qc", label: "QC — Project chat" },
+  { value: "devops", label: "Devops" },
 ];
 
 /** Only allow same-origin relative paths (block open redirects). */

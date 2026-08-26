@@ -80,7 +80,7 @@ export type RegisterBody = {
   username?: string;
   password?: string;
   displayName?: string;
-  /** Platform role: dev | qc | pd | ba */
+  /** Platform role: dev | qc | pd | ba | devops */
   role?: string;
 };
 
@@ -102,7 +102,7 @@ export async function registerUser(body: RegisterBody) {
   }
   if (!isRegisterableRole(roleRaw)) {
     throw new AppError(
-      "role must be one of: dev, qc, pd, ba",
+      "role must be one of: dev, qc, pd, ba, devops",
       400,
       "invalid_role",
     );

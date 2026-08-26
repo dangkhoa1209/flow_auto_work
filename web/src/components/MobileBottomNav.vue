@@ -6,17 +6,26 @@ import {
   CheckCircleOutlined,
   BarChartOutlined,
   SettingOutlined,
+  BuildOutlined,
 } from "@ant-design/icons-vue";
+import { useSessionStore } from "@/stores/session";
 
 const route = useRoute();
 const router = useRouter();
+const session = useSessionStore();
 
-const tabs = computed(() => [
-  { to: "/work", label: "Work", icon: ThunderboltOutlined },
-  { to: "/handoff", label: "Handoff", icon: CheckCircleOutlined },
-  { to: "/stats", label: "Stats", icon: BarChartOutlined },
-  { to: "/settings", label: "Settings", icon: SettingOutlined },
-]);
+const tabs = computed(() => {
+  const items = [
+    { to: "/work", label: "Work", icon: ThunderboltOutlined },
+    { to: "/handoff", label: "Handoff", icon: CheckCircleOutlined },
+    { to: "/stats", label: "Stats", icon: BarChartOutlined },
+  ];
+  if (session.canAccessDevops) {
+    items.push({ to: "/devops", label: "Devops", icon: BuildOutlined });
+  }
+  items.push({ to: "/settings", label: "Settings", icon: SettingOutlined });
+  return items;
+});
 
 const activePath = computed(() => route.path);
 

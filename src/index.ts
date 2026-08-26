@@ -63,6 +63,19 @@ async function main() {
     logger.info(`Restored ${restored} queued job(s) after restart`);
   }
 
+  const { restoreBuildQueue, listBuildScripts } = await import(
+    "./modules/devops/index.js"
+  );
+  const scripts = await listBuildScripts();
+  logger.info("Build catalog OK", {
+    count: scripts.length,
+    ids: scripts.map((s) => s.id),
+  });
+  const restoredBuilds = await restoreBuildQueue();
+  if (restoredBuilds > 0) {
+    logger.info(`Restored ${restoredBuilds} queued build(s) after restart`);
+  }
+
   await startHttpServer();
 }
 

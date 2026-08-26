@@ -55,7 +55,12 @@ export function applyGlobalMiddleware(app: Express): void {
         },
         skip: (req: Request) => {
           const p = req.path || "";
-          return p === "/events" || p.startsWith("/events?");
+          return (
+            p === "/events" ||
+            p.startsWith("/events?") ||
+            p === "/devops/events" ||
+            p.endsWith("/stream")
+          );
         },
       }),
     );
