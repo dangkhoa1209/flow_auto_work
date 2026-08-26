@@ -60,9 +60,9 @@
   --c-surface-raised: 255 255 255;
   --c-surface-soft: 246 247 250;
   --c-surface-muted: 235 239 245;
-  --c-ink: 31 36 46;
-  --c-ink-muted: 90 100 115;
-  --c-ink-faint: 148 156 170;
+  --c-ink: 17 24 39;
+  --c-ink-muted: 51 62 77;
+  --c-ink-faint: 82 94 110;
   --c-line: 221 226 234;
   --c-line-strong: 198 205 217;
   --c-accent: 59 111 209;
@@ -72,8 +72,8 @@
   --app-panel-alt: #eef1f6;
   --app-deep: #e9edf3;
   --app-border-strong: #c6cdd9;
-  --app-ghost: #b7bfcc;
-  --app-code-ink: #3b4664;
+  --app-ghost: #8b96a8;
+  --app-code-ink: #1e293b;
   --app-scroll: #c4cbd6;
   --app-scroll-hover: #a8b1c0;
   --app-hover-weak: rgba(15, 23, 42, 0.04);
@@ -121,6 +121,27 @@ body {
 
 a {
   color: var(--app-accent);
+}
+
+/*
+ * Base <button> reset — Tailwind preflight is off (see tailwind.config), so
+ * without this every unstyled button falls back to the UA's gray ButtonFace.
+ * Component classes (.faw-btn, .ant-btn, …) override what they need.
+ */
+button {
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  text-align: inherit;
+}
+button:disabled {
+  cursor: not-allowed;
 }
 
 /* Clickable GitLab #iid — always Ant primary, even inside muted wrappers */
@@ -538,14 +559,14 @@ code {
   font-size: 13.5px;
   color: var(--app-muted);
 }
-/* Light mode: muted gray is too pale for chat body text — darken it */
+/* Light mode: chat body reads as primary ink, not washed muted gray */
 :root[data-theme="light"] .chat-md-rich,
 :root[data-theme="light"] .chat-md-rich :where(table td),
 :root[data-theme="light"] .faw-msg__bubble {
-  color: #3a4353;
+  color: var(--app-ink);
 }
 :root[data-theme="light"] .chat-md-rich :where(blockquote) {
-  color: #4b5566;
+  color: var(--app-muted);
 }
 .chat-md-rich :where(p, ul, ol) {
   margin: 0.25em 0;
@@ -3374,4 +3395,319 @@ code {
   color: var(--app-ink) !important;
   border-color: var(--app-border) !important;
 }
+
+/* ===== Devops dashboard ===== */
+.faw-dev-dash {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+.faw-dev-queue-pop {
+  min-width: 260px;
+  max-width: 340px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.faw-dev-queue-pop__empty {
+  margin: 4px 2px;
+  font-size: 12px;
+  color: var(--app-muted);
+}
+.faw-dev-queue-pop__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 2px;
+}
+.faw-dev-queue-pop__label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  font-size: 12.5px;
+  color: var(--app-ink);
+}
+.faw-dev-queue-pop__label:hover {
+  color: var(--app-accent);
+}
+.faw-dev-queue-pop__cancel {
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  font-size: 11.5px;
+  color: var(--app-danger-ink);
+}
+.faw-dev-queue-pop__cancel:hover {
+  text-decoration: underline;
+}
+.faw-dev-full {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.faw-dev-config-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 12px 12px;
+}
+.faw-dev-script-table .ant-table-thead > tr > th {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--app-muted);
+  background: var(--app-panel);
+  padding: 6px 8px;
+}
+.faw-dev-script-table .ant-table-tbody > tr > td {
+  padding: 6px 8px;
+  vertical-align: middle;
+}
+.faw-dev-script-table .ant-table-cell {
+  font-size: 12px;
+}
+.faw-dev-hist-table {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 12px 12px;
+}
+.faw-dev-hist-table .ant-table-row {
+  cursor: pointer;
+}
+.faw-dev-drawer-term {
+  flex: 1;
+  min-height: 260px;
+  display: flex;
+  border-radius: 8px;
+  overflow: hidden;
+}
+.faw-dev-body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 1fr;
+}
+@media (min-width: 1024px) {
+  .faw-dev-body {
+    grid-template-columns: minmax(280px, 38%) minmax(0, 1fr);
+  }
+}
+.faw-dev-left {
+  min-height: 0;
+  border-right: 1px solid var(--app-border);
+  overflow: hidden;
+}
+.faw-dev-script-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.faw-dev-script-row:hover {
+  background: var(--app-panel-soft);
+}
+.faw-dev-script-row__cmd {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--app-muted);
+  line-height: 1.35;
+}
+.faw-dev-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--app-muted);
+  font-weight: 650;
+}
+.faw-dev-dash .faw-btn--tight {
+  flex: none;
+  padding: 0 8px;
+  height: 26px;
+  min-width: 0;
+  font-size: 11px;
+  font-weight: 650;
+}
+.faw-topbar--devops .faw-seg__btn {
+  padding: 4px 9px;
+  font-size: 11.5px;
+}
+.faw-dev-tabs {
+  margin: 10px 12px 0;
+}
+.faw-dev-pane {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.faw-dev-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--app-border);
+  border-radius: 8px;
+  background: var(--app-panel);
+}
+.faw-dev-card--sel {
+  border-color: var(--app-accent);
+  background: var(--app-accent-soft);
+}
+.faw-dev-pos {
+  font: 700 12px var(--font-mono);
+  color: var(--app-accent);
+  min-width: 1.6rem;
+}
+.faw-dev-section-label {
+  margin-top: 12px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--app-muted);
+}
+.faw-dev-right {
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: #0d1117;
+}
+.faw-dev-term-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid #21262d;
+  background: #161b22;
+  flex-shrink: 0;
+}
+.faw-dev-term-head__title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 650;
+  color: #e6edf3;
+}
+.faw-dev-term-head__sub {
+  margin: 2px 0 0;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: #8b949e;
+}
+.faw-dev-term-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.faw-dev-clock {
+  font-size: 13px;
+  font-weight: 650;
+  color: #e6edf3;
+  letter-spacing: 0.04em;
+}
+.faw-dev-stdin {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-top: 1px solid #21262d;
+  background: #161b22;
+  flex-shrink: 0;
+}
+.faw-dev-stdin__input {
+  flex: 1;
+  min-width: 0;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 6px;
+  border: 1px solid #30363d;
+  background: #0d1117;
+  color: #e6edf3;
+  font: 13px var(--font-mono);
+}
+.faw-dev-stdin__input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.faw-dev-stdin__secret {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: #8b949e;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.faw-dev-badge {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 1px 6px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+.faw-dev-badge--ok {
+  background: #3fb95022;
+  color: #3fb950;
+}
+.faw-dev-badge--err {
+  background: #f8514922;
+  color: #ff7b72;
+}
+.faw-dev-badge--run {
+  background: #d2992222;
+  color: #d29922;
+}
+.faw-dev-badge--queued {
+  background: #58a6ff22;
+  color: #58a6ff;
+}
+.faw-dev-badge--warn {
+  background: #d2992222;
+  color: #e3b341;
+}
+@media (max-width: 1023px) {
+  .faw-dev-body {
+    overflow: auto;
+  }
+  .faw-dev-left,
+  .faw-dev-right {
+    min-height: 420px;
+  }
+  .faw-dev-term-head {
+    flex-wrap: wrap;
+  }
+  .faw-dev-script-table .ant-table-thead > tr > th,
+  .faw-dev-script-table .ant-table-tbody > tr > td {
+    padding: 5px 6px;
+  }
+  .faw-dev-script-table .faw-btn--tight {
+    padding: 0 6px;
+    height: 24px;
+    font-size: 10px;
+  }
+}
+
 

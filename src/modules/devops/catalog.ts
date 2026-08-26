@@ -17,6 +17,7 @@ const scriptSchema = z.object({
   workingDir: z.string().min(1).max(500),
   timeoutSec: z.number().int().positive().max(86_400).optional(),
   description: z.string().trim().max(240).optional(),
+  active: z.boolean().optional(),
 });
 
 export type BuildScriptDoc = WhitelistedScript & {
@@ -32,6 +33,7 @@ export type ScriptInput = {
   workingDir?: string;
   timeoutSec?: number | null;
   description?: string;
+  active?: boolean;
 };
 
 const COLLECTION = "build_scripts";
@@ -107,6 +109,7 @@ export function normalizeScriptInput(
         ? undefined
         : Number(raw.timeoutSec),
     description: raw.description?.trim() || undefined,
+    active: raw.active === undefined ? undefined : Boolean(raw.active),
   });
   if (!parsed.success) {
     const detail = parsed.error.issues
@@ -125,6 +128,7 @@ export function normalizeScriptInput(
     workingDir: data.workingDir,
     timeoutSec: data.timeoutSec,
     description: data.description,
+    active: data.active ?? true,
   };
 }
 
@@ -216,6 +220,7 @@ function toPublic(doc: BuildScriptDoc): WhitelistedScript {
     workingDir: doc.workingDir,
     timeoutSec: doc.timeoutSec,
     description: doc.description,
+    active: doc.active !== false,
   };
 }
 
@@ -306,6 +311,7 @@ export async function updateBuildScript(
         raw.timeoutSec === undefined ? existing.timeoutSec : raw.timeoutSec,
       description:
         raw.description === undefined ? existing.description : raw.description,
+      active: raw.active === undefined ? existing.active : raw.active,
     },
     { requireId: true },
   );
@@ -321,6 +327,7 @@ export async function updateBuildScript(
         workingDir: data.workingDir,
         timeoutSec: data.timeoutSec,
         description: data.description,
+        active: data.active,
         updatedAt: now,
       },
     },

@@ -66,18 +66,31 @@ export async function updateBuildJob(
 
 export async function listBuildJobs(opts?: {
   limit?: number;
+  offset?: number;
   status?: BuildStatus;
   scriptId?: string;
 }): Promise<BuildJob[]> {
   const limit = Math.min(200, Math.max(1, opts?.limit ?? 50));
+  const offset = Math.max(0, opts?.offset ?? 0);
   const filter: Record<string, unknown> = {};
   if (opts?.status) filter.status = opts.status;
   if (opts?.scriptId) filter.scriptId = opts.scriptId;
   return (await col())
     .find(filter)
     .sort({ createdAt: -1 })
+    .skip(offset)
     .limit(limit)
     .toArray();
+}
+
+export async function countBuildJobs(opts?: {
+  status?: BuildStatus;
+  scriptId?: string;
+}): Promise<number> {
+  const filter: Record<string, unknown> = {};
+  if (opts?.status) filter.status = opts.status;
+  if (opts?.scriptId) filter.scriptId = opts.scriptId;
+  return (await col()).countDocuments(filter);
 }
 
 export async function listQueuedBuildJobs(): Promise<BuildJob[]> {

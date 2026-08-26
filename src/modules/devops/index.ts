@@ -10,12 +10,15 @@ import {
 import { subscribeBuildEvents } from "./events.js";
 import { parseLogLines, readBuildLogTail } from "./logFile.js";
 import { buildQueue } from "./queue.js";
+import { writeBuildStdin } from "./runner.js";
 import {
+  countBuildJobs,
   ensureBuildIndexes,
   getBuildJob,
   listBuildJobs,
   requireBuildJob,
 } from "./store.js";
+import { AppError } from "../../utils/AppError.js";
 import type { BuildJob, BuildQueueSnapshot } from "./types.js";
 
 export { buildQueue } from "./queue.js";
@@ -53,7 +56,14 @@ export async function triggerBuild(opts: {
   triggeredBy: string;
   note?: string;
 }): Promise<BuildJob> {
-  await requireWhitelistedScript(opts.scriptId);
+  const script = await requireWhitelistedScript(opts.scriptId);
+  if (script.active === false) {
+    throw new AppError(
+      "Lệnh này đang inactive — bật lại trong tab Cấu hình trước khi chạy",
+      409,
+      "script_inactive",
+    );
+  }
   return buildQueue.trigger(opts);
 }
 
@@ -64,16 +74,32 @@ export async function cancelBuild(
   return buildQueue.cancel(jobId, reason);
 }
 
+export function sendBuildStdin(
+  jobId: string,
+  data: string,
+  secret = false,
+): void {
+  writeBuildStdin(jobId, data, secret);
+}
+
 export async function getBuild(jobId: string): Promise<BuildJob> {
   return requireBuildJob(jobId);
 }
 
 export async function listBuilds(opts?: {
   limit?: number;
+  offset?: number;
   status?: BuildJob["status"];
   scriptId?: string;
 }): Promise<BuildJob[]> {
   return listBuildJobs(opts);
+}
+
+export async function countBuilds(opts?: {
+  status?: BuildJob["status"];
+  scriptId?: string;
+}): Promise<number> {
+  return countBuildJobs(opts);
 }
 
 export function getBuildQueueSnapshot(): BuildQueueSnapshot {
@@ -100,4 +126,4 @@ export async function shutdownBuildQueue(timeoutMs?: number): Promise<void> {
   await buildQueue.gracefulShutdown(timeoutMs);
 }
 
-export { getBuildJob, parseLogLines, readBuildLogTail };
+export { getBuildJob, parseLogLines, readBuildLogTail, writeBuildStdin };

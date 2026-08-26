@@ -17,6 +17,7 @@ export type BuildScript = {
   workingDir: string;
   timeoutSec?: number;
   description?: string;
+  active?: boolean;
 };
 
 export type BuildJob = {
@@ -64,13 +65,23 @@ export const devopsApi = {
     return request<BuildQueueSnapshot>({ url: API.devops.queue });
   },
 
-  listBuilds(opts?: { limit?: number; status?: BuildStatus; scriptId?: string }) {
+  listBuilds(opts?: {
+    limit?: number;
+    offset?: number;
+    status?: BuildStatus;
+    scriptId?: string;
+  }) {
     const qs = new URLSearchParams();
     if (opts?.limit) qs.set("limit", String(opts.limit));
+    if (opts?.offset) qs.set("offset", String(opts.offset));
     if (opts?.status) qs.set("status", opts.status);
     if (opts?.scriptId) qs.set("scriptId", opts.scriptId);
     const q = qs.toString();
-    return request<{ queue: BuildQueueSnapshot; builds: BuildJob[] }>({
+    return request<{
+      queue: BuildQueueSnapshot;
+      builds: BuildJob[];
+      total?: number;
+    }>({
       url: q ? `${API.devops.builds}?${q}` : API.devops.builds,
     });
   },
@@ -94,6 +105,7 @@ export const devopsApi = {
     workingDir: string;
     timeoutSec?: number;
     description?: string;
+    active?: boolean;
   }) {
     return request<{ script: BuildScript }>({
       url: API.devops.scripts,
@@ -110,6 +122,7 @@ export const devopsApi = {
       workingDir?: string;
       timeoutSec?: number;
       description?: string;
+      active?: boolean;
     },
   ) {
     return request<{ script: BuildScript }>({
@@ -131,6 +144,14 @@ export const devopsApi = {
       url: API.devops.buildCancel(id),
       method: "POST",
       data: {},
+    });
+  },
+
+  stdin(id: string, data: string, secret?: boolean) {
+    return request<{ ok: boolean }>({
+      url: API.devops.buildStdin(id),
+      method: "POST",
+      data: { data, secret: Boolean(secret) },
     });
   },
 

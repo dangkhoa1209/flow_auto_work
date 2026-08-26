@@ -22,6 +22,8 @@ export type WhitelistedScript = {
   workingDir: string;
   timeoutSec?: number;
   description?: string;
+  /** Inactive scripts stay configured but cannot be triggered. */
+  active?: boolean;
 };
 
 export type BuildJob = {

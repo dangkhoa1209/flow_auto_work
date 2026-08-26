@@ -21,6 +21,7 @@ export function createDevopsRoutes(): Router {
   router.get("/builds/:id/log", devopsController.log);
   router.get("/builds/:id/stream", devopsController.stream);
   router.post("/builds/:id/cancel", devopsController.cancel);
+  router.post("/builds/:id/stdin", devopsController.stdin);
 
   return router;
 }

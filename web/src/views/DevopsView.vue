@@ -1,18 +1,35 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, reactive, ref } from "vue";
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 import { message } from "ant-design-vue";
-import { useAutoScroll } from "@/composables/useAutoScroll";
-import { useDevopsStore } from "@/stores/devops";
+import { devopsApi } from "@/api/devopsApi";
 import type { BuildJob, BuildScript, BuildStatus } from "@/api/devopsApi";
+import BuildTerminal from "@/components/devops/BuildTerminal.vue";
+import { useDevopsStore } from "@/stores/devops";
 
 const devops = useDevopsStore();
-const logBox = ref<HTMLElement | null>(null);
-const scroll = useAutoScroll(logBox, () => devops.logLines.length);
 const nowTick = ref(Date.now());
 let tickTimer: ReturnType<typeof setInterval> | undefined;
 
+const histDrawerOpen = ref(false);
 const formOpen = ref(false);
+const configCompact = ref(
+  typeof window !== "undefined" ? window.matchMedia("(max-width: 1023px)").matches : false,
+);
 const editingId = ref<string | null>(null);
+const stdinText = ref("");
+const stdinSecret = ref(false);
+const termRef = ref<{ clear: () => void } | null>(null);
+const testBusy = ref(false);
+
+/** Confirm re-run when the same script already has a queued/running job. */
+const dupConfirm = reactive({
+  open: false,
+  script: null as BuildScript | null,
+  queued: 0,
+});
+
+const TEST_SCRIPT_ID = "test-queue-20s";
+
 const form = reactive({
   id: "",
   label: "",
@@ -21,21 +38,143 @@ const form = reactive({
   timeoutSec: undefined as number | undefined,
 });
 
-const queueHint = computed(() => {
-  const q = devops.queue;
-  if (q.shuttingDown) return "Server is shutting down";
-  if (q.running) {
-    const extra = q.queued > 0 ? ` · ${q.queued} waiting` : "";
-    return `Running 1 job (FIFO, concurrency 1)${extra}`;
-  }
-  if (q.queued > 0) return `${q.queued} waiting in queue`;
-  return "Idle — queue empty";
-});
+const runningJob = computed(
+  () => devops.builds.find((b) => b.id === devops.queue.currentBuildId) || null,
+);
 
-const idleDot = computed(() => (devops.queue.running ? "wip" : "idle"));
+const queuedJobs = computed(() =>
+  devops.queue.queuedIds
+    .map((id, i) => ({
+      pos: i + 1,
+      job: devops.builds.find((b) => b.id === id),
+    }))
+    .filter((row): row is { pos: number; job: BuildJob } => Boolean(row.job)),
+);
+
+const activeScripts = computed(() =>
+  devops.scripts.filter((s) => s.active !== false),
+);
+
 const formTitle = computed(() =>
   editingId.value ? "Sửa lệnh" : "Thêm lệnh build",
 );
+
+const liveRunning = computed(() => devops.liveBuild?.status === "running");
+
+const liveClock = computed(() => {
+  void nowTick.value;
+  const job = devops.liveBuild;
+  if (!job) return "00:00:00";
+  if (job.status === "running" && job.startedAt) {
+    const t = Date.parse(job.startedAt);
+    if (!Number.isFinite(t)) return "00:00:00";
+    return formatClock(Date.now() - t);
+  }
+  if (job.durationMs != null) return formatClock(job.durationMs);
+  return "00:00:00";
+});
+
+const selectedRunning = computed(() => devops.selected?.status === "running");
+
+const histStatusOptions = [
+  { value: "", label: "Tất cả" },
+  { value: "success", label: "Success" },
+  { value: "failed", label: "Failed" },
+  { value: "cancelled", label: "Cancelled" },
+  { value: "timeout", label: "Timeout" },
+  { value: "running", label: "Running" },
+  { value: "queued", label: "Queued" },
+];
+
+const histStatusModel = computed({
+  get: () => devops.historyStatus ?? "",
+  set: (v: string) => {
+    void devops.setHistoryStatus((v || undefined) as BuildStatus | undefined);
+  },
+});
+
+const histColumns = [
+  { title: "Bắt đầu", key: "start", width: 150 },
+  { title: "Script", key: "script" },
+  { title: "Trạng thái", key: "status", width: 110 },
+  { title: "Thời gian", key: "duration", width: 100 },
+  { title: "Người chạy", key: "by", width: 130 },
+  { title: "Exit", key: "exit", width: 60 },
+  { title: "", key: "actions", width: 90 },
+];
+
+const scriptColumns = computed(() => {
+  if (configCompact.value) {
+    return [
+      { title: "", key: "active", width: 44 },
+      { title: "Lệnh build", key: "script" },
+      { title: "", key: "actions", width: 84 },
+    ];
+  }
+  return [
+    { title: "", key: "active", width: 52 },
+    { title: "Tên", key: "label", width: 130 },
+    { title: "Command", key: "command" },
+    { title: "cwd", key: "cwd", width: 120 },
+    { title: "T/o", key: "timeout", width: 52 },
+    { title: "", key: "actions", width: 96 },
+  ];
+});
+
+function formatClock(ms: number) {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  return [h, m, s].map((n) => String(n).padStart(2, "0")).join(":");
+}
+
+function formatMs(ms: number) {
+  const sec = Math.round(ms / 1000);
+  if (sec < 60) return `${sec}s`;
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  if (m < 60) return `${m}m ${s}s`;
+  const h = Math.floor(m / 60);
+  return `${h}h ${m % 60}m`;
+}
+
+function formatDuration(job: BuildJob) {
+  const ms = job.durationMs;
+  if (ms == null) {
+    if (job.status === "running" && job.startedAt) {
+      void nowTick.value;
+      const t = Date.parse(job.startedAt);
+      if (!Number.isFinite(t)) return "—";
+      return formatMs(Date.now() - t);
+    }
+    return "—";
+  }
+  return formatMs(ms);
+}
+
+function formatTime(iso?: string) {
+  if (!iso) return "—";
+  const t = new Date(iso);
+  if (Number.isNaN(t.getTime())) return "—";
+  return t.toLocaleString("vi-VN", { hour12: false });
+}
+
+function statusClass(status: BuildStatus) {
+  switch (status) {
+    case "queued":
+      return "faw-dev-badge faw-dev-badge--queued";
+    case "running":
+      return "faw-dev-badge faw-dev-badge--run";
+    case "success":
+      return "faw-dev-badge faw-dev-badge--ok";
+    case "failed":
+    case "timeout":
+      return "faw-dev-badge faw-dev-badge--err";
+    default:
+      return "faw-dev-badge faw-dev-badge--warn";
+  }
+}
 
 function resetForm() {
   editingId.value = null;
@@ -67,18 +206,23 @@ function closeForm() {
 }
 
 async function onSaveScript() {
+  if (!form.label.trim() || !form.command.trim() || !form.workingDir.trim()) {
+    message.error("Vui lòng điền đủ Tên, Lệnh và Working dir");
+    return Promise.reject(new Error("validation"));
+  }
   try {
     await devops.saveScript({
       id: editingId.value || form.id.trim() || undefined,
-      label: form.label,
-      command: form.command,
-      workingDir: form.workingDir,
+      label: form.label.trim(),
+      command: form.command.trim(),
+      workingDir: form.workingDir.trim(),
       timeoutSec: form.timeoutSec,
     });
     message.success(editingId.value ? "Đã cập nhật lệnh" : "Đã thêm lệnh");
     closeForm();
   } catch (e) {
     message.error(e instanceof Error ? e.message : String(e));
+    return Promise.reject(e);
   }
 }
 
@@ -92,68 +236,72 @@ async function onDeleteScript(id: string) {
   }
 }
 
-function statusClass(status: BuildStatus) {
-  switch (status) {
-    case "queued":
-      return "bg-blue-500/15 text-blue-400";
-    case "running":
-      return "bg-blue-500/20 text-blue-300";
-    case "success":
-      return "bg-emerald-500/15 text-emerald-400";
-    case "failed":
-      return "bg-red-500/15 text-red-400";
-    case "timeout":
-      return "bg-orange-500/15 text-orange-400";
-    default:
-      return "bg-zinc-500/15 text-zinc-400";
+async function onToggleScript(s: BuildScript, active: boolean) {
+  try {
+    await devops.toggleScript(s.id, active);
+    message.success(active ? `Đã bật «${s.label}»` : `Đã tắt «${s.label}»`);
+  } catch (e) {
+    message.error(e instanceof Error ? e.message : String(e));
   }
 }
 
-function formatDuration(job: BuildJob) {
-  const ms = job.durationMs;
-  if (ms == null) {
-    if (job.status === "running" && job.startedAt) {
-      void nowTick.value;
-      return elapsed(Date.parse(job.startedAt));
-    }
-    return "—";
-  }
-  return formatMs(ms);
+/** Jobs of this script still queued or running. */
+function queuedCount(scriptId: string) {
+  const queuedOfScript = queuedJobs.value.filter(
+    (r) => r.job.scriptId === scriptId,
+  ).length;
+  const runningOfScript =
+    runningJob.value?.scriptId === scriptId ? 1 : 0;
+  return queuedOfScript + runningOfScript;
 }
 
-function elapsed(startedMs: number) {
-  if (!Number.isFinite(startedMs)) return "—";
-  return formatMs(Math.max(0, Date.now() - startedMs));
-}
-
-function formatMs(ms: number) {
-  const sec = Math.round(ms / 1000);
-  if (sec < 60) return `${sec}s`;
-  const m = Math.floor(sec / 60);
-  const s = sec % 60;
-  if (m < 60) return `${m}m ${s}s`;
-  const h = Math.floor(m / 60);
-  return `${h}h ${m % 60}m`;
-}
-
-function logColor(stream: string) {
-  if (stream === "stderr") return "text-red-400";
-  if (stream === "system") return "text-sky-400";
-  return "text-zinc-200";
-}
-
-function canCancel(job: BuildJob) {
-  return job.status === "queued" || job.status === "running";
-}
-
-async function onTrigger(scriptId: string) {
+async function doTrigger(scriptId: string) {
   try {
     await devops.trigger(scriptId);
     message.success("Build queued");
-    scroll.resetPin();
-    await scroll.scrollToBottom(true);
+    devops.activeTab = "build";
   } catch (e) {
     message.error(e instanceof Error ? e.message : String(e));
+  }
+}
+
+function onRun(s: BuildScript) {
+  const queued = queuedCount(s.id);
+  if (queued > 0) {
+    dupConfirm.script = s;
+    dupConfirm.queued = queued;
+    dupConfirm.open = true;
+    return;
+  }
+  void doTrigger(s.id);
+}
+
+async function confirmDupRun() {
+  const s = dupConfirm.script;
+  dupConfirm.open = false;
+  if (s) await doTrigger(s.id);
+}
+
+/** Seed (if needed) + trigger a 20s dummy build to test the FIFO queue. */
+async function onRunTest20s() {
+  if (testBusy.value) return;
+  testBusy.value = true;
+  try {
+    if (!devops.scripts.some((s) => s.id === TEST_SCRIPT_ID)) {
+      await devops.saveScript({
+        id: TEST_SCRIPT_ID,
+        label: "Test queue (20s)",
+        command:
+          'for i in $(seq 1 20); do echo "tick $i/20"; sleep 1; done',
+        workingDir: "~",
+        timeoutSec: 120,
+      });
+    }
+    await doTrigger(TEST_SCRIPT_ID);
+  } catch (e) {
+    message.error(e instanceof Error ? e.message : String(e));
+  } finally {
+    testBusy.value = false;
   }
 }
 
@@ -166,13 +314,69 @@ async function onCancel(id: string) {
   }
 }
 
-async function onSelect(id: string) {
-  await devops.selectBuild(id);
-  scroll.resetPin();
-  await scroll.scrollToBottom(true);
+async function openHistoryJob(job: BuildJob) {
+  await devops.selectBuildJob(job);
+  histDrawerOpen.value = true;
 }
 
+async function onSendStdin() {
+  const job = devops.liveBuild;
+  if (!job || job.status !== "running") return;
+  try {
+    await devops.sendStdin(job.id, stdinText.value, stdinSecret.value);
+    stdinText.value = "";
+  } catch (e) {
+    message.error(e instanceof Error ? e.message : String(e));
+  }
+}
+
+async function onDownloadLog(job?: BuildJob | null) {
+  const target = job ?? devops.liveBuild ?? devops.selected;
+  if (!target) return;
+  try {
+    const res = await devopsApi.log(target.id);
+    const blob = new Blob([res.text || ""], {
+      type: "text/plain;charset=utf-8",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${target.scriptId}-${target.id}.log`;
+    a.click();
+    URL.revokeObjectURL(url);
+  } catch (e) {
+    message.error(e instanceof Error ? e.message : String(e));
+  }
+}
+
+function onClearLog() {
+  termRef.value?.clear();
+}
+
+function onHistPageChange(page: number) {
+  void devops.fetchHistory(page);
+}
+
+watch(
+  () => devops.activeTab,
+  (tab) => {
+    if (tab === "history" && !devops.history.length) {
+      void devops.fetchHistory(1).catch(() => undefined);
+    }
+  },
+);
+
+let configMq: MediaQueryList | undefined;
+let syncConfigCompact: (() => void) | undefined;
+
 onMounted(async () => {
+  configMq = window.matchMedia("(max-width: 1023px)");
+  syncConfigCompact = () => {
+    configCompact.value = configMq!.matches;
+  };
+  syncConfigCompact();
+  configMq.addEventListener("change", syncConfigCompact);
+
   tickTimer = setInterval(() => {
     nowTick.value = Date.now();
   }, 1000);
@@ -182,291 +386,506 @@ onMounted(async () => {
     message.error(e instanceof Error ? e.message : String(e));
   }
   devops.connectEvents();
-  const current = devops.queue.currentBuildId || devops.builds[0]?.id;
+  const current =
+    devops.queue.currentBuildId ||
+    devops.builds.find((b) => b.status === "running")?.id ||
+    devops.builds[0]?.id;
   if (current) await devops.selectBuild(current);
 });
 
 onUnmounted(() => {
+  if (configMq && syncConfigCompact) {
+    configMq.removeEventListener("change", syncConfigCompact);
+  }
   if (tickTimer) clearInterval(tickTimer);
   devops.disconnect();
 });
 </script>
 
 <template>
-  <div class="h-full min-h-0 grid grid-cols-1 lg:grid-cols-12 gap-0">
-    <section
-      class="lg:col-span-5 min-h-0 flex flex-col border-r border-line overflow-hidden"
-    >
-      <div class="shrink-0 max-h-[58%] overflow-y-auto p-4 pb-3 border-b border-line">
-        <div class="flex items-center justify-between gap-3 mb-3">
-          <div>
-            <h1 class="text-base font-semibold text-ink">Build scripts</h1>
-            <p class="text-xs text-ink-muted mt-0.5">
-              Devops tự thêm lệnh tại đây — không cần sửa .env.
+  <div class="faw-dev-dash">
+    <!-- Tab 1: Build (tabs + worker/queue live in DevopsLayout header) -->
+    <div v-if="devops.activeTab === 'build'" class="faw-dev-body">
+      <section class="faw-dev-left faw-col flex flex-col min-h-0 overflow-hidden">
+        <div class="faw-col-head">
+          <h2>Scripts</h2>
+          <span class="faw-count">{{ activeScripts.length }}</span>
+        </div>
+
+        <div class="faw-filters">
+          <div class="faw-filters__row">
+            <button
+              type="button"
+              class="faw-btn"
+              style="flex: 1"
+              :disabled="testBusy || devops.queue.shuttingDown"
+              @click="onRunTest20s"
+            >
+              {{ testBusy ? "Đang tạo…" : "⏱ Test queue (20s)" }}
+            </button>
+          </div>
+        </div>
+
+        <div class="faw-list-scroll flex-1 min-h-0">
+          <div v-if="devops.loading" class="px-3 py-2 text-xs text-ink-muted">
+            Loading scripts…
+          </div>
+          <div
+            v-else-if="!activeScripts.length"
+            class="px-3 py-4 text-xs text-ink-muted leading-relaxed"
+          >
+            Chưa có lệnh nào active. Sang tab
+            <strong class="text-ink font-semibold">Cấu hình</strong>
+            để thêm hoặc bật lệnh.
+          </div>
+          <template v-else>
+            <div class="faw-group-label">
+              Active <span class="n">{{ activeScripts.length }}</span>
+            </div>
+            <div
+              v-for="s in activeScripts"
+              :key="s.id"
+              class="faw-dev-script-row"
+            >
+              <div class="min-w-0 flex-1">
+                <div class="faw-task-row__title">{{ s.label }}</div>
+                <div class="faw-dev-script-row__cmd truncate">
+                  {{ s.command }}
+                </div>
+              </div>
+              <span
+                v-if="queuedCount(s.id) > 0"
+                class="faw-chip shrink-0"
+                title="Job của lệnh này đang trong queue / đang chạy"
+              >
+                {{ queuedCount(s.id) }} queued
+              </span>
+              <button
+                type="button"
+                class="faw-btn faw-btn--run faw-btn--tight shrink-0"
+                :disabled="
+                  devops.triggeringId === s.id || devops.queue.shuttingDown
+                "
+                @click="onRun(s)"
+              >
+                {{ devops.triggeringId === s.id ? "…" : "▶ Run" }}
+              </button>
+            </div>
+          </template>
+        </div>
+      </section>
+
+      <section class="faw-dev-right">
+        <div class="faw-dev-term-head">
+          <div class="min-w-0 flex-1">
+            <div class="flex items-center gap-2 min-w-0">
+              <h2 class="faw-dev-term-head__title truncate">
+                {{ devops.liveBuild?.scriptLabel || "Live terminal" }}
+              </h2>
+              <span
+                v-if="devops.liveBuild"
+                :class="statusClass(devops.liveBuild.status)"
+              >
+                {{ devops.liveBuild.status }}
+              </span>
+            </div>
+            <p class="faw-dev-term-head__sub truncate">
+              {{ devops.liveBuild?.command || "Chọn một build để xem log" }}
             </p>
           </div>
-          <span class="faw-idle text-xs">
-            <span class="faw-idle__dot" :class="idleDot" />
-            {{ queueHint }}
-          </span>
-        </div>
-
-        <div v-if="devops.loading" class="text-sm text-ink-muted">
-          Loading scripts…
-        </div>
-        <div
-          v-else-if="!devops.scripts.length && !formOpen"
-          class="rounded-lg border border-dashed border-line p-4 text-sm text-ink-muted mb-3"
-        >
-          Chưa có lệnh nào. Bấm
-          <strong class="text-ink">Thêm lệnh</strong>
-          để cấu hình (ví dụ
-          <code class="text-ink">bash /opt/build/YKKUAT.sh</code>).
-        </div>
-        <div v-else class="flex flex-col gap-2 mb-3">
-          <div
-            v-for="s in devops.scripts"
-            :key="s.id"
-            class="rounded-lg border border-line bg-surface-raised p-3 flex items-start justify-between gap-3"
-          >
-            <div class="min-w-0">
-              <div class="text-sm font-semibold text-ink">{{ s.label }}</div>
-              <div class="text-[11px] font-mono text-ink-faint truncate">
-                {{ s.command }}
-              </div>
-              <div class="text-[11px] text-ink-muted truncate mt-0.5">
-                cwd {{ s.workingDir }}
-                <span v-if="s.timeoutSec"> · timeout {{ s.timeoutSec }}s</span>
-              </div>
-            </div>
-            <div class="flex items-center gap-2 shrink-0">
+          <div class="faw-dev-term-actions">
+            <span class="faw-dev-clock font-mono">{{ liveClock }}</span>
+            <a-popconfirm
+              v-if="liveRunning"
+              title="Dừng khẩn cấp build đang chạy?"
+              ok-text="Cancel Build"
+              cancel-text="Giữ"
+              ok-type="danger"
+              @confirm="onCancel(devops.liveBuildId!)"
+            >
               <button
                 type="button"
-                class="text-xs text-ink-muted hover:text-ink hover:underline"
-                @click="openEdit(s)"
+                class="faw-btn faw-btn--danger faw-btn--tight"
+                :disabled="devops.cancellingId === devops.liveBuildId"
               >
-                Sửa
+                Cancel
               </button>
-              <a-popconfirm
-                title="Xóa lệnh này?"
-                ok-text="Xóa"
-                cancel-text="Giữ"
-                ok-type="danger"
-                @confirm="onDeleteScript(s.id)"
-              >
-                <button
-                  type="button"
-                  class="text-xs text-red-400 hover:underline"
-                  :disabled="devops.deletingScriptId === s.id"
-                >
-                  Xóa
-                </button>
-              </a-popconfirm>
-              <button
-                type="button"
-                class="faw-btn faw-btn--run"
-                :disabled="devops.triggeringId === s.id || devops.queue.shuttingDown"
-                :title="
-                  devops.queue.running
-                    ? 'Queued — runs when the current job finishes'
-                    : 'Enqueue this script'
-                "
-                @click="onTrigger(s.id)"
-              >
-                {{ devops.triggeringId === s.id ? "Queuing…" : "Trigger" }}
-              </button>
-            </div>
+            </a-popconfirm>
+            <button type="button" class="faw-btn faw-btn--tight" @click="onClearLog">
+              Clear
+            </button>
+            <button
+              type="button"
+              class="faw-btn faw-btn--tight"
+              :disabled="!devops.liveBuild"
+              @click="onDownloadLog"
+            >
+              Download
+            </button>
           </div>
         </div>
 
+        <BuildTerminal
+          :key="devops.liveBuildId ?? 'idle'"
+          ref="termRef"
+          :lines="devops.logLines"
+          :build-id="devops.liveBuildId"
+        />
+
+        <form class="faw-dev-stdin" @submit.prevent="onSendStdin">
+          <input
+            v-model="stdinText"
+            class="faw-dev-stdin__input"
+            :type="stdinSecret ? 'password' : 'text'"
+            :disabled="!liveRunning || devops.stdinBusy"
+            :placeholder="
+              liveRunning
+                ? 'Gửi text/password vào stdin…'
+                : 'Stdin chỉ khi build đang RUNNING'
+            "
+            autocomplete="off"
+          />
+          <label class="faw-dev-stdin__secret">
+            <input v-model="stdinSecret" type="checkbox" />
+            Password
+          </label>
+          <button
+            type="submit"
+            class="faw-btn faw-btn--run faw-btn--tight"
+            :disabled="!liveRunning || devops.stdinBusy"
+          >
+            Send
+          </button>
+        </form>
+      </section>
+    </div>
+
+    <!-- Tab 2: History -->
+    <div v-else-if="devops.activeTab === 'history'" class="faw-dev-full faw-col">
+      <div class="faw-col-head">
+        <h2>History</h2>
+        <span class="faw-count">{{ devops.historyTotal }} builds</span>
+        <span class="flex-1" />
+        <a-select
+          v-model:value="histStatusModel"
+          class="w-36"
+          size="small"
+          :options="histStatusOptions"
+        />
+      </div>
+      <a-table
+        class="faw-dev-hist-table"
+        :columns="histColumns"
+        :data-source="devops.history"
+        :loading="devops.historyLoading"
+        row-key="id"
+        size="small"
+        :pagination="{
+          current: devops.historyPage,
+          pageSize: devops.historyPageSize,
+          total: devops.historyTotal,
+          showSizeChanger: false,
+        }"
+        :custom-row="
+          (record: BuildJob) => ({
+            onClick: () => openHistoryJob(record),
+          })
+        "
+        @change="(p: { current?: number }) => onHistPageChange(p.current || 1)"
+      >
+        <template #bodyCell="{ column, record }">
+          <template v-if="column.key === 'start'">
+            <span class="font-mono text-[12px]">
+              {{ formatTime((record as BuildJob).startedAt || (record as BuildJob).queuedAt) }}
+            </span>
+          </template>
+          <template v-else-if="column.key === 'script'">
+            <div class="min-w-0">
+              <div class="faw-task-row__title truncate">
+                {{ (record as BuildJob).scriptLabel }}
+              </div>
+              <div class="faw-dev-script-row__cmd truncate">
+                {{ (record as BuildJob).command }}
+              </div>
+            </div>
+          </template>
+          <template v-else-if="column.key === 'status'">
+            <span :class="statusClass((record as BuildJob).status)">
+              {{ (record as BuildJob).status }}
+            </span>
+          </template>
+          <template v-else-if="column.key === 'duration'">
+            {{ formatDuration(record as BuildJob) }}
+          </template>
+          <template v-else-if="column.key === 'by'">
+            {{ (record as BuildJob).triggeredBy }}
+          </template>
+          <template v-else-if="column.key === 'exit'">
+            {{ (record as BuildJob).exitCode ?? "—" }}
+          </template>
+          <template v-else-if="column.key === 'actions'">
+            <button
+              type="button"
+              class="faw-btn faw-btn--tight"
+              @click.stop="openHistoryJob(record as BuildJob)"
+            >
+              Log
+            </button>
+          </template>
+        </template>
+      </a-table>
+    </div>
+
+    <!-- Tab 3: Cấu hình -->
+    <div v-else class="faw-dev-full faw-col">
+      <div class="faw-col-head">
+        <h2>Cấu hình</h2>
+        <span class="faw-count">{{ devops.scripts.length }}</span>
+        <span class="flex-1" />
         <button
-          v-if="!formOpen"
           type="button"
-          class="faw-btn w-full"
+          class="faw-btn faw-btn--run faw-btn--tight"
           @click="openCreate"
         >
           + Thêm lệnh
         </button>
-
-        <form
-          v-else
-          class="rounded-lg border border-line bg-surface-raised p-3 flex flex-col gap-2"
-          @submit.prevent="onSaveScript"
-        >
-          <div class="text-sm font-semibold text-ink">{{ formTitle }}</div>
-          <label class="text-xs text-ink-muted">
-            Tên
-            <a-input
-              v-model:value="form.label"
-              class="mt-1"
-              placeholder="YKK UAT"
-              required
-            />
-          </label>
-          <label v-if="!editingId" class="text-xs text-ink-muted">
-            Id (optional — để trống sẽ slug từ tên)
-            <a-input
-              v-model:value="form.id"
-              class="mt-1 font-mono"
-              placeholder="ykkuat"
-            />
-          </label>
-          <label class="text-xs text-ink-muted">
-            Lệnh
-            <a-input
-              v-model:value="form.command"
-              class="mt-1 font-mono"
-              placeholder="bash /opt/build/YKKUAT.sh"
-              required
-            />
-          </label>
-          <label class="text-xs text-ink-muted">
-            Working dir
-            <a-input
-              v-model:value="form.workingDir"
-              class="mt-1 font-mono"
-              placeholder="/opt/build hoặc ~/projects/ykk"
-              required
-            />
-          </label>
-          <label class="text-xs text-ink-muted">
-            Timeout (giây, optional)
-            <a-input-number
-              v-model:value="form.timeoutSec"
-              class="mt-1 w-full"
-              :min="1"
-              :max="86400"
-              placeholder="1800"
-            />
-          </label>
-          <div class="flex gap-2 justify-end pt-1">
-            <button type="button" class="faw-btn" @click="closeForm">
-              Hủy
-            </button>
-            <button
-              type="submit"
-              class="faw-btn faw-btn--run"
-              :disabled="devops.savingScript || !form.label.trim() || !form.command.trim() || !form.workingDir.trim()"
-            >
-              {{ devops.savingScript ? "Đang lưu…" : "Lưu" }}
-            </button>
-          </div>
-        </form>
       </div>
 
-      <div class="flex-1 min-h-0 flex flex-col">
-        <div
-          class="shrink-0 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-ink-muted"
+      <div class="faw-dev-config-body">
+        <a-table
+          class="faw-dev-script-table"
+          :columns="scriptColumns"
+          :data-source="devops.scripts"
+          :loading="devops.loading"
+          row-key="id"
+          size="small"
+          :pagination="false"
+          :scroll="configCompact ? { x: 360 } : undefined"
         >
-          History
-        </div>
-        <div class="flex-1 min-h-0 overflow-y-auto px-4 pb-4">
-          <p
-            v-if="!devops.builds.length && !devops.loading"
-            class="text-sm text-ink-faint py-8 text-center"
-          >
-            No builds yet. Trigger a script to enqueue the first job.
-          </p>
-          <div
-            v-for="job in devops.builds"
-            :key="job.id"
-            class="w-full text-left rounded-lg border border-line px-3 py-2.5 mb-2 hover:bg-surface transition cursor-pointer"
-            :class="
-              job.id === devops.selectedId
-                ? 'border-accent bg-accent-soft'
-                : 'bg-surface-raised'
-            "
-            @click="onSelect(job.id)"
-          >
-            <div class="flex items-center justify-between gap-2">
-              <span class="text-sm font-medium text-ink truncate">{{
-                job.scriptLabel
-              }}</span>
+          <template #emptyText>
+            <span class="text-xs text-ink-muted">
+              Chưa có lệnh nào — bấm «+ Thêm lệnh».
+            </span>
+          </template>
+          <template #bodyCell="{ column, record }">
+            <template v-if="column.key === 'active'">
+              <a-switch
+                :checked="(record as BuildScript).active !== false"
+                size="small"
+                @change="(v: boolean) => onToggleScript(record as BuildScript, v)"
+              />
+            </template>
+            <template v-else-if="column.key === 'script'">
+              <div class="min-w-0" :class="{ 'opacity-60': (record as BuildScript).active === false }">
+                <div class="flex items-center gap-2 min-w-0">
+                  <span class="faw-task-row__title truncate">
+                    {{ (record as BuildScript).label }}
+                  </span>
+                  <span
+                    v-if="(record as BuildScript).active === false"
+                    class="faw-chip shrink-0"
+                  >
+                    off
+                  </span>
+                </div>
+                <div class="faw-dev-script-row__cmd truncate">
+                  {{ (record as BuildScript).command }}
+                </div>
+                <div class="faw-dev-script-row__cmd truncate lg:hidden">
+                  cwd {{ (record as BuildScript).workingDir }}
+                  <span v-if="(record as BuildScript).timeoutSec">
+                    · {{ (record as BuildScript).timeoutSec }}s
+                  </span>
+                </div>
+              </div>
+            </template>
+            <template v-else-if="column.key === 'label'">
+              <div class="min-w-0" :class="{ 'opacity-60': (record as BuildScript).active === false }">
+                <div class="faw-task-row__title truncate">
+                  {{ (record as BuildScript).label }}
+                </div>
+                <div class="faw-dev-script-row__cmd truncate">
+                  {{ (record as BuildScript).id }}
+                </div>
+              </div>
+            </template>
+            <template v-else-if="column.key === 'command'">
               <span
-                class="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded font-semibold"
-                :class="statusClass(job.status)"
+                class="faw-dev-script-row__cmd truncate block"
+                :class="{ 'opacity-60': (record as BuildScript).active === false }"
               >
-                {{ job.status }}
+                {{ (record as BuildScript).command }}
               </span>
-            </div>
-            <div class="mt-1 flex items-center justify-between gap-2 text-[11px] text-ink-muted">
-              <span class="truncate">{{ job.triggeredBy }} · {{ formatDuration(job) }}</span>
-              <a-popconfirm
-                v-if="canCancel(job)"
-                title="Cancel this build?"
-                ok-text="Cancel build"
-                cancel-text="Keep"
-                ok-type="danger"
-                @confirm.stop="onCancel(job.id)"
-              >
-                <span
-                  class="text-red-400 hover:underline"
-                  :class="{ 'opacity-50': devops.cancellingId === job.id }"
-                  @click.stop
+            </template>
+            <template v-else-if="column.key === 'cwd'">
+              <span class="faw-dev-script-row__cmd truncate block">
+                {{ (record as BuildScript).workingDir }}
+              </span>
+            </template>
+            <template v-else-if="column.key === 'timeout'">
+              <span class="font-mono text-[11px] text-ink-muted">
+                {{ (record as BuildScript).timeoutSec ?? "—" }}
+              </span>
+            </template>
+            <template v-else-if="column.key === 'actions'">
+              <div class="flex items-center gap-1 justify-end">
+                <button
+                  type="button"
+                  class="faw-btn faw-btn--tight"
+                  @click="openEdit(record as BuildScript)"
                 >
-                  {{
-                    devops.cancellingId === job.id
-                      ? "Stopping…"
-                      : job.status === "running"
-                        ? "Stop"
-                        : "Remove"
-                  }}
-                </span>
-              </a-popconfirm>
-            </div>
-            <p
-              v-if="job.errorMessage"
-              class="mt-1 text-[11px] text-red-400 truncate"
-            >
-              {{ job.errorMessage }}
-            </p>
-          </div>
-        </div>
+                  Sửa
+                </button>
+                <a-popconfirm
+                  title="Xóa lệnh này?"
+                  ok-text="Xóa"
+                  cancel-text="Giữ"
+                  ok-type="danger"
+                  @confirm="onDeleteScript((record as BuildScript).id)"
+                >
+                  <button
+                    type="button"
+                    class="faw-btn faw-btn--danger faw-btn--tight"
+                    :disabled="devops.deletingScriptId === (record as BuildScript).id"
+                  >
+                    Xóa
+                  </button>
+                </a-popconfirm>
+              </div>
+            </template>
+          </template>
+        </a-table>
       </div>
-    </section>
+    </div>
 
-    <section class="lg:col-span-7 min-h-0 flex flex-col overflow-hidden">
-      <div
-        class="shrink-0 px-4 py-3 border-b border-line flex items-center justify-between gap-3"
-      >
-        <div class="min-w-0">
-          <h2 class="text-sm font-semibold text-ink truncate">
-            {{ devops.selected?.scriptLabel || "Live log" }}
-          </h2>
-          <p class="text-[11px] font-mono text-ink-faint truncate">
-            {{
-              devops.selected
-                ? devops.selected.command
-                : "Select a build to stream stdout / stderr"
-            }}
-          </p>
+    <!-- History detail drawer -->
+    <a-drawer
+      v-model:open="histDrawerOpen"
+      :title="devops.selected?.scriptLabel || 'Build log'"
+      placement="right"
+      :width="720"
+    >
+      <div v-if="devops.selected" class="flex flex-col gap-3 h-full min-h-0">
+        <div class="flex items-center gap-2 flex-wrap">
+          <span :class="statusClass(devops.selected.status)">
+            {{ devops.selected.status }}
+          </span>
+          <span class="text-xs text-ink-muted">
+            Bắt đầu {{ formatTime(devops.selected.startedAt || devops.selected.queuedAt) }}
+          </span>
+          <span class="text-xs text-ink-muted">
+            · {{ formatDuration(devops.selected) }}
+          </span>
+          <span class="text-xs text-ink-muted">
+            · {{ devops.selected.triggeredBy }}
+          </span>
+          <span class="flex-1" />
+          <a-popconfirm
+            v-if="selectedRunning"
+            title="Dừng build đang chạy?"
+            ok-text="Cancel Build"
+            cancel-text="Giữ"
+            ok-type="danger"
+            @confirm="onCancel(devops.selectedId!)"
+          >
+            <button type="button" class="faw-btn faw-btn--danger faw-btn--tight">
+              Cancel
+            </button>
+          </a-popconfirm>
+          <button
+            type="button"
+            class="faw-btn faw-btn--tight"
+            @click="onDownloadLog(devops.selected)"
+          >
+            Download
+          </button>
         </div>
-        <span
-          v-if="devops.selected"
-          class="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded font-semibold shrink-0"
-          :class="statusClass(devops.selected.status)"
+        <div class="text-[11px] font-mono text-ink-muted break-all">
+          $ {{ devops.selected.command }}
+          <span class="text-ink-faint"> (cwd {{ devops.selected.workingDir }})</span>
+        </div>
+        <p
+          v-if="devops.selected.errorMessage"
+          class="m-0 text-xs text-red-500"
         >
-          {{ devops.selected.status }}
-        </span>
+          {{ devops.selected.errorMessage }}
+        </p>
+        <div class="faw-dev-drawer-term">
+          <BuildTerminal
+            :lines="devops.logLines"
+            :build-id="devops.selectedId"
+          />
+        </div>
       </div>
-      <pre
-        ref="logBox"
-        class="flex-1 min-h-0 overflow-y-auto m-0 p-4 text-[12px] leading-5 font-mono bg-zinc-950 text-zinc-200"
-        @scroll="scroll.onScroll"
-        @wheel="scroll.onWheel"
-        @touchmove="scroll.onTouchMove"
-      ><template v-if="devops.logLines.length"><div
-          v-for="(line, i) in devops.logLines"
-          :key="i"
-          :class="logColor(line.stream)"
-        ><span class="text-zinc-500 select-none">{{ line.at.slice(11, 19) }} </span><span class="opacity-60">{{ line.stream.padEnd(6) }} </span>{{ line.text }}</div></template><div
-          v-else
-          class="text-zinc-500"
-        >{{
-          devops.selected?.status === "queued"
-            ? "Waiting in FIFO queue…"
-            : "No log yet."
-        }}</div></pre>
-    </section>
+    </a-drawer>
+
+    <!-- Script create/edit modal -->
+    <a-modal
+      v-model:open="formOpen"
+      :title="formTitle"
+      ok-text="Lưu"
+      cancel-text="Hủy"
+      :confirm-loading="devops.savingScript"
+      :width="560"
+      wrap-class-name="work-modal-sheet"
+      :centered="false"
+      destroy-on-close
+      @ok="onSaveScript"
+      @cancel="closeForm"
+    >
+      <a-form layout="vertical" class="mt-1">
+        <a-form-item label="Tên" required>
+          <a-input v-model:value="form.label" placeholder="Deploy UAT" />
+        </a-form-item>
+        <a-form-item v-if="!editingId" label="Id (optional)">
+          <a-input
+            v-model:value="form.id"
+            class="font-mono"
+            placeholder="deploy-uat — để trống sẽ slug từ tên"
+          />
+        </a-form-item>
+        <a-form-item label="Lệnh" required>
+          <a-input
+            v-model:value="form.command"
+            class="font-mono"
+            placeholder="bash /opt/build/YKKUAT.sh"
+          />
+        </a-form-item>
+        <a-form-item label="Working dir" required>
+          <a-input
+            v-model:value="form.workingDir"
+            class="font-mono"
+            placeholder="/opt/build hoặc ~/projects/ykk"
+          />
+        </a-form-item>
+        <a-form-item label="Timeout (giây)">
+          <a-input-number
+            v-model:value="form.timeoutSec"
+            class="w-full"
+            :min="1"
+            :max="86400"
+            placeholder="1800"
+          />
+        </a-form-item>
+      </a-form>
+    </a-modal>
+
+    <!-- Duplicate-run confirm -->
+    <a-modal
+      v-model:open="dupConfirm.open"
+      title="Lệnh đang có trong queue"
+      ok-text="Vẫn chạy"
+      cancel-text="Bỏ qua"
+      @ok="confirmDupRun"
+    >
+      <p class="text-sm">
+        «{{ dupConfirm.script?.label }}» đang có
+        <strong>{{ dupConfirm.queued }}</strong>
+        job trong queue / đang chạy.
+      </p>
+      <p class="text-sm text-ink-muted">
+        Có muốn xếp thêm một lần chạy nữa không? (FIFO — job mới sẽ chạy sau)
+      </p>
+    </a-modal>
   </div>
 </template>

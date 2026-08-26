@@ -194,6 +194,8 @@ export const API = {
       `/api/devops/builds/${encodeURIComponent(id)}/stream`,
     buildCancel: (id: string) =>
       `/api/devops/builds/${encodeURIComponent(id)}/cancel`,
+    buildStdin: (id: string) =>
+      `/api/devops/builds/${encodeURIComponent(id)}/stdin`,
   },
 } as const;
 

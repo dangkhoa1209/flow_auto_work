@@ -10,6 +10,7 @@ import {
 import {
   addBuildScript,
   cancelBuild,
+  countBuilds,
   getBuild,
   getBuildQueueSnapshot,
   listBuildScripts,
@@ -17,6 +18,7 @@ import {
   patchBuildScript,
   readBuildLog,
   removeBuildScript,
+  sendBuildStdin,
   subscribeBuildEvents,
   triggerBuild,
 } from "../../modules/devops/index.js";
@@ -47,6 +49,7 @@ export const devopsController = {
       workingDir?: string;
       timeoutSec?: number;
       description?: string;
+      active?: boolean;
     };
     const script = await addBuildScript(body, username());
     res.status(201).json({ script });
@@ -59,6 +62,7 @@ export const devopsController = {
       workingDir?: string;
       timeoutSec?: number;
       description?: string;
+      active?: boolean;
     };
     const script = await patchBuildScript(
       String(req.params.scriptId || ""),
@@ -78,14 +82,19 @@ export const devopsController = {
 
   listBuilds: asyncHandler(async (req: Request, res: Response) => {
     const limit = Number(req.query.limit || 50);
-    res.json({
-      queue: getBuildQueueSnapshot(),
-      builds: await listBuilds({
+    const offset = Number(req.query.offset || 0);
+    const status = asStatus(req.query.status);
+    const scriptId = String(req.query.scriptId || "").trim() || undefined;
+    const [builds, total] = await Promise.all([
+      listBuilds({
         limit: Number.isFinite(limit) ? limit : 50,
-        status: asStatus(req.query.status),
-        scriptId: String(req.query.scriptId || "").trim() || undefined,
+        offset: Number.isFinite(offset) ? offset : 0,
+        status,
+        scriptId,
       }),
-    });
+      countBuilds({ status, scriptId }),
+    ]);
+    res.json({ queue: getBuildQueueSnapshot(), builds, total });
   }),
 
   getBuild: asyncHandler(async (req: Request, res: Response) => {
@@ -108,6 +117,16 @@ export const devopsController = {
       "Cancelled from Devops console",
     );
     res.json({ job, queue: getBuildQueueSnapshot() });
+  }),
+
+  stdin: asyncHandler(async (req: Request, res: Response) => {
+    const id = String(req.params.id || "").trim();
+    const body = (req.body ?? {}) as { data?: unknown; secret?: unknown };
+    if (typeof body.data !== "string") {
+      throw new AppError("stdin data must be a string", 400, "stdin_invalid");
+    }
+    sendBuildStdin(id, body.data, Boolean(body.secret));
+    res.json({ ok: true });
   }),
 
   log: asyncHandler(async (req: Request, res: Response) => {

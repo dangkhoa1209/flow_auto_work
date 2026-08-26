@@ -20,9 +20,11 @@ type ActiveRun = {
   child: ChildProcess;
   jobId: string;
   cancel: (reason: string) => void;
+  writeStdin: (chunk: string, secret?: boolean) => void;
 };
 
 const active = new Map<string, ActiveRun>();
+const MAX_STDIN_BYTES = 4096;
 
 function emitLog(
   job: BuildJob,
@@ -95,6 +97,30 @@ export async function cancelRunningBuild(
   if (!run) return false;
   run.cancel(reason);
   return true;
+}
+
+/** Write a line to the running job's stdin (appends newline if missing). */
+export function writeBuildStdin(
+  jobId: string,
+  data: string,
+  secret = false,
+): void {
+  if (data.length > MAX_STDIN_BYTES) {
+    throw new AppError(
+      `stdin too long (max ${MAX_STDIN_BYTES} characters)`,
+      400,
+      "stdin_too_long",
+    );
+  }
+  const run = active.get(jobId);
+  if (!run) {
+    throw new AppError(
+      "No running build to write stdin",
+      409,
+      "build_not_running",
+    );
+  }
+  run.writeStdin(data, secret);
 }
 
 /**
@@ -224,7 +250,7 @@ export async function runBuildJob(jobId: string): Promise<BuildRunResult> {
           FLOW_BUILD_SCRIPT_ID: script.id,
           FLOW_BUILD_TRIGGERED_BY: job.triggeredBy,
         },
-        stdio: ["ignore", "pipe", "pipe"],
+        stdio: ["pipe", "pipe", "pipe"],
         detached: process.platform !== "win32",
       });
     } catch (err) {
@@ -232,6 +258,24 @@ export async function runBuildJob(jobId: string): Promise<BuildRunResult> {
       void finish("failed", null, `spawn failed: ${msg}`);
       return;
     }
+
+    const writeStdin = (chunk: string, secret?: boolean) => {
+      if (!child.stdin || child.stdin.destroyed || child.killed) {
+        throw new AppError(
+          "Build process is not accepting stdin",
+          409,
+          "build_stdin_closed",
+        );
+      }
+      const payload = chunk.endsWith("\n") ? chunk : `${chunk}\n`;
+      child.stdin.write(payload);
+      emitLog(
+        job,
+        log,
+        "system",
+        secret ? "[stdin] <redacted>" : `[stdin] ${chunk.replace(/\n+$/, "")}`,
+      );
+    };
 
     const requestCancel = (reason: string) => {
       if (settled) return;
@@ -248,7 +292,7 @@ export async function runBuildJob(jobId: string): Promise<BuildRunResult> {
       killTimer.unref?.();
     };
 
-    active.set(jobId, { child, jobId, cancel: requestCancel });
+    active.set(jobId, { child, jobId, cancel: requestCancel, writeStdin });
 
     child.stdout?.on("data", (chunk) => stdoutSplit.push(chunk));
     child.stderr?.on("data", (chunk) => stderrSplit.push(chunk));

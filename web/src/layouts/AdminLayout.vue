@@ -62,7 +62,7 @@ async function logout() {
       <div class="flex items-center gap-3 text-sm text-ink-muted">
         <button
           type="button"
-          class="px-2 py-1 rounded-md hover:text-ink hover:bg-surface transition"
+          class="faw-icon-btn"
           :title="
             themeStore.mode === 'dark'
               ? 'Switch to light mode'
