@@ -39,6 +39,37 @@ const runningJob = computed(
   () => devops.builds.find((b) => b.id === devops.queue.currentBuildId) || null,
 );
 
+/** Per-script queue/running counts — trust queue.currentBuildId for running. */
+function scriptQueueState(scriptId: string) {
+  const runId = devops.queue.running ? devops.queue.currentBuildId : null;
+  let running = 0;
+  if (runId) {
+    const run = devops.builds.find((b) => b.id === runId);
+    if (run?.scriptId === scriptId) running = 1;
+  }
+
+  const queuedIds = new Set(
+    devops.queue.queuedIds.filter((id) => id !== runId),
+  );
+  let queued = 0;
+  for (const id of queuedIds) {
+    const j = devops.builds.find((b) => b.id === id);
+    if (j?.scriptId === scriptId) queued++;
+  }
+  for (const j of devops.builds) {
+    if (j.scriptId !== scriptId || j.status !== "queued") continue;
+    if (j.id === runId) continue;
+    if (queuedIds.has(j.id)) continue;
+    queued++;
+  }
+  return { running, queued };
+}
+
+function scriptBusyCount(scriptId: string) {
+  const { running, queued } = scriptQueueState(scriptId);
+  return running + queued;
+}
+
 const queuedJobs = computed(() =>
   devops.queue.queuedIds
     .map((id, i) => ({
@@ -244,12 +275,7 @@ async function onToggleScript(s: BuildScript, active: boolean) {
 
 /** Jobs of this script still queued or running. */
 function queuedCount(scriptId: string) {
-  const queuedOfScript = queuedJobs.value.filter(
-    (r) => r.job.scriptId === scriptId,
-  ).length;
-  const runningOfScript =
-    runningJob.value?.scriptId === scriptId ? 1 : 0;
-  return queuedOfScript + runningOfScript;
+  return scriptBusyCount(scriptId);
 }
 
 async function doTrigger(scriptId: string) {
@@ -337,6 +363,9 @@ watch(
     if (tab === "history" && !devops.history.length) {
       void devops.fetchHistory(1).catch(() => undefined);
     }
+    if (tab === "build") {
+      void devops.syncLiveStream();
+    }
   },
 );
 
@@ -414,11 +443,18 @@ onUnmounted(() => {
                 </div>
               </div>
               <span
-                v-if="queuedCount(s.id) > 0"
-                class="faw-chip shrink-0"
-                title="Job của lệnh này đang trong queue / đang chạy"
+                v-if="scriptQueueState(s.id).running"
+                class="faw-chip shrink-0 faw-dev-badge faw-dev-badge--run"
+                title="Build đang chạy"
               >
-                {{ queuedCount(s.id) }} queued
+                running
+              </span>
+              <span
+                v-else-if="scriptQueueState(s.id).queued"
+                class="faw-chip shrink-0"
+                title="Job đang chờ trong queue"
+              >
+                {{ scriptQueueState(s.id).queued }} queued
               </span>
               <button
                 type="button"

@@ -39,6 +39,8 @@ export const useDevopsStore = defineStore("devops", () => {
   const logLines = ref<BuildLogLine[]>([]);
   const viewLogLines = ref<BuildLogLine[]>([]);
   const viewingBuildId = ref<string | null>(null);
+  /** Last build shown on the Build tab — kept after completion so logs stay visible. */
+  const lastLiveBuildId = ref<string | null>(null);
   const loading = ref(false);
   const history = ref<BuildJob[]>([]);
   const historyTotal = ref(0);
@@ -57,23 +59,6 @@ export const useDevopsStore = defineStore("devops", () => {
     () => builds.value.find((b) => b.id === selectedId.value) || null,
   );
 
-  function resolveLiveBuildId(): string | null {
-    const runningId = queue.value.currentBuildId;
-    if (runningId) {
-      const job = builds.value.find((b) => b.id === runningId);
-      if (job?.status === "running") return runningId;
-    }
-    const anyRunning = builds.value.find((b) => b.status === "running");
-    if (anyRunning) return anyRunning.id;
-    return null;
-  }
-
-  const liveBuildId = computed(() => resolveLiveBuildId());
-
-  const liveBuild = computed(
-    () => builds.value.find((b) => b.id === liveBuildId.value) || null,
-  );
-
   let logEs: EventSource | null = null;
   let streamingId: string | null = null;
   let logStreamStopped = false;
@@ -84,6 +69,24 @@ export const useDevopsStore = defineStore("devops", () => {
   let viewStreamingId: string | null = null;
   let viewLogGen = 0;
   let viewLogsLoadedFor: string | null = null;
+  let liveLogsLoadedFor: string | null = null;
+
+  /** Job actively executing right now (queue snapshot or local running status). */
+  function resolveRunningBuildId(): string | null {
+    const fromQueue = queue.value.currentBuildId;
+    if (queue.value.running && fromQueue) return fromQueue;
+    return builds.value.find((b) => b.status === "running")?.id ?? null;
+  }
+
+  const liveBuildId = computed(() => {
+    const running = resolveRunningBuildId();
+    if (running) return running;
+    return lastLiveBuildId.value;
+  });
+
+  const liveBuild = computed(
+    () => builds.value.find((b) => b.id === liveBuildId.value) || null,
+  );
 
   function clearLogReconnect() {
     if (logReconnectTimer) {
@@ -114,6 +117,30 @@ export const useDevopsStore = defineStore("devops", () => {
     if (idx >= 0) builds.value[idx] = job;
     else builds.value = [job, ...builds.value];
 
+    if (job.status === "running") {
+      lastLiveBuildId.value = job.id;
+      liveLogsLoadedFor = null;
+      const queuedIds = queue.value.queuedIds.filter((id) => id !== job.id);
+      queue.value = {
+        ...queue.value,
+        running: true,
+        currentBuildId: job.id,
+        queuedIds,
+        queued: queuedIds.length,
+      };
+    } else if (TERMINAL_STATUSES.includes(job.status)) {
+      if (queue.value.currentBuildId === job.id) {
+        queue.value = {
+          ...queue.value,
+          running: false,
+          currentBuildId: null,
+        };
+      }
+      if (lastLiveBuildId.value === job.id) {
+        liveLogsLoadedFor = null;
+      }
+    }
+
     const hIdx = history.value.findIndex((b) => b.id === job.id);
     if (hIdx >= 0) {
       history.value[hIdx] = job;
@@ -130,23 +157,31 @@ export const useDevopsStore = defineStore("devops", () => {
 
   async function syncLiveStream() {
     const gen = ++syncGen;
-    const id = resolveLiveBuildId();
-    if (!id) {
-      closeLogStream();
-      return;
-    }
-    const job = findBuild(id);
-    if (!job || job.status === "queued") {
-      if (streamingId !== id) logLines.value = [];
-      closeLogStream();
-      return;
-    }
-    if (streamingId === id && logEs) return;
+    const runningId = resolveRunningBuildId();
 
-    if (streamingId !== id) logLines.value = [];
+    if (runningId) {
+      lastLiveBuildId.value = runningId;
+      liveLogsLoadedFor = null;
+      if (streamingId === runningId && logEs) return;
+      if (streamingId !== runningId) logLines.value = [];
+      closeLogStream();
+      if (gen !== syncGen) return;
+      await attachLogStream(runningId, gen, logLines);
+      return;
+    }
+
     closeLogStream();
+    const idleId = lastLiveBuildId.value;
+    if (!idleId) return;
+
+    const job = findBuild(idleId);
+    if (!job || !TERMINAL_STATUSES.includes(job.status)) return;
+    if (liveLogsLoadedFor === idleId && logLines.value.length > 0) return;
+
+    const res = await devopsApi.log(idleId);
     if (gen !== syncGen) return;
-    await attachLogStream(id, gen, logLines);
+    logLines.value = res.lines;
+    liveLogsLoadedFor = idleId;
   }
 
   async function syncViewLogs(id: string) {
@@ -191,7 +226,7 @@ export const useDevopsStore = defineStore("devops", () => {
     logReconnectTimer = setTimeout(() => {
       logReconnectTimer = undefined;
       if (logStreamStopped || gen !== syncGen) return;
-      if (resolveLiveBuildId() !== id) return;
+      if (resolveRunningBuildId() !== id) return;
       void attachLogStream(id, gen, logLines);
     }, 2000);
   }
@@ -241,6 +276,8 @@ export const useDevopsStore = defineStore("devops", () => {
       try {
         const ev = JSON.parse((e as MessageEvent).data) as { job: BuildJob };
         if (ev.job) {
+          lastLiveBuildId.value = ev.job.id;
+          liveLogsLoadedFor = null;
           const i = builds.value.findIndex((b) => b.id === ev.job.id);
           if (i >= 0) builds.value[i] = ev.job;
           else builds.value = [ev.job, ...builds.value];
@@ -253,6 +290,7 @@ export const useDevopsStore = defineStore("devops", () => {
         logEs = null;
         streamingId = null;
       }
+      void syncLiveStream();
     });
     es.onerror = () => {
       if (gen !== syncGen) return;
@@ -385,6 +423,9 @@ export const useDevopsStore = defineStore("devops", () => {
       scripts.value = s.scripts;
       builds.value = list.builds;
       queue.value = list.queue;
+      const running = resolveRunningBuildId();
+      if (running) lastLiveBuildId.value = running;
+      else if (list.builds[0]) lastLiveBuildId.value = list.builds[0].id;
       await syncLiveStream();
     } catch (err) {
       errorText.value = err instanceof Error ? err.message : String(err);
@@ -400,7 +441,9 @@ export const useDevopsStore = defineStore("devops", () => {
       const res = await devopsApi.trigger(scriptId, note);
       upsertBuild(res.job);
       applyQueue(res.queue);
-      await selectBuild(res.job.id);
+      lastLiveBuildId.value = res.job.id;
+      selectedId.value = res.job.id;
+      await syncLiveStream();
       return res.job;
     } finally {
       triggeringId.value = null;
@@ -573,6 +616,7 @@ export const useDevopsStore = defineStore("devops", () => {
     selectBuildJob,
     fetchHistory,
     setHistoryStatus,
+    syncLiveStream,
     connectEvents,
     disconnect,
   };
