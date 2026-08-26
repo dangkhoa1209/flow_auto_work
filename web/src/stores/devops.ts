@@ -171,17 +171,31 @@ export const useDevopsStore = defineStore("devops", () => {
     }
 
     closeLogStream();
-    const idleId = lastLiveBuildId.value;
-    if (!idleId) return;
+    const focusId = lastLiveBuildId.value;
+    if (!focusId) return;
 
-    const job = findBuild(idleId);
+    const job = findBuild(focusId);
+    const pendingInQueue =
+      job?.status === "queued" ||
+      (!job && queue.value.queuedIds.includes(focusId));
+
+    if (pendingInQueue) {
+      liveLogsLoadedFor = null;
+      if (streamingId !== focusId) logLines.value = [];
+      if (streamingId === focusId && logEs) return;
+      closeLogStream();
+      if (gen !== syncGen) return;
+      await attachLogStream(focusId, gen, logLines);
+      return;
+    }
+
     if (!job || !TERMINAL_STATUSES.includes(job.status)) return;
-    if (liveLogsLoadedFor === idleId && logLines.value.length > 0) return;
+    if (liveLogsLoadedFor === focusId && logLines.value.length > 0) return;
 
-    const res = await devopsApi.log(idleId);
+    const res = await devopsApi.log(focusId);
     if (gen !== syncGen) return;
     logLines.value = res.lines;
-    liveLogsLoadedFor = idleId;
+    liveLogsLoadedFor = focusId;
   }
 
   async function syncViewLogs(id: string) {
@@ -267,6 +281,18 @@ export const useDevopsStore = defineStore("devops", () => {
         const i = builds.value.findIndex((b) => b.id === ev.job.id);
         if (i >= 0) builds.value[i] = ev.job;
         else builds.value = [ev.job, ...builds.value];
+        if (ev.job.status === "running") {
+          lastLiveBuildId.value = ev.job.id;
+          liveLogsLoadedFor = null;
+          const queuedIds = queue.value.queuedIds.filter((qid) => qid !== ev.job.id);
+          queue.value = {
+            ...queue.value,
+            running: true,
+            currentBuildId: ev.job.id,
+            queuedIds,
+            queued: queuedIds.length,
+          };
+        }
       } catch {
         /* ignore */
       }
@@ -439,10 +465,12 @@ export const useDevopsStore = defineStore("devops", () => {
     triggeringId.value = scriptId;
     try {
       const res = await devopsApi.trigger(scriptId, note);
+      lastLiveBuildId.value = res.job.id;
+      liveLogsLoadedFor = null;
+      logLines.value = [];
+      selectedId.value = res.job.id;
       upsertBuild(res.job);
       applyQueue(res.queue);
-      lastLiveBuildId.value = res.job.id;
-      selectedId.value = res.job.id;
       await syncLiveStream();
       return res.job;
     } finally {
