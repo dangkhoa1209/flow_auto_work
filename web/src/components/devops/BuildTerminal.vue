@@ -36,9 +36,12 @@ function fitTerm() {
 
 function writeFrom(start: number) {
   if (!term) return;
+  if (start >= props.lines.length) return;
+  const chunk: string[] = [];
   for (let i = start; i < props.lines.length; i++) {
-    term.writeln(ansiLine(props.lines[i]));
+    chunk.push(ansiLine(props.lines[i]));
   }
+  term.write(`${chunk.join("\r\n")}\r\n`);
   written = props.lines.length;
 }
 

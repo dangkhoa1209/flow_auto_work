@@ -37,6 +37,8 @@ export const useDevopsStore = defineStore("devops", () => {
   });
   const selectedId = ref<string | null>(null);
   const logLines = ref<BuildLogLine[]>([]);
+  const viewLogLines = ref<BuildLogLine[]>([]);
+  const viewingBuildId = ref<string | null>(null);
   const loading = ref(false);
   const history = ref<BuildJob[]>([]);
   const historyTotal = ref(0);
@@ -63,7 +65,7 @@ export const useDevopsStore = defineStore("devops", () => {
     }
     const anyRunning = builds.value.find((b) => b.status === "running");
     if (anyRunning) return anyRunning.id;
-    return selectedId.value;
+    return null;
   }
 
   const liveBuildId = computed(() => resolveLiveBuildId());
@@ -78,6 +80,11 @@ export const useDevopsStore = defineStore("devops", () => {
   let logReconnectTimer: ReturnType<typeof setTimeout> | undefined;
   let syncGen = 0;
 
+  let viewLogEs: EventSource | null = null;
+  let viewStreamingId: string | null = null;
+  let viewLogGen = 0;
+  let viewLogsLoadedFor: string | null = null;
+
   function clearLogReconnect() {
     if (logReconnectTimer) {
       clearTimeout(logReconnectTimer);
@@ -90,6 +97,16 @@ export const useDevopsStore = defineStore("devops", () => {
     logEs?.close();
     logEs = null;
     streamingId = null;
+  }
+
+  function closeViewLogStream() {
+    viewLogEs?.close();
+    viewLogEs = null;
+    viewStreamingId = null;
+  }
+
+  function findBuild(id: string): BuildJob | undefined {
+    return builds.value.find((b) => b.id === id);
   }
 
   function upsertBuild(job: BuildJob) {
@@ -115,22 +132,55 @@ export const useDevopsStore = defineStore("devops", () => {
     const gen = ++syncGen;
     const id = resolveLiveBuildId();
     if (!id) {
-      logLines.value = [];
       closeLogStream();
       return;
     }
-    const job = builds.value.find((b) => b.id === id);
+    const job = findBuild(id);
     if (!job || job.status === "queued") {
-      logLines.value = [];
+      if (streamingId !== id) logLines.value = [];
       closeLogStream();
       return;
     }
     if (streamingId === id && logEs) return;
 
-    logLines.value = [];
+    if (streamingId !== id) logLines.value = [];
     closeLogStream();
     if (gen !== syncGen) return;
-    await attachLogStream(id, gen);
+    await attachLogStream(id, gen, logLines);
+  }
+
+  async function syncViewLogs(id: string) {
+    const gen = ++viewLogGen;
+    viewingBuildId.value = id;
+
+    let job = findBuild(id);
+    if (!job) {
+      try {
+        job = (await devopsApi.getBuild(id)).job;
+        const idx = builds.value.findIndex((b) => b.id === job!.id);
+        if (idx >= 0) builds.value[idx] = job;
+        else builds.value = [job, ...builds.value];
+      } catch {
+        return;
+      }
+    }
+    if (gen !== viewLogGen) return;
+
+    if (TERMINAL_STATUSES.includes(job.status)) {
+      closeViewLogStream();
+      if (viewLogsLoadedFor === id && viewLogLines.value.length > 0) return;
+      const res = await devopsApi.log(id);
+      if (gen !== viewLogGen) return;
+      viewLogLines.value = res.lines;
+      viewLogsLoadedFor = id;
+      return;
+    }
+
+    viewLogsLoadedFor = null;
+    if (viewStreamingId !== id) viewLogLines.value = [];
+    closeViewLogStream();
+    if (gen !== viewLogGen) return;
+    await attachViewLogStream(id, gen);
   }
 
   function scheduleLogReconnect(id: string, gen: number) {
@@ -142,11 +192,15 @@ export const useDevopsStore = defineStore("devops", () => {
       logReconnectTimer = undefined;
       if (logStreamStopped || gen !== syncGen) return;
       if (resolveLiveBuildId() !== id) return;
-      void attachLogStream(id, gen);
+      void attachLogStream(id, gen, logLines);
     }, 2000);
   }
 
-  async function attachLogStream(id: string, gen: number) {
+  async function attachLogStream(
+    id: string,
+    gen: number,
+    target: typeof logLines,
+  ) {
     if (gen !== syncGen) return;
     if (streamingId === id && logEs) return;
     closeLogStream();
@@ -165,7 +219,7 @@ export const useDevopsStore = defineStore("devops", () => {
           buildId?: string;
         };
         if (ev.buildId && ev.buildId !== id) return;
-        logLines.value = [...logLines.value, ev];
+        target.value.push(ev);
       } catch {
         /* ignore */
       }
@@ -199,7 +253,6 @@ export const useDevopsStore = defineStore("devops", () => {
         logEs = null;
         streamingId = null;
       }
-      void syncLiveStream();
     });
     es.onerror = () => {
       if (gen !== syncGen) return;
@@ -212,6 +265,75 @@ export const useDevopsStore = defineStore("devops", () => {
     };
   }
 
+  async function attachViewLogStream(id: string, gen: number) {
+    if (gen !== viewLogGen) return;
+    if (viewStreamingId === id && viewLogEs) return;
+    closeViewLogStream();
+    if (gen !== viewLogGen) return;
+    await ensureFreshToken();
+    if (gen !== viewLogGen) return;
+
+    const es = new EventSource(devopsBuildStreamUrl(id));
+    viewLogEs = es;
+    viewStreamingId = id;
+
+    es.addEventListener("log", (e) => {
+      if (gen !== viewLogGen) return;
+      try {
+        const ev = JSON.parse((e as MessageEvent).data) as BuildLogLine & {
+          buildId?: string;
+        };
+        if (ev.buildId && ev.buildId !== id) return;
+        viewLogLines.value.push(ev);
+      } catch {
+        /* ignore */
+      }
+    });
+    es.addEventListener("job", (e) => {
+      if (gen !== viewLogGen) return;
+      try {
+        const ev = JSON.parse((e as MessageEvent).data) as { job: BuildJob };
+        if (ev.job?.id !== id) return;
+        const i = builds.value.findIndex((b) => b.id === ev.job.id);
+        if (i >= 0) builds.value[i] = ev.job;
+        else builds.value = [ev.job, ...builds.value];
+      } catch {
+        /* ignore */
+      }
+    });
+    es.addEventListener("done", (e) => {
+      if (gen !== viewLogGen) return;
+      try {
+        const ev = JSON.parse((e as MessageEvent).data) as { job: BuildJob };
+        if (ev.job) {
+          const i = builds.value.findIndex((b) => b.id === ev.job.id);
+          if (i >= 0) builds.value[i] = ev.job;
+          else builds.value = [ev.job, ...builds.value];
+        }
+      } catch {
+        /* ignore */
+      }
+      es.close();
+      if (viewLogEs === es) {
+        viewLogEs = null;
+        viewStreamingId = null;
+      }
+    });
+    es.onerror = () => {
+      if (gen !== viewLogGen) return;
+      es.close();
+      if (viewLogEs === es) {
+        viewLogEs = null;
+        viewStreamingId = null;
+      }
+      if (gen !== viewLogGen || viewingBuildId.value !== id) return;
+      setTimeout(() => {
+        if (gen !== viewLogGen || viewingBuildId.value !== id) return;
+        void attachViewLogStream(id, gen);
+      }, 2000);
+    };
+  }
+
   async function selectBuild(id: string) {
     selectedId.value = id;
     await syncLiveStream();
@@ -221,7 +343,8 @@ export const useDevopsStore = defineStore("devops", () => {
   async function selectBuildJob(job: BuildJob) {
     const idx = builds.value.findIndex((b) => b.id === job.id);
     if (idx < 0) builds.value = [job, ...builds.value];
-    await selectBuild(job.id);
+    selectedId.value = job.id;
+    await syncViewLogs(job.id);
   }
 
   async function fetchHistory(page = historyPage.value) {
@@ -410,6 +533,8 @@ export const useDevopsStore = defineStore("devops", () => {
     eventsEs?.close();
     eventsEs = null;
     closeLogStream();
+    closeViewLogStream();
+    viewLogGen++;
   }
 
   return {
@@ -422,6 +547,8 @@ export const useDevopsStore = defineStore("devops", () => {
     liveBuildId,
     liveBuild,
     logLines,
+    viewLogLines,
+    viewingBuildId,
     loading,
     history,
     historyTotal,

@@ -772,8 +772,8 @@ onUnmounted(() => {
         </p>
         <div class="faw-dev-drawer-term">
           <BuildTerminal
-            :lines="devops.logLines"
-            :build-id="devops.selectedId"
+            :lines="devops.viewLogLines"
+            :build-id="devops.viewingBuildId"
           />
         </div>
       </div>
