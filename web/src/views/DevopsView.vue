@@ -19,7 +19,6 @@ const editingId = ref<string | null>(null);
 const stdinText = ref("");
 const stdinSecret = ref(false);
 const termRef = ref<{ clear: () => void } | null>(null);
-const testBusy = ref(false);
 
 /** Confirm re-run when the same script already has a queued/running job. */
 const dupConfirm = reactive({
@@ -27,8 +26,6 @@ const dupConfirm = reactive({
   script: null as BuildScript | null,
   queued: 0,
 });
-
-const TEST_SCRIPT_ID = "test-queue-20s";
 
 const form = reactive({
   id: "",
@@ -282,29 +279,6 @@ async function confirmDupRun() {
   if (s) await doTrigger(s.id);
 }
 
-/** Seed (if needed) + trigger a 20s dummy build to test the FIFO queue. */
-async function onRunTest20s() {
-  if (testBusy.value) return;
-  testBusy.value = true;
-  try {
-    if (!devops.scripts.some((s) => s.id === TEST_SCRIPT_ID)) {
-      await devops.saveScript({
-        id: TEST_SCRIPT_ID,
-        label: "Test queue (20s)",
-        command:
-          'for i in $(seq 1 20); do echo "tick $i/20"; sleep 1; done',
-        workingDir: "~",
-        timeoutSec: 120,
-      });
-    }
-    await doTrigger(TEST_SCRIPT_ID);
-  } catch (e) {
-    message.error(e instanceof Error ? e.message : String(e));
-  } finally {
-    testBusy.value = false;
-  }
-}
-
 async function onCancel(id: string) {
   try {
     await devops.cancel(id);
@@ -410,20 +384,6 @@ onUnmounted(() => {
         <div class="faw-col-head">
           <h2>Scripts</h2>
           <span class="faw-count">{{ activeScripts.length }}</span>
-        </div>
-
-        <div class="faw-filters">
-          <div class="faw-filters__row">
-            <button
-              type="button"
-              class="faw-btn"
-              style="flex: 1"
-              :disabled="testBusy || devops.queue.shuttingDown"
-              @click="onRunTest20s"
-            >
-              {{ testBusy ? "Đang tạo…" : "⏱ Test queue (20s)" }}
-            </button>
-          </div>
         </div>
 
         <div class="faw-list-scroll flex-1 min-h-0">
