@@ -104,6 +104,26 @@ export async function listRunningBuildJobs(): Promise<BuildJob[]> {
   return (await col()).find({ status: "running" }).toArray();
 }
 
+/**
+ * Atomically start the next queued job only if nothing else is running
+ * anywhere in the cluster (Mongo is the global mutex).
+ */
+export async function tryClaimBuildJobForRun(
+  jobId: string,
+): Promise<BuildJob | null> {
+  const c = await col();
+  const otherRunning = await c.findOne({ status: "running" });
+  if (otherRunning) return null;
+
+  const now = new Date().toISOString();
+  const res = await c.findOneAndUpdate(
+    { id: jobId, status: "queued" },
+    { $set: { status: "running", startedAt: now, updatedAt: now } },
+    { returnDocument: "after" },
+  );
+  return res ?? null;
+}
+
 export function createQueuedBuildJob(opts: {
   scriptId: string;
   scriptLabel: string;

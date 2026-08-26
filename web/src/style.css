@@ -3438,6 +3438,12 @@ code {
 .faw-dev-queue-pop__label:hover {
   color: var(--app-accent);
 }
+.faw-dev-queue-pop__meta {
+  display: block;
+  font-size: 10px;
+  color: var(--app-muted);
+  font-family: var(--font-mono);
+}
 .faw-dev-queue-pop__cancel {
   background: none;
   border: 0;

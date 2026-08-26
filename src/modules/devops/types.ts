@@ -1,4 +1,4 @@
-/** FIFO build-script jobs — independent of Cursor/GitLab WorkBench jobs. */
+/** FIFO build-script jobs — one global runner (concurrency 1) for all Devops users. */
 
 export const BUILD_STATUSES = [
   "queued",

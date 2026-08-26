@@ -27,6 +27,28 @@ function memoryStore() {
   };
 }
 
+function memoryQueueHelpers(store: ReturnType<typeof memoryStore>) {
+  return {
+    listRunningJobs: async () =>
+      [...store.jobs.values()].filter((j) => j.status === "running"),
+    listQueuedJobIds: async () =>
+      [...store.jobs.values()]
+        .filter((j) => j.status === "queued")
+        .sort((a, b) => a.queuedAt.localeCompare(b.queuedAt))
+        .map((j) => j.id),
+    claimJob: async (jobId: string) => {
+      const other = [...store.jobs.values()].find((j) => j.status === "running");
+      if (other) return null;
+      const job = store.jobs.get(jobId);
+      if (!job || job.status !== "queued") return null;
+      return store.update(jobId, {
+        status: "running",
+        startedAt: new Date().toISOString(),
+      });
+    },
+  };
+}
+
 const echoScript: WhitelistedScript = {
   id: "echo",
   label: "Echo",
@@ -42,6 +64,7 @@ describe("BuildQueue FIFO concurrency=1", () => {
     let maxConcurrent = 0;
     const started: Array<() => void> = [];
 
+    const helpers = memoryQueueHelpers(store);
     const queue = new BuildQueue({
       queueMax: 10,
       requireScript: () => echoScript,
@@ -50,6 +73,7 @@ describe("BuildQueue FIFO concurrency=1", () => {
       requireJob: store.requireJob,
       isRunning: () => false,
       cancelRun: async () => true,
+      ...helpers,
       run: async (jobId) => {
         concurrent += 1;
         maxConcurrent = Math.max(maxConcurrent, concurrent);
@@ -58,6 +82,10 @@ describe("BuildQueue FIFO concurrency=1", () => {
           started.push(resolve);
         });
         concurrent -= 1;
+        await store.update(jobId, {
+          status: "success",
+          finishedAt: new Date().toISOString(),
+        });
       },
     });
 
@@ -93,6 +121,7 @@ describe("BuildQueue FIFO concurrency=1", () => {
       release = resolve;
     });
 
+    const helpers = memoryQueueHelpers(store);
     const queue = new BuildQueue({
       queueMax: 10,
       requireScript: () => echoScript,
@@ -101,6 +130,7 @@ describe("BuildQueue FIFO concurrency=1", () => {
       requireJob: store.requireJob,
       isRunning: () => false,
       cancelRun: async () => true,
+      ...helpers,
       run: async () => {
         ran += 1;
         await gate;
@@ -123,6 +153,7 @@ describe("BuildQueue FIFO concurrency=1", () => {
 
   it("refuses new work after graceful shutdown", async () => {
     const store = memoryStore();
+    const helpers = memoryQueueHelpers(store);
     const queue = new BuildQueue({
       queueMax: 10,
       requireScript: () => echoScript,
@@ -131,12 +162,67 @@ describe("BuildQueue FIFO concurrency=1", () => {
       requireJob: store.requireJob,
       isRunning: () => false,
       cancelRun: async () => true,
+      ...helpers,
       run: async () => undefined,
     });
     await queue.gracefulShutdown(50);
     await expect(
       queue.trigger({ scriptId: "echo", triggeredBy: "u" }),
     ).rejects.toMatchObject({ code: "build_shutting_down" });
+  });
+
+  it("FIFO is global across devops users (not per triggeredBy)", async () => {
+    const store = memoryStore();
+    const order: string[] = [];
+    const triggers: string[] = [];
+    let concurrent = 0;
+    let maxConcurrent = 0;
+    const started: Array<() => void> = [];
+
+    const helpers = memoryQueueHelpers(store);
+    const queue = new BuildQueue({
+      queueMax: 10,
+      requireScript: () => echoScript,
+      insert: store.insert,
+      update: store.update,
+      requireJob: store.requireJob,
+      isRunning: () => false,
+      cancelRun: async () => true,
+      ...helpers,
+      run: async (jobId) => {
+        concurrent += 1;
+        maxConcurrent = Math.max(maxConcurrent, concurrent);
+        order.push(jobId);
+        triggers.push(store.jobs.get(jobId)?.triggeredBy ?? "");
+        await new Promise<void>((resolve) => {
+          started.push(resolve);
+        });
+        concurrent -= 1;
+        await store.update(jobId, {
+          status: "success",
+          finishedAt: new Date().toISOString(),
+        });
+      },
+    });
+
+    const a = await queue.trigger({ scriptId: "echo", triggeredBy: "dev-a" });
+    const b = await queue.trigger({ scriptId: "echo", triggeredBy: "dev-b" });
+    const c = await queue.trigger({ scriptId: "echo", triggeredBy: "dev-a" });
+
+    await new Promise((r) => setTimeout(r, 20));
+    expect(queue.snapshot().queued).toBe(2);
+    expect(maxConcurrent).toBeLessThanOrEqual(1);
+
+    started[0]?.();
+    await new Promise((r) => setTimeout(r, 20));
+    started[1]?.();
+    await new Promise((r) => setTimeout(r, 20));
+    started[2]?.();
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(order).toEqual([a.id, b.id, c.id]);
+    expect(triggers).toEqual(["dev-a", "dev-b", "dev-a"]);
+    expect(maxConcurrent).toBe(1);
   });
 });
 

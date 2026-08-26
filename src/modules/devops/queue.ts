@@ -8,8 +8,10 @@ import {
   createQueuedBuildJob,
   insertBuildJob,
   listQueuedBuildJobs,
+  listRunningBuildJobs,
   markInterruptedBuildsFailed,
   requireBuildJob,
+  tryClaimBuildJobForRun,
   updateBuildJob,
 } from "./store.js";
 import type { WhitelistedScript } from "./types.js";
@@ -38,12 +40,16 @@ export type BuildQueueDeps = {
     patch: Partial<Omit<BuildJob, "id">>,
   ) => Promise<BuildJob>;
   requireJob?: (id: string) => Promise<BuildJob>;
+  claimJob?: (jobId: string) => Promise<BuildJob | null>;
+  listRunningJobs?: () => Promise<BuildJob[]>;
+  listQueuedJobIds?: () => Promise<string[]>;
   queueMax?: number;
 };
 
 /**
- * In-process FIFO queue. Concurrency is hard-locked to 1 —
- * one spawn at a time, never parallel.
+ * In-process pump for a **system-wide** FIFO queue (concurrency hard-locked to 1).
+ * Job order and the global "only one running" rule are enforced via MongoDB so every
+ * Devops user shares the same queue — not per-user runners.
  */
 export class BuildQueue {
   private readonly queuedIds: string[] = [];
@@ -65,6 +71,9 @@ export class BuildQueue {
     patch: Partial<Omit<BuildJob, "id">>,
   ) => Promise<BuildJob>;
   private readonly requireJob: (id: string) => Promise<BuildJob>;
+  private readonly claimJob: (jobId: string) => Promise<BuildJob | null>;
+  private readonly listRunningJobs: () => Promise<BuildJob[]>;
+  private readonly listQueuedJobIds: () => Promise<string[]>;
   private readonly queueMaxOverride?: number;
 
   constructor(deps?: BuildQueueDeps) {
@@ -75,6 +84,13 @@ export class BuildQueue {
     this.insert = deps?.insert ?? insertBuildJob;
     this.update = deps?.update ?? updateBuildJob;
     this.requireJob = deps?.requireJob ?? requireBuildJob;
+    this.claimJob = deps?.claimJob ?? tryClaimBuildJobForRun;
+    this.listRunningJobs =
+      deps?.listRunningJobs ??
+      (async () => listRunningBuildJobs());
+    this.listQueuedJobIds =
+      deps?.listQueuedJobIds ??
+      (async () => (await listQueuedBuildJobs()).map((j) => j.id));
     this.queueMaxOverride = deps?.queueMax;
   }
 
@@ -191,13 +207,8 @@ export class BuildQueue {
     if (interrupted > 0) {
       logger.warn("Marked interrupted builds as failed", { count: interrupted });
     }
-    const queued = await listQueuedBuildJobs();
-    let restored = 0;
-    for (const job of queued) {
-      if (this.queuedIds.includes(job.id)) continue;
-      this.queuedIds.push(job.id);
-      restored += 1;
-    }
+    await this.syncQueuedFromDb();
+    const restored = this.queuedIds.length;
     if (restored > 0) {
       logger.info("Restored queued builds after restart", { restored });
       this.publishSnapshot();
@@ -245,16 +256,40 @@ export class BuildQueue {
     }
   }
 
+  private async syncQueuedFromDb(): Promise<void> {
+    this.queuedIds = await this.listQueuedJobIds();
+  }
+
   private async pump(): Promise<void> {
     if (this.pumping) return;
     this.pumping = true;
     try {
-      while (this.queuedIds.length > 0 && !this.shuttingDown) {
-        const jobId = this.queuedIds.shift();
-        if (!jobId) break;
+      while (!this.shuttingDown) {
+        await this.syncQueuedFromDb();
+        if (this.queuedIds.length === 0) break;
+
+        const running = await this.listRunningJobs();
+        if (running.length > 0) {
+          this.currentBuildId = running[0]?.id ?? this.currentBuildId;
+          this.publishSnapshot();
+          break;
+        }
+
+        const jobId = this.queuedIds[0];
+        const claimed = await this.claimJob(jobId);
+        if (!claimed) {
+          await this.syncQueuedFromDb();
+          continue;
+        }
+
+        this.queuedIds.shift();
         this.currentBuildId = jobId;
+        publishBuildEvent({ type: "job", job: claimed });
         this.publishSnapshot();
-        logger.info("Build dequeued — running", { jobId });
+        logger.info("Build dequeued — running", {
+          jobId,
+          triggeredBy: claimed.triggeredBy,
+        });
         try {
           await this.run(jobId);
         } catch (err) {
@@ -278,7 +313,9 @@ export class BuildQueue {
       }
     } finally {
       this.pumping = false;
-      if (this.queuedIds.length > 0 && !this.shuttingDown) {
+      await this.syncQueuedFromDb();
+      const running = await this.listRunningJobs();
+      if (this.queuedIds.length > 0 && !this.shuttingDown && running.length === 0) {
         void this.pump();
       }
     }

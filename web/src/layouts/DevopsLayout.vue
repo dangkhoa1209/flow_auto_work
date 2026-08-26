@@ -26,7 +26,9 @@ const runningJob = computed(
 
 const workerLabel = computed(() => {
   if (devops.queue.shuttingDown) return "SHUTTING DOWN";
-  if (runningJob.value) return `RUNNING: ${runningJob.value.scriptLabel}`;
+  if (runningJob.value) {
+    return `RUNNING: ${runningJob.value.scriptLabel} (@${runningJob.value.triggeredBy})`;
+  }
   return "IDLE";
 });
 
@@ -135,7 +137,8 @@ async function logout() {
                   class="faw-dev-queue-pop__label"
                   @click="onSelectQueued(row.job.id)"
                 >
-                  {{ row.job.scriptLabel }}
+                  <span class="block truncate">{{ row.job.scriptLabel }}</span>
+                  <span class="faw-dev-queue-pop__meta">@{{ row.job.triggeredBy }}</span>
                 </button>
                 <a-popconfirm
                   title="Xóa job này khỏi queue?"
