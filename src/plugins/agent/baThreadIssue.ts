@@ -429,7 +429,6 @@ export async function runBaThreadIssueDraft(opts: {
       const agent = await Agent.create({
         apiKey,
         model: { id: modelId },
-        mode: "plan",
         ...(BA_GITLAB_INTERACTION_ENABLED ? {} : { mcpServers: {} }),
         local: {
           cwd: project.localPath,

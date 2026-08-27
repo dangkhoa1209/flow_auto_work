@@ -95,6 +95,17 @@ ${baSpecFormatInstructions()}
 - **Deliverable trong chat:** user story / AC (Given–When–Then) viết sẵn để dán ticket — **không** tạo file.`;
 }
 
+/** Cấm trả lời chỉ “đang tra cứu / lập kế hoạch” — phải có nội dung nghiệp vụ. */
+export function baDeliverAnswerRules(): string {
+  return `## 4. Trả lời phải có KẾT QUẢ (BẮT BUỘC)
+- **Cấm** kết thúc chỉ bằng tường thuật thao tác: "Đang tra cứu…", "Mình sẽ kiểm tra…", "Đã thu thập đủ tài liệu…", "đang lập kế hoạch…", "Bước tiếp theo…", "sẽ mô tả…".
+- Tra cứu source **trong lượt này** (read/grep) rồi **viết luôn câu trả lời nghiệp vụ** — không dừng ở bước chuẩn bị.
+- **Câu đầu tiên** trả lời trực tiếp câu hỏi (logic / luồng / quy tắc / màn hình liên quan).
+- Nếu user kèm **URL hoặc path UI** (vd: \`/timekeeping/setting/staff-leave\`): grep path/route đó trong router/config → mở view/component liên quan → mô tả **logic nghiệp vụ** tại màn đó (tên UI tiếng Việt).
+- Chưa đủ bằng chứng: nói rõ "chưa tìm thấy trên hệ thống" + 1–2 câu hỏi làm rõ — **không** giả vờ đang làm tiếp.
+- Ngắn gọn đúng trọng tâm; heading/bullet khi nội dung nhiều phần. Không chú thích thừa "(theo UI)", "(trong code)". Viết tiếng Việt tự nhiên.`;
+}
+
 /** Intent triage — always run before codebase scan or BA deliverables. */
 export function baIntentTriageGate(): string {
   return `### 🛑 CRITICAL GATE: INTENT TRIAGE & SANITY CHECK (LUÔN THỰC HIỆN TRƯỚC TIÊN)
@@ -274,8 +285,9 @@ ${baIntentTriageGate()}
 0. **Thực hiện INTENT TRIAGE (mục 🛑) trước.** Case 1–2: KHÔNG scan codebase. Chỉ case 3 mới được tra cứu source.
 1. **Đọc "Hội thoại trước" trước tiên.** Nếu thông tin đã có trong hội thoại (tên màn hình, luồng, kết luận đã chốt) → dùng lại ngay, KHÔNG tìm lại trong source.
 2. Nếu cần tra cứu (chỉ case 3): **tìm có chủ đích** — grep từ khóa tiếng Việt trong câu hỏi vào locale/i18n trước, rồi mở đúng 1–3 file liên quan nhất. Không quét lan man toàn repo, không đọc file không phục vụ câu hỏi.
-3. **Tìm đủ bằng chứng là dừng và trả lời ngay.** Không xác minh lặp lại điều đã chắc chắn.
+3. **Tìm đủ bằng chứng là viết câu trả lời nghiệp vụ ngay** — không xác minh lặp, không dừng sau bước đọc file.
 4. Câu hỏi rộng/mơ hồ (case 2): hỏi làm rõ — không tự mở rộng phạm vi tra cứu.
+5. User kèm URL/path màn hình → ưu tiên map route → mô tả logic tại màn đó.
 
 ## 2. Chuẩn xác — bám sát sản phẩm thật (BẮT BUỘC)
 - Mọi tên nút / menu / ô nhập / thông báo phải khớp 100% chữ trên UI (locale \`vi\`). **Không thấy bằng chứng thì nói "chưa tìm thấy trên hệ thống" — tuyệt đối không bịa.**
@@ -289,10 +301,7 @@ ${baGitlabBoundaryInstructions()}
 
 ${dbBlock}
 
-## 4. Định dạng câu trả lời
-- Vào thẳng nội dung, **câu đầu tiên trả lời trực tiếp câu hỏi**. Không viết "Mình sẽ kiểm tra…", "Đang xem…", "Bước tiếp theo…" — không tường thuật thao tác, không stream dàn ý.
-- Ngắn gọn đúng trọng tâm: câu hỏi đơn giản → vài câu; chỉ dùng heading/bullet khi nội dung thật sự nhiều phần.
-- Không chú thích thừa "(theo UI)", "(trong code)". Viết tiếng Việt tự nhiên.
+${baDeliverAnswerRules()}
 
 ## 5. Trình bày (chat hẹp — dễ đọc, chuyên nghiệp)
 - So sánh nhiều thành phần / tab / rule / bước → dùng **bảng Markdown GFM đúng chuẩn** (mỗi cột có separator riêng), ví dụ:
@@ -458,7 +467,6 @@ export async function runBaChatAgent(opts: {
       const agent = await Agent.create({
         apiKey,
         model: { id: modelId },
-        mode: "plan",
         ...(BA_GITLAB_INTERACTION_ENABLED
           ? {}
           : {

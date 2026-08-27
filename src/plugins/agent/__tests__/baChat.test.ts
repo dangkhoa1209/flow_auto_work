@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   BA_GITLAB_INTERACTION_ENABLED,
   baAnalysisModeInstructions,
+  baDeliverAnswerRules,
   baGitlabBoundaryInstructions,
   baIntentTriageGate,
   baReadOnlyWorkspaceRules,
@@ -44,6 +45,16 @@ describe("baAnalysisModeInstructions", () => {
     expect(text).toMatch(/Mức tối thiểu/);
     expect(text).toMatch(/Yêu cầu khách hàng/);
     expect(text).toMatch(/không.*tạo file/);
+  });
+});
+
+describe("baDeliverAnswerRules", () => {
+  it("forbids plan-only responses and requires business answer", () => {
+    const text = baDeliverAnswerRules();
+    expect(text).toMatch(/KẾT QUẢ/);
+    expect(text).toMatch(/đang lập kế hoạch/);
+    expect(text).toMatch(/Đã thu thập đủ tài liệu/);
+    expect(text).toMatch(/staff-leave/);
   });
 });
 
