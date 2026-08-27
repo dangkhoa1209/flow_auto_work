@@ -20,7 +20,10 @@ import { resolveBaUserGoogleAccessToken } from "../../modules/google/index.js";
 import {
   BA_GITLAB_INTERACTION_ENABLED,
   baGitlabBoundaryInstructions,
+  baReadOnlyWorkspaceRules,
+  baSpecFormatInstructions,
 } from "./baChat.js";
+import { baBusinessLanguageRules } from "./baWorkflow.js";
 import {
   beginCancellableJob,
   errorFromCursorRunStatus,
@@ -257,7 +260,7 @@ function tryParseIssueJson(raw: string): BaThreadIssueDraft | null {
   }
 }
 
-function buildThreadIssuePrompt(opts: {
+export function buildThreadIssuePrompt(opts: {
   displayName: string;
   gitlabPath: string;
   mainBranch: string;
@@ -272,19 +275,30 @@ function buildThreadIssuePrompt(opts: {
   return `Bạn là Business Analyst trên dự án **${opts.displayName}**.
 
 ## Nhiệm vụ
-User bấm **Create issue** — hãy **review toàn bộ hội thoại** dưới đây và soạn **một** GitLab issue draft cho Dev.
+User bấm **Create issue** — hãy **review toàn bộ hội thoại** dưới đây và soạn **một** GitLab issue draft cho Dev/QA.
 
-Yêu cầu:
-1. Tổng hợp những gì đã trao đổi / chốt — không bịa thêm ngoài chat (trừ khi cần tra source để đúng tên UI).
-2. Title ngắn, rõ, Dev-ready.
-3. Description markdown: bối cảnh, phạm vi, ghi chú từ chat. Nếu có điều kiện nghiệm thu, viết luôn trong mô tả (section \`### Acceptance criteria\` + bullet Given–When–Then).
-4. **Không** gán label — để BA chọn trên form.
+## Format mô tả issue (gợi ý — cùng format spec với BA mode)
+${baSpecFormatInstructions()}
 
-**Chỉ đọc source khi cần** xác minh tên màn hình/nút (locale vi) — không sửa file.
+## Quy tắc soạn draft
+1. **Tổng hợp** từ hội thoại — không bịa (trừ khi cần tra source để đúng tên UI).
+2. **Title** — ngắn, rõ; lấy từ tên chức năng chính (thường từ mục 1).
+3. **Description (markdown):**
+   - Mục **1–2** = **đầu vào** (YC gốc / PD) — trích từ chat, không nhét phân tích BA vào đây.
+   - Mục **3** = **phân tích BA** — phần chính khi đã có trao đổi phân tích; có thể bỏ qua nếu chat mới dừng ở YC thô.
+   - Mục **4** = câu hỏi còn mở (nếu có).
+   - Tối thiểu: mục 1 (+ mục 2 nếu có ý PD).
+4. Chat đã có phân tích → **giữ mục 3**, không làm mất chi tiết BA đã chốt.
+5. **acceptanceCriteria** (JSON): Given–When–Then rút từ **mục 3** nếu đã rõ — có thể \`[]\`.
+6. **Không** gán label.
 
-## Ranh giới
+${baBusinessLanguageRules()}
+
+**Chỉ đọc source khi cần** xác minh tên màn hình/nút (locale vi) — không sửa file, không tạo file.
+
+## Ranh giới workspace (CHỈ ĐỌC)
+${baReadOnlyWorkspaceRules({ mainBranch: opts.mainBranch })}
 ${baGitlabBoundaryInstructions()}
-- Branch đọc: ${opts.mainBranch}
 ${dbBlock}
 
 ${opts.gitlabTaskBlock ? `${opts.gitlabTaskBlock}\n\n` : ""}## Hội thoại cần review
@@ -292,13 +306,13 @@ ${opts.threadBlock}
 
 ---
 
-**Cuối câu trả lời**, thêm **một** block JSON (bắt buộc) — **một dòng**, không xuống dòng trong chuỗi:
+**Cuối câu trả lời**, thêm **một** block JSON (bắt buộc):
 
 \`\`\`json
-{"title":"…","description":"…","labels":[],"acceptanceCriteria":[]}
+{"title":"…","description":"… (markdown: 1–2 đầu vào, 3 phân tích BA nếu có)","labels":[],"acceptanceCriteria":[]}
 \`\`\`
 
-JSON phải parse được; không comment; escape \`"\` trong chuỗi.`;
+JSON phải parse được; \`description\` escape newline thành \\n; không comment trong JSON.`;
 }
 
 export async function runBaThreadIssueDraft(opts: {
@@ -386,10 +400,12 @@ export async function runBaThreadIssueDraft(opts: {
       const agent = await Agent.create({
         apiKey,
         model: { id: modelId },
+        mode: "plan",
         ...(BA_GITLAB_INTERACTION_ENABLED ? {} : { mcpServers: {} }),
         local: {
           cwd: project.localPath,
           ...(BA_GITLAB_INTERACTION_ENABLED ? {} : { settingSources: [] }),
+          sandboxOptions: { enabled: true },
           ...(dbCfg
             ? { customTools: buildBaDbCustomTools(dbCfg) as never }
             : {}),

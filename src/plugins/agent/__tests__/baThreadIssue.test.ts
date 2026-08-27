@@ -1,8 +1,28 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildThreadIssuePrompt,
   normalizeIssueDraftForForm,
   parseIssueDraftFromAgent,
 } from "../baThreadIssue.js";
+
+describe("buildThreadIssuePrompt", () => {
+  it("suggests spec format with minimum sections 1+2", () => {
+    const prompt = buildThreadIssuePrompt({
+      displayName: "Demo",
+      gitlabPath: "group/app",
+      mainBranch: "main",
+      threadBlock: "### Human\nphân tích export excel",
+      gitlabTaskBlock: "",
+      dbAccess: { allowed: false },
+    });
+    expect(prompt).toMatch(/gợi ý.*format spec/i);
+    expect(prompt).toMatch(/đầu vào/);
+    expect(prompt).toMatch(/phân tích BA/);
+    expect(prompt).toMatch(/Tối thiểu: mục 1/);
+    expect(prompt).toMatch(/Cấm ghi file/);
+    expect(prompt).toMatch(/CHỈ ĐỌC/);
+  });
+});
 
 describe("parseIssueDraftFromAgent", () => {
   it("parses JSON block from agent output", () => {

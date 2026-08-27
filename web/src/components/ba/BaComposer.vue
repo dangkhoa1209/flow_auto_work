@@ -58,7 +58,7 @@ function onKeydown(e: KeyboardEvent) {
           loading
             ? 'Đang suy nghĩ…'
             : analysisMode
-              ? 'Hỏi bình thường hoặc nhờ phân tích nghiệp vụ (kèm URL / màn hình nếu có)…'
+              ? 'Hỏi bình thường hoặc nhờ phân tích/spec nghiệp vụ (kèm YC, link issue, tài liệu…)…'
               : 'Hỏi về dự án — nên kèm URL hoặc tên màn hình / nút trên UI'
         "
         @keydown="onKeydown"

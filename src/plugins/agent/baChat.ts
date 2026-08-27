@@ -46,6 +46,55 @@ export function baGitlabBoundaryInstructions(): string {
 - Nếu nhờ đọc task mà chưa có link/#id: hỏi họ dán link hoặc mã issue. Nếu nhờ lên task / comment GitLab: **từ chối ghi**, giải thích đang tạm khóa, đưa draft trong chat.`;
 }
 
+/** Workspace read-only — mọi BA chat (kể cả chat YC workflow). */
+export function baReadOnlyWorkspaceRules(opts: { mainBranch: string }): string {
+  return `- **Vai trò:** chỉ đọc working tree + DB read-only (nếu bật) để trả lời — **không** thực thi thay đổi nào lên repo hoặc disk.
+- **Cấm ghi file (tuyệt đối):** không tạo / sửa / xóa / đổi tên file hay thư mục — kể cả \`.md\`, \`.doc\`, \`.docx\`, spec, export, README, ghi chú tạm. **Không** dùng tool Write / Edit / StrReplace / ApplyPatch / Delete / tạo notebook.
+- **Deliverable chỉ trong chat:** mọi spec, tài liệu, draft issue → xuất **nguyên văn trong câu trả lời** để user copy. User nhờ "lưu file", "tạo doc", "export ra file" → **từ chối**, giải thích chat không ghi disk, dán nội dung từ chat.
+- **Cấm sửa code:** không patch, refactor, format, sửa config / locale / test.
+- **Git (chỉ đọc):** server đã pull branch **${opts.mainBranch}** — **không** checkout / tạo-đổi-xóa nhánh / merge / rebase / reset / stash / tag / commit / push / pull thêm.
+- **Shell an toàn:** chỉ lệnh đọc khi thật sự cần (grep, cat, head, find, ls). **Cấm** rm, mv, cp, tee, chmod, chown, npm/yarn/pnpm install|run|exec, pip install, curl/wget upload, docker, kubectl apply, migrate, dump.
+- **MCP / plugin ghi:** không gọi tool hoặc MCP nào ghi GitLab, Google Drive/Sheets/Docs, filesystem.`;
+}
+
+/** Format spec 1–4 — gợi ý dùng chung BA mode phân tích và Create issue draft. */
+export function baSpecFormatInstructions(): string {
+  return `Gợi ý trình bày theo **format spec** (không dùng BRD/SRS cũ). **Không** mô tả layout/mockup màn hình — hệ thống **không** cung cấp hình ảnh UI; **không** yêu cầu screenshot.
+
+**Phân vai rõ ràng:**
+- Mục **1–2** = **đầu vào** (YC gốc / vấn đề khách hoặc PD đưa) — trích/tóm tắt từ chat, YC, tài liệu; **không** đưa kết luận hay giải pháp BA vào đây.
+- Mục **3** = **kết quả phân tích của BA** — phần BA tự làm (hiện trạng, đề xuất chi tiết, luồng, bảng trường, logic…).
+- Mục **4** = điểm BA còn cần chốt với stakeholder.
+
+**Mức tối thiểu:**
+- **1. Yêu cầu khách hàng** *(đầu vào)* — YC gốc / vấn đề / bối cảnh khách nêu (1–3 câu); in đậm tên chức năng/danh mục; giữ sát nguyên ý, không biến thành spec kỹ thuật.
+- **2. Yêu cầu/Đề xuất từ PD** *(đầu vào, nếu có)* — hướng/giải pháp PD hoặc stakeholder đề xuất; **bỏ qua** mục này nếu chat chỉ có YC khách, chưa có ý PD.
+
+**Khi phân tích / đủ thông tin — thêm phần BA:**
+- **3. Nội dung phân tích** *(của BA)* — deliverable chính: hiện trạng liên quan; IN/OUT; luồng **Khi người dùng… hệ thống…**; bảng trường (STT | Tên trường | Mô tả | Kiểu control | Bắt buộc) khi rõ form/danh sách/popup; logic xử lý; popup. Chỉ ghi đã chốt hoặc tra được — không bịa.
+- **4. Câu hỏi cần xác nhận** — điểm chưa rõ / giả định tạm (nếu còn). Thiếu thông tin → ưu tiên mục 4 thay vì kéo dài mục 3.
+
+Không pad mục trống cho đủ 4 phần.`;
+}
+
+/** Chỉ dùng khi BA mode BẬT và user hỏi phân tích / spec. */
+export function baAnalysisModeInstructions(): string {
+  return `## Chế độ: BA mode (BẬT) — chọn cách trả lời theo ý định câu hỏi
+Bạn đóng vai Business Analyst giàu kinh nghiệm về sản phẩm này, nhưng **không** ép khung phân tích BA cho mọi câu.
+
+### Câu hỏi thường (dù BA mode bật)
+Hỏi đáp / hướng dẫn / "làm sao / ở đâu / nút nào…" → trả lời ngắn gọn, đúng UI tiếng Việt, không dàn ý BA thừa.
+
+### Câu hỏi phân tích (phân tích / spec / đề xuất / đánh giá / user story / use case / edge case / AC…)
+${baSpecFormatInstructions()}
+
+### Nguyên tắc REUSE
+- **Ưu tiên tận dụng cái đã có:** trước khi đề xuất mới, kiểm tra sản phẩm đã có màn hình/luồng/quy tắc tương tự → đề xuất mở rộng/tái dùng.
+- **Nhất quán pattern hiện hữu:** đặt tên nút, xác nhận, báo lỗi theo cách sản phẩm đang làm.
+- **Tái dùng kết luận cũ:** kế thừa phân tích đã chốt trong hội thoại — không làm lại từ đầu.
+- **Deliverable trong chat:** user story / AC (Given–When–Then) viết sẵn để dán ticket — **không** tạo file.`;
+}
+
 /** Intent triage — always run before codebase scan or BA deliverables. */
 export function baIntentTriageGate(): string {
   return `### 🛑 CRITICAL GATE: INTENT TRIAGE & SANITY CHECK (LUÔN THỰC HIỆN TRƯỚC TIÊN)
@@ -186,23 +235,7 @@ function buildBaPrompt(opts: {
   };
 }): string {
   const modeBlock = opts.analysisMode
-    ? `## Chế độ: BA mode (BẬT) — chọn cách trả lời theo ý định câu hỏi
-Bạn đóng vai Business Analyst giàu kinh nghiệm về sản phẩm này, nhưng **không** ép khung phân tích BA cho mọi câu.
-
-### Câu hỏi thường (dù BA mode bật)
-Hỏi đáp / hướng dẫn / "làm sao / ở đâu / nút nào…" → trả lời ngắn gọn, đúng UI tiếng Việt, không dàn ý BA thừa.
-
-### Câu hỏi phân tích (phân tích / đề xuất / đánh giá / user story / use case / edge case / tối ưu / tác động…)
-Trả lời theo cấu trúc gọn (gia giảm theo ngữ cảnh, bỏ mục không cần):
-1. **Hiện trạng** — hệ thống ĐANG có gì liên quan (màn hình, luồng, quy tắc thật trong sản phẩm — nêu đúng tên trên UI).
-2. **Phân tích & Đề xuất** — giải pháp, luồng đề xuất, edge case đáng chú ý.
-3. **Rủi ro & Câu hỏi làm rõ** — chỉ liệt kê điểm thật sự cần quyết định, tối đa 3–5.
-
-### Nguyên tắc REUSE (quan trọng — đây là điểm ăn tiền của BA giỏi)
-- **Ưu tiên tận dụng cái đã có:** trước khi đề xuất tính năng/màn hình/luồng mới, kiểm tra sản phẩm đã có màn hình, cấu phần, quy tắc, thông báo nào tương tự chưa → đề xuất mở rộng/tái dùng cái đó, nêu rõ "tận dụng màn hình X / luồng Y hiện có".
-- **Nhất quán với pattern hiện hữu:** đề xuất mới phải theo đúng cách sản phẩm đang làm (cách đặt tên nút, cách xác nhận, cách báo lỗi…), không phát minh pattern lạ.
-- **Tái dùng kết luận cũ:** nếu hội thoại trước đã phân tích/kết luận về phần liên quan, kế thừa luôn — không phân tích lại từ đầu, chỉ bổ sung phần mới.
-- **Deliverable dùng lại được:** khi được yêu cầu user story / acceptance criteria / test case, viết theo format chuẩn có thể dán thẳng vào ticket (Là… / Tôi muốn… / Để…; Given–When–Then cho AC).`
+    ? baAnalysisModeInstructions()
     : `## Chế độ: Hỏi đáp sản phẩm (thường)
 - Giải thích hành vi sản phẩm, luồng thao tác, hướng dẫn dùng — ngắn gọn, đúng UI tiếng Việt.
 - Vào thẳng câu trả lời; chỉ mở rộng khi người dùng hỏi thêm.`;
@@ -250,10 +283,9 @@ ${baIntentTriageGate()}
 - Thứ tự nguồn tra cứu: (a) \`**/locales/vi*.json\`, \`**/i18n/**/vi*\`, \`**/lang/**\` → (b) component/view giao diện (template, label, title) → (c) docs/config trong repo.
 - Tránh jargon kỹ thuật (API, class, commit…) trừ khi người dùng chủ động hỏi kỹ thuật; ưu tiên ngôn ngữ thao tác của người dùng cuối.
 
-## 3. Ranh giới (BẮT BUỘC)
-- Chỉ **đọc** working tree để trả lời — **không** sửa file, refactor, patch, commit, push, MR.
+## 3. Ranh giới workspace (CHỈ ĐỌC — BẮT BUỘC)
+${baReadOnlyWorkspaceRules({ mainBranch: opts.mainBranch })}
 ${baGitlabBoundaryInstructions()}
-- **Git:** không checkout / tạo-đổi-xóa nhánh / merge / rebase / reset / stash. Working tree đã ở sẵn branch **${opts.mainBranch}**, chỉ đọc.
 
 ${dbBlock}
 
@@ -426,6 +458,7 @@ export async function runBaChatAgent(opts: {
       const agent = await Agent.create({
         apiKey,
         model: { id: modelId },
+        mode: "plan",
         ...(BA_GITLAB_INTERACTION_ENABLED
           ? {}
           : {
@@ -437,6 +470,7 @@ export async function runBaChatAgent(opts: {
           ...(BA_GITLAB_INTERACTION_ENABLED
             ? {}
             : { settingSources: [] }),
+          sandboxOptions: { enabled: true },
           ...(dbCfg
             ? {
                 // SDKCustomTool typing is strict; our tools match runtime shape.

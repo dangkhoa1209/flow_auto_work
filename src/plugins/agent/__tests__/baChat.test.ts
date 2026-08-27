@@ -1,13 +1,51 @@
 import { describe, expect, it } from "vitest";
 import {
   BA_GITLAB_INTERACTION_ENABLED,
+  baAnalysisModeInstructions,
   baGitlabBoundaryInstructions,
   baIntentTriageGate,
+  baReadOnlyWorkspaceRules,
+  baSpecFormatInstructions,
 } from "../baChat.js";
 import {
   extractBaIssueRefs,
   formatBaIssueSnapshot,
 } from "../../gitlab/ba-issue-read.js";
+
+describe("baReadOnlyWorkspaceRules", () => {
+  it("forbids file writes and destructive shell/git", () => {
+    const text = baReadOnlyWorkspaceRules({ mainBranch: "main" });
+    expect(text).toMatch(/Cấm ghi file/);
+    expect(text).toMatch(/Deliverable chỉ trong chat/);
+    expect(text).toMatch(/Không.*Write/);
+    expect(text).toMatch(/Cấm sửa code/);
+    expect(text).toMatch(/branch \*\*main\*\*/);
+    expect(text).toMatch(/Cấm.*rm/);
+  });
+});
+
+describe("baSpecFormatInstructions", () => {
+  it("separates input (1–2) from BA analysis (3)", () => {
+    const text = baSpecFormatInstructions();
+    expect(text).toMatch(/Phân vai rõ ràng/);
+    expect(text).toMatch(/đầu vào/);
+    expect(text).toMatch(/kết quả phân tích của BA/);
+    expect(text).toMatch(/YC gốc/);
+    expect(text).toMatch(/deliverable chính/);
+    expect(text).toMatch(/không pad mục trống/i);
+  });
+});
+
+describe("baAnalysisModeInstructions", () => {
+  it("uses spec format without screen mockups", () => {
+    const text = baAnalysisModeInstructions();
+    expect(text).toMatch(/format spec|Gợi ý trình bày/);
+    expect(text).toMatch(/Không.*mockup/);
+    expect(text).toMatch(/Mức tối thiểu/);
+    expect(text).toMatch(/Yêu cầu khách hàng/);
+    expect(text).toMatch(/không.*tạo file/);
+  });
+});
 
 describe("baGitlabBoundaryInstructions", () => {
   it("forbids GitLab writes in every BA mode, allows read via pasted link/id", () => {
