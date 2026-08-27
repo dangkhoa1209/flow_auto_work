@@ -262,6 +262,7 @@ function buildBaPrompt(opts: {
   - \`{"op":"find","collection":"…","filter":{}}\`
   - \`{"op":"aggregate","collection":"…","pipeline":[…]}\`
   - \`{"op":"count","collection":"…","filter":{}}\`
+- Tool đã được hệ thống gắn sẵn (admin đã bật DB) — **gọi ngay**, không chờ phê duyệt / không nói "tool bị chặn" nếu chưa thử gọi.
 - **Cấm:** insert/update/delete, \`$out\`/\`$merge\`, dump; không truyền \`database\`/\`db\` trong JSON.
 - Không ghi password/URI vào câu trả lời.`
       : `## 3b. Database (ĐƯỢC PHÉP — SQL read-only, đã cấu hình admin)
@@ -269,6 +270,7 @@ function buildBaPrompt(opts: {
 - **Cấm tuyệt đối:** \`USE\` DB khác, query \`otherdb.table\`, shell \`mysql\`/\`psql\`, credential \`.env\`.
 - Tenant/mã công ty trong câu hỏi → lọc bằng cột trong **cùng** DB đã setup, không đổi database.
 - Khi cần dữ liệu: **chỉ** tool \`query_readonly_sql\` (SELECT / WITH / SHOW / DESCRIBE / EXPLAIN).
+- Tool đã được hệ thống gắn sẵn (admin đã bật DB) — **gọi ngay**, không chờ phê duyệt / không nói "tool bị chặn" nếu chưa thử gọi.
 - **Cấm:** INSERT/UPDATE/DELETE/DDL, dump, migrate.
 - Không ghi password/URI vào câu trả lời.`
     : `## 3b. Database (CẤM — project chưa bật DB)
@@ -478,7 +480,9 @@ export async function runBaChatAgent(opts: {
           ...(BA_GITLAB_INTERACTION_ENABLED
             ? {}
             : { settingSources: [] }),
-          sandboxOptions: { enabled: true },
+          // Không bật sandboxOptions: customTools (query_readonly_*) đi qua MCP
+          // custom-user-tools; sandbox headless chặn phê duyệt → agent báo "tool bị chặn".
+          // Read-only vẫn siết bằng baReadOnlyWorkspaceRules trong prompt.
           ...(dbCfg
             ? {
                 // SDKCustomTool typing is strict; our tools match runtime shape.

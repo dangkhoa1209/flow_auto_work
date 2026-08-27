@@ -433,7 +433,7 @@ export async function runBaThreadIssueDraft(opts: {
         local: {
           cwd: project.localPath,
           ...(BA_GITLAB_INTERACTION_ENABLED ? {} : { settingSources: [] }),
-          sandboxOptions: { enabled: true },
+          // Không sandbox: customTools DB cần chạy không qua cổng phê duyệt headless.
           ...(dbCfg
             ? { customTools: buildBaDbCustomTools(dbCfg) as never }
             : {}),
