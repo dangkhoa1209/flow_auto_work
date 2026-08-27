@@ -3,10 +3,11 @@ import {
   buildThreadIssuePrompt,
   normalizeIssueDraftForForm,
   parseIssueDraftFromAgent,
+  stripOpenQuestionsFromIssueDescription,
 } from "../baThreadIssue.js";
 
 describe("buildThreadIssuePrompt", () => {
-  it("suggests spec format with minimum sections 1+2", () => {
+  it("suggests spec format and excludes open questions from task", () => {
     const prompt = buildThreadIssuePrompt({
       displayName: "Demo",
       gitlabPath: "group/app",
@@ -19,8 +20,31 @@ describe("buildThreadIssuePrompt", () => {
     expect(prompt).toMatch(/đầu vào/);
     expect(prompt).toMatch(/phân tích BA/);
     expect(prompt).toMatch(/Tối thiểu: mục 1/);
+    expect(prompt).toMatch(/KHÔNG đưa mục 4/);
     expect(prompt).toMatch(/Cấm ghi file/);
     expect(prompt).toMatch(/CHỈ ĐỌC/);
+  });
+});
+
+describe("stripOpenQuestionsFromIssueDescription", () => {
+  it("removes mục 4 open-questions section from task body", () => {
+    const raw = `## 1. Yêu cầu khách hàng
+Cần export Excel.
+
+## 3. Nội dung phân tích
+Cho phép xuất danh sách.
+
+## 4. Câu hỏi cần xác nhận
+- Có cần PDF không?
+
+## Acceptance criteria
+- Given danh sách When xuất Then tải file`;
+    const cleaned = stripOpenQuestionsFromIssueDescription(raw);
+    expect(cleaned).toContain("Yêu cầu khách hàng");
+    expect(cleaned).toContain("Nội dung phân tích");
+    expect(cleaned).toContain("Acceptance criteria");
+    expect(cleaned).not.toMatch(/Câu hỏi cần xác nhận/);
+    expect(cleaned).not.toContain("PDF");
   });
 });
 
@@ -77,5 +101,17 @@ describe("normalizeIssueDraftForForm", () => {
     expect(out.acceptanceCriteria).toEqual([]);
     expect(out.description).toContain("### Acceptance criteria");
     expect(out.description).toContain("Given A When B Then C");
+  });
+
+  it("strips open-questions section before form", () => {
+    const out = normalizeIssueDraftForForm({
+      title: "T",
+      description:
+        "## 1. Yêu cầu\nX\n\n## 4. Câu hỏi cần xác nhận\n- Còn hỏi?\n",
+      labels: [],
+      acceptanceCriteria: [],
+    });
+    expect(out.description).not.toMatch(/Câu hỏi cần xác nhận/);
+    expect(out.description).toContain("Yêu cầu");
   });
 });

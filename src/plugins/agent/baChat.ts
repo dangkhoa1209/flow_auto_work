@@ -64,7 +64,7 @@ export function baSpecFormatInstructions(): string {
 **Phân vai rõ ràng:**
 - Mục **1–2** = **đầu vào** (YC gốc / vấn đề khách hoặc PD đưa) — trích/tóm tắt từ chat, YC, tài liệu; **không** đưa kết luận hay giải pháp BA vào đây.
 - Mục **3** = **kết quả phân tích của BA** — phần BA tự làm (hiện trạng, đề xuất chi tiết, luồng, bảng trường, logic…).
-- Mục **4** = điểm BA còn cần chốt với stakeholder.
+- Mục **4** = điểm BA còn cần chốt với stakeholder — **chỉ dùng khi chat / phân tích**; **không** đưa vào GitLab issue / task khi Create issue.
 
 **Mức tối thiểu:**
 - **1. Yêu cầu khách hàng** *(đầu vào)* — YC gốc / vấn đề / bối cảnh khách nêu (1–3 câu); in đậm tên chức năng/danh mục; giữ sát nguyên ý, không biến thành spec kỹ thuật.

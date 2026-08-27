@@ -39,11 +39,40 @@ export type BaThreadIssueDraft = {
   acceptanceCriteria: string[];
 };
 
+/**
+ * Bỏ mục 4 "Câu hỏi cần xác nhận" khỏi mô tả task — chỉ dùng khi chat/phân tích,
+ * không đưa lên GitLab issue.
+ */
+export function stripOpenQuestionsFromIssueDescription(
+  description: string,
+): string {
+  const lines = description.split("\n");
+  const out: string[] = [];
+  let skipping = false;
+  for (const line of lines) {
+    const t = line.trim();
+    if (
+      /^#{1,3}\s*4[\.\)]?\s*Câu hỏi cần xác nhận/i.test(t) ||
+      /^#{1,3}\s*Câu hỏi cần xác nhận/i.test(t)
+    ) {
+      skipping = true;
+      continue;
+    }
+    if (skipping && /^#{1,3}\s+\S/.test(t)) {
+      skipping = false;
+    }
+    if (!skipping) out.push(line);
+  }
+  return out.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
 /** Gộp AC vào mô tả; không gán label mặc định cho form. */
 export function normalizeIssueDraftForForm(
   draft: BaThreadIssueDraft,
 ): BaThreadIssueDraft {
-  let description = draft.description.trim();
+  let description = stripOpenQuestionsFromIssueDescription(
+    draft.description.trim(),
+  );
   const ac = draft.acceptanceCriteria.map((s) => s.trim()).filter(Boolean);
   if (ac.length && !/###\s*Acceptance criteria/i.test(description)) {
     const parts = [
@@ -286,9 +315,9 @@ ${baSpecFormatInstructions()}
 3. **Description (markdown):**
    - Mục **1–2** = **đầu vào** (YC gốc / PD) — trích từ chat, không nhét phân tích BA vào đây.
    - Mục **3** = **phân tích BA** — phần chính khi đã có trao đổi phân tích; có thể bỏ qua nếu chat mới dừng ở YC thô.
-   - Mục **4** = câu hỏi còn mở (nếu có).
+   - **KHÔNG đưa mục 4 (Câu hỏi cần xác nhận)** vào description / task — mục đó chỉ dùng khi chat hoặc phân tích; lên issue thì **bỏ hẳn**. Nếu chat còn câu hỏi mở: **không** copy vào mô tả issue.
    - Tối thiểu: mục 1 (+ mục 2 nếu có ý PD).
-4. Chat đã có phân tích → **giữ mục 3**, không làm mất chi tiết BA đã chốt.
+4. Chat đã có phân tích → **giữ mục 3**, không làm mất chi tiết BA đã chốt; vẫn **cắt bỏ** mọi heading/đoạn "Câu hỏi cần xác nhận".
 5. **acceptanceCriteria** (JSON): Given–When–Then rút từ **mục 3** nếu đã rõ — có thể \`[]\`.
 6. **Không** gán label.
 
@@ -309,7 +338,7 @@ ${opts.threadBlock}
 **Cuối câu trả lời**, thêm **một** block JSON (bắt buộc):
 
 \`\`\`json
-{"title":"…","description":"… (markdown: 1–2 đầu vào, 3 phân tích BA nếu có)","labels":[],"acceptanceCriteria":[]}
+{"title":"…","description":"… (markdown: 1–2 đầu vào, 3 phân tích BA nếu có — KHÔNG mục 4)","labels":[],"acceptanceCriteria":[]}
 \`\`\`
 
 JSON phải parse được; \`description\` escape newline thành \\n; không comment trong JSON.`;
