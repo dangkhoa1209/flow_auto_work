@@ -10,9 +10,9 @@ export type GoogleSheetRef = {
 const SHEET_URL_RE =
   /https?:\/\/(?:docs\.google\.com\/spreadsheets\/d\/|drive\.google\.com\/(?:open\?id=|file\/d\/))([a-zA-Z0-9-_]+)[^\s)\]>"']*/gi;
 
-const MAX_ROWS = 200;
-const MAX_COLS = 40;
-const MAX_CHARS = 80_000;
+const MAX_ROWS = 500;
+const MAX_COLS = 100;
+const MAX_CHARS = 250_000;
 
 const OFFICE_MIME = new Set([
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", // xlsx
