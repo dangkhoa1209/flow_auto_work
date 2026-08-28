@@ -23,6 +23,8 @@ describe("buildThreadIssuePrompt", () => {
     expect(prompt).toMatch(/KHÔNG đưa mục 4/);
     expect(prompt).toMatch(/Cấm ghi file/);
     expect(prompt).toMatch(/CHỈ ĐỌC/);
+    expect(prompt).toMatch(/không.*ép mọi khối thành bảng/i);
+    expect(prompt).toMatch(/viết lại.*heading \+ câu\/bullet/i);
   });
 });
 

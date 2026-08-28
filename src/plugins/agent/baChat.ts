@@ -63,7 +63,7 @@ export function baSpecFormatInstructions(): string {
 
 **Phân vai rõ ràng:**
 - Mục **1–2** = **đầu vào** (YC gốc / vấn đề khách hoặc PD đưa) — trích/tóm tắt từ chat, YC, tài liệu; **không** đưa kết luận hay giải pháp BA vào đây.
-- Mục **3** = **kết quả phân tích của BA** — phần BA tự làm (hiện trạng, đề xuất chi tiết, luồng, bảng trường, logic…).
+- Mục **3** = **kết quả phân tích của BA** — phần BA tự làm (hiện trạng, đề xuất, luồng, catalog trường nếu nhiều field, logic…).
 - Mục **4** = điểm BA còn cần chốt với stakeholder — **chỉ dùng khi chat / phân tích**; **không** đưa vào GitLab issue / task khi Create issue.
 
 **Mức tối thiểu:**
@@ -71,10 +71,23 @@ export function baSpecFormatInstructions(): string {
 - **2. Yêu cầu/Đề xuất từ PD** *(đầu vào, nếu có)* — hướng/giải pháp PD hoặc stakeholder đề xuất; **bỏ qua** mục này nếu chat chỉ có YC khách, chưa có ý PD.
 
 **Khi phân tích / đủ thông tin — thêm phần BA:**
-- **3. Nội dung phân tích** *(của BA)* — deliverable chính: hiện trạng liên quan; IN/OUT; luồng **Khi người dùng… hệ thống…**; bảng trường (STT | Tên trường | Mô tả | Kiểu control | Bắt buộc) khi rõ form/danh sách/popup; logic xử lý; popup. Chỉ ghi đã chốt hoặc tra được — không bịa.
+- **3. Nội dung phân tích** *(của BA)* — deliverable chính, viết **tự nhiên** (heading + câu/bullet): hiện trạng; IN/OUT; luồng **Khi người dùng… hệ thống…**; logic; popup. Catalog trường dạng bảng GFM **chỉ khi** form/danh sách có nhiều field cùng cột (STT | Tên trường | Mô tả | Kiểu control | Bắt buộc). Kết luận / đề xuất / user story / lưu ý = văn xuôi, không bảng. Chỉ ghi đã chốt hoặc tra được — không bịa.
 - **4. Câu hỏi cần xác nhận** — điểm chưa rõ / giả định tạm (nếu còn). Thiếu thông tin → ưu tiên mục 4 thay vì kéo dài mục 3.
 
 Không pad mục trống cho đủ 4 phần.`;
+}
+
+/** Văn xuôi mặc định; bảng GFM chỉ khi so sánh nhiều dòng cùng cột. */
+export function baPresentationRules(): string {
+  return `## Trình bày (tự nhiên — bảng chỉ khi thật sự giúp đọc)
+- **Mặc định:** văn xuôi + heading ngắn (\`###\`) + bullet. Viết như BA nói với stakeholder — **không** ép mọi khối thành bảng.
+- **Chỉ dùng bảng Markdown GFM** khi có **nhiều dòng cùng cấu trúc cột**, ví dụ:
+  - Catalog trường form/danh sách (≥4 field): \`| STT | Tên trường | Mô tả | Kiểu control | Bắt buộc |\`
+  - Ma trận bước kiểm tra: \`| Bước | Hệ thống kiểm tra | Kết quả |\`
+  - So sánh song song ≥4 mục cùng loại (tab / rule)
+  Đúng chuẩn: mỗi cột một separator \`| --- | --- |\` — **không** bảng hỏng \`|---|\` một cột hay hàng toàn \`---\`.
+- **Cấm nhét vào bảng:** kết luận BA, IN/OUT, đề xuất, user story, lưu ý, đoạn giải thích nhân quả. Những phần đó: heading + câu hoặc bullet.
+- Liệt kê ngắn (≤3 mục) luôn dùng bullet. Ô bảng ngắn; đoạn dài để dưới bảng.`;
 }
 
 /** Chỉ dùng khi BA mode BẬT và user hỏi phân tích / spec. */
@@ -305,15 +318,7 @@ ${dbBlock}
 
 ${baDeliverAnswerRules()}
 
-## 5. Trình bày (chat hẹp — dễ đọc, chuyên nghiệp)
-- So sánh nhiều thành phần / tab / rule / bước → dùng **bảng Markdown GFM đúng chuẩn** (mỗi cột có separator riêng), ví dụ:
-  \`| Thành phần | Việc làm |\`
-  \`| --- | --- |\`
-  \`| … | … |\`
-- **Không** viết bảng hỏng kiểu chỉ có \`|---|\` một cột — UI sẽ không render thành bảng.
-- Cột ngắn, nội dung ô gọn; tránh nhồi cả đoạn dài vào một ô (tách bullet bên dưới nếu cần).
-- Liệt kê ngắn (≤3 mục) có thể dùng bullet; từ 4 mục trở lên ưu tiên bảng hoặc danh sách có tiêu đề rõ.
-- Tiêu đề ngắn (\`###\`) khi tách khối; không trang trí thừa.
+${baPresentationRules()}
 
 ## Project
 Tên: ${opts.displayName}

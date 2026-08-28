@@ -5,6 +5,7 @@ import {
   baDeliverAnswerRules,
   baGitlabBoundaryInstructions,
   baIntentTriageGate,
+  baPresentationRules,
   baReadOnlyWorkspaceRules,
   baSpecFormatInstructions,
 } from "../baChat.js";
@@ -34,6 +35,19 @@ describe("baSpecFormatInstructions", () => {
     expect(text).toMatch(/YC gốc/);
     expect(text).toMatch(/deliverable chính/);
     expect(text).toMatch(/không pad mục trống/i);
+    expect(text).toMatch(/Kết luận \/ đề xuất \/ user story \/ lưu ý = văn xuôi/);
+  });
+});
+
+describe("baPresentationRules", () => {
+  it("defaults to prose and forbids wrapping conclusions in tables", () => {
+    const text = baPresentationRules();
+    expect(text).toMatch(/không.*ép mọi khối thành bảng/i);
+    expect(text).toMatch(/Cấm nhét vào bảng/);
+    expect(text).toMatch(/kết luận BA/);
+    expect(text).toMatch(/user story/);
+    expect(text).toMatch(/Chỉ dùng bảng Markdown GFM/);
+    expect(text).toMatch(/≥4 field/);
   });
 });
 

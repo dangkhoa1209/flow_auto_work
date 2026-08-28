@@ -22,6 +22,7 @@ import {
   BA_GITLAB_INTERACTION_ENABLED,
   baGitlabBoundaryInstructions,
   baIntentTriageGate,
+  baPresentationRules,
 } from "./baChat.js";
 import {
   beginCancellableJob,
@@ -288,6 +289,8 @@ ${baIntentTriageGate()}
 ${stepInstructions[opts.step]}
 
 ${baBusinessLanguageRules()}
+
+${baPresentationRules()}
 
 ## Ranh giới
 - Chỉ đọc source — không sửa file, commit, MR.

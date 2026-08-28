@@ -20,6 +20,7 @@ import { resolveBaUserGoogleAccessToken } from "../../modules/google/index.js";
 import {
   BA_GITLAB_INTERACTION_ENABLED,
   baGitlabBoundaryInstructions,
+  baPresentationRules,
   baReadOnlyWorkspaceRules,
   baSpecFormatInstructions,
 } from "./baChat.js";
@@ -309,6 +310,8 @@ User bấm **Create issue** — hãy **review toàn bộ hội thoại** dưới
 ## Format mô tả issue (gợi ý — cùng format spec với BA mode)
 ${baSpecFormatInstructions()}
 
+${baPresentationRules()}
+
 ## Quy tắc soạn draft
 1. **Tổng hợp** từ hội thoại — không bịa (trừ khi cần tra source để đúng tên UI).
 2. **Title** — ngắn, rõ; lấy từ tên chức năng chính (thường từ mục 1).
@@ -317,7 +320,7 @@ ${baSpecFormatInstructions()}
    - Mục **3** = **phân tích BA** — phần chính khi đã có trao đổi phân tích; có thể bỏ qua nếu chat mới dừng ở YC thô.
    - **KHÔNG đưa mục 4 (Câu hỏi cần xác nhận)** vào description / task — mục đó chỉ dùng khi chat hoặc phân tích; lên issue thì **bỏ hẳn**. Nếu chat còn câu hỏi mở: **không** copy vào mô tả issue.
    - Tối thiểu: mục 1 (+ mục 2 nếu có ý PD).
-4. Chat đã có phân tích → **giữ mục 3**, không làm mất chi tiết BA đã chốt; vẫn **cắt bỏ** mọi heading/đoạn "Câu hỏi cần xác nhận".
+4. Chat đã có phân tích → **giữ mục 3** (ý đã chốt), **cắt bỏ** heading/đoạn "Câu hỏi cần xác nhận". Nếu chat đã nhét kết luận / IN-OUT / user story vào bảng → **viết lại** heading + câu/bullet; chỉ giữ bảng catalog trường / ma trận bước kiểm tra.
 5. **acceptanceCriteria** (JSON): Given–When–Then rút từ **mục 3** nếu đã rõ — có thể \`[]\`.
 6. **Không** gán label.
 
