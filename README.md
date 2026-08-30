@@ -60,34 +60,38 @@ UI: tag Context + link **Xem tiêu chuẩn** (modal). Chi tiết: [`docs/NOTES.m
 
 **Không gửi vào prompt:** media, toàn bộ codebase, secrets. Linked = issue links + `#mention` + excerpt comments.
 
-Code: `src/plugins/agent/context-quality.ts` · `src/queue.ts` · `src/plugins/agent/run.ts` · `src/plugins/agent/prompt.ts` · `src/plugins/gitlab/linked-context.ts`.
+Code: `apps/api/src/plugins/agent/context-quality.ts` · `apps/api/src/queue.ts` · `apps/api/src/plugins/agent/run.ts` · `apps/api/src/plugins/agent/prompt.ts` · `apps/api/src/plugins/gitlab/linked-context.ts`.
 
 ## Chạy
 
 ```bash
 cp .env.example .env   # điền secrets
-npm install
-npm install --prefix web
-npm run build:web      # build Vue → web/dist
-npm run dev            # API :8787 (serve web/dist)
-# Hot-reload UI:
-#   npm run dev:web    → http://127.0.0.1:5173/ (proxy /api)
+npm install            # workspaces: api + web + extension + shared
+npm run build:web      # Vue → apps/web/dist
+npm run dev            # turbo: API :8787 + Vite :5173
+# Chỉ API (serve apps/web/dist nếu đã build):
+#   npm run dev:api
+# Extension QC:
+#   npm run dev:extension
 ```
 
 | Command | Mô tả |
 |---------|--------|
-| `npm run dev` | Nodemon + server |
+| `npm run dev` | Turbo — API + web |
+| `npm run dev:api` | Nodemon API (`@flow/api`) |
 | `npm run dev:web` | Vite UI (proxy API) |
-| `npm run build:web` | Build Vue → `web/dist` |
+| `npm run build:web` | Build Vue → `apps/web/dist` |
 | `npm start` | Chạy một lần (không watch) |
-| `npm run typecheck` | `tsc --noEmit` |
+| `npm run typecheck` | Turbo typecheck |
 
-> Sửa `web/src` rồi chạy qua `:8787` → cần `npm run build:web` (hoặc dùng `dev:web`).
+> Sửa `apps/web/src` rồi chạy qua `:8787` → cần `npm run build:web` (hoặc dùng `dev:web`).
+
+Monorepo: `apps/api` · `apps/web` · `apps/extension` · `packages/shared` (Turbo + npm workspaces).
 
 ### Thử nhanh sau khi pull
 
 ```bash
-npm install && npm install --prefix web
+npm install
 npm run build:web
 npm run dev
 # mở http://127.0.0.1:8787 → login → chọn project

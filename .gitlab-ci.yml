@@ -10,7 +10,9 @@ default:
         - package-lock.json
     paths:
       - node_modules/
-      - web/node_modules/
+      - apps/web/node_modules/
+      - apps/api/node_modules/
+      - packages/shared/node_modules/
 
 typecheck:
   stage: check
@@ -28,9 +30,8 @@ build_web:
   stage: build
   script:
     - npm ci
-    - npm run install:web
     - npm run build:web
   artifacts:
     paths:
-      - web/dist/
+      - apps/web/dist/
     expire_in: 1 week

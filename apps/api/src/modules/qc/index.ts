@@ -3,6 +3,7 @@ import { mkdir, writeFile, unlink } from "node:fs/promises";
 import path from "node:path";
 import { type Collection } from "mongodb";
 import { connectMongo } from "../../db/mongo.js";
+import { getRepoRoot } from "../../repoRoot.js";
 import { AppError } from "../../utils/AppError.js";
 import {
   slugId,
@@ -51,7 +52,7 @@ async function sampleFiles(): Promise<Collection<QcSampleFileDoc>> {
 }
 
 function uploadsRoot(): string {
-  return path.resolve(process.cwd(), "uploads", "qc");
+  return path.resolve(getRepoRoot(), "uploads", "qc");
 }
 
 async function assertProjectOwned(

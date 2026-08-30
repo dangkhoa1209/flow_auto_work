@@ -257,7 +257,9 @@ export class BuildQueue {
   }
 
   private async syncQueuedFromDb(): Promise<void> {
-    this.queuedIds = await this.listQueuedJobIds();
+    const ids = await this.listQueuedJobIds();
+    this.queuedIds.length = 0;
+    this.queuedIds.push(...ids);
   }
 
   private async pump(): Promise<void> {

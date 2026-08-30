@@ -6,6 +6,7 @@ import { createApiRouter } from "./api/routes/index.js";
 import { eventsController } from "./api/controllers/eventsController.js";
 import { globalErrorHandler } from "./api/middleware/errorHandler.js";
 import { applyGlobalMiddleware } from "./api/middleware/security.js";
+import { getRepoRoot } from "./repoRoot.js";
 
 /**
  * Express application factory (transport layer only).
@@ -30,11 +31,10 @@ export async function createApp(): Promise<Express> {
 
   app.use("/api", express.json({ limit: "100mb" }), await createApiRouter());
 
-  const vueDist = join(process.cwd(), "web", "dist");
+  const root = getRepoRoot();
+  const vueDist = join(root, "apps", "web", "dist");
   const useVue = existsSync(join(vueDist, "index.html"));
-  const staticRoot = useVue
-    ? join(process.cwd(), "web", "dist")
-    : join(process.cwd(), "public");
+  const staticRoot = useVue ? vueDist : join(root, "public");
 
   app.use(
     "/assets",
@@ -75,7 +75,7 @@ export async function createApp(): Promise<Express> {
         res
           .status(503)
           .type("text")
-          .send("UI not built — run npm run build:web");
+          .send("UI not built — run npm run build:web (apps/web)");
       }
     });
   }

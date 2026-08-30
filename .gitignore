@@ -11,3 +11,5 @@ scripts/.pids
 !/project/.gitkeep
 .vscode/
 graphify-out/
+.turbo/
+

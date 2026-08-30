@@ -23,6 +23,6 @@ if [[ -f "$PID_DIR/server.pid" ]] && kill -0 "$(cat "$PID_DIR/server.pid")" 2>/d
 fi
 
 echo "Starting flow_auto_work on ${HOST}:${PORT}..."
-nohup npx tsx src/index.ts >"$ROOT/data/server.log" 2>&1 &
+nohup npm run start -w @flow/api >"$ROOT/data/server.log" 2>&1 &
 echo $! >"$PID_DIR/server.pid"
 echo "UI: http://${HOST}:${PORT}/"

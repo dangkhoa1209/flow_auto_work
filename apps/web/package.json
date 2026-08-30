@@ -1,5 +1,5 @@
 {
-  "name": "web",
+  "name": "@flow/web",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@ant-design/icons-vue": "^7.0.1",
+    "@flow/shared": "*",
     "@toast-ui/editor": "^3.2.2",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/addon-web-links": "^0.12.0",

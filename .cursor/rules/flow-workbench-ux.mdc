@@ -1,6 +1,6 @@
 ---
 description: UI/UX rules for Flow Auto WorkBench (Vue 3 + Ant Design Vue + Tailwind)
-globs: web/src/views/Work*.vue,web/src/components/work/**/*.vue,web/src/composables/**/*.ts
+globs: apps/web/src/views/Work*.vue,apps/web/src/components/work/**/*.vue,apps/web/src/composables/**/*.ts
 alwaysApply: false
 ---
 

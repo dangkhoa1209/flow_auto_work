@@ -23,7 +23,7 @@ npm run build:web
 npm start
 ```
 
-Server serves `web/dist` when present; otherwise falls back to legacy `public/index.html`.
+Server serves `apps/web/dist` when present; otherwise falls back to legacy `public/index.html`.
 
 ## Routes
 

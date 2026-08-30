@@ -1,5 +1,6 @@
 import path from "node:path";
 import { getConfig } from "../config.js";
+import { getRepoRoot } from "../repoRoot.js";
 
 export type CloneStatus = "pending" | "cloning" | "ready" | "failed";
 
@@ -266,12 +267,12 @@ export function normUserId(username: string): string {
   return username.trim().replace(/^@/, "").toLowerCase();
 }
 
-/** Root folder for cloned repos (default `<cwd>/project`). */
+/** Root folder for cloned repos (default `<repo>/project`). */
 export function resolveProjectRoot(): string {
   const cfg = getConfig();
   const root = cfg.PROJECT_ROOT?.trim();
   if (root) return path.resolve(root);
-  return path.resolve(process.cwd(), "project");
+  return path.resolve(getRepoRoot(), "project");
 }
 
 /**

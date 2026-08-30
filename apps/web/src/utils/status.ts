@@ -1,4 +1,10 @@
 /** Human-readable job/task status for UI */
+import type { JobStatus } from "@flow/shared";
+import { isJobBusy } from "@flow/shared";
+
+export type { JobStatus };
+export { isJobBusy as isJobStatusBusy };
+
 const STATUS_LABELS: Record<string, string> = {
   draft: "Draft",
   queued: "Queued",

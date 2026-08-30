@@ -37,15 +37,14 @@ Không commit `.env`. Chỉ commit `.env.example`.
 # Node ≥ 20 (khuyến nghị 20 LTS hoặc 22)
 node -v
 
-npm install                 # backend
-npm install --prefix web    # frontend (bắt buộc — thiếu sẽ treo/lỗi ở vite build)
-npm run build:web           # Vue → web/dist (server serve static)
+npm install                 # workspaces (api + web + extension + shared)
+npm run build:web           # Vue → apps/web/dist (server serve static)
 ```
 
 Nếu `npm run build:web` dừng ở dòng `vite build` không ra thêm log:
 
-1. Ctrl+C, chắc chắn đã `npm install --prefix web`
-2. Thử verbose: `cd web && npx vite build --debug`
+1. Ctrl+C, chắc chắn đã `npm install` (workspaces)
+2. Thử verbose: `cd apps/web && npx vite build --debug`
 3. Máy ít CPU/RAM: `NODE_OPTIONS=--max-old-space-size=4096 npm run build:web`
 4. Repo này dùng **Vite 6** (tránh hang Rolldown/Vite 8 trên Linux server)
 
@@ -54,16 +53,18 @@ Nếu `npm run build:web` dừng ở dòng `vite build` không ra thêm log:
 ```bash
 npm start            # production (tsx, không watch)
 # hoặc
-npm run dev          # nodemon + reload API
+npm run dev:api      # nodemon + reload API
+# hoặc full stack:
+npm run dev          # turbo: API + Vite
 ```
 
 Mở **http://127.0.0.1:8787** (hoặc `HOST`/`PORT` trong `.env`).
 
 | Command | Mô tả |
 |---------|--------|
-| `npm start` | API + serve `web/dist` |
-| `npm run dev` | API watch |
-| `npm run build:web` | Build UI trước khi dùng `:8787` sau khi sửa `web/src` |
+| `npm start` | API + serve `apps/web/dist` |
+| `npm run dev` | Turbo API + web |
+| `npm run build:web` | Build UI trước khi dùng `:8787` sau khi sửa `apps/web/src` |
 | `npm run tunnel` | Cloudflare tunnel → `http://127.0.0.1:8787` |
 
 ### 4. Onboarding sau khi lên

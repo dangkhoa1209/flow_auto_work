@@ -1,7 +1,9 @@
 import { config as loadDotenv } from "dotenv";
+import { join } from "node:path";
 import { z } from "zod";
+import { getRepoRoot } from "./repoRoot.js";
 
-loadDotenv();
+loadDotenv({ path: join(getRepoRoot(), ".env") });
 
 const envSchema = z.object({
   PORT: z.coerce.number().default(8787),

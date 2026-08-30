@@ -1,3 +1,5 @@
+/** QC recorder / playback types shared by API + extension. */
+
 export type SelectorContext = {
   primarySelector?: string;
   textContent?: string;

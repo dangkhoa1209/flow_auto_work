@@ -3,13 +3,16 @@ import { mkdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import type { WriteStream } from "node:fs";
 import { logger } from "../../logger.js";
+import { getRepoRoot } from "../../repoRoot.js";
 import type { BuildLogStream } from "./types.js";
 
 const MAX_REPLAY_BYTES = 512 * 1024;
 
 export function resolveBuildLogDir(): string {
   const dir = process.env.BUILD_LOG_DIR?.trim();
-  return dir ? path.resolve(dir) : path.resolve(process.cwd(), "data", "build-logs");
+  return dir
+    ? path.resolve(dir)
+    : path.resolve(getRepoRoot(), "data", "build-logs");
 }
 
 export function logPathForBuild(buildId: string): string {
