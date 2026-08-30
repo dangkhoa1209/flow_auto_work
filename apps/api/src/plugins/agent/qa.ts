@@ -27,7 +27,7 @@ import {
   errorFromCursorRunStatus,
 } from "./run.js";
 import { gitlabCommentInstructions } from "./prompt.js";
-import { addChatMessage } from "../../db/mongo.js";
+import { addChatMessage } from "../../models/chat.js";
 setMaxListeners(50);
 
 export type QaHistoryTurn = {

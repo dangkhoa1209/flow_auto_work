@@ -7,12 +7,12 @@ import * as googleMod from "../../modules/google/index.js";
 
 export const baController = {
   listProjects: asyncHandler(async (_req: Request, res: Response) => {
-    res.json(await ba.baListProjects());
+    res.formatter.ok(await ba.baListProjects());
   }),
 
   getProjectGitlabMeta: asyncHandler(async (req: Request, res: Response) => {
     const { username } = requireRoleContext();
-    res.json(
+    res.formatter.ok(
       await wb.baGetGitlabIssueMeta(
         username,
         String(req.params.id || ""),
@@ -23,29 +23,29 @@ export const baController = {
   listThreads: asyncHandler(async (req: Request, res: Response) => {
     const { username } = requireRoleContext();
     const projectId = String(req.query.baProjectId || "").trim();
-    res.json(await ba.baListThreads(username, projectId || undefined));
+    res.formatter.ok(await ba.baListThreads(username, projectId || undefined));
   }),
 
   createThread: asyncHandler(async (req: Request, res: Response) => {
     const { username } = requireRoleContext();
-    res.status(201).json(await ba.baCreateThread(username, req.body || {}));
+    res.formatter.created(await ba.baCreateThread(username, req.body || {}));
   }),
 
   deleteThread: asyncHandler(async (req: Request, res: Response) => {
     const { username } = requireRoleContext();
-    res.json(
+    res.formatter.ok(
       await ba.baDeleteThread(username, String(req.params.id || "")),
     );
   }),
 
   getMessages: asyncHandler(async (req: Request, res: Response) => {
     const { username } = requireRoleContext();
-    res.json(await ba.baGetMessages(username, String(req.params.id || "")));
+    res.formatter.ok(await ba.baGetMessages(username, String(req.params.id || "")));
   }),
 
   sendMessage: asyncHandler(async (req: Request, res: Response) => {
     const { username } = requireRoleContext();
-    res.status(202).json(
+    res.formatter.accepted(
       await ba.baSendMessage(
         username,
         String(req.params.id || ""),
@@ -56,7 +56,7 @@ export const baController = {
 
   stopThread: asyncHandler(async (req: Request, res: Response) => {
     const { username } = requireRoleContext();
-    res.json(await ba.baStopThread(username, String(req.params.id || "")));
+    res.formatter.ok(await ba.baStopThread(username, String(req.params.id || "")));
   }),
 
   draftIssueFromThread: asyncHandler(async (req: Request, res: Response) => {
@@ -66,31 +66,31 @@ export const baController = {
       String(req.params.id || ""),
     );
     if (result.status === "started") {
-      res.status(202).json(result);
+      res.formatter.accepted(result);
       return;
     }
-    res.json(result);
+    res.formatter.ok(result);
   }),
 
   listRequirements: asyncHandler(async (req: Request, res: Response) => {
     const { username } = requireRoleContext();
     const projectId = String(req.query.baProjectId || "").trim();
-    res.json(await wb.baListRequirements(username, projectId || undefined));
+    res.formatter.ok(await wb.baListRequirements(username, projectId || undefined));
   }),
 
   createRequirement: asyncHandler(async (req: Request, res: Response) => {
     const { username } = requireRoleContext();
-    res.status(201).json(await wb.baCreateRequirement(username, req.body || {}));
+    res.formatter.created(await wb.baCreateRequirement(username, req.body || {}));
   }),
 
   getRequirement: asyncHandler(async (req: Request, res: Response) => {
     const { username } = requireRoleContext();
-    res.json(await wb.baGetRequirement(username, String(req.params.id || "")));
+    res.formatter.ok(await wb.baGetRequirement(username, String(req.params.id || "")));
   }),
 
   updateRequirement: asyncHandler(async (req: Request, res: Response) => {
     const { username } = requireRoleContext();
-    res.json(
+    res.formatter.ok(
       await wb.baUpdateRequirement(
         username,
         String(req.params.id || ""),
@@ -101,12 +101,12 @@ export const baController = {
 
   deleteRequirement: asyncHandler(async (req: Request, res: Response) => {
     const { username } = requireRoleContext();
-    res.json(await wb.baDeleteRequirement(username, String(req.params.id || "")));
+    res.formatter.ok(await wb.baDeleteRequirement(username, String(req.params.id || "")));
   }),
 
   runWorkflowStep: asyncHandler(async (req: Request, res: Response) => {
     const { username } = requireRoleContext();
-    res.status(202).json(
+    res.formatter.accepted(
       await wb.baRunWorkflowStep(
         username,
         String(req.params.id || ""),
@@ -117,19 +117,19 @@ export const baController = {
 
   stopWorkflow: asyncHandler(async (req: Request, res: Response) => {
     const { username } = requireRoleContext();
-    res.json(await wb.baStopWorkflow(username, String(req.params.id || "")));
+    res.formatter.ok(await wb.baStopWorkflow(username, String(req.params.id || "")));
   }),
 
   ensureRequirementThread: asyncHandler(async (req: Request, res: Response) => {
     const { username } = requireRoleContext();
-    res.json(
+    res.formatter.ok(
       await wb.baEnsureRequirementThread(username, String(req.params.id || "")),
     );
   }),
 
   listTaskDrafts: asyncHandler(async (req: Request, res: Response) => {
     const { username } = requireRoleContext();
-    res.json(
+    res.formatter.ok(
       await wb.baListTaskDrafts(username, {
         baProjectId: String(req.query.baProjectId || ""),
         requirementId: String(req.query.requirementId || ""),
@@ -140,12 +140,12 @@ export const baController = {
 
   createTaskDraft: asyncHandler(async (req: Request, res: Response) => {
     const { username } = requireRoleContext();
-    res.status(201).json(await wb.baCreateTaskDraft(username, req.body || {}));
+    res.formatter.created(await wb.baCreateTaskDraft(username, req.body || {}));
   }),
 
   updateTaskDraft: asyncHandler(async (req: Request, res: Response) => {
     const { username } = requireRoleContext();
-    res.json(
+    res.formatter.ok(
       await wb.baUpdateTaskDraft(
         username,
         String(req.params.id || ""),
@@ -156,12 +156,12 @@ export const baController = {
 
   deleteTaskDraft: asyncHandler(async (req: Request, res: Response) => {
     const { username } = requireRoleContext();
-    res.json(await wb.baDeleteTaskDraft(username, String(req.params.id || "")));
+    res.formatter.ok(await wb.baDeleteTaskDraft(username, String(req.params.id || "")));
   }),
 
   publishTaskDraft: asyncHandler(async (req: Request, res: Response) => {
     const { username } = requireRoleContext();
-    res.json(
+    res.formatter.ok(
       await wb.baPublishTaskDraft(
         username,
         String(req.params.id || ""),
@@ -172,21 +172,21 @@ export const baController = {
 
   parseChatTask: asyncHandler(async (req: Request, res: Response) => {
     const content = String(req.body?.content || "").trim();
-    res.json({ parsed: wb.parseTaskFromChatContent(content) });
+    res.formatter.ok({ parsed: wb.parseTaskFromChatContent(content) });
   }),
 
   googleStatus: asyncHandler(async (req: Request, res: Response) => {
     const { username } = requireRoleContext();
-    res.json(await googleMod.getBaGoogleStatus(username));
+    res.formatter.ok(await googleMod.getBaGoogleStatus(username));
   }),
 
   googleAuthUrl: asyncHandler(async (req: Request, res: Response) => {
     const { username } = requireRoleContext();
-    res.json(await googleMod.getBaGoogleAuthUrl(username));
+    res.formatter.ok(await googleMod.getBaGoogleAuthUrl(username));
   }),
 
   googleRevoke: asyncHandler(async (req: Request, res: Response) => {
     const { username } = requireRoleContext();
-    res.json(await googleMod.revokeBaGoogleAuth(username));
+    res.formatter.ok(await googleMod.revokeBaGoogleAuth(username));
   }),
 };

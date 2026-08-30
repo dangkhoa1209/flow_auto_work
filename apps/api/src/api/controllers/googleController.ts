@@ -20,10 +20,10 @@ export const googleController = {
   authUrl: asyncHandler(async (req: Request, res: Response) => {
     const id = String(req.query.jobId || "").trim();
     if (!id) {
-      res.status(400).json({ error: "jobId query required" });
+      res.formatter.badRequest("jobId query required");
       return;
     }
-    res.json(await getGoogleAuthUrlForJob(id));
+    res.formatter.ok(await getGoogleAuthUrlForJob(id));
   }),
 
   /** GET /api/google/callback — public; HTML closes popup */
@@ -41,28 +41,28 @@ export const googleController = {
 
   /** GET /api/jobs/:id/google/status */
   status: asyncHandler(async (req: Request, res: Response) => {
-    res.json(await getJobGoogleStatus(jobId(req)));
+    res.formatter.ok(await getJobGoogleStatus(jobId(req)));
   }),
 
   /** GET /api/jobs/:id/google/detect */
   detect: asyncHandler(async (req: Request, res: Response) => {
-    res.json(await detectJobGoogleSheets(jobId(req)));
+    res.formatter.ok(await detectJobGoogleSheets(jobId(req)));
   }),
 
   /** PUT /api/jobs/:id/google/include */
   include: asyncHandler(async (req: Request, res: Response) => {
     const body = (req.body ?? {}) as { spreadsheetIds?: string[] };
     const ids = Array.isArray(body.spreadsheetIds) ? body.spreadsheetIds : [];
-    res.json(await setJobGoogleSheetsInclude(jobId(req), ids));
+    res.formatter.ok(await setJobGoogleSheetsInclude(jobId(req), ids));
   }),
 
   /** POST /api/jobs/:id/google/revoke */
   revoke: asyncHandler(async (req: Request, res: Response) => {
-    res.json(await revokeJobGoogleAuth(jobId(req)));
+    res.formatter.ok(await revokeJobGoogleAuth(jobId(req)));
   }),
 
   /** POST /api/jobs/:id/google/continue */
   continueRun: asyncHandler(async (req: Request, res: Response) => {
-    res.json(await continueJobAfterGoogleAuth(jobId(req)));
+    res.formatter.ok(await continueJobAfterGoogleAuth(jobId(req)));
   }),
 };

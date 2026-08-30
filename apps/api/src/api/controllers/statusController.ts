@@ -8,7 +8,7 @@ import {
 
 export const statusController = {
   get: asyncHandler(async (req: Request, res: Response) => {
-    res.json(
+    res.formatter.ok(
       await getStatusPayload({
         ownerUsername: headerUserFromExpress(req),
         workspaceProjectId: headerProjectFromExpress(req),

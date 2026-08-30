@@ -4,13 +4,16 @@ import rateLimit from "express-rate-limit";
 import helmet from "helmet";
 import morgan from "morgan";
 import { getConfig } from "../../config.js";
+import { attachResponseFormatter } from "../../plugins/response-formatter/middleware.js";
 
 /**
  * Global security / ops middlewares for the Express transport layer.
- * Order: helmet → cors → logger → (body parsers applied in app.ts) → rate limit.
+ * Order: formatter → helmet → cors → logger → (body parsers in app.ts) → rate limit.
  */
 export function applyGlobalMiddleware(app: Express): void {
   const config = getConfig();
+
+  app.use(attachResponseFormatter);
 
   // Security headers (CSP relaxed for Vue SPA served from same origin)
   app.use(

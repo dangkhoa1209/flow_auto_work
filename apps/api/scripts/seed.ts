@@ -4,7 +4,7 @@
  *   npm run seed
  */
 import { getConfig } from "../src/config.js";
-import { connectMongo, closeMongo } from "../src/db/mongo.js";
+import { connectMongo, closeMongo } from "../src/models/connection.js";
 import { logger } from "../src/logger.js";
 import { ensureAuthIndexes } from "../src/auth/sessions.js";
 import { ensureWorkspaceIndexes } from "../src/workspace/store.js";

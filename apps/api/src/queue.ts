@@ -28,7 +28,7 @@ import { answerTaskQuestion } from "./plugins/agent/qa.js";
 import { generateTestcasesForIssue } from "./plugins/agent/testcases.js";
 import { appendJobProgress, getJobTokenUsage } from "./plugins/agent/progress.js";
 import { cancelDiffApproval } from "./plugins/review/diff-wait.js";
-import { addChatMessage, listChatMessages } from "./db/mongo.js";
+import { addChatMessage, listChatMessages } from "./models/chat.js";
 import { publishRealtime } from "./plugins/realtime/hub.js";
 import {
   commitMessageForIssue,
@@ -1304,7 +1304,7 @@ export class JobQueue {
     cancelDiffApproval(jobId, reason);
     const agentCancelled = await cancelActiveAgentRun(jobId);
 
-    const { getJobDoc } = await import("./db/mongo.js");
+    const { getJobDoc } = await import("./models/job.js");
     const doc = await getJobDoc(jobId);
     if (doc) {
       const job = { ...doc } as JobRecord & { _id?: string; source?: string };
@@ -1395,7 +1395,7 @@ export class JobQueue {
       if (!doc || inScope(doc)) ids.add(jobId);
     }
 
-    const { listJobDocs } = await import("./db/mongo.js");
+    const { listJobDocs } = await import("./models/job.js");
     const docs = await listJobDocs({
       workspaceProjectId: projectId,
       ownerUsername: owner,

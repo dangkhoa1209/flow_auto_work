@@ -1,6 +1,14 @@
 import type { Collection } from "mongodb";
 import crypto from "node:crypto";
-import { connectMongo } from "../db/mongo.js";
+import { connectMongo } from "../models/connection.js";
+import { withActive } from "../models/base.js";
+import {
+  BaMessageModel,
+  BaProjectModel,
+  BaRequirementModel,
+  BaTaskDraftModel,
+  BaThreadModel,
+} from "../models/ba.js";
 import { decryptSecret, encryptSecret } from "../plugins/crypto/secrets.js";
 import {
   baProjectLocalPath,
@@ -161,21 +169,11 @@ async function systemSettingsCol(): Promise<Collection<SystemSettings>> {
 }
 
 export async function ensureBaIndexes(): Promise<void> {
-  const db = await connectMongo();
-  await db.collection("ba_projects").createIndex({ slug: 1 }, { unique: true });
-  await db
-    .collection("ba_threads")
-    .createIndex({ userId: 1, baProjectId: 1, updatedAt: -1 });
-  await db.collection("ba_messages").createIndex({ threadId: 1, createdAt: 1 });
-  await db
-    .collection("ba_requirements")
-    .createIndex({ userId: 1, baProjectId: 1, updatedAt: -1 });
-  await db
-    .collection("ba_task_drafts")
-    .createIndex({ userId: 1, baProjectId: 1, updatedAt: -1 });
-  await db
-    .collection("ba_task_drafts")
-    .createIndex({ requirementId: 1, createdAt: 1 });
+  await BaProjectModel.ensureIndexes();
+  await BaThreadModel.ensureIndexes();
+  await BaMessageModel.ensureIndexes();
+  await BaRequirementModel.ensureIndexes();
+  await BaTaskDraftModel.ensureIndexes();
 }
 
 function slugify(raw: string): string {
@@ -262,11 +260,11 @@ export function toPublicBaProject(p: BaProject): BaProjectPublic {
 }
 
 export async function listBaProjects(): Promise<BaProject[]> {
-  return (await baProjectsCol()).find({}).sort({ displayName: 1 }).toArray();
+  return (await baProjectsCol()).find(withActive({})).sort({ displayName: 1 }).toArray();
 }
 
 export async function getBaProject(id: string): Promise<BaProject | null> {
-  return (await baProjectsCol()).findOne({ id: id.trim() });
+  return (await baProjectsCol()).findOne(withActive({ id: id.trim() }));
 }
 
 export async function createBaProject(opts: {
@@ -423,7 +421,8 @@ export async function updateBaProject(
 }
 
 export async function deleteBaProject(id: string): Promise<boolean> {
-  const res = await (await baProjectsCol()).deleteOne({ id: id.trim() });
+  const n = await BaProjectModel.softDeleteMany({ id: id.trim() });
+  const res = { deletedCount: n };
   return res.deletedCount > 0;
 }
 
@@ -752,7 +751,7 @@ export async function listBaThreads(
   if (baProjectId?.trim()) reqFilter.baProjectId = baProjectId.trim();
   const linkedIds = (
     await (await requirementsCol())
-      .find(reqFilter)
+      .find(withActive(reqFilter))
       .project({ linkedThreadId: 1 })
       .toArray()
   )
@@ -764,13 +763,13 @@ export async function listBaThreads(
   }
 
   return (await threadsCol())
-    .find(filter)
+    .find(withActive(filter))
     .sort({ updatedAt: -1 })
     .toArray();
 }
 
 export async function getBaThread(id: string): Promise<BaThread | null> {
-  return (await threadsCol()).findOne({ id: id.trim() });
+  return (await threadsCol()).findOne(withActive({ id: id.trim() }));
 }
 
 export async function createBaThread(opts: {
@@ -825,14 +824,15 @@ export async function touchBaThread(id: string): Promise<void> {
 export async function deleteBaThread(id: string, userId: string): Promise<boolean> {
   const thread = await getBaThread(id);
   if (!thread || thread.userId !== userId.toLowerCase()) return false;
-  await (await messagesCol()).deleteMany({ threadId: id });
-  const res = await (await threadsCol()).deleteOne({ id });
+  await BaMessageModel.softDeleteMany({ threadId: id });
+  const n = await BaThreadModel.softDeleteMany({ id });
+  const res = { deletedCount: n };
   return res.deletedCount > 0;
 }
 
 export async function listBaMessages(threadId: string): Promise<BaMessage[]> {
   return (await messagesCol())
-    .find({ threadId: threadId.trim() })
+    .find(withActive({ threadId: threadId.trim() }))
     .sort({ createdAt: 1 })
     .toArray();
 }
@@ -916,7 +916,7 @@ export async function updateBaMessageContent(
   content: string,
 ): Promise<void> {
   const col = await messagesCol();
-  const existing = await col.findOne({ id });
+  const existing = await col.findOne(withActive({ id }));
   if (!existing) return;
   await col.updateOne({ id }, { $set: { content } });
   await bumpBaThreadIssueDraftVersion(existing.threadId);
@@ -974,13 +974,13 @@ export async function listBaRequirements(
   const filter: Record<string, string> = { userId: userId.toLowerCase() };
   if (baProjectId?.trim()) filter.baProjectId = baProjectId.trim();
   return (await requirementsCol())
-    .find(filter)
+    .find(withActive(filter))
     .sort({ updatedAt: -1 })
     .toArray();
 }
 
 export async function getBaRequirement(id: string): Promise<BaRequirement | null> {
-  return (await requirementsCol()).findOne({ id: id.trim() });
+  return (await requirementsCol()).findOne(withActive({ id: id.trim() }));
 }
 
 export async function createBaRequirement(opts: {
@@ -1059,7 +1059,9 @@ export async function getBaRequirementByThread(
 ): Promise<BaRequirement | null> {
   const id = threadId.trim();
   if (!id) return null;
-  return (await requirementsCol()).findOne({ linkedThreadId: id });
+  return (await requirementsCol()).findOne(
+    withActive({ linkedThreadId: id }),
+  );
 }
 
 export async function upsertBaRequirementStep(
@@ -1113,8 +1115,8 @@ export async function deleteBaRequirement(
 ): Promise<boolean> {
   const req = await getBaRequirement(id);
   if (!req || req.userId !== userId.toLowerCase()) return false;
-  await (await requirementsCol()).deleteOne({ id });
-  await (await taskDraftsCol()).deleteMany({ requirementId: id });
+  await BaRequirementModel.softDeleteMany({ id });
+  await BaTaskDraftModel.softDeleteMany({ requirementId: id });
   return true;
 }
 
@@ -1161,13 +1163,13 @@ export async function listBaTaskDrafts(opts: {
   if (opts.requirementId?.trim()) filter.requirementId = opts.requirementId.trim();
   if (opts.status) filter.status = opts.status;
   return (await taskDraftsCol())
-    .find(filter)
+    .find(withActive(filter))
     .sort({ updatedAt: -1 })
     .toArray();
 }
 
 export async function getBaTaskDraft(id: string): Promise<BaTaskDraft | null> {
-  return (await taskDraftsCol()).findOne({ id: id.trim() });
+  return (await taskDraftsCol()).findOne(withActive({ id: id.trim() }));
 }
 
 export async function createBaTaskDraft(opts: {
@@ -1268,6 +1270,7 @@ export async function deleteBaTaskDraft(
 ): Promise<boolean> {
   const draft = await getBaTaskDraft(id);
   if (!draft || draft.userId !== userId.toLowerCase()) return false;
-  const res = await (await taskDraftsCol()).deleteOne({ id });
+  const n = await BaTaskDraftModel.softDeleteMany({ id });
+  const res = { deletedCount: n };
   return res.deletedCount > 0;
 }

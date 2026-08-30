@@ -1,5 +1,5 @@
 import { getConfig } from "../../config.js";
-import { aggregateJobsForStats } from "../../db/mongo.js";
+import { aggregateJobsForStats } from "../../models/jobStats.js";
 import { getRuntimeContext } from "../../workspace/runtime.js";
 import { enumerateDays, shiftYmd, STATS_TZ } from "./calendar.js";
 import { classifyFailReason, estimateUsd, pctChange, successRate } from "./metrics.js";

@@ -11,7 +11,7 @@ import {
 
 export const fsController = {
   browse: asyncHandler(async (req: Request, res: Response) => {
-    res.json(
+    res.formatter.ok(
       await browseLocalPath(
         headerUserFromExpress(req),
         String(req.query.path || ""),
@@ -20,7 +20,7 @@ export const fsController = {
   }),
 
   context: asyncHandler(async (req: Request, res: Response) => {
-    res.json(
+    res.formatter.ok(
       await getWorkspaceContext(
         headerUserFromExpress(req),
         headerProjectFromExpress(req),

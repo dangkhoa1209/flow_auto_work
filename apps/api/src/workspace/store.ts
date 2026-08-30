@@ -1,7 +1,13 @@
 import { type Collection } from "mongodb";
 import { rename as fsRename } from "node:fs/promises";
 import path from "node:path";
-import { connectMongo } from "../db/mongo.js";
+import { connectMongo } from "../models/connection.js";
+import { withActive } from "../models/base.js";
+import {
+  WorkspaceMembershipModel,
+  WorkspaceProjectModel,
+  WorkspaceUserModel,
+} from "../models/workspace.js";
 import { decryptSecret, encryptSecret } from "../plugins/crypto/secrets.js";
 import { hashPassword } from "../auth/password.js";
 import { logger } from "../logger.js";
@@ -35,37 +41,27 @@ export function projectFolderSegment(projectName: string): string {
 }
 
 async function usersCol(): Promise<Collection<WorkspaceUser>> {
-  const db = await connectMongo();
-  return db.collection<WorkspaceUser>("workspace_users");
+  return (await WorkspaceUserModel.col()) as Collection<WorkspaceUser>;
 }
 
 async function projectsCol(): Promise<Collection<WorkspaceProject>> {
-  const db = await connectMongo();
-  return db.collection<WorkspaceProject>("workspace_projects");
+  return (await WorkspaceProjectModel.col()) as Collection<WorkspaceProject>;
 }
 
 async function membershipsCol(): Promise<Collection<WorkspaceMembership>> {
-  const db = await connectMongo();
-  return db.collection<WorkspaceMembership>("workspace_memberships");
+  return (await WorkspaceMembershipModel.col()) as Collection<WorkspaceMembership>;
 }
 
 export async function ensureWorkspaceIndexes(): Promise<void> {
+  await WorkspaceUserModel.ensureIndexes();
+  await WorkspaceProjectModel.ensureIndexes();
+  await WorkspaceMembershipModel.ensureIndexes();
   const db = await connectMongo();
-  await db
-    .collection("workspace_users")
-    .createIndex({ gitlabUsername: 1 }, { unique: true });
-  await db
-    .collection("workspace_projects")
-    .createIndex({ userId: 1, projectName: 1 }, { unique: true });
-  await db.collection("workspace_projects").createIndex({ userId: 1, isActive: 1 });
   try {
     await db.collection("workspace_projects").dropIndex("gitlabPath_1");
   } catch {
     /* index may not exist */
   }
-  await db
-    .collection("workspace_memberships")
-    .createIndex({ userId: 1, projectId: 1 }, { unique: true });
 }
 
 export async function getUserByUsername(
@@ -73,7 +69,7 @@ export async function getUserByUsername(
 ): Promise<WorkspaceUser | null> {
   const id = normUserId(username);
   if (!id) return null;
-  return (await usersCol()).findOne({ id });
+  return (await usersCol()).findOne(withActive({ id }));
 }
 
 export async function createOrUpdateUserPassword(opts: {
@@ -334,7 +330,7 @@ export async function getProjectSecrets(projectId: string): Promise<{
 }
 
 export async function listProjects(): Promise<WorkspaceProject[]> {
-  return (await projectsCol()).find({}).sort({ displayName: 1 }).toArray();
+  return (await projectsCol()).find(withActive({})).sort({ displayName: 1 }).toArray();
 }
 
 export async function listProjectsForUser(
@@ -342,7 +338,7 @@ export async function listProjectsForUser(
 ): Promise<WorkspaceProject[]> {
   const userId = normUserId(username);
   return (await projectsCol())
-    .find({ userId })
+    .find(withActive({ userId }))
     .sort({ isActive: -1, updatedAt: -1 })
     .toArray();
 }
@@ -350,17 +346,17 @@ export async function listProjectsForUser(
 export async function getProject(
   projectId: string,
 ): Promise<WorkspaceProject | null> {
-  return (await projectsCol()).findOne({ id: projectId });
+  return (await projectsCol()).findOne(withActive({ id: projectId }));
 }
 
 export async function getActiveProjectForUser(
   username: string,
 ): Promise<WorkspaceProject | null> {
   const userId = normUserId(username);
-  const active = await (await projectsCol()).findOne({ userId, isActive: true });
+  const active = await (await projectsCol()).findOne(withActive({ userId, isActive: true }));
   if (active) return active;
   const first = await (await projectsCol())
-    .find({ userId })
+    .find(withActive({ userId }))
     .sort({ updatedAt: -1 })
     .limit(1)
     .toArray();
@@ -371,12 +367,14 @@ export async function getProjectByPath(
   gitlabPath: string,
 ): Promise<WorkspaceProject | null> {
   const path = gitlabPath.trim().replace(/^\/+|\/+$/g, "");
-  return (await projectsCol()).findOne({
-    gitlabPath: {
-      $regex: `^${path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`,
-      $options: "i",
-    },
-  });
+  return (await projectsCol()).findOne(
+    withActive({
+      gitlabPath: {
+        $regex: `^${path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`,
+        $options: "i",
+      },
+    }),
+  );
 }
 
 function syncRepoPath(doc: WorkspaceProject): WorkspaceProject {
@@ -413,7 +411,9 @@ export async function createUserProject(opts: {
 
   // Case-insensitive + folder-segment clash (path …/{name}/source)
   const nameKey = projectFolderSegment(projectName).toLowerCase();
-  const siblings = await (await projectsCol()).find({ userId }).toArray();
+  const siblings = await (await projectsCol())
+    .find(withActive({ userId }))
+    .toArray();
   const clash = siblings.find(
     (p) =>
       p.projectName.trim().toLowerCase() === projectName.toLowerCase() ||
@@ -546,7 +546,7 @@ export async function updateProjectFields(
     if (nextName !== existing.projectName) {
       const nameKey = projectFolderSegment(nextName).toLowerCase();
       const siblings = await (await projectsCol())
-        .find({ userId: existing.userId, id: { $ne: projectId } })
+        .find(withActive({ userId: existing.userId, id: { $ne: projectId } }))
         .toArray();
       const clash = siblings.find(
         (p) =>
@@ -717,9 +717,9 @@ export async function deleteUserProject(
   if (project.userId !== normUserId(username)) {
     throw new Error("Not your project");
   }
-  await (await projectsCol()).deleteOne({ id: projectId });
+  await WorkspaceProjectModel.softDeleteMany({ id: projectId });
   try {
-    await (await membershipsCol()).deleteMany({
+    await WorkspaceMembershipModel.softDeleteMany({
       userId: normUserId(username),
       projectId,
     });
@@ -760,6 +760,8 @@ export async function upsertMembership(opts: {
     role: opts.role ?? existing?.role ?? "dev",
     joinedAt: existing?.joinedAt ?? now,
     updatedAt: now,
+    deleted: false,
+    deletedAt: null,
   };
   const $unset: Record<string, ""> = {};
   if (opts.baseBranch !== undefined) {
@@ -791,7 +793,7 @@ export async function listMembershipsForUser(
   // Legacy fallback
   const userId = normUserId(username);
   const mems = await (await membershipsCol())
-    .find({ userId })
+    .find(withActive({ userId }))
     .sort({ updatedAt: -1 })
     .toArray();
   const out: MembershipWithProject[] = [];
@@ -811,5 +813,5 @@ export async function getMembership(
     return projectToMembership(username, project);
   }
   const id = membershipId(normUserId(username), projectId);
-  return (await membershipsCol()).findOne({ id });
+  return (await membershipsCol()).findOne(withActive({ id }));
 }

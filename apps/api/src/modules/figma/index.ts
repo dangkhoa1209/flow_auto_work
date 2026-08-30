@@ -2,7 +2,7 @@
  * Figma orchestration — detect links, opt-in, fetch with project PAT.
  */
 
-import { addChatMessage, listChatMessages } from "../../db/mongo.js";
+import { addChatMessage, listChatMessages } from "../../models/chat.js";
 import { saveJob } from "../../job-store.js";
 import { logger } from "../../logger.js";
 import { jobQueue } from "../../queue.js";

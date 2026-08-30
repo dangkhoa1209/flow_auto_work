@@ -1,18 +1,5 @@
-import { connectMongo, getDb } from "../../db/mongo.js";
+import { StatsAnalysisCacheModel } from "../../models/stats.js";
 import type { DevAnalysisResult } from "./analyze.js";
-
-type CacheDoc = {
-  _id: string;
-  ownerUsername: string;
-  workspaceProjectId: string | null;
-  from: string;
-  to: string;
-  jobCount: number;
-  labelConfigAt: string;
-  engine: string;
-  analyzedAt: string;
-  result: DevAnalysisResult;
-};
 
 function cacheKey(opts: {
   ownerUsername: string;
@@ -21,11 +8,6 @@ function cacheKey(opts: {
   to: string;
 }): string {
   return `${opts.ownerUsername}|${opts.workspaceProjectId || "*"}|${opts.from}|${opts.to}`;
-}
-
-async function analysisCollection() {
-  await connectMongo();
-  return getDb().collection<CacheDoc>("stats_analysis_cache");
 }
 
 export async function getCachedDevAnalysis(opts: {
@@ -37,8 +19,7 @@ export async function getCachedDevAnalysis(opts: {
   labelConfigAt: string;
   engine: string;
 }): Promise<DevAnalysisResult | null> {
-  const col = await analysisCollection();
-  const doc = await col.findOne({ _id: cacheKey(opts) });
+  const doc = await StatsAnalysisCacheModel.findById(cacheKey(opts));
   if (!doc) return null;
   if (doc.jobCount !== opts.jobCount) return null;
   if (doc.labelConfigAt !== opts.labelConfigAt) return null;
@@ -56,13 +37,13 @@ export async function saveDevAnalysisCache(opts: {
   engine: string;
   result: DevAnalysisResult;
 }): Promise<void> {
-  const col = await analysisCollection();
-  const key = cacheKey(opts);
+  const _id = cacheKey(opts);
+  const analyzedAt = opts.result.analyzedAt || new Date().toISOString();
+  const col = await StatsAnalysisCacheModel.col();
   await col.updateOne(
-    { _id: key },
+    { _id },
     {
       $set: {
-        _id: key,
         ownerUsername: opts.ownerUsername,
         workspaceProjectId: opts.workspaceProjectId ?? null,
         from: opts.from,
@@ -70,8 +51,10 @@ export async function saveDevAnalysisCache(opts: {
         jobCount: opts.jobCount,
         labelConfigAt: opts.labelConfigAt,
         engine: opts.engine,
-        analyzedAt: opts.result.analyzedAt,
+        analyzedAt,
         result: opts.result,
+        deleted: false,
+        deletedAt: null,
       },
     },
     { upsert: true },

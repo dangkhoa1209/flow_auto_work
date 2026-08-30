@@ -1,5 +1,7 @@
 import { type Collection } from "mongodb";
-import { connectMongo } from "../../db/mongo.js";
+import { connectMongo } from "../../models/connection.js";
+import { withActive } from "../../models/base.js";
+import { BuildJobModel } from "../../models/devops.js";
 import { AppError } from "../../utils/AppError.js";
 import { logPathForBuild } from "./logFile.js";
 import {
@@ -9,35 +11,24 @@ import {
   type BuildStatus,
 } from "./types.js";
 
-const COLLECTION = "build_jobs";
-
-let indexesReady = false;
-
 export async function ensureBuildIndexes(): Promise<void> {
-  if (indexesReady) return;
-  const db = await connectMongo();
-  const col = db.collection(COLLECTION);
-  await col.createIndex({ createdAt: -1 });
-  await col.createIndex({ status: 1, queuedAt: 1 });
-  await col.createIndex({ scriptId: 1, createdAt: -1 });
-  await col.createIndex({ triggeredBy: 1, createdAt: -1 });
-  indexesReady = true;
+  await BuildJobModel.ensureIndexes();
 }
 
 async function col(): Promise<Collection<BuildJob>> {
   await ensureBuildIndexes();
-  return (await connectMongo()).collection<BuildJob>(COLLECTION);
+  return (await BuildJobModel.col()) as Collection<BuildJob>;
 }
 
 export async function insertBuildJob(job: BuildJob): Promise<BuildJob> {
-  await (await col()).insertOne(job);
+  await BuildJobModel.insert({ ...job, deleted: false, deletedAt: null });
   return job;
 }
 
 export async function getBuildJob(id: string): Promise<BuildJob | null> {
   const jobId = id.trim();
   if (!jobId) return null;
-  return (await col()).findOne({ id: jobId });
+  return (await col()).findOne(withActive({ id: jobId }));
 }
 
 export async function requireBuildJob(id: string): Promise<BuildJob> {
@@ -54,7 +45,7 @@ export async function updateBuildJob(
   const res = await (
     await col()
   ).findOneAndUpdate(
-    { id },
+    withActive({ id }),
     { $set: { ...patch, updatedAt } },
     { returnDocument: "after" },
   );
@@ -76,7 +67,7 @@ export async function listBuildJobs(opts?: {
   if (opts?.status) filter.status = opts.status;
   if (opts?.scriptId) filter.scriptId = opts.scriptId;
   return (await col())
-    .find(filter)
+    .find(withActive(filter))
     .sort({ createdAt: -1 })
     .skip(offset)
     .limit(limit)
@@ -90,18 +81,18 @@ export async function countBuildJobs(opts?: {
   const filter: Record<string, unknown> = {};
   if (opts?.status) filter.status = opts.status;
   if (opts?.scriptId) filter.scriptId = opts.scriptId;
-  return (await col()).countDocuments(filter);
+  return (await col()).countDocuments(withActive(filter));
 }
 
 export async function listQueuedBuildJobs(): Promise<BuildJob[]> {
   return (await col())
-    .find({ status: "queued" })
+    .find(withActive({ status: "queued" }))
     .sort({ queuedAt: 1 })
     .toArray();
 }
 
 export async function listRunningBuildJobs(): Promise<BuildJob[]> {
-  return (await col()).find({ status: "running" }).toArray();
+  return (await col()).find(withActive({ status: "running" })).toArray();
 }
 
 /**
@@ -112,12 +103,12 @@ export async function tryClaimBuildJobForRun(
   jobId: string,
 ): Promise<BuildJob | null> {
   const c = await col();
-  const otherRunning = await c.findOne({ status: "running" });
+  const otherRunning = await c.findOne(withActive({ status: "running" }));
   if (otherRunning) return null;
 
   const now = new Date().toISOString();
   const res = await c.findOneAndUpdate(
-    { id: jobId, status: "queued" },
+    withActive({ id: jobId, status: "queued" }),
     { $set: { status: "running", startedAt: now, updatedAt: now } },
     { returnDocument: "after" },
   );

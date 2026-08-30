@@ -1,7 +1,7 @@
 import {
   aggregateJobsForDevAnalysis,
   type DevAnalysisJobRow,
-} from "../../db/mongo.js";
+} from "../../models/jobStats.js";
 import { getRuntimeContext } from "../../workspace/runtime.js";
 import { shiftYmd, STATS_TZ } from "./calendar.js";
 import { classifyFailReason } from "./metrics.js";

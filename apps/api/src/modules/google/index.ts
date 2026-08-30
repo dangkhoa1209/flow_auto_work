@@ -24,7 +24,7 @@ import {
   type GoogleSheetRef,
 } from "../../plugins/google/sheets.js";
 import { decryptSecret } from "../../plugins/crypto/secrets.js";
-import { addChatMessage, listChatMessages } from "../../db/mongo.js";
+import { addChatMessage, listChatMessages } from "../../models/chat.js";
 import { requireJobRecord } from "../job/lifecycle.js";
 import {
   resolveDevNotes,

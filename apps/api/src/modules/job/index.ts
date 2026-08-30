@@ -2,7 +2,7 @@
  * Job domain module — framework-agnostic business logic.
  * Controllers call these; no Express imports here.
  */
-import { listJobDocs } from "../../db/mongo.js";
+import { listJobDocs } from "../../models/job.js";
 import { getConfig } from "../../config.js";
 import {
   fetchIssueAsJob,

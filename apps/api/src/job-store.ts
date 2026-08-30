@@ -6,7 +6,7 @@ import {
   listJobDocs,
   rekeyJobSideDocs,
   upsertJobDoc,
-} from "./db/mongo.js";
+} from "./models/job.js";
 import type { CompletionActions, IssueJob, JobRecord } from "./types.js";
 import {
   busyIssueKey,

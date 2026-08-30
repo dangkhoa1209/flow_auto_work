@@ -3,10 +3,14 @@ import path from "node:path";
 import { z } from "zod";
 import { type Collection } from "mongodb";
 import { getConfig } from "../../config.js";
-import { connectMongo } from "../../db/mongo.js";
+import { connectMongo } from "../../models/connection.js";
+import { withActive } from "../../models/base.js";
+import { BuildScriptModel, type BuildScriptDoc } from "../../models/devops.js";
 import { logger } from "../../logger.js";
 import { AppError } from "../../utils/AppError.js";
 import type { WhitelistedScript } from "./types.js";
+
+export type { BuildScriptDoc } from "../../models/devops.js";
 
 export const SCRIPT_ID_RE = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/;
 
@@ -19,12 +23,6 @@ const scriptSchema = z.object({
   description: z.string().trim().max(240).optional(),
   active: z.boolean().optional(),
 });
-
-export type BuildScriptDoc = WhitelistedScript & {
-  createdBy?: string;
-  createdAt: string;
-  updatedAt: string;
-};
 
 export type ScriptInput = {
   id?: string;
@@ -41,11 +39,10 @@ let indexesReady = false;
 
 async function scriptsCol(): Promise<Collection<BuildScriptDoc>> {
   if (!indexesReady) {
-    const db = await connectMongo();
-    await db.collection(COLLECTION).createIndex({ id: 1 }, { unique: true });
+    await BuildScriptModel.ensureIndexes();
     indexesReady = true;
   }
-  return (await connectMongo()).collection<BuildScriptDoc>(COLLECTION);
+  return (await BuildScriptModel.col()) as Collection<BuildScriptDoc>;
 }
 
 function normalizeCommand(command: string): string {
@@ -226,7 +223,7 @@ function toPublic(doc: BuildScriptDoc): WhitelistedScript {
 
 export async function listWhitelistedScripts(): Promise<WhitelistedScript[]> {
   const docs = await (await scriptsCol())
-    .find({})
+    .find(withActive({}))
     .sort({ updatedAt: -1 })
     .toArray();
   return docs.map(toPublic);
@@ -237,7 +234,7 @@ export async function getWhitelistedScript(
 ): Promise<WhitelistedScript | null> {
   const id = scriptId.trim();
   if (!SCRIPT_ID_RE.test(id)) return null;
-  const doc = await (await scriptsCol()).findOne({ id });
+  const doc = await (await scriptsCol()).findOne(withActive({ id }));
   return doc ? toPublic(doc) : null;
 }
 
@@ -337,8 +334,8 @@ export async function updateBuildScript(
 
 export async function deleteBuildScript(scriptId: string): Promise<void> {
   const id = scriptId.trim();
-  const res = await (await scriptsCol()).deleteOne({ id });
-  if (!res.deletedCount) {
+  const n = await BuildScriptModel.softDeleteMany({ id });
+  if (!n) {
     throw new AppError("Script not found", 404, "script_not_found");
   }
 }

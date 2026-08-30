@@ -44,11 +44,11 @@ function statsQueryFromReq(req: Request) {
 
 export const statsController = {
   daily: asyncHandler(async (req: Request, res: Response) => {
-    res.json(await getDailyStats(statsQueryFromReq(req)));
+    res.formatter.ok(await getDailyStats(statsQueryFromReq(req)));
   }),
 
   analyze: asyncHandler(async (req: Request, res: Response) => {
-    res.json(
+    res.formatter.ok(
       await analyzeDevPerformance(statsQueryFromReq(req), {
         force: flag(req.query.force ?? req.body?.force),
       }),

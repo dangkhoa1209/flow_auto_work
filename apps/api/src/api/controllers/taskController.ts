@@ -8,15 +8,15 @@ import {
 
 export const taskController = {
   list: asyncHandler(async (_req: Request, res: Response) => {
-    res.json(await listTasks());
+    res.formatter.ok(await listTasks());
   }),
 
   one: asyncHandler(async (req: Request, res: Response) => {
     const iid = Number(req.params.iid);
-    res.json(await getTaskDetail(iid));
+    res.formatter.ok(await getTaskDetail(iid));
   }),
 
   update: asyncHandler(async (req: Request, res: Response) => {
-    res.json(await updateTasks(req.body || {}));
+    res.formatter.ok(await updateTasks(req.body || {}));
   }),
 };

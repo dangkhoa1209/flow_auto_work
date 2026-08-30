@@ -1,55 +1,38 @@
+/**
+ * QC domain module — ownership rules + FS uploads.
+ * Persistence: models/qc.ts (createModel + soft-delete).
+ */
 import { createReadStream, existsSync } from "node:fs";
 import { mkdir, writeFile, unlink } from "node:fs/promises";
 import path from "node:path";
-import { type Collection } from "mongodb";
-import { connectMongo } from "../../db/mongo.js";
-import { getRepoRoot } from "../../repoRoot.js";
-import { AppError } from "../../utils/AppError.js";
+import type { Sort } from "mongodb";
 import {
+  QcFlowModel,
+  QcProjectModel,
+  QcSampleFileModel,
+  QcTestCaseModel,
   slugId,
+  type QcExecutionPlanItem,
   type QcFlowDoc,
   type QcFlowStep,
   type QcProjectDoc,
   type QcSampleFileDoc,
   type QcTestCaseDoc,
-  type QcExecutionPlanItem,
-} from "./types.js";
+} from "../../models/qc.js";
+import { getRepoRoot } from "../../repoRoot.js";
+import { AppError } from "../../utils/AppError.js";
 
-let indexesReady = false;
-
-async function ensureQcIndexes(): Promise<void> {
-  if (indexesReady) return;
-  const db = await connectMongo();
-  await db.collection("qc_projects").createIndex({ ownerUsername: 1 });
-  await db.collection("qc_flows").createIndex({ qcProjectId: 1, updatedAt: -1 });
-  await db
-    .collection("qc_test_cases")
-    .createIndex({ qcProjectId: 1, updatedAt: -1 });
-  await db
-    .collection("qc_sample_files")
-    .createIndex({ qcProjectId: 1, createdAt: -1 });
-  indexesReady = true;
-}
-
-async function projects(): Promise<Collection<QcProjectDoc>> {
-  await ensureQcIndexes();
-  return (await connectMongo()).collection<QcProjectDoc>("qc_projects");
-}
-
-async function flows(): Promise<Collection<QcFlowDoc>> {
-  await ensureQcIndexes();
-  return (await connectMongo()).collection<QcFlowDoc>("qc_flows");
-}
-
-async function testCases(): Promise<Collection<QcTestCaseDoc>> {
-  await ensureQcIndexes();
-  return (await connectMongo()).collection<QcTestCaseDoc>("qc_test_cases");
-}
-
-async function sampleFiles(): Promise<Collection<QcSampleFileDoc>> {
-  await ensureQcIndexes();
-  return (await connectMongo()).collection<QcSampleFileDoc>("qc_sample_files");
-}
+export type {
+  QcExecutionPlanItem,
+  QcFlowDoc,
+  QcFlowStep,
+  QcProjectDoc,
+  QcSampleFileDoc,
+  QcSelectorContext,
+  QcStepAction,
+  QcTestCaseDoc,
+} from "../../models/qc.js";
+export { slugId } from "../../models/qc.js";
 
 function uploadsRoot(): string {
   return path.resolve(getRepoRoot(), "uploads", "qc");
@@ -59,7 +42,7 @@ async function assertProjectOwned(
   qcProjectId: string,
   username: string,
 ): Promise<QcProjectDoc> {
-  const doc = await (await projects()).findOne({ _id: qcProjectId });
+  const doc = await QcProjectModel.findById(qcProjectId);
   if (!doc) throw new AppError("QC project not found", 404);
   if (doc.ownerUsername !== username) {
     throw new AppError("QC project access denied", 403);
@@ -67,11 +50,27 @@ async function assertProjectOwned(
   return doc;
 }
 
-export async function listQcProjects(username: string): Promise<QcProjectDoc[]> {
-  return (await projects())
-    .find({ ownerUsername: username })
-    .sort({ updatedAt: -1 })
-    .toArray();
+export type ListOpts = {
+  sort?: Sort;
+  skip?: number;
+  limit?: number;
+};
+
+export async function listQcProjects(
+  username: string,
+  list?: ListOpts,
+): Promise<{ rows: QcProjectDoc[]; count: number }> {
+  const filter = { ownerUsername: username };
+  const [rows, count] = await Promise.all([
+    QcProjectModel.findMany({
+      filter,
+      sort: list?.sort,
+      skip: list?.skip,
+      limit: list?.limit,
+    }),
+    QcProjectModel.count({ filter }),
+  ]);
+  return { rows, count };
 }
 
 export async function createQcProject(opts: {
@@ -84,16 +83,14 @@ export async function createQcProject(opts: {
   if (!name) throw new AppError("name required", 400);
   if (!targetBaseUrl) throw new AppError("targetBaseUrl required", 400);
   const now = new Date().toISOString();
-  const doc: QcProjectDoc = {
+  return QcProjectModel.insert({
     _id: slugId("qcp", name),
     ownerUsername: opts.username,
     name,
     targetBaseUrl,
     createdAt: now,
     updatedAt: now,
-  };
-  await (await projects()).insertOne(doc);
-  return doc;
+  });
 }
 
 export async function updateQcProject(opts: {
@@ -103,14 +100,17 @@ export async function updateQcProject(opts: {
   targetBaseUrl?: string;
 }): Promise<QcProjectDoc> {
   const existing = await assertProjectOwned(opts.projectId, opts.username);
-  if (opts.name !== undefined) existing.name = opts.name.trim() || existing.name;
+  const patch: Partial<QcProjectDoc> = {
+    updatedAt: new Date().toISOString(),
+  };
+  if (opts.name !== undefined) patch.name = opts.name.trim() || existing.name;
   if (opts.targetBaseUrl !== undefined) {
-    existing.targetBaseUrl =
+    patch.targetBaseUrl =
       opts.targetBaseUrl.trim().replace(/\/$/, "") || existing.targetBaseUrl;
   }
-  existing.updatedAt = new Date().toISOString();
-  await (await projects()).updateOne({ _id: existing._id }, { $set: existing });
-  return existing;
+  const updated = await QcProjectModel.updateById(existing._id, patch);
+  if (!updated) throw new AppError("QC project not found", 404);
+  return updated;
 }
 
 export async function deleteQcProject(opts: {
@@ -118,29 +118,47 @@ export async function deleteQcProject(opts: {
   projectId: string;
 }): Promise<{ ok: true }> {
   await assertProjectOwned(opts.projectId, opts.username);
-  await (await flows()).deleteMany({ qcProjectId: opts.projectId });
-  await (await testCases()).deleteMany({ qcProjectId: opts.projectId });
-  await (await sampleFiles()).deleteMany({ qcProjectId: opts.projectId });
-  await (await projects()).deleteOne({ _id: opts.projectId });
+  const samples = await QcSampleFileModel.findMany({
+    filter: { qcProjectId: opts.projectId },
+  });
+  for (const sample of samples) {
+    try {
+      await unlink(sample.storagePath);
+    } catch {
+      /* ignore missing */
+    }
+  }
+  await QcFlowModel.softDeleteMany({ qcProjectId: opts.projectId });
+  await QcTestCaseModel.softDeleteMany({ qcProjectId: opts.projectId });
+  await QcSampleFileModel.softDeleteMany({ qcProjectId: opts.projectId });
+  await QcProjectModel.softDeleteById(opts.projectId);
   return { ok: true };
 }
 
 export async function listQcFlows(opts: {
   username: string;
   qcProjectId: string;
-}): Promise<QcFlowDoc[]> {
+  list?: ListOpts;
+}): Promise<{ rows: QcFlowDoc[]; count: number }> {
   await assertProjectOwned(opts.qcProjectId, opts.username);
-  return (await flows())
-    .find({ qcProjectId: opts.qcProjectId })
-    .sort({ updatedAt: -1 })
-    .toArray();
+  const filter = { qcProjectId: opts.qcProjectId };
+  const [rows, count] = await Promise.all([
+    QcFlowModel.findMany({
+      filter,
+      sort: opts.list?.sort,
+      skip: opts.list?.skip,
+      limit: opts.list?.limit,
+    }),
+    QcFlowModel.count({ filter }),
+  ]);
+  return { rows, count };
 }
 
 export async function getQcFlow(opts: {
   username: string;
   flowId: string;
 }): Promise<QcFlowDoc> {
-  const doc = await (await flows()).findOne({ _id: opts.flowId });
+  const doc = await QcFlowModel.findById(opts.flowId);
   if (!doc) throw new AppError("Flow not found", 404);
   await assertProjectOwned(doc.qcProjectId, opts.username);
   return doc;
@@ -156,7 +174,7 @@ export async function createQcFlow(opts: {
   const name = opts.name.trim();
   if (!name) throw new AppError("name required", 400);
   const now = new Date().toISOString();
-  const doc: QcFlowDoc = {
+  return QcFlowModel.insert({
     _id: slugId("flow", name),
     qcProjectId: opts.qcProjectId,
     ownerUsername: opts.username,
@@ -164,9 +182,7 @@ export async function createQcFlow(opts: {
     steps: Array.isArray(opts.steps) ? opts.steps : [],
     createdAt: now,
     updatedAt: now,
-  };
-  await (await flows()).insertOne(doc);
-  return doc;
+  });
 }
 
 export async function updateQcFlow(opts: {
@@ -179,11 +195,14 @@ export async function updateQcFlow(opts: {
     username: opts.username,
     flowId: opts.flowId,
   });
-  if (opts.name !== undefined) existing.name = opts.name.trim() || existing.name;
-  if (opts.steps !== undefined) existing.steps = opts.steps;
-  existing.updatedAt = new Date().toISOString();
-  await (await flows()).updateOne({ _id: existing._id }, { $set: existing });
-  return existing;
+  const patch: Partial<QcFlowDoc> = {
+    updatedAt: new Date().toISOString(),
+  };
+  if (opts.name !== undefined) patch.name = opts.name.trim() || existing.name;
+  if (opts.steps !== undefined) patch.steps = opts.steps;
+  const updated = await QcFlowModel.updateById(existing._id, patch);
+  if (!updated) throw new AppError("Flow not found", 404);
+  return updated;
 }
 
 export async function deleteQcFlow(opts: {
@@ -191,26 +210,34 @@ export async function deleteQcFlow(opts: {
   flowId: string;
 }): Promise<{ ok: true }> {
   await getQcFlow(opts);
-  await (await flows()).deleteOne({ _id: opts.flowId });
+  await QcFlowModel.softDeleteById(opts.flowId);
   return { ok: true };
 }
 
 export async function listQcTestCases(opts: {
   username: string;
   qcProjectId: string;
-}): Promise<QcTestCaseDoc[]> {
+  list?: ListOpts;
+}): Promise<{ rows: QcTestCaseDoc[]; count: number }> {
   await assertProjectOwned(opts.qcProjectId, opts.username);
-  return (await testCases())
-    .find({ qcProjectId: opts.qcProjectId })
-    .sort({ updatedAt: -1 })
-    .toArray();
+  const filter = { qcProjectId: opts.qcProjectId };
+  const [rows, count] = await Promise.all([
+    QcTestCaseModel.findMany({
+      filter,
+      sort: opts.list?.sort,
+      skip: opts.list?.skip,
+      limit: opts.list?.limit,
+    }),
+    QcTestCaseModel.count({ filter }),
+  ]);
+  return { rows, count };
 }
 
 export async function getQcTestCase(opts: {
   username: string;
   testCaseId: string;
 }): Promise<QcTestCaseDoc> {
-  const doc = await (await testCases()).findOne({ _id: opts.testCaseId });
+  const doc = await QcTestCaseModel.findById(opts.testCaseId);
   if (!doc) throw new AppError("Test case not found", 404);
   await assertProjectOwned(doc.qcProjectId, opts.username);
   return doc;
@@ -227,7 +254,7 @@ export async function createQcTestCase(opts: {
   const name = opts.name.trim();
   if (!name) throw new AppError("name required", 400);
   const now = new Date().toISOString();
-  const doc: QcTestCaseDoc = {
+  return QcTestCaseModel.insert({
     _id: slugId("tc", name),
     qcProjectId: opts.qcProjectId,
     ownerUsername: opts.username,
@@ -236,9 +263,7 @@ export async function createQcTestCase(opts: {
     executionPlan: Array.isArray(opts.executionPlan) ? opts.executionPlan : [],
     createdAt: now,
     updatedAt: now,
-  };
-  await (await testCases()).insertOne(doc);
-  return doc;
+  });
 }
 
 export async function updateQcTestCase(opts: {
@@ -252,19 +277,19 @@ export async function updateQcTestCase(opts: {
     username: opts.username,
     testCaseId: opts.testCaseId,
   });
-  if (opts.name !== undefined) existing.name = opts.name.trim() || existing.name;
+  const patch: Partial<QcTestCaseDoc> = {
+    updatedAt: new Date().toISOString(),
+  };
+  if (opts.name !== undefined) patch.name = opts.name.trim() || existing.name;
   if (opts.loopCount !== undefined) {
-    existing.loopCount = Math.max(1, Number(opts.loopCount) || 1);
+    patch.loopCount = Math.max(1, Number(opts.loopCount) || 1);
   }
   if (opts.executionPlan !== undefined) {
-    existing.executionPlan = opts.executionPlan;
+    patch.executionPlan = opts.executionPlan;
   }
-  existing.updatedAt = new Date().toISOString();
-  await (await testCases()).updateOne(
-    { _id: existing._id },
-    { $set: existing },
-  );
-  return existing;
+  const updated = await QcTestCaseModel.updateById(existing._id, patch);
+  if (!updated) throw new AppError("Test case not found", 404);
+  return updated;
 }
 
 export async function deleteQcTestCase(opts: {
@@ -272,19 +297,27 @@ export async function deleteQcTestCase(opts: {
   testCaseId: string;
 }): Promise<{ ok: true }> {
   await getQcTestCase(opts);
-  await (await testCases()).deleteOne({ _id: opts.testCaseId });
+  await QcTestCaseModel.softDeleteById(opts.testCaseId);
   return { ok: true };
 }
 
 export async function listQcSampleFiles(opts: {
   username: string;
   qcProjectId: string;
-}): Promise<QcSampleFileDoc[]> {
+  list?: ListOpts;
+}): Promise<{ rows: QcSampleFileDoc[]; count: number }> {
   await assertProjectOwned(opts.qcProjectId, opts.username);
-  return (await sampleFiles())
-    .find({ qcProjectId: opts.qcProjectId })
-    .sort({ createdAt: -1 })
-    .toArray();
+  const filter = { qcProjectId: opts.qcProjectId };
+  const [rows, count] = await Promise.all([
+    QcSampleFileModel.findMany({
+      filter,
+      sort: opts.list?.sort ?? { createdAt: -1 },
+      skip: opts.list?.skip,
+      limit: opts.list?.limit,
+    }),
+    QcSampleFileModel.count({ filter }),
+  ]);
+  return { rows, count };
 }
 
 export async function saveQcSampleFile(opts: {
@@ -302,7 +335,7 @@ export async function saveQcSampleFile(opts: {
   const storagePath = path.join(dir, `${id}__${safeName}`);
   await writeFile(storagePath, opts.buffer);
   const now = new Date().toISOString();
-  const doc: QcSampleFileDoc = {
+  return QcSampleFileModel.insert({
     _id: id,
     qcProjectId: opts.qcProjectId,
     ownerUsername: opts.username,
@@ -311,16 +344,14 @@ export async function saveQcSampleFile(opts: {
     storagePath,
     size: opts.buffer.length,
     createdAt: now,
-  };
-  await (await sampleFiles()).insertOne(doc);
-  return doc;
+  });
 }
 
 export async function getQcSampleFileStream(opts: {
   username: string;
   fileId: string;
 }): Promise<{ doc: QcSampleFileDoc; stream: NodeJS.ReadableStream }> {
-  const doc = await (await sampleFiles()).findOne({ _id: opts.fileId });
+  const doc = await QcSampleFileModel.findById(opts.fileId);
   if (!doc) throw new AppError("Sample file not found", 404);
   await assertProjectOwned(doc.qcProjectId, opts.username);
   if (!existsSync(doc.storagePath)) {
@@ -333,7 +364,7 @@ export async function deleteQcSampleFile(opts: {
   username: string;
   fileId: string;
 }): Promise<{ ok: true }> {
-  const doc = await (await sampleFiles()).findOne({ _id: opts.fileId });
+  const doc = await QcSampleFileModel.findById(opts.fileId);
   if (!doc) throw new AppError("Sample file not found", 404);
   await assertProjectOwned(doc.qcProjectId, opts.username);
   try {
@@ -341,6 +372,6 @@ export async function deleteQcSampleFile(opts: {
   } catch {
     /* ignore missing */
   }
-  await (await sampleFiles()).deleteOne({ _id: opts.fileId });
+  await QcSampleFileModel.softDeleteById(opts.fileId);
   return { ok: true };
 }

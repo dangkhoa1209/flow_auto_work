@@ -76,37 +76,37 @@ export const jobController = {
       status,
       limit: Number.isFinite(limit) ? limit : 50,
     });
-    res.json(data);
+    res.formatter.ok(data);
   }),
 
   /** POST /api/jobs/start */
   start: asyncHandler(async (req: Request, res: Response) => {
-    res.json(await startJobs(body<StartJobsInput>(req)));
+    res.formatter.ok(await startJobs(body<StartJobsInput>(req)));
   }),
 
   /** POST /api/jobs/ensure */
   ensure: asyncHandler(async (req: Request, res: Response) => {
-    res.json(await ensureJobForIssue(body<EnsureJobInput>(req)));
+    res.formatter.ok(await ensureJobForIssue(body<EnsureJobInput>(req)));
   }),
 
   /** POST /api/jobs/adhoc */
   adhoc: asyncHandler(async (req: Request, res: Response) => {
-    res.json(await createAdhocSession(body<AdhocJobInput>(req)));
+    res.formatter.ok(await createAdhocSession(body<AdhocJobInput>(req)));
   }),
 
   /** GET /api/jobs/by-issue/:iid */
   byIssue: asyncHandler(async (req: Request, res: Response) => {
-    res.json(await findJobByIssueIid(Number(req.params.iid)));
+    res.formatter.ok(await findJobByIssueIid(Number(req.params.iid)));
   }),
 
   /** GET /api/jobs/:id/issue-draft */
   issueDraft: asyncHandler(async (req: Request, res: Response) => {
-    res.json(await buildIssueDraft(jobId(req)));
+    res.formatter.ok(await buildIssueDraft(jobId(req)));
   }),
 
   /** POST /api/jobs/:id/create-issue */
   createIssue: asyncHandler(async (req: Request, res: Response) => {
-    res.json(
+    res.formatter.ok(
       await createIssueFromAdhoc(
         jobId(req),
         body<CreateIssueFromAdhocInput>(req),
@@ -116,41 +116,41 @@ export const jobController = {
 
   /** PUT /api/jobs/:id/dev-notes */
   updateDevNotes: asyncHandler(async (req: Request, res: Response) => {
-    res.json(await updateDevNotes(jobId(req), body<DevNotesInput>(req)));
+    res.formatter.ok(await updateDevNotes(jobId(req), body<DevNotesInput>(req)));
   }),
 
   /** GET /api/jobs/:id/docs */
   docs: asyncHandler(async (req: Request, res: Response) => {
-    res.json(await getJobDocsForReview(jobId(req)));
+    res.formatter.ok(await getJobDocsForReview(jobId(req)));
   }),
 
   /** POST /api/jobs/:id/approve-docs */
   approveDocs: asyncHandler(async (req: Request, res: Response) => {
-    res.json(await approveJobDocs(jobId(req)));
+    res.formatter.ok(await approveJobDocs(jobId(req)));
   }),
 
   /** POST /api/jobs/:id/rerun-docs */
   rerunDocs: asyncHandler(async (req: Request, res: Response) => {
-    res.json(await rerunJobDocs(jobId(req)));
+    res.formatter.ok(await rerunJobDocs(jobId(req)));
   }),
 
   /** POST /api/jobs/:id/completion-actions */
   completionActions: asyncHandler(async (req: Request, res: Response) => {
-    res.json(
+    res.formatter.ok(
       await applyCompletionActions(jobId(req), body<CompletionActionsInput>(req)),
     );
   }),
 
   /** POST /api/jobs/:id/merge */
   merge: asyncHandler(async (req: Request, res: Response) => {
-    res.json(
+    res.formatter.ok(
       await mergeJobBranch(jobId(req), body<{ targetBranch?: string }>(req)),
     );
   }),
 
   /** POST /api/jobs/:id/create-mr — open MR only (no accept) */
   createMr: asyncHandler(async (req: Request, res: Response) => {
-    res.json(
+    res.formatter.ok(
       await createJobMergeRequest(
         jobId(req),
         body<{ targetBranch?: string }>(req),
@@ -160,7 +160,7 @@ export const jobController = {
 
   /** POST /api/jobs/:id/sync-base — pull base into work branch (AI fixes conflicts) */
   syncBase: asyncHandler(async (req: Request, res: Response) => {
-    res.json(
+    res.formatter.ok(
       await syncJobBranchWithBase(
         jobId(req),
         body<{ targetBranch?: string }>(req),
@@ -170,14 +170,14 @@ export const jobController = {
 
   /** POST /api/jobs/:id/commit — manual GitLab API commit */
   commit: asyncHandler(async (req: Request, res: Response) => {
-    res.json(
+    res.formatter.ok(
       await commitJobManual(jobId(req), body<{ message?: string }>(req)),
     );
   }),
 
   /** POST /api/jobs/:id/discard-changes — drop uncommitted files */
   discardChanges: asyncHandler(async (req: Request, res: Response) => {
-    res.json(
+    res.formatter.ok(
       await discardJobChanges(
         jobId(req),
         body<{ paths?: string[] }>(req),
@@ -187,7 +187,7 @@ export const jobController = {
 
   /** POST /api/jobs/:id/group-commit — squash job commits into one */
   groupCommit: asyncHandler(async (req: Request, res: Response) => {
-    res.json(
+    res.formatter.ok(
       await groupJobCommits(
         jobId(req),
         body<{ message?: string; title?: string; body?: string }>(req),
@@ -197,7 +197,7 @@ export const jobController = {
 
   /** PATCH /api/jobs/:id/commit-mode */
   commitMode: asyncHandler(async (req: Request, res: Response) => {
-    res.json(
+    res.formatter.ok(
       await setJobCommitMode(
         jobId(req),
         body<{ commitMode?: string }>(req).commitMode,
@@ -207,23 +207,23 @@ export const jobController = {
 
   /** GET /api/jobs/:id */
   detail: asyncHandler(async (req: Request, res: Response) => {
-    res.json(await getJobDetail(jobId(req)));
+    res.formatter.ok(await getJobDetail(jobId(req)));
   }),
 
   /** GET /api/jobs/:id/progress?after= */
   progress: asyncHandler(async (req: Request, res: Response) => {
     const after = Number(req.query.after ?? "0");
-    res.json(await getJobProgressForUi(jobId(req), after));
+    res.formatter.ok(await getJobProgressForUi(jobId(req), after));
   }),
 
   /** GET /api/jobs/:id/commits */
   commits: asyncHandler(async (req: Request, res: Response) => {
-    res.json(await getJobCommits(jobId(req)));
+    res.formatter.ok(await getJobCommits(jobId(req)));
   }),
 
   /** POST /api/jobs/:id/commits/:sha/revert */
   revertCommit: asyncHandler(async (req: Request, res: Response) => {
-    res.json(
+    res.formatter.ok(
       await revertJobCommit(
         jobId(req),
         String(req.params.sha ?? ""),
@@ -240,13 +240,13 @@ export const jobController = {
       req.query.pending === "1" ||
       req.query.pending === "true" ||
       singleCommit === "pending";
-    res.json(await getJobDiff(jobId(req), singleCommit, pending));
+    res.formatter.ok(await getJobDiff(jobId(req), singleCommit, pending));
   }),
 
   /** POST /api/jobs/kill-all */
   killAll: asyncHandler(async (_req: Request, res: Response) => {
     const { reason } = body<{ reason?: string }>(_req);
-    res.json(await killAllJobs(reason));
+    res.formatter.ok(await killAllJobs(reason));
   }),
 
   /** POST /api/jobs/:id/kill */
@@ -254,15 +254,15 @@ export const jobController = {
     const { reason } = body<{ reason?: string }>(req);
     const result = await killJob(jobId(req), reason);
     if (!result.ok) {
-      res.status(409).json({ error: "Job not killable", ...result });
+      res.formatter.conflict("Job not killable", result);
       return;
     }
-    res.json(result);
+    res.formatter.ok(result);
   }),
 
   /** POST /api/jobs/:id/reset-window */
   resetWindow: asyncHandler(async (req: Request, res: Response) => {
-    res.json(await resetJobWindow(jobId(req)));
+    res.formatter.ok(await resetJobWindow(jobId(req)));
   }),
 
   /** PATCH /api/jobs/:id/status */
@@ -272,15 +272,14 @@ export const jobController = {
       body<{ status?: string; force?: boolean }>(req),
     );
     if (result.ok) {
-      res.json({ job: result.job });
+      res.formatter.ok({ job: result.job });
       return;
     }
     if (result.reason === "invalid_status") {
-      res.status(400).json({ error: "Invalid status", allowed: result.allowed });
+      res.formatter.badRequest("Invalid status", { allowed: result.allowed });
       return;
     }
-    res.status(409).json({
-      error: "Job is busy — stop it first or pass force: true",
+    res.formatter.conflict("Job is busy — stop it first or pass force: true", {
       status: result.status,
     });
   }),
@@ -290,18 +289,18 @@ export const jobController = {
     const force = req.query.force === "1" || req.query.force === "true";
     const result = await deleteJob(jobId(req), force);
     if (!result.ok) {
-      res.status(409).json({
-        error: "Job is busy — stop it first or delete with force=1",
-        status: result.status,
-      });
+      res.formatter.conflict(
+        "Job is busy — stop it first or delete with force=1",
+        { status: result.status },
+      );
       return;
     }
-    res.json(result);
+    res.formatter.ok(result);
   }),
 
   /** POST /api/jobs/:id/approve-diff */
   approveDiff: asyncHandler(async (req: Request, res: Response) => {
-    res.json(
+    res.formatter.ok(
       await approveJobDiff(
         jobId(req),
         body<{ action?: "approve" | "reject"; message?: string }>(req),
@@ -311,12 +310,12 @@ export const jobController = {
 
   /** GET /api/jobs/:id/file?path= */
   readFile: asyncHandler(async (req: Request, res: Response) => {
-    res.json(await readJobFile(jobId(req), queryString(req.query.path)));
+    res.formatter.ok(await readJobFile(jobId(req), queryString(req.query.path)));
   }),
 
   /** PUT /api/jobs/:id/file */
   writeFile: asyncHandler(async (req: Request, res: Response) => {
-    res.json(
+    res.formatter.ok(
       await writeJobFile(
         jobId(req),
         body<{ path?: string; content?: string }>(req),
@@ -326,36 +325,36 @@ export const jobController = {
 
   /** GET /api/jobs/:id/linked */
   linked: asyncHandler(async (req: Request, res: Response) => {
-    res.json(await getLinkedIssueContext(jobId(req)));
+    res.formatter.ok(await getLinkedIssueContext(jobId(req)));
   }),
 
   /** POST /api/jobs/:id/continue */
   continueChat: asyncHandler(async (req: Request, res: Response) => {
-    res.json(
+    res.formatter.ok(
       await continueJobChat(jobId(req), body<{ message?: string }>(req)),
     );
   }),
 
   /** POST /api/jobs/:id/ask */
   ask: asyncHandler(async (req: Request, res: Response) => {
-    res.json(
+    res.formatter.ok(
       await askJobQuestion(jobId(req), body<{ question?: string }>(req)),
     );
   }),
 
   /** POST /api/jobs/:id/generate-testcases — QC testcases + GitLab comment */
   generateTestcases: asyncHandler(async (req: Request, res: Response) => {
-    res.json(await enqueueJobTestcases(jobId(req)));
+    res.formatter.ok(await enqueueJobTestcases(jobId(req)));
   }),
 
   /** GET /api/jobs/:id/chat */
   chat: asyncHandler(async (req: Request, res: Response) => {
-    res.json(await getJobChat(jobId(req)));
+    res.formatter.ok(await getJobChat(jobId(req)));
   }),
 
   /** POST /api/jobs/:id/chat */
   appendChat: asyncHandler(async (req: Request, res: Response) => {
-    res.json(
+    res.formatter.ok(
       await appendJobChat(
         jobId(req),
         body<{ body?: string; kind?: "qa" | "note" }>(req),
@@ -365,6 +364,6 @@ export const jobController = {
 
   /** POST /api/jobs/:id/notes */
   addNote: asyncHandler(async (req: Request, res: Response) => {
-    res.json(await addJobNote(jobId(req), body<{ body?: string }>(req)));
+    res.formatter.ok(await addJobNote(jobId(req), body<{ body?: string }>(req)));
   }),
 };

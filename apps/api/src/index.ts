@@ -2,7 +2,7 @@ import "./plugins/agent/abortSignalPatch.js";
 import { setMaxListeners } from "node:events";
 import { isTransientCursorTransportError } from "./plugins/agent/run.js";
 import { getConfig } from "./config.js";
-import { connectMongo } from "./db/mongo.js";
+import { connectMongo } from "./models/connection.js";
 import {
   failInterruptedJobs,
   resolveLegacyDiffApprovalJobs,
@@ -45,9 +45,11 @@ async function main() {
 
   await ensureWorkspaceIndexes();
   await ensureAuthIndexes();
+  const { ensureAllModelIndexes } = await import("./models/index.js");
+  await ensureAllModelIndexes();
   const { ensureBaIndexes } = await import("./workspace/baStore.js");
   await ensureBaIndexes();
-  logger.info("Workspace + auth indexes OK");
+  logger.info("Workspace + auth + model indexes OK");
 
   await failInterruptedJobs();
   const legacy = await resolveLegacyDiffApprovalJobs();

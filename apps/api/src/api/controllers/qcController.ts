@@ -1,9 +1,8 @@
 import type { Request, Response } from "express";
 import { asyncHandler } from "../../utils/asyncHandler.js";
 import { AppError } from "../../utils/AppError.js";
-import {
-  requireQcContext,
-} from "../middleware/qcAuth.js";
+import { listQuery } from "../../plugins/fetch/index.js";
+import { requireQcContext } from "../middleware/qcAuth.js";
 import {
   createQcFlow,
   createQcProject,
@@ -37,8 +36,13 @@ function qcProjectId(): string {
 }
 
 export const qcController = {
-  listProjects: asyncHandler(async (_req: Request, res: Response) => {
-    res.json({ projects: await listQcProjects(username()) });
+  listProjects: asyncHandler(async (req: Request, res: Response) => {
+    const q = listQuery(req, { sort: { updatedAt: -1 } });
+    const { rows, count } = await listQcProjects(username(), q);
+    res.formatter.ok(
+      { projects: rows, count },
+      { sort: q.sort, skip: q.skip, limit: q.limit },
+    );
   }),
 
   createProject: asyncHandler(async (req: Request, res: Response) => {
@@ -46,13 +50,12 @@ export const qcController = {
       name?: string;
       targetBaseUrl?: string;
     };
-    res.status(201).json(
-      await createQcProject({
-        username: username(),
-        name: String(body.name || ""),
-        targetBaseUrl: String(body.targetBaseUrl || ""),
-      }),
-    );
+    const project = await createQcProject({
+      username: username(),
+      name: String(body.name || ""),
+      targetBaseUrl: String(body.targetBaseUrl || ""),
+    });
+    res.formatter.created(project);
   }),
 
   updateProject: asyncHandler(async (req: Request, res: Response) => {
@@ -60,7 +63,7 @@ export const qcController = {
       name?: string;
       targetBaseUrl?: string;
     };
-    res.json(
+    res.formatter.ok(
       await updateQcProject({
         username: username(),
         projectId: String(req.params.projectId || ""),
@@ -71,7 +74,7 @@ export const qcController = {
   }),
 
   deleteProject: asyncHandler(async (req: Request, res: Response) => {
-    res.json(
+    res.formatter.ok(
       await deleteQcProject({
         username: username(),
         projectId: String(req.params.projectId || ""),
@@ -79,17 +82,21 @@ export const qcController = {
     );
   }),
 
-  listFlows: asyncHandler(async (_req: Request, res: Response) => {
-    res.json({
-      flows: await listQcFlows({
-        username: username(),
-        qcProjectId: qcProjectId(),
-      }),
+  listFlows: asyncHandler(async (req: Request, res: Response) => {
+    const q = listQuery(req, { sort: { updatedAt: -1 } });
+    const { rows, count } = await listQcFlows({
+      username: username(),
+      qcProjectId: qcProjectId(),
+      list: q,
     });
+    res.formatter.ok(
+      { flows: rows, count },
+      { sort: q.sort, skip: q.skip, limit: q.limit },
+    );
   }),
 
   getFlow: asyncHandler(async (req: Request, res: Response) => {
-    res.json(
+    res.formatter.ok(
       await getQcFlow({
         username: username(),
         flowId: String(req.params.flowId || ""),
@@ -104,7 +111,7 @@ export const qcController = {
       qcProjectId?: string;
     };
     const projectId = body.qcProjectId?.trim() || qcProjectId();
-    res.status(201).json(
+    res.formatter.created(
       await createQcFlow({
         username: username(),
         qcProjectId: projectId,
@@ -119,7 +126,7 @@ export const qcController = {
       name?: string;
       steps?: QcFlowStep[];
     };
-    res.json(
+    res.formatter.ok(
       await updateQcFlow({
         username: username(),
         flowId: String(req.params.flowId || ""),
@@ -130,7 +137,7 @@ export const qcController = {
   }),
 
   deleteFlow: asyncHandler(async (req: Request, res: Response) => {
-    res.json(
+    res.formatter.ok(
       await deleteQcFlow({
         username: username(),
         flowId: String(req.params.flowId || ""),
@@ -138,17 +145,21 @@ export const qcController = {
     );
   }),
 
-  listTestCases: asyncHandler(async (_req: Request, res: Response) => {
-    res.json({
-      testCases: await listQcTestCases({
-        username: username(),
-        qcProjectId: qcProjectId(),
-      }),
+  listTestCases: asyncHandler(async (req: Request, res: Response) => {
+    const q = listQuery(req, { sort: { updatedAt: -1 } });
+    const { rows, count } = await listQcTestCases({
+      username: username(),
+      qcProjectId: qcProjectId(),
+      list: q,
     });
+    res.formatter.ok(
+      { testCases: rows, count },
+      { sort: q.sort, skip: q.skip, limit: q.limit },
+    );
   }),
 
   getTestCase: asyncHandler(async (req: Request, res: Response) => {
-    res.json(
+    res.formatter.ok(
       await getQcTestCase({
         username: username(),
         testCaseId: String(req.params.testCaseId || ""),
@@ -164,7 +175,7 @@ export const qcController = {
       qcProjectId?: string;
     };
     const projectId = body.qcProjectId?.trim() || qcProjectId();
-    res.status(201).json(
+    res.formatter.created(
       await createQcTestCase({
         username: username(),
         qcProjectId: projectId,
@@ -181,7 +192,7 @@ export const qcController = {
       loopCount?: number;
       executionPlan?: QcExecutionPlanItem[];
     };
-    res.json(
+    res.formatter.ok(
       await updateQcTestCase({
         username: username(),
         testCaseId: String(req.params.testCaseId || ""),
@@ -193,7 +204,7 @@ export const qcController = {
   }),
 
   deleteTestCase: asyncHandler(async (req: Request, res: Response) => {
-    res.json(
+    res.formatter.ok(
       await deleteQcTestCase({
         username: username(),
         testCaseId: String(req.params.testCaseId || ""),
@@ -201,13 +212,17 @@ export const qcController = {
     );
   }),
 
-  listSampleFiles: asyncHandler(async (_req: Request, res: Response) => {
-    res.json({
-      files: await listQcSampleFiles({
-        username: username(),
-        qcProjectId: qcProjectId(),
-      }),
+  listSampleFiles: asyncHandler(async (req: Request, res: Response) => {
+    const q = listQuery(req, { sort: { createdAt: -1 } });
+    const { rows, count } = await listQcSampleFiles({
+      username: username(),
+      qcProjectId: qcProjectId(),
+      list: q,
     });
+    res.formatter.ok(
+      { files: rows, count },
+      { sort: q.sort, skip: q.skip, limit: q.limit },
+    );
   }),
 
   uploadSampleFile: asyncHandler(async (req: Request, res: Response) => {
@@ -222,7 +237,7 @@ export const qcController = {
     const buffer = Buffer.from(b64, "base64");
     if (!buffer.length) throw new AppError("empty file", 400);
     const projectId = body.qcProjectId?.trim() || qcProjectId();
-    res.status(201).json(
+    res.formatter.created(
       await saveQcSampleFile({
         username: username(),
         qcProjectId: projectId,
@@ -247,7 +262,7 @@ export const qcController = {
   }),
 
   deleteSampleFile: asyncHandler(async (req: Request, res: Response) => {
-    res.json(
+    res.formatter.ok(
       await deleteQcSampleFile({
         username: username(),
         fileId: String(req.params.fileId || ""),

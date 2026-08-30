@@ -81,6 +81,20 @@ const rawHttp = axios.create({
   headers: { "Content-Type": "application/json" },
 });
 
+/** Unwrap HTS-style `{ success, data }` envelopes from the API. */
+export function unwrapApiData<T = unknown>(body: unknown): T {
+  if (
+    body &&
+    typeof body === "object" &&
+    "success" in body &&
+    (body as { success?: unknown }).success === true &&
+    "data" in body
+  ) {
+    return (body as { data: T }).data;
+  }
+  return body as T;
+}
+
 export async function refreshAccessTokenRaw(): Promise<string> {
   if (refreshInFlight) return refreshInFlight;
 
@@ -90,15 +104,15 @@ export async function refreshAccessTokenRaw(): Promise<string> {
       throw new ApiError("No refresh token", 401, "SESSION_EXPIRED");
     }
     try {
-      const res = await rawHttp.post<{
+      const res = await rawHttp.post(API.auth.refresh, { refreshToken });
+
+      const data = unwrapApiData<{
         accessToken: string;
         refreshToken?: string;
         expiresIn?: number;
         accessExpiresAt?: number;
         user?: { gitlabUsername?: string };
-      }>(API.auth.refresh, { refreshToken });
-
-      const data = res.data;
+      }>(res.data);
       if (!data.accessToken) {
         throw new ApiError(
           "Refresh missing accessToken",
@@ -160,8 +174,18 @@ http.interceptors.request.use((config: InternalAxiosRequestConfig) => {
 });
 
 http.interceptors.response.use(
-  (res) => res,
-  async (error: AxiosError<{ error?: string; code?: string }>) => {
+  (res) => {
+    if (
+      res.data &&
+      typeof res.data === "object" &&
+      (res.data as { success?: unknown }).success === true &&
+      "data" in (res.data as object)
+    ) {
+      res.data = (res.data as { data: unknown }).data;
+    }
+    return res;
+  },
+  async (error: AxiosError<{ error?: string; message?: string; code?: string }>) => {
     const original = error.config as
       | (InternalAxiosRequestConfig & HttpRequestConfig)
       | undefined;
@@ -239,15 +263,16 @@ function clearAuthAndNotify() {
 }
 
 function toApiError(
-  error: AxiosError<{ error?: string; code?: string }>,
+  error: AxiosError<{ error?: string; message?: string; code?: string }>,
 ): ApiError {
   const status = error.response?.status || 0;
   const data = error.response?.data;
   const msg =
     data?.error ||
+    data?.message ||
     error.message ||
     (status ? `HTTP ${status}` : "Network error");
-  return new ApiError(msg, status, data?.code);
+  return new ApiError(msg, status, data?.code != null ? String(data.code) : undefined);
 }
 
 export function clearAuthSession(): void {
@@ -258,6 +283,6 @@ export function clearAuthSession(): void {
 export async function request<T = unknown>(
   config: HttpRequestConfig,
 ): Promise<T> {
-  const res = await http.request<T>(config);
-  return res.data;
+  const res = await http.request(config);
+  return unwrapApiData<T>(res.data);
 }

@@ -33,6 +33,6 @@ export const gitlabController = {
     const issueIid = req.query.issueIid
       ? Number(req.query.issueIid)
       : undefined;
-    res.json(await getDiffPayload(issueIid));
+    res.formatter.ok(await getDiffPayload(issueIid));
   }),
 };

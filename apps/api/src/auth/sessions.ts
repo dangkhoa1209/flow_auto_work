@@ -1,5 +1,5 @@
 import type { Collection } from "mongodb";
-import { connectMongo } from "../db/mongo.js";
+import { connectMongo } from "../models/connection.js";
 import { hashToken } from "./tokens.js";
 
 export type RefreshSessionDoc = {

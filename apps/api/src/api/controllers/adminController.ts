@@ -4,15 +4,15 @@ import * as admin from "../../modules/admin/index.js";
 
 export const adminController = {
   listProjects: asyncHandler(async (_req: Request, res: Response) => {
-    res.json({ projects: await admin.adminListBaProjects() });
+    res.formatter.ok({ projects: await admin.adminListBaProjects() });
   }),
 
   createProject: asyncHandler(async (req: Request, res: Response) => {
-    res.status(201).json(await admin.adminCreateBaProject(req.body || {}));
+    res.formatter.created(await admin.adminCreateBaProject(req.body || {}));
   }),
 
   updateProject: asyncHandler(async (req: Request, res: Response) => {
-    res.json(
+    res.formatter.ok(
       await admin.adminUpdateBaProject(
         String(req.params.id || ""),
         req.body || {},
@@ -21,11 +21,11 @@ export const adminController = {
   }),
 
   deleteProject: asyncHandler(async (req: Request, res: Response) => {
-    res.json(await admin.adminDeleteBaProject(String(req.params.id || "")));
+    res.formatter.ok(await admin.adminDeleteBaProject(String(req.params.id || "")));
   }),
 
   cloneProject: asyncHandler(async (req: Request, res: Response) => {
-    res.json(
+    res.formatter.ok(
       await admin.adminCloneBaProject(
         String(req.params.id || ""),
         req.body || {},
@@ -34,38 +34,38 @@ export const adminController = {
   }),
 
   cloneStatus: asyncHandler(async (req: Request, res: Response) => {
-    res.json(await admin.adminGetBaCloneStatus(String(req.params.id || "")));
+    res.formatter.ok(await admin.adminGetBaCloneStatus(String(req.params.id || "")));
   }),
 
   testDb: asyncHandler(async (req: Request, res: Response) => {
-    res.json(await admin.adminTestBaProjectDb(String(req.params.id || "")));
+    res.formatter.ok(await admin.adminTestBaProjectDb(String(req.params.id || "")));
   }),
 
   getCursor: asyncHandler(async (_req: Request, res: Response) => {
-    res.json(await admin.adminGetCursorSettings());
+    res.formatter.ok(await admin.adminGetCursorSettings());
   }),
 
   cursorModels: asyncHandler(async (_req: Request, res: Response) => {
-    res.json(await admin.adminListCursorModels());
+    res.formatter.ok(await admin.adminListCursorModels());
   }),
 
   putCursor: asyncHandler(async (req: Request, res: Response) => {
-    res.json(await admin.adminUpdateCursorSettings(req.body || {}));
+    res.formatter.ok(await admin.adminUpdateCursorSettings(req.body || {}));
   }),
 
   getTaskTypeLabels: asyncHandler(async (_req: Request, res: Response) => {
-    res.json(await admin.adminGetTaskTypeLabels());
+    res.formatter.ok(await admin.adminGetTaskTypeLabels());
   }),
 
   putTaskTypeLabels: asyncHandler(async (req: Request, res: Response) => {
-    res.json(await admin.adminUpdateTaskTypeLabels(req.body || {}));
+    res.formatter.ok(await admin.adminUpdateTaskTypeLabels(req.body || {}));
   }),
 
   getBaFeatures: asyncHandler(async (_req: Request, res: Response) => {
-    res.json(await admin.adminGetBaFeatures());
+    res.formatter.ok(await admin.adminGetBaFeatures());
   }),
 
   putBaFeatures: asyncHandler(async (req: Request, res: Response) => {
-    res.json(await admin.adminUpdateBaFeatures(req.body || {}));
+    res.formatter.ok(await admin.adminUpdateBaFeatures(req.body || {}));
   }),
 };

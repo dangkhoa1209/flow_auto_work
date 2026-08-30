@@ -48,9 +48,17 @@ async function rawFetch<T>(path: string, init?: RequestInit): Promise<T> {
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw new Error(
-      (body as { error?: string }).error || `HTTP ${res.status}`,
-    );
+    const errBody = body as { error?: string; message?: string };
+    throw new Error(errBody.error || errBody.message || `HTTP ${res.status}`);
+  }
+  if (
+    body &&
+    typeof body === "object" &&
+    "success" in body &&
+    (body as { success?: boolean }).success === true &&
+    "data" in body
+  ) {
+    return (body as { data: T }).data;
   }
   return body as T;
 }
@@ -104,14 +112,25 @@ async function qcFetch<T>(
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new Error(
-      (body as { error?: string }).error || `HTTP ${res.status}`,
-    );
+    const errBody = body as { error?: string; message?: string };
+    throw new Error(errBody.error || errBody.message || `HTTP ${res.status}`);
   }
   if (res.status === 204) return undefined as T;
   const ct = res.headers.get("content-type") || "";
   if (!ct.includes("application/json")) return undefined as T;
-  return res.json() as Promise<T>;
+  const body = (await res.json()) as
+    | T
+    | { success?: boolean; data?: T };
+  if (
+    body &&
+    typeof body === "object" &&
+    "success" in body &&
+    (body as { success?: boolean }).success === true &&
+    "data" in body
+  ) {
+    return (body as { data: T }).data;
+  }
+  return body as T;
 }
 
 export async function listFlows(cfg: ExtConfig) {

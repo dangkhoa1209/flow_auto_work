@@ -1,4 +1,4 @@
-import { mongoPing } from "../../db/mongo.js";
+import { mongoPing } from "../../models/connection.js";
 import { jobQueue } from "../../queue.js";
 import { getRuntimeContext } from "../../workspace/runtime.js";
 

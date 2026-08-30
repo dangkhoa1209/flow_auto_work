@@ -29,7 +29,7 @@ function projectIdParam(req: Request): string {
 
 export const projectController = {
   defaultPath: asyncHandler(async (req: Request, res: Response) => {
-    res.json(
+    res.formatter.ok(
       getDefaultProjectPath(
         headerUserFromExpress(req),
         String(req.query.projectName || "project"),
@@ -39,17 +39,17 @@ export const projectController = {
 
   create: asyncHandler(async (req: Request, res: Response) => {
     const body = (req.body ?? {}) as CreateProjectBody;
-    res.json(await createProject(headerUserFromExpress(req), body));
+    res.formatter.ok(await createProject(headerUserFromExpress(req), body));
   }),
 
   join: asyncHandler(async (req: Request, res: Response) => {
     const body = (req.body ?? {}) as JoinProjectBody;
-    res.json(await joinProject(headerUserFromExpress(req), body));
+    res.formatter.ok(await joinProject(headerUserFromExpress(req), body));
   }),
 
   clone: asyncHandler(async (req: Request, res: Response) => {
     const body = (req.body ?? {}) as CloneProjectBody;
-    res.json(
+    res.formatter.ok(
       await startProjectClone(
         headerUserFromExpress(req),
         projectIdParam(req),
@@ -59,7 +59,7 @@ export const projectController = {
   }),
 
   cloneStatus: asyncHandler(async (req: Request, res: Response) => {
-    res.json(
+    res.formatter.ok(
       await getProjectCloneStatus(
         headerUserFromExpress(req),
         projectIdParam(req),
@@ -68,7 +68,7 @@ export const projectController = {
   }),
 
   activate: asyncHandler(async (req: Request, res: Response) => {
-    res.json(
+    res.formatter.ok(
       await activateUserProject(
         headerUserFromExpress(req),
         projectIdParam(req),
@@ -77,7 +77,7 @@ export const projectController = {
   }),
 
   remove: asyncHandler(async (req: Request, res: Response) => {
-    res.json(
+    res.formatter.ok(
       await removeUserProject(headerUserFromExpress(req), projectIdParam(req)),
     );
   }),
@@ -85,7 +85,7 @@ export const projectController = {
   /** PUT /me/projects/:projectId — update branches / path / token / Flow name */
   updateOwned: asyncHandler(async (req: Request, res: Response) => {
     const body = (req.body ?? {}) as UpdateProjectBody;
-    res.json(
+    res.formatter.ok(
       await updateOwnedProject(
         headerUserFromExpress(req),
         projectIdParam(req),
@@ -95,7 +95,7 @@ export const projectController = {
   }),
 
   ownedMilestones: asyncHandler(async (req: Request, res: Response) => {
-    res.json(
+    res.formatter.ok(
       await listOwnedProjectMilestones(
         headerUserFromExpress(req),
         projectIdParam(req),
@@ -104,7 +104,7 @@ export const projectController = {
   }),
 
   myGitlabProjects: asyncHandler(async (req: Request, res: Response) => {
-    res.json(
+    res.formatter.ok(
       await listMyGitlabProjectsForUser(
         headerUserFromExpress(req),
         headerProjectFromExpress(req),
@@ -113,7 +113,7 @@ export const projectController = {
   }),
 
   branches: asyncHandler(async (req: Request, res: Response) => {
-    res.json(
+    res.formatter.ok(
       await listProjectBranches({
         username: headerUserFromExpress(req),
         gitlabPath: String(req.query.gitlabPath || ""),
@@ -130,6 +130,6 @@ export const projectController = {
       gitlabToken?: string;
       gitlabPath?: string;
     };
-    res.json(await previewGitlab(headerUserFromExpress(req), body));
+    res.formatter.ok(await previewGitlab(headerUserFromExpress(req), body));
   }),
 };

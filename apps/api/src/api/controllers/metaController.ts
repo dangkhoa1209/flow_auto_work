@@ -9,15 +9,15 @@ import {
 
 export const metaController = {
   completionDefaults: asyncHandler(async (_req: Request, res: Response) => {
-    res.json(await getCompletionDefaults());
+    res.formatter.ok(await getCompletionDefaults());
   }),
   members: asyncHandler(async (_req: Request, res: Response) => {
-    res.json(await listMembers());
+    res.formatter.ok(await listMembers());
   }),
   labels: asyncHandler(async (_req: Request, res: Response) => {
-    res.json(await listLabels());
+    res.formatter.ok(await listLabels());
   }),
   milestones: asyncHandler(async (_req: Request, res: Response) => {
-    res.json(await listMilestones());
+    res.formatter.ok(await listMilestones());
   }),
 };

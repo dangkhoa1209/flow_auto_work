@@ -8,6 +8,6 @@ export const terminalController = {
     const remote =
       req.socket?.remoteAddress ||
       (req.headers["x-forwarded-for"] as string | undefined)?.split(",")[0]?.trim();
-    res.json(terminalStatusPayload(remote));
+    res.formatter.ok(terminalStatusPayload(remote));
   }),
 };

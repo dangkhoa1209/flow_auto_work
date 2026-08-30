@@ -2,7 +2,8 @@
  * Conversation surface: IDE-style continue, Q&A, chat transcript and notes.
  * Clarification is chat-only — agent posts questions; user replies via continue.
  */
-import { addChatMessage, addNote, listChatMessages } from "../../db/mongo.js";
+import { addChatMessage, listChatMessages } from "../../models/chat.js";
+import { addNote } from "../../models/note.js";
 import { logger } from "../../logger.js";
 import { jobQueue } from "../../queue.js";
 import { AppError } from "../../utils/AppError.js";

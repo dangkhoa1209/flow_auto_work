@@ -7,9 +7,9 @@ import {
   deleteJobDoc,
   deleteJobSideDocs,
   getJobDoc,
-  listChatMessages,
-  listNotes,
-} from "../../db/mongo.js";
+} from "../../models/job.js";
+import { listChatMessages } from "../../models/chat.js";
+import { listNotes } from "../../models/note.js";
 import {
   commentOnIssue,
   createIssue,

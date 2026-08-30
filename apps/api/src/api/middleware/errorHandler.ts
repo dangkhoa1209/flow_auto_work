@@ -1,10 +1,14 @@
 import type { ErrorRequestHandler } from "express";
 import { logger } from "../../logger.js";
+import {
+  formatterMethodForStatus,
+  generateFormatters,
+} from "../../plugins/response-formatter/index.js";
 import { AppError } from "../../utils/AppError.js";
 
 /**
  * Global error handler — must be registered AFTER all routes.
- * Standard JSON: { success: false, message, code?, error? }
+ * Uses `res.formatter` when available; keeps `{ success: false, message, error }`.
  */
 export const globalErrorHandler: ErrorRequestHandler = (
   err,
@@ -16,13 +20,13 @@ export const globalErrorHandler: ErrorRequestHandler = (
     return;
   }
 
+  if (!res.formatter) {
+    res.formatter = generateFormatters(res);
+  }
+
   if (err instanceof AppError) {
-    res.status(err.status).json({
-      success: false,
-      message: err.message,
-      error: err.message,
-      code: err.code,
-    });
+    const method = formatterMethodForStatus(err.status);
+    res.formatter[method](err.message, undefined, err.status);
     return;
   }
 
@@ -35,16 +39,16 @@ export const globalErrorHandler: ErrorRequestHandler = (
       : 500;
 
   const message =
-    err instanceof Error ? err.message : typeof err === "string" ? err : "Internal Server Error";
+    err instanceof Error
+      ? err.message
+      : typeof err === "string"
+        ? err
+        : "Internal Server Error";
 
   if (status >= 500) {
     logger.error("Unhandled route error", { err: message });
   }
 
-  res.status(status).json({
-    success: false,
-    message,
-    error: message,
-    code: status === 401 ? "unauthorized" : undefined,
-  });
+  const method = formatterMethodForStatus(status);
+  res.formatter[method](message, undefined, status);
 };

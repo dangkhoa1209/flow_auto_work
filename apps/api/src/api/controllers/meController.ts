@@ -19,23 +19,23 @@ import {
 
 export const meController = {
   get: asyncHandler(async (req: Request, res: Response) => {
-    res.json(await getMe(headerUserFromExpress(req)));
+    res.formatter.ok(await getMe(headerUserFromExpress(req)));
   }),
 
   updateSecrets: asyncHandler(async (req: Request, res: Response) => {
     const body = (req.body ?? {}) as UpdateSecretsBody;
-    res.json(await updateMySecrets(headerUserFromExpress(req), body));
+    res.formatter.ok(await updateMySecrets(headerUserFromExpress(req), body));
   }),
 
   updatePreferences: asyncHandler(async (req: Request, res: Response) => {
     const body = (req.body ?? {}) as { cursorModel?: string };
-    res.json(await updateMyPreferences(headerUserFromExpress(req), body));
+    res.formatter.ok(await updateMyPreferences(headerUserFromExpress(req), body));
   }),
 
   getHandoffPrefs: asyncHandler(async (req: Request, res: Response) => {
     const q = typeof req.query.projectId === "string" ? req.query.projectId : "";
     const projectId = q || headerProjectFromExpress(req);
-    res.json(await getMyHandoffPrefs(headerUserFromExpress(req), projectId));
+    res.formatter.ok(await getMyHandoffPrefs(headerUserFromExpress(req), projectId));
   }),
 
   updateHandoffPrefs: asyncHandler(async (req: Request, res: Response) => {
@@ -45,7 +45,7 @@ export const meController = {
     };
     const projectId =
       body.projectId?.trim() || headerProjectFromExpress(req) || undefined;
-    res.json(
+    res.formatter.ok(
       await updateMyHandoffPrefs(headerUserFromExpress(req), {
         projectId,
         prefs: body.prefs,
@@ -54,15 +54,15 @@ export const meController = {
   }),
 
   cursorModels: asyncHandler(async (req: Request, res: Response) => {
-    res.json(await listCursorModels(headerUserFromExpress(req)));
+    res.formatter.ok(await listCursorModels(headerUserFromExpress(req)));
   }),
 
   clearCursorKey: asyncHandler(async (req: Request, res: Response) => {
-    res.json(await clearMyCursorKey(headerUserFromExpress(req)));
+    res.formatter.ok(await clearMyCursorKey(headerUserFromExpress(req)));
   }),
 
   setQcRole: asyncHandler(async (req: Request, res: Response) => {
     const enabled = Boolean((req.body ?? {}).enabled);
-    res.json(await setMyQcRole(headerUserFromExpress(req), enabled));
+    res.formatter.ok(await setMyQcRole(headerUserFromExpress(req), enabled));
   }),
 };

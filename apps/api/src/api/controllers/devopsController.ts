@@ -38,7 +38,7 @@ function asStatus(raw: unknown): BuildStatus | undefined {
 
 export const devopsController = {
   listScripts: asyncHandler(async (_req: Request, res: Response) => {
-    res.json({ scripts: await listBuildScripts() });
+    res.formatter.ok({ scripts: await listBuildScripts() });
   }),
 
   createScript: asyncHandler(async (req: Request, res: Response) => {
@@ -52,7 +52,7 @@ export const devopsController = {
       active?: boolean;
     };
     const script = await addBuildScript(body, username());
-    res.status(201).json({ script });
+    res.formatter.created({ script });
   }),
 
   updateScript: asyncHandler(async (req: Request, res: Response) => {
@@ -68,16 +68,16 @@ export const devopsController = {
       String(req.params.scriptId || ""),
       body,
     );
-    res.json({ script });
+    res.formatter.ok({ script });
   }),
 
   deleteScript: asyncHandler(async (req: Request, res: Response) => {
     await removeBuildScript(String(req.params.scriptId || ""));
-    res.json({ ok: true });
+    res.formatter.ok({ ok: true });
   }),
 
   queue: asyncHandler(async (_req: Request, res: Response) => {
-    res.json(getBuildQueueSnapshot());
+    res.formatter.ok(getBuildQueueSnapshot());
   }),
 
   listBuilds: asyncHandler(async (req: Request, res: Response) => {
@@ -94,11 +94,11 @@ export const devopsController = {
       }),
       countBuilds({ status, scriptId }),
     ]);
-    res.json({ queue: getBuildQueueSnapshot(), builds, total });
+    res.formatter.ok({ queue: getBuildQueueSnapshot(), builds, total });
   }),
 
   getBuild: asyncHandler(async (req: Request, res: Response) => {
-    res.json({ job: await getBuild(String(req.params.id || "")) });
+    res.formatter.ok({ job: await getBuild(String(req.params.id || "")) });
   }),
 
   trigger: asyncHandler(async (req: Request, res: Response) => {
@@ -108,7 +108,7 @@ export const devopsController = {
       triggeredBy: username(),
       note: body.note,
     });
-    res.status(202).json({ job, queue: getBuildQueueSnapshot() });
+    res.formatter.accepted({ job, queue: getBuildQueueSnapshot() });
   }),
 
   cancel: asyncHandler(async (req: Request, res: Response) => {
@@ -116,7 +116,7 @@ export const devopsController = {
       String(req.params.id || ""),
       "Cancelled from Devops console",
     );
-    res.json({ job, queue: getBuildQueueSnapshot() });
+    res.formatter.ok({ job, queue: getBuildQueueSnapshot() });
   }),
 
   stdin: asyncHandler(async (req: Request, res: Response) => {
@@ -126,12 +126,12 @@ export const devopsController = {
       throw new AppError("stdin data must be a string", 400, "stdin_invalid");
     }
     sendBuildStdin(id, body.data, Boolean(body.secret));
-    res.json({ ok: true });
+    res.formatter.ok({ ok: true });
   }),
 
   log: asyncHandler(async (req: Request, res: Response) => {
     const { job, text, lines } = await readBuildLog(String(req.params.id || ""));
-    res.json({ job, text, lines });
+    res.formatter.ok({ job, text, lines });
   }),
 
   /** Queue + job status SSE (no high-volume log lines). */
