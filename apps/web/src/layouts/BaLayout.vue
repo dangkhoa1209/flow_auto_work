@@ -148,10 +148,8 @@ onMounted(async () => {
 
       <div class="faw-topbar__spacer hidden lg:block" />
 
-      <AppTopbarRight
-        settings-to="/ba/settings/gitlab"
-        class="hidden lg:contents"
-      >
+      <!-- One instance: mobile CSS already hides desktop chrome + settings -->
+      <AppTopbarRight settings-to="/ba/settings/gitlab">
         <template #status>
           <span class="faw-idle faw-ba-idle">
             <span class="faw-idle__dot" :class="statusDot" />
@@ -164,11 +162,6 @@ onMounted(async () => {
           </RouterLink>
         </template>
       </AppTopbarRight>
-
-      <AppTopbarRight
-        settings-to="/ba/settings/gitlab"
-        class="lg:hidden !gap-1"
-      />
     </header>
 
     <nav
