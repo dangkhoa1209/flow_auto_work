@@ -138,6 +138,11 @@ export const useSessionStore = defineStore("session", () => {
     hasAnyRole(roles.value, "admin", "devops", "dev"),
   );
 
+  /** Edit build scripts — devops or admin (not plain dev). */
+  const canConfigureDevopsScripts = computed(() =>
+    hasAnyRole(roles.value, "admin", "devops"),
+  );
+
   /** devops role, not dev (dev → /work). */
   const isDevopsAudience = computed(() => {
     const r = roles.value;
@@ -363,6 +368,7 @@ export const useSessionStore = defineStore("session", () => {
     canAccessWork,
     canAccessBa,
     canAccessDevops,
+    canConfigureDevopsScripts,
     isDevopsAudience,
     homeRoute,
     currentMembership,

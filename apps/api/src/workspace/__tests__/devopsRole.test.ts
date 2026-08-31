@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   canAccessBa,
   canAccessDevops,
+  canConfigureDevopsScripts,
   isDevopsAudience,
   normalizeUserRoles,
   primaryHomePath,
@@ -21,6 +22,13 @@ describe("devops role helpers", () => {
     expect(canAccessDevops(["admin"])).toBe(true);
     expect(canAccessDevops(["devops"])).toBe(true);
     expect(canAccessDevops(["dev"])).toBe(true);
+  });
+
+  it("lets only devops and admin configure scripts", () => {
+    expect(canConfigureDevopsScripts(["devops"])).toBe(true);
+    expect(canConfigureDevopsScripts(["admin"])).toBe(true);
+    expect(canConfigureDevopsScripts(["dev"])).toBe(false);
+    expect(canConfigureDevopsScripts(["devops", "dev"])).toBe(true);
   });
 
   it("lets devops open project chat", () => {

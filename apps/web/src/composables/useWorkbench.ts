@@ -734,40 +734,61 @@ export function useWorkbench() {
       message.warning("Select a job first");
       return;
     }
+
+    const run = async () => {
+      if (!(await ensureWorkReady())) return;
+      chatInput.value = "";
+      await nextTick();
+      busy.value = true;
+      work.watchProgress();
+      try {
+        const useContinue =
+          mode === "continue" ||
+          currentJob.value?.status === "awaiting_clarification";
+        if (useContinue) {
+          const res = await projectClone.withCloneRetry(() =>
+            work.sendContinue(msg),
+          );
+          if (!res) return;
+          if (res?.kind === "bad_context") {
+            message.warning(
+              "Bad Context — add Dev Notes / chat, then Send again",
+            );
+          }
+        } else {
+          await projectClone.withCloneRetry(() => work.sendAsk(msg));
+        }
+      } catch (e) {
+        const msgText = e instanceof Error ? e.message : String(e);
+        if (/Force-stopped/i.test(msgText)) {
+          message.info("Chat stopped");
+        } else {
+          message.error(msgText);
+        }
+      } finally {
+        busy.value = false;
+        await work.loadJobs().catch(() => undefined);
+      }
+    };
+
     if (chatLocked.value) {
-      message.warning("Agent đang bận — đợi xong hoặc Force Stop rồi gửi lại");
+      Modal.confirm({
+        title: "Stop the running agent?",
+        content:
+          "Sending will force-stop the current run and queue your new message.",
+        okText: "Stop & send",
+        cancelText: "Keep running",
+        okType: "danger",
+        centered: true,
+        async onOk() {
+          await forceStop();
+          await run();
+        },
+      });
       return;
     }
-    if (!(await ensureWorkReady())) return;
-    chatInput.value = "";
-    await nextTick();
-    busy.value = true;
-    work.watchProgress();
-    try {
-      const useContinue =
-        mode === "continue" ||
-        currentJob.value?.status === "awaiting_clarification";
-      if (useContinue) {
-        const res = await projectClone.withCloneRetry(() => work.sendContinue(msg));
-        if (!res) return;
-        if (res?.kind === "bad_context") {
-          message.warning("Bad Context — bổ sung Dev Notes / chat rồi Send lại");
-        }
-        // queued → agentTyping + SSE; no blocking wait
-      } else {
-        await projectClone.withCloneRetry(() => work.sendAsk(msg));
-      }
-    } catch (e) {
-      const msgText = e instanceof Error ? e.message : String(e);
-      if (/Force-stopped/i.test(msgText)) {
-        message.info("Chat stopped");
-      } else {
-        message.error(msgText);
-      }
-    } finally {
-      busy.value = false;
-      await work.loadJobs().catch(() => undefined);
-    }
+
+    await run();
   }
 
   async function forceStop() {

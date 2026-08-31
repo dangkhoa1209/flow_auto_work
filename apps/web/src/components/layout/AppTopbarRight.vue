@@ -5,9 +5,14 @@ import { SettingOutlined } from "@ant-design/icons-vue";
 import { useSessionStore } from "@/stores/session";
 import { useThemeStore } from "@/stores/theme";
 
-const props = defineProps<{
-  settingsTo: string;
-}>();
+withDefaults(
+  defineProps<{
+    settingsTo: string;
+    /** When false, hide the settings icon entirely. */
+    showSettings?: boolean;
+  }>(),
+  { showSettings: true },
+);
 
 const session = useSessionStore();
 const themeStore = useThemeStore();
@@ -23,11 +28,14 @@ const username = computed(
 
 <template>
   <div class="faw-topbar__right">
-    <slot name="status" />
-    <slot name="extra" />
-    <div class="faw-user-chip">
-      <span class="faw-avatar" />
-      @{{ username }}
+    <!-- Desktop-only chrome (mobile uses bottom nav for Settings) -->
+    <div class="faw-topbar__right-desktop">
+      <slot name="status" />
+      <slot name="extra" />
+      <div class="faw-user-chip">
+        <span class="faw-avatar" />
+        @{{ username }}
+      </div>
     </div>
     <button
       type="button"
@@ -42,8 +50,9 @@ const username = computed(
       {{ themeStore.mode === "dark" ? "☀" : "☾" }}
     </button>
     <button
+      v-if="showSettings"
       type="button"
-      class="faw-icon-btn"
+      class="faw-icon-btn faw-topbar__settings-btn"
       title="Settings"
       @click="router.push(settingsTo)"
     >

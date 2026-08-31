@@ -22,7 +22,7 @@ const rows = computed(() =>
 <template>
   <div class="faw-build-log">
     <div v-if="!rows.length && !running" class="faw-build-log__empty">
-      đang chờ trong hàng đợi…
+      waiting in queue…
     </div>
     <div
       v-for="(row, i) in rows"

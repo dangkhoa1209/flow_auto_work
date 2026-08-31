@@ -7,8 +7,11 @@ import { SearchOutlined } from "@ant-design/icons-vue";
 import BuildFeedCard from "@/components/devops/BuildFeedCard.vue";
 import BuildTerminal from "@/components/devops/BuildTerminal.vue";
 import { useDevopsStore } from "@/stores/devops";
+import { useSessionStore } from "@/stores/session";
 
 const devops = useDevopsStore();
+const session = useSessionStore();
+const canConfigure = computed(() => session.canConfigureDevopsScripts);
 const nowTick = ref(Date.now());
 let tickTimer: ReturnType<typeof setInterval> | undefined;
 
@@ -24,6 +27,10 @@ const lastFailedToastId = ref<string | null>(null);
 const scriptSearch = ref("");
 const expandedBuildId = ref<string | null>(null);
 const logCache = ref<Record<string, BuildLogLine[]>>({});
+/** Mobile: collapse scripts list to free feed space. */
+const scriptsCollapsed = ref(
+  typeof window !== "undefined" ? window.matchMedia("(max-width: 900px)").matches : false,
+);
 
 /** Confirm re-run when the same script already has a queued/running job. */
 const dupConfirm = reactive({
@@ -75,12 +82,6 @@ const activeScripts = computed(() =>
   devops.scripts.filter((s) => s.active !== false),
 );
 
-function scriptGroup(s: BuildScript): string {
-  if (s.id === "local-smoke") return "General";
-  if (["core", "ykksub", "ykk"].includes(s.id)) return "Hệ thống";
-  return "Khách hàng";
-}
-
 const filteredScripts = computed(() => {
   const q = scriptSearch.value.trim().toLowerCase();
   return activeScripts.value.filter((s) => {
@@ -91,20 +92,6 @@ const filteredScripts = computed(() => {
       s.id.toLowerCase().includes(q)
     );
   });
-});
-
-const groupedScripts = computed(() => {
-  const order = ["General", "Hệ thống", "Khách hàng"];
-  const map = new Map<string, BuildScript[]>();
-  for (const s of filteredScripts.value) {
-    const g = scriptGroup(s);
-    const list = map.get(g) || [];
-    list.push(s);
-    map.set(g, list);
-  }
-  return order
-    .filter((g) => map.has(g))
-    .map((g) => ({ group: g, items: map.get(g)! }));
 });
 
 const feedBuilds = computed(() => devops.builds);
@@ -172,7 +159,7 @@ async function toggleBuildCard(job: BuildJob) {
 
 function copyCommand(job: BuildJob) {
   void navigator.clipboard?.writeText(job.command).then(() => {
-    message.success("Đã copy lệnh");
+    message.success("Command copied");
   });
 }
 
@@ -181,7 +168,7 @@ async function onCancelCard(job: BuildJob) {
 }
 
 const formTitle = computed(() =>
-  editingId.value ? "Sửa lệnh" : "Thêm lệnh build",
+  editingId.value ? "Edit script" : "Add build script",
 );
 
 const liveRunning = computed(() => devops.liveBuild?.status === "running");
@@ -189,7 +176,7 @@ const liveRunning = computed(() => devops.liveBuild?.status === "running");
 const selectedRunning = computed(() => devops.selected?.status === "running");
 
 const histStatusOptions = [
-  { value: "", label: "Tất cả" },
+  { value: "", label: "All" },
   { value: "success", label: "Success" },
   { value: "failed", label: "Failed" },
   { value: "cancelled", label: "Cancelled" },
@@ -206,11 +193,11 @@ const histStatusModel = computed({
 });
 
 const histColumns = [
-  { title: "Bắt đầu", key: "start", width: 150 },
+  { title: "Started", key: "start", width: 150 },
   { title: "Script", key: "script" },
-  { title: "Trạng thái", key: "status", width: 110 },
-  { title: "Thời gian", key: "duration", width: 100 },
-  { title: "Người chạy", key: "by", width: 130 },
+  { title: "Status", key: "status", width: 110 },
+  { title: "Duration", key: "duration", width: 100 },
+  { title: "Triggered by", key: "by", width: 130 },
   { title: "Exit", key: "exit", width: 60 },
   { title: "", key: "actions", width: 90 },
 ];
@@ -219,13 +206,13 @@ const scriptColumns = computed(() => {
   if (configCompact.value) {
     return [
       { title: "", key: "active", width: 44 },
-      { title: "Lệnh build", key: "script" },
+      { title: "Build script", key: "script" },
       { title: "", key: "actions", width: 84 },
     ];
   }
   return [
     { title: "", key: "active", width: 52 },
-    { title: "Tên", key: "label", width: 130 },
+    { title: "Name", key: "label", width: 130 },
     { title: "Command", key: "command" },
     { title: "cwd", key: "cwd", width: 120 },
     { title: "T/o", key: "timeout", width: 52 },
@@ -261,7 +248,7 @@ function formatTime(iso?: string) {
   if (!iso) return "—";
   const t = new Date(iso);
   if (Number.isNaN(t.getTime())) return "—";
-  return t.toLocaleString("vi-VN", { hour12: false });
+  return t.toLocaleString("en-US", { hour12: false });
 }
 
 function statusClass(status: BuildStatus) {
@@ -310,8 +297,12 @@ function closeForm() {
 }
 
 async function onSaveScript() {
+  if (!canConfigure.value) {
+    message.error("Only the devops role can configure scripts");
+    return Promise.reject(new Error("forbidden"));
+  }
   if (!form.label.trim() || !form.command.trim() || !form.workingDir.trim()) {
-    message.error("Vui lòng điền đủ Tên, Lệnh và Working dir");
+    message.error("Please fill in Name, Command, and Working dir");
     return Promise.reject(new Error("validation"));
   }
   try {
@@ -322,7 +313,7 @@ async function onSaveScript() {
       workingDir: form.workingDir.trim(),
       timeoutSec: form.timeoutSec,
     });
-    message.success(editingId.value ? "Đã cập nhật lệnh" : "Đã thêm lệnh");
+    message.success(editingId.value ? "Script updated" : "Script added");
     closeForm();
   } catch (e) {
     message.error(e instanceof Error ? e.message : String(e));
@@ -331,19 +322,27 @@ async function onSaveScript() {
 }
 
 async function onDeleteScript(id: string) {
+  if (!canConfigure.value) {
+    message.error("Only the devops role can configure scripts");
+    return;
+  }
   try {
     await devops.removeScript(id);
     if (editingId.value === id) closeForm();
-    message.success("Đã xóa lệnh");
+    message.success("Script deleted");
   } catch (e) {
     message.error(e instanceof Error ? e.message : String(e));
   }
 }
 
 async function onToggleScript(s: BuildScript, active: boolean) {
+  if (!canConfigure.value) {
+    message.error("Only the devops role can configure scripts");
+    return;
+  }
   try {
     await devops.toggleScript(s.id, active);
-    message.success(active ? `Đã bật «${s.label}»` : `Đã tắt «${s.label}»`);
+    message.success(active ? `Enabled «${s.label}»` : `Disabled «${s.label}»`);
   } catch (e) {
     message.error(e instanceof Error ? e.message : String(e));
   }
@@ -508,19 +507,29 @@ onUnmounted(() => {
     <!-- Tab 1: Build -->
     <div v-if="devops.activeTab === 'build'" class="faw-build-shell">
       <!-- Sidebar: scripts -->
-      <aside class="faw-build-sidebar">
+      <aside
+        class="faw-build-sidebar"
+        :class="{ 'is-collapsed': scriptsCollapsed }"
+      >
         <div class="faw-build-sidebar__head">
-          <div class="faw-build-sidebar__title-row">
+          <button
+            type="button"
+            class="faw-build-sidebar__title-row w-full text-left lg:pointer-events-none"
+            @click="scriptsCollapsed = !scriptsCollapsed"
+          >
             <span class="faw-build-sidebar__title">Scripts</span>
             <span class="faw-build-sidebar__count">{{ activeScripts.length }}</span>
-          </div>
+            <span class="lg:hidden ml-auto text-[11px] text-[var(--ink-muted)]">
+              {{ scriptsCollapsed ? "Show" : "Hide" }}
+            </span>
+          </button>
           <div class="faw-build-search">
             <SearchOutlined class="faw-build-search__icon" />
             <input
               v-model="scriptSearch"
               type="search"
               class="faw-build-search__input"
-              placeholder="Tìm script…"
+              placeholder="Search scripts…"
             />
           </div>
         </div>
@@ -531,60 +540,58 @@ onUnmounted(() => {
             v-else-if="!activeScripts.length"
             class="faw-build-empty"
           >
-            Chưa có lệnh active. Sang tab
-            <strong>Cấu hình</strong> để thêm hoặc bật lệnh.
+            <template v-if="canConfigure">
+              No active scripts. Open the
+              <strong>Config</strong> tab to add or enable one.
+            </template>
+            <template v-else>
+              No active scripts. Ask devops to configure scripts.
+            </template>
           </div>
           <div
             v-else-if="!filteredScripts.length"
             class="faw-build-empty"
           >
-            Không tìm thấy script phù hợp.
+            No matching scripts.
           </div>
           <template v-else>
-            <section
-              v-for="grp in groupedScripts"
-              :key="grp.group"
-              class="faw-build-script-group"
+            <div
+              v-for="s in filteredScripts"
+              :key="s.id"
+              class="faw-build-script-row"
+              :class="{ 'is-running': scriptQueueState(s.id).running > 0 }"
             >
-              <div class="faw-build-script-group__label">{{ grp.group }}</div>
-              <div
-                v-for="s in grp.items"
-                :key="s.id"
-                class="faw-build-script-row"
-                :class="{ 'is-running': scriptQueueState(s.id).running > 0 }"
-              >
-                <div class="faw-build-script-row__swatch" />
-                <div class="faw-build-script-row__body">
-                  <div class="faw-build-script-row__name">{{ s.label }}</div>
-                  <div class="faw-build-script-row__cmd">{{ s.command }}</div>
-                </div>
-                <button
-                  type="button"
-                  class="faw-build-run-btn"
-                  :class="{
-                    'is-disabled':
-                      scriptQueueState(s.id).running > 0 ||
-                      devops.triggeringId === s.id ||
-                      devops.queue.shuttingDown,
-                  }"
-                  :disabled="
+              <div class="faw-build-script-row__swatch" />
+              <div class="faw-build-script-row__body">
+                <div class="faw-build-script-row__name">{{ s.label }}</div>
+                <div class="faw-build-script-row__cmd">{{ s.command }}</div>
+              </div>
+              <button
+                type="button"
+                class="faw-build-run-btn"
+                :class="{
+                  'is-disabled':
                     scriptQueueState(s.id).running > 0 ||
                     devops.triggeringId === s.id ||
-                    devops.queue.shuttingDown
-                  "
-                  @click="onRun(s)"
-                >
-                  <span class="faw-build-run-btn__icon">▶</span>
-                  {{
-                    scriptQueueState(s.id).running > 0
-                      ? "Đang chạy"
-                      : devops.triggeringId === s.id
-                        ? "…"
-                        : "Run"
-                  }}
-                </button>
-              </div>
-            </section>
+                    devops.queue.shuttingDown,
+                }"
+                :disabled="
+                  scriptQueueState(s.id).running > 0 ||
+                  devops.triggeringId === s.id ||
+                  devops.queue.shuttingDown
+                "
+                @click="onRun(s)"
+              >
+                <span class="faw-build-run-btn__icon">▶</span>
+                {{
+                  scriptQueueState(s.id).running > 0
+                    ? "Running"
+                    : devops.triggeringId === s.id
+                      ? "…"
+                      : "Run"
+                }}
+              </button>
+            </div>
           </template>
         </div>
       </aside>
@@ -593,11 +600,11 @@ onUnmounted(() => {
       <div class="faw-build-main">
         <section class="faw-build-queue-strip">
           <div class="faw-build-queue-strip__title">
-            Hàng đợi build
+            Build queue
             <span class="faw-build-queue-strip__n">({{ queueActive.length }})</span>
           </div>
           <div v-if="!queueActive.length" class="faw-build-queue-empty">
-            Không có build nào đang chờ — FIFO, chạy tối đa 1 build cùng lúc.
+            No builds waiting — FIFO, at most one build at a time.
           </div>
           <div v-else class="faw-build-queue-chips">
             <template v-for="(job, idx) in queueActive" :key="job.id">
@@ -622,7 +629,7 @@ onUnmounted(() => {
 
         <div class="faw-build-feed">
           <div v-if="!feedBuilds.length" class="faw-build-feed-empty">
-            Chưa có build nào. Chọn một script bên trái để bắt đầu.
+            No builds yet. Pick a script on the left to start.
           </div>
           <BuildFeedCard
             v-for="job in feedBuilds"
@@ -651,7 +658,7 @@ onUnmounted(() => {
               class="faw-build-stdin__input"
               :type="stdinSecret ? 'password' : 'text'"
               :disabled="!liveRunning || devops.stdinBusy"
-              placeholder="Gửi text/password vào stdin (build đang chạy)…"
+              placeholder="Send text/password to stdin (running build)…"
               autocomplete="off"
             />
             <label class="faw-build-stdin__secret">
@@ -690,6 +697,7 @@ onUnmounted(() => {
         :loading="devops.historyLoading"
         row-key="id"
         size="small"
+        :scroll="{ x: 720 }"
         :pagination="{
           current: devops.historyPage,
           pageSize: devops.historyPageSize,
@@ -746,10 +754,10 @@ onUnmounted(() => {
       </a-table>
     </div>
 
-    <!-- Tab 3: Cấu hình -->
-    <div v-else class="faw-dev-full faw-col">
+    <!-- Tab 3: Config (devops / admin only) -->
+    <div v-else-if="canConfigure" class="faw-dev-full faw-col">
       <div class="faw-col-head">
-        <h2>Cấu hình</h2>
+        <h2>Config</h2>
         <span class="faw-count">{{ devops.scripts.length }}</span>
         <span class="flex-1" />
         <button
@@ -757,7 +765,7 @@ onUnmounted(() => {
           class="faw-btn faw-btn--run faw-btn--tight"
           @click="openCreate"
         >
-          + Thêm lệnh
+          + Add script
         </button>
       </div>
 
@@ -774,7 +782,7 @@ onUnmounted(() => {
         >
           <template #emptyText>
             <span class="text-xs text-ink-muted">
-              Chưa có lệnh nào — bấm «+ Thêm lệnh».
+              No scripts yet — click «+ Add script».
             </span>
           </template>
           <template #bodyCell="{ column, record }">
@@ -844,12 +852,12 @@ onUnmounted(() => {
                   class="faw-btn faw-btn--tight"
                   @click="openEdit(record as BuildScript)"
                 >
-                  Sửa
+                  Edit
                 </button>
                 <a-popconfirm
-                  title="Xóa lệnh này?"
-                  ok-text="Xóa"
-                  cancel-text="Giữ"
+                  title="Delete this script?"
+                  ok-text="Delete"
+                  cancel-text="Keep"
                   ok-type="danger"
                   @confirm="onDeleteScript((record as BuildScript).id)"
                 >
@@ -858,7 +866,7 @@ onUnmounted(() => {
                     class="faw-btn faw-btn--danger faw-btn--tight"
                     :disabled="devops.deletingScriptId === (record as BuildScript).id"
                   >
-                    Xóa
+                    Delete
                   </button>
                 </a-popconfirm>
               </div>
@@ -881,7 +889,7 @@ onUnmounted(() => {
             {{ devops.selected.status }}
           </span>
           <span class="text-xs text-ink-muted">
-            Bắt đầu {{ formatTime(devops.selected.startedAt || devops.selected.queuedAt) }}
+            Started {{ formatTime(devops.selected.startedAt || devops.selected.queuedAt) }}
           </span>
           <span class="text-xs text-ink-muted">
             · {{ formatDuration(devops.selected) }}
@@ -892,9 +900,9 @@ onUnmounted(() => {
           <span class="flex-1" />
           <a-popconfirm
             v-if="selectedRunning"
-            title="Dừng build đang chạy?"
+            title="Stop the running build?"
             ok-text="Cancel Build"
-            cancel-text="Giữ"
+            cancel-text="Keep"
             ok-type="danger"
             @confirm="onCancel(devops.selectedId!)"
           >
@@ -931,10 +939,11 @@ onUnmounted(() => {
 
     <!-- Script create/edit modal -->
     <a-modal
+      v-if="canConfigure"
       v-model:open="formOpen"
       :title="formTitle"
-      ok-text="Lưu"
-      cancel-text="Hủy"
+      ok-text="Save"
+      cancel-text="Cancel"
       :confirm-loading="devops.savingScript"
       :width="560"
       wrap-class-name="work-modal-sheet"
@@ -944,17 +953,17 @@ onUnmounted(() => {
       @cancel="closeForm"
     >
       <a-form layout="vertical" class="mt-1">
-        <a-form-item label="Tên" required>
+        <a-form-item label="Name" required>
           <a-input v-model:value="form.label" placeholder="Deploy UAT" />
         </a-form-item>
         <a-form-item v-if="!editingId" label="Id (optional)">
           <a-input
             v-model:value="form.id"
             class="font-mono"
-            placeholder="deploy-uat — để trống sẽ slug từ tên"
+            placeholder="deploy-uat — leave blank to slug from name"
           />
         </a-form-item>
-        <a-form-item label="Lệnh" required>
+        <a-form-item label="Command" required>
           <a-input
             v-model:value="form.command"
             class="font-mono"
@@ -965,10 +974,10 @@ onUnmounted(() => {
           <a-input
             v-model:value="form.workingDir"
             class="font-mono"
-            placeholder="/opt/build hoặc ~/projects/ykk"
+            placeholder="/opt/build or ~/projects/ykk"
           />
         </a-form-item>
-        <a-form-item label="Timeout (giây)">
+        <a-form-item label="Timeout (seconds)">
           <a-input-number
             v-model:value="form.timeoutSec"
             class="w-full"
@@ -983,18 +992,18 @@ onUnmounted(() => {
     <!-- Duplicate-run confirm -->
     <a-modal
       v-model:open="dupConfirm.open"
-      title="Lệnh đang có trong queue"
-      ok-text="Vẫn chạy"
-      cancel-text="Bỏ qua"
+      title="Script already in the queue"
+      ok-text="Queue anyway"
+      cancel-text="Cancel"
       @ok="confirmDupRun"
     >
       <p class="text-sm">
-        «{{ dupConfirm.script?.label }}» đang có
+        «{{ dupConfirm.script?.label }}» already has
         <strong>{{ dupConfirm.queued }}</strong>
-        job trong queue / đang chạy.
+        job(s) queued or running.
       </p>
       <p class="text-sm text-ink-muted">
-        Có muốn xếp thêm một lần chạy nữa không? (FIFO — job mới sẽ chạy sau)
+        Queue another run? (FIFO — the new job runs after the current ones.)
       </p>
     </a-modal>
   </div>

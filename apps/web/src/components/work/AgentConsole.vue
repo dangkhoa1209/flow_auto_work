@@ -60,7 +60,7 @@ function onChatKeydown(e: KeyboardEvent) {
   if (e.isComposing) return;
   if (e.shiftKey) return;
   e.preventDefault();
-  if (props.busy || props.agentTyping) return;
+  if (!props.chatInput.trim() || props.stopBusy) return;
   emit("sendChat", "continue");
 }
 
@@ -687,27 +687,27 @@ watch(chatBox, (el, prev) => {
           :auto-size="{ minRows: 2, maxRows: 12 }"
           :autofocus="false"
           :disabled="false"
-          :readonly="busy || agentTyping"
+          :readonly="false"
           :placeholder="
             agentTyping || busy
-              ? 'Agent đang suy nghĩ… đợi xong hoặc Force Stop'
+              ? 'Type a follow-up — Send will ask to stop the current run…'
               : currentJob?.status === 'awaiting_clarification'
-                ? 'Trả lời agent / xác nhận…'
-                : 'Gửi lệnh (sửa / làm / phân tích) → xếp queue…'
+                ? 'Reply to the agent / confirm…'
+                : 'Send a command (fix / implement / analyze) → queue…'
           "
           @update:value="(v: string) => emit('update:chatInput', v)"
           @keydown="onChatKeydown"
         />
         <div class="faw-console-input__row faw-ba-input-row">
           <span class="faw-ba-input-hint">
-            Enter gửi · Shift+Enter xuống dòng
+            Enter to send · Shift+Enter for newline
           </span>
           <div class="faw-ba-input-actions">
             <button
               type="button"
               class="faw-btn faw-btn--run faw-btn--send"
-              :disabled="busy || agentTyping"
-              title="Xếp lệnh vào queue — agent chạy nền (không chờ HTTP)"
+              :disabled="!chatInput.trim() || stopBusy"
+              title="Queue command — agent runs in the background"
               @click="emit('sendChat', 'continue')"
             >
               Send
@@ -715,8 +715,8 @@ watch(chatBox, (el, prev) => {
             <button
               type="button"
               class="faw-btn faw-btn--ask"
-              :disabled="busy || agentTyping"
-              title="Hỏi nhanh (Q&A, không sửa code) → xếp queue"
+              :disabled="!chatInput.trim() || stopBusy"
+              title="Quick Q&A (no code changes) → queue"
               @click="emit('sendChat', 'ask')"
             >
               Ask only

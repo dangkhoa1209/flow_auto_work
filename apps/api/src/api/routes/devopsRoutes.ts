@@ -1,6 +1,9 @@
 import { Router } from "express";
 import { devopsController } from "../controllers/devopsController.js";
-import { requireDevops } from "../middleware/devopsAuth.js";
+import {
+  requireDevops,
+  requireDevopsScriptConfig,
+} from "../middleware/devopsAuth.js";
 
 export const routePath = "/devops";
 
@@ -9,9 +12,21 @@ export function createDevopsRoutes(): Router {
   router.use(requireDevops);
 
   router.get("/scripts", devopsController.listScripts);
-  router.post("/scripts", devopsController.createScript);
-  router.patch("/scripts/:scriptId", devopsController.updateScript);
-  router.delete("/scripts/:scriptId", devopsController.deleteScript);
+  router.post(
+    "/scripts",
+    requireDevopsScriptConfig,
+    devopsController.createScript,
+  );
+  router.patch(
+    "/scripts/:scriptId",
+    requireDevopsScriptConfig,
+    devopsController.updateScript,
+  );
+  router.delete(
+    "/scripts/:scriptId",
+    requireDevopsScriptConfig,
+    devopsController.deleteScript,
+  );
   router.get("/queue", devopsController.queue);
   router.get("/events", devopsController.events);
 

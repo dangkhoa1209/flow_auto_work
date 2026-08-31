@@ -240,7 +240,7 @@ async function onKillAll() {
 
       <div class="faw-topbar__spacer hidden lg:block" />
 
-      <AppTopbarRight settings-to="/settings/project" class="hidden lg:contents">
+      <AppTopbarRight settings-to="/settings/project">
         <template #status>
           <span class="faw-idle">
             <span class="faw-idle__dot" :class="idleDot" />
@@ -267,18 +267,19 @@ async function onKillAll() {
           </a-popconfirm>
         </template>
       </AppTopbarRight>
-
-      <!-- Mobile: status + avatar only -->
-      <button
-        type="button"
-        class="faw-status-avatar lg:hidden"
-        :title="work.statusText || 'Idle'"
-        @click="router.push('/settings/account')"
-      >
-        <span class="faw-status-avatar__dot" :class="idleDot" />
-        <span class="faw-avatar faw-avatar--md" />
-      </button>
     </header>
+
+    <nav class="faw-mseg lg:hidden" aria-label="Workbench sections">
+      <RouterLink
+        v-for="item in nav"
+        :key="item.to"
+        :to="item.to"
+        class="faw-mseg__btn"
+        :class="{ active: route.path.startsWith(item.to) }"
+      >
+        {{ item.label }}
+      </RouterLink>
+    </nav>
 
     <main
       class="flex-1 min-h-0 overflow-hidden overflow-x-hidden pb-[calc(3.25rem+env(safe-area-inset-bottom))] lg:pb-0"

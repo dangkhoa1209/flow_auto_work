@@ -30,7 +30,7 @@ const badge = computed(() => {
 
 const timeLabel = computed(() => {
   const j = props.job;
-  if (j.status === "queued") return "chờ…";
+  if (j.status === "queued") return "waiting…";
   if (j.status === "running" && j.startedAt) {
     const t = Date.parse(j.startedAt);
     if (!Number.isFinite(t)) return "0:00";
@@ -69,10 +69,10 @@ const timeLabel = computed(() => {
       </p>
       <footer class="faw-build-card__foot">
         <button type="button" class="faw-build-card__foot-btn" @click.stop="$emit('copy')">
-          Copy lệnh
+          Copy command
         </button>
         <button type="button" class="faw-build-card__foot-btn" @click.stop="$emit('download')">
-          Tải log
+          Download log
         </button>
         <button
           v-if="job.status === 'running'"

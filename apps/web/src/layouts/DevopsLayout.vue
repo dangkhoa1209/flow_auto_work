@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { useRouter, RouterLink, RouterView } from "vue-router";
 import { message } from "ant-design-vue";
 import type { BuildJob } from "@/api/devopsApi";
@@ -15,11 +15,26 @@ const devops = useDevopsStore();
 
 const queuePopOpen = ref(false);
 
-const tabs: Array<{ key: DevopsTab; label: string }> = [
-  { key: "build", label: "Build" },
-  { key: "history", label: "History" },
-  { key: "config", label: "Cấu hình" },
-];
+const tabs = computed(() => {
+  const all: Array<{ key: DevopsTab; label: string }> = [
+    { key: "build", label: "Build" },
+    { key: "history", label: "History" },
+  ];
+  if (session.canConfigureDevopsScripts) {
+    all.push({ key: "config", label: "Config" });
+  }
+  return all;
+});
+
+watch(
+  () => session.canConfigureDevopsScripts,
+  (ok) => {
+    if (!ok && devops.activeTab === "config") {
+      devops.activeTab = "build";
+    }
+  },
+  { immediate: true },
+);
 
 const inSettings = computed(() =>
   router.currentRoute.value.path.startsWith("/devops/settings"),
@@ -111,7 +126,58 @@ async function onCancelQueued(id: string) {
 
       <div class="faw-topbar__spacer" />
 
-      <AppTopbarRight settings-to="/devops/settings/account" class="hidden lg:contents">
+      <a-popover
+        v-if="!inSettings"
+        v-model:open="queuePopOpen"
+        trigger="click"
+        placement="bottomRight"
+      >
+        <template #content>
+          <div class="faw-dev-queue-pop">
+            <p v-if="!queuedJobs.length" class="faw-dev-queue-pop__empty">
+              Queue empty
+            </p>
+            <div
+              v-for="row in queuedJobs"
+              :key="row.job.id"
+              class="faw-dev-queue-pop__row"
+            >
+              <span class="faw-dev-pos">#{{ row.pos }}</span>
+              <button
+                type="button"
+                class="faw-dev-queue-pop__label"
+                @click="onSelectQueued(row.job.id)"
+              >
+                <span class="block truncate">{{ row.job.scriptLabel }}</span>
+                <span class="faw-dev-queue-pop__meta"
+                  >@{{ row.job.triggeredBy }}</span
+                >
+              </button>
+              <a-popconfirm
+                title="Remove this job from the queue?"
+                ok-text="Cancel job"
+                cancel-text="Keep"
+                ok-type="danger"
+                @confirm="onCancelQueued(row.job.id)"
+              >
+                <button type="button" class="faw-dev-queue-pop__cancel">
+                  Cancel
+                </button>
+              </a-popconfirm>
+            </div>
+          </div>
+        </template>
+        <button type="button" class="faw-topbar-chip" title="Build queue">
+          <span class="faw-idle__dot" :class="idleDot" />
+          <span class="lg:hidden">Q:{{ devops.queue.queued }}</span>
+          <span class="hidden lg:inline">
+            Queue: {{ devops.queue.queued }}
+            {{ devops.queue.queued === 1 ? "job" : "jobs" }}
+          </span>
+        </button>
+      </a-popover>
+
+      <AppTopbarRight settings-to="/devops/settings/account">
         <template #status>
           <span class="faw-idle" :title="workerLabel">
             <span class="faw-idle__dot" :class="idleDot" />
@@ -119,52 +185,6 @@ async function onCancelQueued(id: string) {
           </span>
         </template>
         <template #extra>
-          <a-popover
-            v-if="!inSettings"
-            v-model:open="queuePopOpen"
-            trigger="click"
-            placement="bottomRight"
-          >
-            <template #content>
-              <div class="faw-dev-queue-pop">
-                <p v-if="!queuedJobs.length" class="faw-dev-queue-pop__empty">
-                  Queue trống
-                </p>
-                <div
-                  v-for="row in queuedJobs"
-                  :key="row.job.id"
-                  class="faw-dev-queue-pop__row"
-                >
-                  <span class="faw-dev-pos">#{{ row.pos }}</span>
-                  <button
-                    type="button"
-                    class="faw-dev-queue-pop__label"
-                    @click="onSelectQueued(row.job.id)"
-                  >
-                    <span class="block truncate">{{ row.job.scriptLabel }}</span>
-                    <span class="faw-dev-queue-pop__meta"
-                      >@{{ row.job.triggeredBy }}</span
-                    >
-                  </button>
-                  <a-popconfirm
-                    title="Xóa job này khỏi queue?"
-                    ok-text="Hủy job"
-                    cancel-text="Giữ"
-                    ok-type="danger"
-                    @confirm="onCancelQueued(row.job.id)"
-                  >
-                    <button type="button" class="faw-dev-queue-pop__cancel">
-                      Hủy
-                    </button>
-                  </a-popconfirm>
-                </div>
-              </div>
-            </template>
-            <button type="button" class="faw-btn" title="Xem hàng đợi build">
-              Queue: {{ devops.queue.queued }}
-              {{ devops.queue.queued === 1 ? "job" : "jobs" }}
-            </button>
-          </a-popover>
           <RouterLink v-if="session.isAdmin" to="/admin/users" class="faw-btn">
             Admin
           </RouterLink>
@@ -172,11 +192,35 @@ async function onCancelQueued(id: string) {
       </AppTopbarRight>
     </header>
 
-    <main
-      class="flex-1 min-h-0 pb-[calc(3.25rem+env(safe-area-inset-bottom))] lg:pb-0"
-      :class="inSettings ? 'overflow-hidden' : 'overflow-hidden'"
+    <nav
+      v-if="!inSettings"
+      class="faw-mseg lg:hidden"
+      aria-label="Build sections"
+      role="tablist"
     >
-      <RouterView />
+      <button
+        v-for="t in tabs"
+        :key="t.key"
+        type="button"
+        class="faw-mseg__btn"
+        :class="{ active: devops.activeTab === t.key }"
+        role="tab"
+        :aria-selected="devops.activeTab === t.key"
+        @click="devops.activeTab = t.key"
+      >
+        {{ t.label }}
+      </button>
+    </nav>
+
+    <main
+      class="flex flex-1 min-h-0 flex-col overflow-hidden pb-[calc(3.25rem+env(safe-area-inset-bottom))] lg:pb-0"
+    >
+      <RouterView v-slot="{ Component }">
+        <component
+          :is="Component"
+          class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
+        />
+      </RouterView>
     </main>
 
     <MobileBottomNav />

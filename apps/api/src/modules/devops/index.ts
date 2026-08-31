@@ -1,7 +1,7 @@
 import {
   createBuildScript,
   deleteBuildScript,
-  ensureLocalDevSmokeScript,
+  removeLocalDevSmokeScript,
   listWhitelistedScripts,
   requireWhitelistedScript,
   seedBuildScriptsIfEmpty,
@@ -60,7 +60,7 @@ export async function triggerBuild(opts: {
   const script = await requireWhitelistedScript(opts.scriptId);
   if (script.active === false) {
     throw new AppError(
-      "Lệnh này đang inactive — bật lại trong tab Cấu hình trước khi chạy",
+      "This script is inactive — enable it in the Config tab before running",
       409,
       "script_inactive",
     );
@@ -120,7 +120,7 @@ export async function readBuildLog(jobId: string): Promise<{
 export async function restoreBuildQueue(): Promise<number> {
   await ensureBuildIndexes();
   await seedBuildScriptsIfEmpty();
-  await ensureLocalDevSmokeScript();
+  await removeLocalDevSmokeScript();
   return buildQueue.restoreQueued();
 }
 

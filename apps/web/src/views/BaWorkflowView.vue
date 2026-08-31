@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 import { message, Modal } from "ant-design-vue";
-import { PlusOutlined, DeleteOutlined } from "@ant-design/icons-vue";
+import { PlusOutlined, DeleteOutlined, ArrowLeftOutlined } from "@ant-design/icons-vue";
 import { Splitpanes, Pane } from "splitpanes";
 import "splitpanes/dist/splitpanes.css";
 import { useBaChatStore } from "@/stores/baChat";
@@ -72,6 +72,8 @@ const flowResumeFrom = ref(0);
 const flowAbort = ref(false);
 const activeFlowStep = ref<BaWorkflowStepKey | null>(null);
 const flowStepLabel = ref("");
+/** Mobile: list → flow / chat detail. */
+const mobilePane = ref<"list" | "flow" | "chat">("list");
 
 /** Sửa YC gốc / BA đàm phán tại chỗ. */
 const editingYc = ref(false);
@@ -215,11 +217,7 @@ const wfProgressLabel = computed(() => {
 });
 
 const composerDisabled = computed(
-  () =>
-    !wfThreadId.value ||
-    !ba.projectReady ||
-    wfStreaming.value ||
-    flowRunning.value,
+  () => !wfThreadId.value || !ba.projectReady,
 );
 
 function isMyEvent(userId: string) {
@@ -372,6 +370,7 @@ async function ensureThreadForSelected() {
 async function loadDetail(id: string) {
   const res = await baApi.getRequirement(id);
   selectedId.value = id;
+  mobilePane.value = "flow";
   const idx = requirements.value.findIndex((r) => r.id === id);
   if (idx >= 0) requirements.value[idx] = res.requirement;
   taskDrafts.value = res.taskDrafts || [];
@@ -383,6 +382,18 @@ async function loadDetail(id: string) {
   flowInvalidReason.value = "";
   editingYc.value = false;
   await ensureThreadForSelected();
+}
+
+function backToMobileList() {
+  selectedId.value = null;
+  mobilePane.value = "list";
+  taskDrafts.value = [];
+  wfThreadId.value = null;
+  wfMessages.value = [];
+  editingYc.value = false;
+  flowPaused.value = false;
+  flowPauseReason.value = "";
+  flowInvalidReason.value = "";
 }
 
 async function refreshAll() {
@@ -574,6 +585,7 @@ function onDeleteYc(id: string, title: string) {
       requirements.value = requirements.value.filter((r) => r.id !== id);
       if (selectedId.value === id) {
         selectedId.value = null;
+        mobilePane.value = "list";
         taskDrafts.value = [];
         wfThreadId.value = null;
         wfMessages.value = [];
@@ -587,6 +599,9 @@ async function onWfSend(content: string) {
   if (!wfThreadId.value) return;
   wfError.value = "";
   try {
+    if (wfStreaming.value) {
+      await api(API.ba.stop(wfThreadId.value), { method: "POST" });
+    }
     await api(API.ba.messages(wfThreadId.value), {
       method: "POST",
       body: JSON.stringify({
@@ -805,13 +820,15 @@ onUnmounted(() => {
               </button>
             </div>
             <div class="flex-1 min-h-0 overflow-y-auto">
-              <button
+              <div
                 v-for="r in requirements"
                 :key="r.id"
-                type="button"
+                role="button"
+                tabindex="0"
                 class="faw-ba-thread w-full text-left"
                 :class="{ active: r.id === selectedId }"
                 @click="loadDetail(r.id)"
+                @keydown.enter.prevent="loadDetail(r.id)"
               >
                 <div class="faw-ba-thread__main min-w-0">
                   <span class="faw-ba-thread__title truncate">{{ r.title }}</span>
@@ -824,7 +841,7 @@ onUnmounted(() => {
                 >
                   <DeleteOutlined />
                 </button>
-              </button>
+              </div>
             </div>
           </aside>
         </Pane>
@@ -1141,21 +1158,314 @@ onUnmounted(() => {
       </Splitpanes>
     </div>
 
-    <!-- Mobile: stack đơn giản -->
-    <div class="lg:hidden flex-1 min-h-0 overflow-y-auto p-3 space-y-3">
-      <a-empty v-if="!selected" description="Chọn YC trên desktop layout" />
+    <!-- Mobile: list → flow / chat -->
+    <div class="lg:hidden flex-1 min-h-0 flex flex-col overflow-hidden">
+      <!-- List -->
+      <div
+        v-if="!selected || mobilePane === 'list'"
+        class="flex-1 min-h-0 flex flex-col overflow-hidden"
+      >
+        <div class="faw-filters p-3 space-y-2 border-b border-[var(--app-border)] shrink-0">
+          <a-input
+            v-model:value="ycTitle"
+            size="small"
+            placeholder="Tiêu đề (tùy chọn)"
+          />
+          <div>
+            <label class="faw-ba-label block mb-1">Yêu cầu gốc *</label>
+            <a-textarea
+              v-model:value="ycContent"
+              :rows="3"
+              placeholder="Dán yêu cầu từ KH/PD…"
+            />
+          </div>
+          <a-textarea
+            v-model:value="ycBaNote"
+            :rows="2"
+            placeholder="BA phân tích / đàm phán (tùy chọn)"
+          />
+          <button
+            type="button"
+            class="faw-btn faw-btn--run w-full"
+            :disabled="!ba.projectReady || loading"
+            @click="createYc"
+          >
+            <PlusOutlined /> Tạo YC
+          </button>
+        </div>
+        <div class="flex-1 min-h-0 overflow-y-auto">
+          <a-empty
+            v-if="!requirements.length"
+            class="mt-8"
+            description="Chưa có YC — tạo ở form trên"
+          />
+          <div
+            v-for="r in requirements"
+            :key="r.id"
+            role="button"
+            tabindex="0"
+            class="faw-ba-thread w-full text-left"
+            :class="{ active: r.id === selectedId }"
+            @click="loadDetail(r.id)"
+            @keydown.enter.prevent="loadDetail(r.id)"
+          >
+            <div class="faw-ba-thread__main min-w-0">
+              <span class="faw-ba-thread__title truncate">{{ r.title }}</span>
+              <span class="faw-ba-thread__time">{{ r.status }}</span>
+            </div>
+            <button
+              type="button"
+              class="faw-icon-btn faw-ba-thread__del shrink-0"
+              @click.stop="onDeleteYc(r.id, r.title)"
+            >
+              <DeleteOutlined />
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Detail -->
       <template v-else>
-        <button
-          type="button"
-          class="faw-btn faw-btn--run w-full"
-          :disabled="!canRunFlow && !flowPaused"
-          @click="flowPaused ? continueFlow() : runFlow(0)"
+        <div class="faw-m-detail-bar shrink-0">
+          <button
+            type="button"
+            class="faw-icon-btn"
+            title="Quay lại danh sách"
+            @click="backToMobileList"
+          >
+            <ArrowLeftOutlined />
+          </button>
+          <div class="faw-m-detail-bar__title min-w-0 flex-1">
+            <div class="faw-m-detail-bar__name truncate">{{ selected.title }}</div>
+            <div class="faw-m-detail-bar__meta truncate">
+              {{ selected.status }}
+              <template v-if="activeFlowStep">
+                · {{ flowStepLabel || WORKFLOW_STEPS.find((s) => s.key === activeFlowStep)?.label }}
+              </template>
+              <template v-else-if="flowPaused"> · chờ làm rõ</template>
+            </div>
+          </div>
+          <div class="faw-m-seg" role="tablist">
+            <button
+              type="button"
+              class="faw-m-seg__btn touch-manipulation"
+              :class="{ 'is-active': mobilePane === 'flow' }"
+              @click="mobilePane = 'flow'"
+            >
+              Flow
+            </button>
+            <button
+              type="button"
+              class="faw-m-seg__btn touch-manipulation"
+              :class="{ 'is-active': mobilePane === 'chat' }"
+              @click="mobilePane = 'chat'"
+            >
+              Chat
+            </button>
+          </div>
+        </div>
+
+        <!-- Flow pane -->
+        <div
+          v-show="mobilePane === 'flow'"
+          class="flex-1 min-h-0 overflow-y-auto p-3 space-y-3"
         >
-          {{ runFlowLabel }}
-        </button>
-        <p class="text-[12px] text-[var(--app-muted)] m-0">
-          Mở màn hình rộng để xem layout 3 cột đầy đủ.
-        </p>
+          <div class="flex gap-2">
+            <button
+              type="button"
+              class="faw-btn faw-btn--run flex-1"
+              :disabled="!canRunFlow && !flowPaused"
+              @click="flowPaused ? continueFlow() : runFlow(0)"
+            >
+              {{ runFlowLabel }}
+            </button>
+            <button
+              v-if="flowRunning"
+              type="button"
+              class="faw-btn"
+              @click="stopFlow"
+            >
+              Dừng
+            </button>
+          </div>
+          <p
+            v-if="flowBlockedReason && !flowPaused"
+            class="text-[11px] text-[var(--app-muted)] m-0"
+          >
+            {{ flowBlockedReason }}
+          </p>
+
+          <a-alert
+            v-if="flowInvalidReason"
+            type="error"
+            show-icon
+            class="text-[12px]"
+            message="Flow dừng — YC không phải yêu cầu nghiệp vụ"
+            :description="flowInvalidReason"
+          />
+          <a-alert
+            v-if="inputStale && hasAnalysis && !flowRunning"
+            type="info"
+            show-icon
+            class="text-[12px]"
+            message="YC đã đổi — bấm Phân tích lại"
+          />
+          <a-alert
+            v-if="flowPaused"
+            type="warning"
+            show-icon
+            class="text-[12px]"
+            message="Cần chốt — chat hoặc Tiếp tục flow"
+            :description="flowPauseReason"
+          />
+
+          <a-card size="small">
+            <template #title>Yêu cầu gốc</template>
+            <template #extra>
+              <button
+                v-if="!editingYc"
+                type="button"
+                class="faw-btn text-[11px]"
+                :disabled="flowRunning"
+                @click="startEditYc"
+              >
+                Sửa
+              </button>
+            </template>
+            <template v-if="!editingYc">
+              <pre class="whitespace-pre-wrap text-[12px] m-0 font-sans">{{ selected.rawContent }}</pre>
+              <div
+                v-if="selected.baNote"
+                class="mt-3 pt-2 border-t border-dashed border-[var(--app-border)]"
+              >
+                <div class="text-[11px] font-semibold text-[var(--app-muted)] mb-1">
+                  BA phân tích / đàm phán
+                </div>
+                <pre class="whitespace-pre-wrap text-[12px] m-0 font-sans">{{ selected.baNote }}</pre>
+              </div>
+            </template>
+            <div v-else class="space-y-2">
+              <a-input v-model:value="editYcTitle" size="small" placeholder="Tiêu đề" />
+              <a-textarea v-model:value="editYcContent" :rows="4" />
+              <a-textarea
+                v-model:value="editYcBaNote"
+                :rows="2"
+                placeholder="BA phân tích / đàm phán"
+              />
+              <div class="flex gap-2 justify-end">
+                <button type="button" class="faw-btn text-[11px]" @click="editingYc = false">
+                  Huỷ
+                </button>
+                <button
+                  type="button"
+                  class="faw-btn faw-btn--run text-[11px]"
+                  :disabled="editYcSaving"
+                  @click="saveYcEdit"
+                >
+                  {{ editYcSaving ? "…" : "Lưu YC" }}
+                </button>
+              </div>
+            </div>
+          </a-card>
+
+          <div
+            v-for="step in WORKFLOW_STEPS"
+            :key="step.key"
+            class="rounded-xl border border-[var(--app-border)] bg-[var(--app-panel)] p-3"
+            :class="{
+              'ring-1 ring-[var(--app-accent)]': activeFlowStep === step.key,
+            }"
+          >
+            <div class="flex items-start justify-between gap-2 mb-2">
+              <div>
+                <div class="text-[13px] font-semibold text-[var(--app-ink)]">
+                  {{ step.label }}
+                </div>
+                <div class="text-[11px] text-[var(--app-muted)]">{{ step.hint }}</div>
+              </div>
+              <span
+                class="text-[10px] uppercase tracking-wide shrink-0"
+                :class="
+                  stepDone(step.key)
+                    ? 'text-emerald-600 dark:text-emerald-400'
+                    : 'text-[var(--app-faint)]'
+                "
+              >
+                {{ stepDone(step.key) ? "Xong" : "Chưa chạy" }}
+              </span>
+            </div>
+            <div
+              v-if="stepDisplayBody(step.key)"
+              class="faw-ba-step-body max-h-[280px] overflow-y-auto border-t border-[var(--app-border)] pt-2 mt-2 text-[13px]"
+            >
+              <ChatMessageBody :body="stepDisplayBody(step.key)" markdown />
+            </div>
+          </div>
+
+          <a-card
+            v-if="taskDraft"
+            size="small"
+            class="ring-1 ring-[var(--app-accent)]"
+          >
+            <template #title>Kết quả phân tích</template>
+            <template #extra>
+              <button
+                type="button"
+                class="faw-btn faw-btn--run text-[11px]"
+                @click="openTaskFromDraft(taskDraft)"
+              >
+                {{ taskDraft.gitlabIid ? "Cập nhật task" : "Tạo task" }}
+              </button>
+            </template>
+            <div class="font-semibold text-[13px]">{{ taskDraft.title }}</div>
+            <div
+              v-if="taskDraft.description"
+              class="faw-ba-step-body max-h-[240px] overflow-y-auto border-t border-[var(--app-border)] pt-2 mt-2 text-[13px]"
+            >
+              <ChatMessageBody :body="taskDraft.description" markdown />
+            </div>
+          </a-card>
+        </div>
+
+        <!-- Chat pane -->
+        <div
+          v-show="mobilePane === 'chat'"
+          class="flex-1 min-h-0 flex flex-col overflow-hidden"
+        >
+          <div v-if="!wfThreadId" class="flex-1 flex items-center justify-center p-4">
+            <p class="text-[12px] text-[var(--app-muted)] m-0 text-center">
+              Đang tải chat…
+            </p>
+          </div>
+          <template v-else>
+            <BaMessageList
+              :messages="wfMessages"
+              :streaming="wfStreaming"
+              :streaming-message-id="wfStreamingMessageId"
+              :progress-hint="wfProgressLabel"
+              :reset-key="wfThreadId"
+            />
+            <div v-if="wfError" class="shrink-0 px-3 pb-1">
+              <a-alert type="error" show-icon :message="wfError" />
+            </div>
+            <BaComposer
+              :disabled="composerDisabled"
+              :disabled-reason="
+                !wfThreadId
+                  ? 'Đang tải chat…'
+                  : flowRunning
+                    ? 'Đợi flow xong'
+                    : 'Không gửi được'
+              "
+              :loading="wfStreaming"
+              :stop-busy="wfStopBusy"
+              :analysis-mode="wfAnalysisMode"
+              @update:analysis-mode="wfAnalysisMode = $event"
+              @send="onWfSend"
+              @stop="onWfStop"
+            />
+          </template>
+        </div>
       </template>
     </div>
 

@@ -39,12 +39,25 @@ const activePath = computed(() => route.path);
         <header class="faw-settings__head">
           <h1 class="faw-settings__title">{{ title }}</h1>
         </header>
-        <nav class="faw-settings__nav-list">
+        <!-- Desktop: vertical list -->
+        <nav class="faw-settings__nav-list hidden lg:flex">
           <RouterLink
             v-for="t in tabs"
             :key="t.to"
             :to="t.to"
             class="faw-settings__nav-item"
+            :class="{ 'is-active': isActive(t) }"
+          >
+            {{ t.label }}
+          </RouterLink>
+        </nav>
+        <!-- Mobile: horizontal chips -->
+        <nav class="faw-settings__tabs lg:hidden" aria-label="Settings tabs">
+          <RouterLink
+            v-for="t in tabs"
+            :key="`m-${t.to}`"
+            :to="t.to"
+            class="faw-settings__tab"
             :class="{ 'is-active': isActive(t) }"
           >
             {{ t.label }}

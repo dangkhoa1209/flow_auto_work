@@ -1,0 +1,32 @@
+---
+description: All product UI and client-facing API messages must be English
+alwaysApply: true
+---
+
+# English product copy
+
+User-facing strings in this repo are **English only**.
+
+## Applies to
+
+- Vue templates: labels, buttons, empty states, placeholders, `a-modal` / `a-popconfirm` titles
+- `message.*` / toast / alert text in `apps/web`
+- API `AppError` messages and other strings returned to the client
+- Table column titles, tab names, status chip labels meant for humans
+
+## Does not force
+
+- Agent/LLM system prompts that intentionally speak Vietnamese for BA domain work (existing `baChat` prompts) — leave unless the task is explicitly translating those
+- Comments in code (English preferred)
+- Commit messages (English)
+
+## When editing UI
+
+1. Write new copy in English.
+2. If the file still has Vietnamese UI strings on the same surface, translate them in the same change.
+3. Prefer concise product English: "No active scripts", "Only the devops role can configure scripts".
+
+```text
+❌ Chưa có lệnh active. Sang tab Config để thêm hoặc bật lệnh.
+✅ No active scripts. Open the Config tab to add or enable one.
+```

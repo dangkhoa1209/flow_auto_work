@@ -6,6 +6,7 @@ import {
   MessageOutlined,
   BuildOutlined,
   SettingOutlined,
+  ControlOutlined,
 } from "@ant-design/icons-vue";
 import { useSessionStore } from "@/stores/session";
 
@@ -14,6 +15,12 @@ const router = useRouter();
 const session = useSessionStore();
 
 function settingsTarget(): { to: string; match: (path: string) => boolean } {
+  if (route.path.startsWith("/admin")) {
+    return {
+      to: "/admin/settings/account",
+      match: (p) => p.startsWith("/admin/settings"),
+    };
+  }
   if (route.path.startsWith("/ba")) {
     return {
       to: "/ba/settings/gitlab",
@@ -38,6 +45,12 @@ function settingsTarget(): { to: string; match: (path: string) => boolean } {
       match: (p) => p.startsWith("/ba/settings"),
     };
   }
+  if (session.isAdmin) {
+    return {
+      to: "/admin/settings/account",
+      match: (p) => p.startsWith("/admin/settings"),
+    };
+  }
   return {
     to: "/devops/settings/account",
     match: (p) => p.startsWith("/devops/settings"),
@@ -53,6 +66,14 @@ const tabs = computed(() => {
     match: (path: string) => boolean;
   }> = [];
 
+  if (session.isAdmin) {
+    items.push({
+      to: "/admin/users",
+      label: "Admin",
+      icon: ControlOutlined,
+      match: (p) => p.startsWith("/admin") && !p.startsWith("/admin/settings"),
+    });
+  }
   if (session.canAccessWork) {
     items.push({
       to: "/work",

@@ -3,7 +3,6 @@ import path from "node:path";
 import { z } from "zod";
 import { type Collection } from "mongodb";
 import { getConfig } from "../../config.js";
-import { getRepoRoot } from "../../repoRoot.js";
 import { connectMongo } from "../../models/connection.js";
 import { withActive, softDeleteActiveFields, purgeSoftDeleted } from "../../models/base.js";
 import { BuildScriptModel, type BuildScriptDoc } from "../../models/devops.js";
@@ -48,7 +47,7 @@ async function scriptsCol(): Promise<Collection<BuildScriptDoc>> {
 
 function normalizeCommand(command: string): string {
   if (command.includes("\0")) {
-    throw new AppError("command chứa ký tự không hợp lệ", 400, "invalid_script");
+    throw new AppError("command contains invalid characters", 400, "invalid_script");
   }
   const joined = command
     .split(/\r?\n/)
@@ -59,7 +58,7 @@ function normalizeCommand(command: string): string {
     throw new AppError("command required", 400, "invalid_script");
   }
   if (joined.length > 4000) {
-    throw new AppError("command quá dài (max 4000)", 400, "invalid_script");
+    throw new AppError("command is too long (max 4000)", 400, "invalid_script");
   }
   return joined;
 }
@@ -116,7 +115,7 @@ export function normalizeScriptInput(
     throw new AppError(detail || "Invalid script", 400, "invalid_script");
   }
   if (opts?.requireId && !SCRIPT_ID_RE.test(idRaw)) {
-    throw new AppError("id không hợp lệ", 400, "invalid_script");
+    throw new AppError("invalid id", 400, "invalid_script");
   }
   const data = parsed.data;
   return {
@@ -213,27 +212,18 @@ export async function seedBuildScriptsIfEmpty(): Promise<number> {
 
 const LOCAL_SMOKE_SCRIPT_ID = "local-smoke";
 
-/** Non-production: ensure one script with a valid repo-root cwd for local testing. */
-export async function ensureLocalDevSmokeScript(): Promise<void> {
-  if (getConfig().NODE_ENV === "production") return;
-  const existing = await getWhitelistedScript(LOCAL_SMOKE_SCRIPT_ID);
-  if (existing) return;
-  const workingDir = getRepoRoot();
-  await createBuildScript(
-    {
-      id: LOCAL_SMOKE_SCRIPT_ID,
-      label: "Local smoke test",
-      command: 'echo "Devops OK" && pwd',
-      workingDir,
-      description: "Auto-added for local dev (repo root). Production scripts may use /opt/build.",
-      active: true,
-    },
-    "system",
+/** Drop the old auto-seeded local smoke script (no longer shown in UI). */
+export async function removeLocalDevSmokeScript(): Promise<void> {
+  const col = await scriptsCol();
+  const res = await col.updateOne(
+    withActive({ id: LOCAL_SMOKE_SCRIPT_ID }),
+    { $set: softDeleteActiveFields() },
   );
-  logger.info("Added local Devops smoke script", {
-    id: LOCAL_SMOKE_SCRIPT_ID,
-    workingDir,
-  });
+  if (res.modifiedCount > 0) {
+    logger.info("Removed local Devops smoke script", {
+      id: LOCAL_SMOKE_SCRIPT_ID,
+    });
+  }
 }
 
 function toPublic(doc: BuildScriptDoc): WhitelistedScript {
@@ -253,7 +243,9 @@ export async function listWhitelistedScripts(): Promise<WhitelistedScript[]> {
     .find(withActive({}))
     .sort({ updatedAt: -1 })
     .toArray();
-  return docs.map(toPublic);
+  return docs
+    .map(toPublic)
+    .filter((s) => s.id !== LOCAL_SMOKE_SCRIPT_ID);
 }
 
 export async function getWhitelistedScript(
@@ -279,7 +271,7 @@ export async function requireWhitelistedScript(
   const script = await getWhitelistedScript(id);
   if (!script) {
     throw new AppError(
-      `Unknown scriptId "${id}" — thêm lệnh trên trang Devops trước`,
+      `Unknown scriptId "${id}" — add the script on the Devops Config page first`,
       400,
       "script_not_whitelisted",
     );

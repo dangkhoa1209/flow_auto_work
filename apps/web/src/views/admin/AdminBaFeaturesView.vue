@@ -106,7 +106,7 @@ onMounted(() => {
         :key="f.key"
         class="flex flex-col gap-1.5 pb-4 border-b border-line last:border-b-0 last:pb-0"
       >
-        <div class="flex items-center justify-between gap-3">
+        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div class="min-w-0">
             <div class="text-sm font-medium text-ink">{{ f.name }}</div>
             <div class="text-xs text-ink-muted">{{ f.desc }}</div>
@@ -115,7 +115,7 @@ onMounted(() => {
             v-model:value="flags[f.key]"
             :options="STATE_OPTIONS"
             :disabled="loading"
-            class="w-60 shrink-0"
+            class="w-full sm:w-60 shrink-0"
           />
         </div>
 

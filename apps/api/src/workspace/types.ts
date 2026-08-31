@@ -236,6 +236,14 @@ export function canAccessDevops(roles?: UserRole[] | null): boolean {
   return r.includes("admin") || r.includes("devops") || r.includes("dev");
 }
 
+/** Create/edit/delete build scripts — devops role only (admin may also). */
+export function canConfigureDevopsScripts(
+  roles?: UserRole[] | null,
+): boolean {
+  const r = normalizeUserRoles(roles);
+  return r.includes("devops") || r.includes("admin");
+}
+
 /** Workbench: dev or admin. */
 export function canAccessWork(roles?: UserRole[] | null): boolean {
   const r = normalizeUserRoles(roles);

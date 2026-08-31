@@ -87,13 +87,15 @@ function formatTime(iso: string) {
       >
         Chưa có chat.<br />Bấm <b class="text-[var(--app-muted)]">New Chat</b> để bắt đầu.
       </div>
-      <button
+      <div
         v-for="t in ba.threads"
         :key="t.id"
-        type="button"
+        role="button"
+        tabindex="0"
         class="faw-ba-thread"
         :class="{ active: t.id === ba.activeThreadId }"
         @click="onSelectThread(t.id)"
+        @keydown.enter.prevent="onSelectThread(t.id)"
       >
         <div class="faw-ba-thread__main">
           <span class="faw-ba-thread__title">{{ t.title }}</span>
@@ -107,7 +109,7 @@ function formatTime(iso: string) {
         >
           <DeleteOutlined />
         </button>
-      </button>
+      </div>
     </div>
   </aside>
 </template>

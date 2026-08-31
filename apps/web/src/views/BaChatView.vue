@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
-import { message } from "ant-design-vue";
+import { message, Modal } from "ant-design-vue";
 import { useBaChatStore } from "@/stores/baChat";
 import { baApi } from "@/api/baApi";
 import { useBaGitPat } from "@/composables/useBaGitPat";
@@ -35,14 +35,12 @@ const draftingIssue = computed(
 const composerDisabled = computed(() => {
   if (!ba.selectedProjectId) return true;
   if (!ba.projectReady) return true;
-  if (ba.streaming) return true;
   return false;
 });
 
 const disabledReason = computed(() => {
-  if (!ba.selectedProjectId) return "Chọn project ở sidebar";
-  if (!ba.projectReady) return "Project chưa sẵn sàng — liên hệ admin";
-  if (ba.streaming) return "Đang trả lời…";
+  if (!ba.selectedProjectId) return "Select a project in the top bar";
+  if (!ba.projectReady) return "Project is not ready yet — ask an admin";
   return "";
 });
 
@@ -110,6 +108,9 @@ watch(
 
 async function onSend(content: string) {
   try {
+    if (ba.streaming) {
+      await ba.stop();
+    }
     await ba.sendMessage(content);
   } catch (e) {
     message.error(e instanceof Error ? e.message : String(e));
@@ -119,7 +120,7 @@ async function onSend(content: string) {
 async function onStop() {
   try {
     await ba.stop();
-    message.info("Đã gửi lệnh dừng");
+    message.info("Stop requested");
   } catch (e) {
     message.error(e instanceof Error ? e.message : String(e));
   }

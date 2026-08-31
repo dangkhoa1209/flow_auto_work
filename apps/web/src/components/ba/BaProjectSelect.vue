@@ -8,15 +8,23 @@ const props = withDefaults(
     size?: "small" | "middle" | "large";
     block?: boolean;
     showLabel?: boolean;
+    /** Nest inside `.faw-crumb` — no second border on the select. */
+    embedded?: boolean;
   }>(),
   {
     size: "small",
     block: true,
     showLabel: true,
+    embedded: false,
   },
 );
 
 const ba = useBaChatStore();
+
+const selectClass = computed(() => {
+  const skin = props.embedded ? "faw-crumb-select" : "faw-ba-select";
+  return props.block ? `w-full ${skin}` : skin;
+});
 
 const projectId = computed({
   get: () => ba.selectedProjectId ?? undefined,
@@ -26,9 +34,15 @@ const projectId = computed({
   },
 });
 
+function isProjectReady(p: BaProject): boolean {
+  return Boolean(p.ready) || p.cloneStatus === "ready";
+}
+
+/** Name only when ready; otherwise append clone status. */
 function projectLabel(p: BaProject): string {
-  if (p.ready) return p.displayName;
-  return `${p.displayName} (${p.cloneStatus})`;
+  if (isProjectReady(p)) return p.displayName;
+  const status = (p.cloneStatus || "").trim();
+  return status ? `${p.displayName} (${status})` : p.displayName;
 }
 
 async function onChange(id: string) {
@@ -46,7 +60,7 @@ async function onChange(id: string) {
     <a-select
       v-model:value="projectId"
       placeholder="Select project"
-      :class="block ? 'w-full faw-ba-select' : 'faw-ba-select'"
+      :class="selectClass"
       :size="size"
       :disabled="!ba.projects.length"
       show-search
@@ -57,10 +71,15 @@ async function onChange(id: string) {
         :key="p.id"
         :value="p.id"
         :label="projectLabel(p)"
-        :disabled="!p.ready"
       >
         <span class="inline-flex items-center gap-1.5 min-w-0">
-          <span class="truncate">{{ projectLabel(p) }}</span>
+          <span class="truncate">{{ p.displayName }}</span>
+          <span
+            v-if="!isProjectReady(p) && p.cloneStatus"
+            class="faw-ba-project-status shrink-0"
+          >
+            {{ p.cloneStatus }}
+          </span>
           <span
             v-if="p.db?.enabled"
             class="ba-db-dot shrink-0"
@@ -73,6 +92,11 @@ async function onChange(id: string) {
 </template>
 
 <style scoped>
+.faw-ba-project-status {
+  font-size: 11px;
+  color: var(--app-faint, var(--app-muted));
+  font-family: var(--font-mono, ui-monospace, monospace);
+}
 .ba-db-dot {
   width: 6px;
   height: 6px;

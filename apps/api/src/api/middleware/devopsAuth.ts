@@ -3,6 +3,7 @@ import type { NextFunction, Request, Response } from "express";
 import { getUserByUsername } from "../../workspace/store.js";
 import {
   canAccessDevops,
+  canConfigureDevopsScripts,
   normalizeUserRoles,
   type UserRole,
 } from "../../workspace/types.js";
@@ -73,5 +74,20 @@ export const requireDevops = asyncHandler(
       );
     }
     devopsAls.run({ username: user.id, roles }, () => next());
+  },
+);
+
+/** Script create/update/delete — devops or admin only (not plain dev). */
+export const requireDevopsScriptConfig = asyncHandler(
+  async (_req: Request, _res: Response, next: NextFunction) => {
+    const ctx = requireDevopsContext();
+    if (!canConfigureDevopsScripts(ctx.roles)) {
+      throw new AppError(
+        "Only the devops role can configure scripts",
+        403,
+        "devops_config_forbidden",
+      );
+    }
+    next();
   },
 );

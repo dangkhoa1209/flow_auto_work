@@ -214,14 +214,14 @@ onMounted(() => void refresh());
 
 <template>
   <div class="faw-ba-tasks h-full min-h-0 flex flex-col overflow-hidden">
-    <div class="faw-console-head shrink-0">
-      <div class="faw-console-head__title">
+    <div class="faw-console-head shrink-0 flex-wrap gap-2">
+      <div class="faw-console-head__title min-w-0">
         <h2>Task drafts</h2>
         <div class="faw-console-head__win">
           {{ ba.selectedProject?.displayName || "Chọn project ở thanh trên cùng" }}
         </div>
       </div>
-      <div class="flex items-center gap-2">
+      <div class="flex items-center gap-2 flex-wrap w-full sm:w-auto">
         <a-segmented
           v-model:value="filter"
           size="small"
@@ -237,7 +237,7 @@ onMounted(() => void refresh());
           :disabled="!ba.projectReady"
           @click="openNew"
         >
-          <PlusOutlined /> Lên task manual
+          <PlusOutlined /> Lên task
         </button>
       </div>
     </div>

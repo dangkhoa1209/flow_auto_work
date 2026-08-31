@@ -23,10 +23,10 @@ let disconnect: (() => void) | undefined;
 const statusDot = computed(() => (ba.streaming ? "wip" : "idle"));
 const statusText = computed(() =>
   ba.streaming
-    ? ba.currentProgressLabel || "Đang trả lời…"
+    ? ba.currentProgressLabel || "Replying…"
     : ba.selectedProject
       ? ba.selectedProject.displayName
-      : "Chọn project",
+      : "Select project",
 );
 
 const navActive = computed(() => {
@@ -156,15 +156,15 @@ onUnmounted(() => {
 
       <div
         v-if="showProjectSelect"
-        class="faw-crumb hidden lg:flex faw-ba-topbar-project"
-        title="Project — dùng chung cho Chat / Phân tích YC / Tasks"
+        class="faw-crumb faw-ba-topbar-project min-w-0 flex-1 lg:flex-none lg:max-w-[420px]"
+        title="Project — shared for Chat / Workflow / Tasks"
       >
-        <BaProjectSelect :show-label="false" size="small" />
+        <BaProjectSelect :show-label="false" embedded size="small" />
       </div>
 
-      <div class="faw-topbar__spacer" />
+      <div class="faw-topbar__spacer hidden lg:block" />
 
-      <AppTopbarRight settings-to="/ba/settings/gitlab" class="hidden lg:contents">
+      <AppTopbarRight settings-to="/ba/settings/gitlab">
         <template #status>
           <span class="faw-idle faw-ba-idle">
             <span class="faw-idle__dot" :class="statusDot" />
@@ -178,6 +178,36 @@ onUnmounted(() => {
         </template>
       </AppTopbarRight>
     </header>
+
+    <nav
+      v-if="navActive !== 'settings'"
+      class="faw-mseg lg:hidden"
+      aria-label="BA sections"
+    >
+      <RouterLink
+        to="/ba"
+        class="faw-mseg__btn"
+        :class="{ active: navActive === 'chat' }"
+      >
+        Chat
+      </RouterLink>
+      <RouterLink
+        v-if="showWorkflowTab"
+        to="/ba/workflow"
+        class="faw-mseg__btn"
+        :class="{ active: navActive === 'workflow' }"
+      >
+        {{ workflowTabLabel }}
+      </RouterLink>
+      <RouterLink
+        v-if="showTasksTab"
+        to="/ba/tasks"
+        class="faw-mseg__btn"
+        :class="{ active: navActive === 'tasks' }"
+      >
+        {{ tasksTabLabel }}
+      </RouterLink>
+    </nav>
 
     <main
       class="flex-1 min-h-0 overflow-hidden flex flex-col pb-[calc(3.25rem+env(safe-area-inset-bottom))] lg:pb-0"

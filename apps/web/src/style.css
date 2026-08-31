@@ -1456,6 +1456,20 @@ code {
   color: var(--app-muted);
   flex-shrink: 0;
 }
+.faw-topbar__right-desktop {
+  display: contents;
+}
+@media (max-width: 1023px) {
+  .faw-topbar__right-desktop {
+    display: none;
+  }
+  .faw-topbar__settings-btn {
+    display: none;
+  }
+  .faw-topbar__right {
+    gap: 4px;
+  }
+}
 .faw-idle {
   display: inline-flex;
   align-items: center;
@@ -1485,6 +1499,11 @@ code {
   border-radius: 20px;
   white-space: nowrap;
 }
+@media (max-width: 1023px) {
+  .faw-topbar__right .faw-user-chip {
+    display: none;
+  }
+}
 .faw-avatar {
   width: 16px;
   height: 16px;
@@ -1497,30 +1516,65 @@ code {
   height: 22px;
 }
 
-/* —— Mobile topbar adaptations —— */
+/* —— Mobile topbar (Work / BA / Build — same chrome) —— */
 .faw-brand__logo--mark {
   display: none;
 }
+.faw-topbar-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  height: 36px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid var(--app-border);
+  background: var(--app-panel-soft);
+  color: var(--app-ink);
+  font-size: 12px;
+  font-weight: 600;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.faw-topbar-chip:hover {
+  background: var(--app-panel-hover, var(--app-panel-soft));
+}
+.faw-topbar-chip .faw-idle__dot {
+  margin-right: 0;
+}
 @media (max-width: 1023px) {
-  .faw-topbar--work {
+  .faw-topbar--work,
+  .faw-topbar--ba,
+  .faw-topbar--devops {
     height: 48px;
     gap: 6px;
     padding: 0 8px 0 10px;
   }
-  .faw-topbar--work .faw-brand__logo--full {
+  .faw-topbar--work .faw-brand__logo--full,
+  .faw-topbar--ba .faw-brand__logo--full,
+  .faw-topbar--devops .faw-brand__logo--full {
     display: none;
   }
-  .faw-topbar--work .faw-brand__logo--mark {
+  .faw-topbar--work .faw-brand__logo--mark,
+  .faw-topbar--ba .faw-brand__logo--mark,
+  .faw-topbar--devops .faw-brand__logo--mark {
     display: block;
     height: 24px;
     width: 24px;
     max-width: 24px;
     border-radius: 6px;
   }
-  .faw-topbar--work .faw-topbar__spacer,
   .faw-topbar--work .faw-seg,
-  .faw-topbar--work .faw-topbar__right {
+  .faw-topbar--ba .faw-seg,
+  .faw-topbar--devops .faw-seg {
     display: none !important;
+  }
+  .faw-topbar-chip {
+    height: 30px;
+    padding: 0 8px;
+    border-radius: 6px;
+    font-size: 11px;
   }
 }
 
@@ -1565,36 +1619,49 @@ code {
   flex-shrink: 0;
 }
 
-.faw-status-avatar {
-  position: relative;
-  width: 36px;
+/* —— Mobile section strip (under topbar) —— */
+.faw-mseg {
+  display: flex;
+  flex-shrink: 0;
+  gap: 0;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  border-bottom: 1px solid var(--app-border);
+  background: var(--app-panel);
+  padding: 0 4px;
+}
+.faw-mseg::-webkit-scrollbar {
+  display: none;
+}
+.faw-mseg__btn {
+  flex: 1 0 auto;
+  min-width: 0;
   height: 36px;
-  border-radius: 999px;
-  border: 1px solid var(--app-border);
-  background: var(--app-panel-soft);
+  padding: 0 12px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  background: transparent;
+  color: var(--app-faint);
+  font: 600 12px/1 var(--font-ui, inherit);
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  text-align: center;
+}
+a.faw-mseg__btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  flex-shrink: 0;
-  padding: 0;
-  cursor: pointer;
 }
-.faw-status-avatar__dot {
-  position: absolute;
-  top: 3px;
-  right: 3px;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  border: 1.5px solid var(--app-panel);
-  background: var(--app-faint);
+.faw-mseg__btn:hover {
+  color: var(--app-ink);
+  text-decoration: none;
 }
-.faw-status-avatar__dot.wip {
-  background: var(--wip);
-  box-shadow: 0 0 0 2px rgba(240, 180, 41, 0.25);
-}
-.faw-status-avatar__dot.idle {
-  background: #6b7280;
+.faw-mseg__btn.active {
+  color: var(--app-accent);
+  border-bottom-color: var(--app-accent);
 }
 
 /* —— Mobile bottom nav —— */
@@ -2127,17 +2194,6 @@ code {
     font-size: 13px;
   }
 
-  .faw-app-shell .faw-topbar--work {
-    height: 48px;
-    gap: 6px;
-    padding: 0 8px 0 10px;
-  }
-  .faw-app-shell .faw-topbar--work .faw-brand__logo--mark {
-    height: 24px;
-    width: 24px;
-    max-width: 24px;
-    border-radius: 6px;
-  }
   .faw-app-shell .faw-crumb-tap {
     height: 30px;
     padding: 0 8px;
@@ -2145,14 +2201,6 @@ code {
   }
   .faw-app-shell .faw-crumb-tap__flow {
     font-size: 12px;
-  }
-  .faw-app-shell .faw-status-avatar {
-    width: 30px;
-    height: 30px;
-  }
-  .faw-app-shell .faw-avatar--md {
-    width: 18px;
-    height: 18px;
   }
 
   .faw-app-shell .faw-mnav__grid {
@@ -2400,7 +2448,8 @@ code {
   align-items: center;
   justify-content: center;
   padding: 32px 16px;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
   background: var(--app-bg);
 }
 .faw-login__grid {
@@ -2807,6 +2856,10 @@ code {
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
+  margin: 0;
+  padding: 0 12px 12px;
+}
+.faw-settings__panel .faw-settings__tabs {
   margin: 0 -16px 14px;
   padding: 0 16px 4px;
 }
@@ -3127,9 +3180,6 @@ code {
 .faw-topbar--ba {
   gap: 10px;
 }
-.faw-topbar--ba .faw-brand__logo--mark {
-  display: none;
-}
 .faw-ba-menu-btn {
   flex-shrink: 0;
 }
@@ -3358,43 +3408,24 @@ code {
 }
 
 @media (max-width: 1023px) {
-  .faw-topbar--ba {
-    height: 48px;
-    gap: 8px;
-    padding: 0 8px 0 10px;
-  }
-  .faw-topbar--ba .faw-brand__logo--full {
-    display: none;
-  }
-  .faw-topbar--ba .faw-brand__logo--mark {
-    display: block;
-    height: 24px;
-    width: 24px;
-    max-width: 24px;
-    border-radius: 6px;
-  }
-  .faw-topbar--ba .faw-seg {
-    display: none !important;
-  }
-  .faw-ba-idle {
-    max-width: 6.5rem;
-  }
-  .faw-ba-user__name {
-    display: none;
-  }
-  .faw-ba-user {
-    padding: 4px;
+  .faw-topbar--ba .faw-ba-topbar-project {
+    height: 30px;
+    padding: 0 4px 0 8px;
+    max-width: none;
   }
   .faw-ba-side {
     position: fixed;
     top: 48px;
     left: 0;
-    bottom: 0;
+    bottom: calc(3.25rem + env(safe-area-inset-bottom, 0px));
     z-index: 40;
     width: min(300px, 86vw);
     transform: translateX(-105%);
     transition: transform 0.2s ease;
     box-shadow: 8px 0 24px rgba(0, 0, 0, 0.35);
+  }
+  .faw-ba-shell:has(> .faw-mseg) .faw-ba-side {
+    top: calc(48px + 37px);
   }
   .faw-ba-shell.is-side-open .faw-ba-side {
     transform: translateX(0);
@@ -3679,8 +3710,10 @@ code {
 .faw-dev-dash {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  flex: 1 1 0;
   min-height: 0;
+  height: 100%;
+  overflow: hidden;
 }
 .faw-dev-queue-pop {
   min-width: 260px;
@@ -3998,15 +4031,18 @@ code {
 /* Build tab (Devops) */
 .faw-build-shell {
   display: grid;
-  grid-template-columns: 308px 1fr;
+  grid-template-columns: 308px minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  flex: 1 1 0;
   min-height: 0;
-  height: 100%;
+  overflow: hidden;
 }
 .faw-build-sidebar {
   border-right: 1px solid var(--line);
   display: flex;
   flex-direction: column;
   min-height: 0;
+  overflow: hidden;
   background: var(--app-bg);
 }
 .faw-build-sidebar__head {
@@ -4020,6 +4056,12 @@ code {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
+  gap: 8px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: default;
+  padding: 0;
 }
 .faw-build-sidebar__title {
   font-size: 11.5px;
@@ -4065,14 +4107,6 @@ code {
   flex: 1;
   overflow-y: auto;
   padding: 8px 8px 16px;
-}
-.faw-build-script-group__label {
-  font-size: 10.5px;
-  font-weight: 600;
-  letter-spacing: 0.05em;
-  color: var(--ink-faint, var(--ink-muted));
-  text-transform: uppercase;
-  padding: 12px 8px 6px;
 }
 .faw-build-script-row {
   display: flex;
@@ -4149,8 +4183,11 @@ code {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  min-width: 0;
+  overflow: hidden;
 }
 .faw-build-queue-strip {
+  flex-shrink: 0;
   padding: 14px 22px;
   border-bottom: 1px solid var(--line);
   background: var(--surface);
@@ -4210,20 +4247,25 @@ code {
   color: var(--ink-faint, var(--ink-muted));
 }
 .faw-build-feed {
-  flex: 1;
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-x: hidden;
   overflow-y: auto;
   padding: 16px 22px 40px;
   display: flex;
   flex-direction: column;
   gap: 10px;
+  align-items: stretch;
 }
 .faw-build-feed-empty,
 .faw-build-empty {
   color: var(--ink-faint, var(--ink-muted));
   font-size: 13px;
   padding: 30px 4px;
+  flex-shrink: 0;
 }
 .faw-build-card {
+  flex: 0 0 auto;
   border: 1px solid var(--line);
   border-radius: 10px;
   background: var(--surface);
@@ -4374,6 +4416,7 @@ code {
   color: var(--danger, #f0546b);
 }
 .faw-build-stdin {
+  flex: 0 0 auto;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -4401,13 +4444,33 @@ code {
 }
 @media (max-width: 900px) {
   .faw-build-shell {
-    grid-template-columns: 1fr;
-    grid-template-rows: auto 1fr;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
   }
   .faw-build-sidebar {
-    max-height: 42vh;
+    max-height: none;
     border-right: none;
     border-bottom: 1px solid var(--line);
+  }
+  .faw-build-sidebar__title-row {
+    cursor: pointer;
+  }
+  .faw-build-sidebar.is-collapsed .faw-build-script-list,
+  .faw-build-sidebar.is-collapsed .faw-build-search {
+    display: none;
+  }
+  .faw-build-sidebar:not(.is-collapsed) .faw-build-script-list {
+    max-height: min(36vh, 280px);
+  }
+  .faw-build-stdin {
+    flex-wrap: wrap;
+  }
+  .faw-build-stdin__input {
+    flex: 1 1 100%;
+  }
+  .faw-admin-page__head {
+    flex-direction: column;
+    align-items: stretch;
   }
 }
 
