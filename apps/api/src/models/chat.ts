@@ -51,10 +51,8 @@ export async function addChatMessage(input: {
     body: input.body.trim(),
     createdAt: new Date().toISOString(),
   };
-  const result = await (await ChatModel.col()).insertOne(
-    doc as ChatMessageDoc & { _id?: unknown },
-  );
-  const saved = { ...doc, _id: String(result.insertedId) };
+  const inserted = await ChatModel.insert(doc);
+  const saved = { ...inserted, _id: String(inserted._id) };
   // Realtime push — UI appends without polling /chat
   if (saved.jobId) {
     publishRealtime({

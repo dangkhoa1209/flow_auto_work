@@ -4,9 +4,20 @@
  * (or softUnique) so soft-deleted rows do not block re-create of username/slug/job.
  */
 import { describe, expect, it } from "vitest";
-import { softUniqueOptions, withActive } from "../base.js";
+import {
+  softDeleteActiveFields,
+  softUniqueOptions,
+  withActive,
+} from "../base.js";
 
 describe("soft-delete index helpers", () => {
+  it("softDeleteActiveFields stamps deleted:false for inserts", () => {
+    expect(softDeleteActiveFields()).toEqual({
+      deleted: false,
+      deletedAt: null,
+    });
+  });
+
   it("softUniqueOptions sets partialFilterExpression for active rows only", () => {
     const opts = softUniqueOptions("slug_soft_unique");
     expect(opts.unique).toBe(true);

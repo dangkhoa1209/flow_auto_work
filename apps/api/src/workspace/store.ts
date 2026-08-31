@@ -2,7 +2,7 @@ import { type Collection } from "mongodb";
 import { rename as fsRename } from "node:fs/promises";
 import path from "node:path";
 import { connectMongo } from "../models/connection.js";
-import { withActive } from "../models/base.js";
+import { withActive, softDeleteActiveFields, purgeSoftDeleted } from "../models/base.js";
 import {
   WorkspaceMembershipModel,
   WorkspaceProjectModel,
@@ -98,6 +98,10 @@ export async function createOrUpdateUserPassword(opts: {
   if (!doc.cursorModel) doc.cursorModel = "auto";
   doc.updatedAt = now;
   doc.gitlabUsername = opts.username.trim().replace(/^@/, "");
+  if (!existing) {
+    await purgeSoftDeleted(await usersCol(), { id });
+  }
+  Object.assign(doc, softDeleteActiveFields());
   await (await usersCol()).updateOne({ id }, { $set: doc }, { upsert: true });
   return toPublicUser(doc);
 }
@@ -136,7 +140,9 @@ export async function upsertUserLogin(opts: {
   doc.updatedAt = now;
   if (!existing) {
     doc.gitlabUsername = opts.gitlabUsername.trim().replace(/^@/, "");
+    await purgeSoftDeleted(await usersCol(), { id });
   }
+  Object.assign(doc, softDeleteActiveFields());
   await (await usersCol()).updateOne({ id }, { $set: doc }, { upsert: true });
   return toPublicUser(doc);
 }
@@ -455,11 +461,12 @@ export async function createUserProject(opts: {
   }
   if (doc.isActive) {
     await (await projectsCol()).updateMany(
-      { userId },
+      withActive({ userId }),
       { $set: { isActive: false, updatedAt: now } },
     );
   }
-  await (await projectsCol()).insertOne(doc);
+  await purgeSoftDeleted(await projectsCol(), { id });
+  await (await projectsCol()).insertOne({ ...doc, ...softDeleteActiveFields() });
   return syncRepoPath(doc);
 }
 
@@ -511,6 +518,10 @@ export async function upsertProject(opts: {
   if (opts.gitlabToken?.trim()) {
     doc.gitlabTokenEnc = encryptSecret(opts.gitlabToken.trim());
   }
+  if (!existing) {
+    await purgeSoftDeleted(await projectsCol(), { id });
+  }
+  Object.assign(doc, softDeleteActiveFields());
   await (await projectsCol()).updateOne({ id }, { $set: doc }, { upsert: true });
   return syncRepoPath(doc);
 }
@@ -620,7 +631,7 @@ export async function updateProjectFields(
   }
   if (patch.isActive === true) {
     await (await projectsCol()).updateMany(
-      { userId: existing.userId },
+      withActive({ userId: existing.userId }),
       { $set: { isActive: false, updatedAt: now } },
     );
     existing.isActive = true;
@@ -628,7 +639,10 @@ export async function updateProjectFields(
     existing.isActive = false;
   }
   existing.updatedAt = now;
-  await (await projectsCol()).updateOne({ id: projectId }, { $set: existing });
+  await (await projectsCol()).updateOne(
+    withActive({ id: projectId }),
+    { $set: existing },
+  );
   return syncRepoPath(existing);
 }
 
@@ -752,7 +766,8 @@ export async function upsertMembership(opts: {
   const id = membershipId(userId, opts.projectId);
   const now = new Date().toISOString();
   const col = await membershipsCol();
-  const existing = await col.findOne({ id });
+  const existing = await col.findOne(withActive({ id }));
+  await purgeSoftDeleted(col, { id });
   const $set: Record<string, unknown> = {
     id,
     userId,
@@ -778,7 +793,7 @@ export async function upsertMembership(opts: {
     { $set };
   if (Object.keys($unset).length) update.$unset = $unset;
   await col.updateOne({ id }, update, { upsert: true });
-  const saved = await col.findOne({ id });
+  const saved = await col.findOne(withActive({ id }));
   if (!saved) throw new Error("Failed to save membership");
   return saved;
 }

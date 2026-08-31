@@ -1,7 +1,7 @@
 import type { Collection } from "mongodb";
 import crypto from "node:crypto";
 import { connectMongo } from "../models/connection.js";
-import { withActive } from "../models/base.js";
+import { purgeSoftDeleted, softDeleteActiveFields, withActive } from "../models/base.js";
 import {
   BaMessageModel,
   BaProjectModel,
@@ -303,7 +303,8 @@ export async function createBaProject(opts: {
   if (opts.gitlabToken?.trim()) {
     doc.gitlabTokenEnc = encryptSecret(opts.gitlabToken.trim());
   }
-  await (await baProjectsCol()).insertOne(doc);
+  await purgeSoftDeleted(await baProjectsCol(), { id });
+  await (await baProjectsCol()).insertOne({ ...doc, ...softDeleteActiveFields() });
   return doc;
 }
 
@@ -416,7 +417,10 @@ export async function updateBaProject(
   }
 
   existing.updatedAt = now;
-  await (await baProjectsCol()).updateOne({ id }, { $set: existing });
+  await (await baProjectsCol()).updateOne(
+    withActive({ id }),
+    { $set: existing },
+  );
   return existing;
 }
 
@@ -475,13 +479,15 @@ export async function resolveBaProjectDbForTest(
 
 export async function getSystemSettings(): Promise<SystemSettings> {
   const col = await systemSettingsCol();
-  const existing = await col.findOne({ id: "default" });
+  const existing = await col.findOne(withActive({ id: "default" }));
   if (existing) return existing;
   const doc: SystemSettings = {
     id: "default",
     cursorModel: "auto",
     updatedAt: new Date().toISOString(),
+    ...softDeleteActiveFields(),
   };
+  await purgeSoftDeleted(col, { id: "default" });
   await col.updateOne({ id: "default" }, { $set: doc }, { upsert: true });
   return doc;
 }
@@ -579,6 +585,7 @@ export async function updateSystemBaFeatures(
         },
         baFeaturesUpdatedAt: now,
         updatedAt: now,
+        ...softDeleteActiveFields(),
       },
     },
     { upsert: true },
@@ -604,7 +611,10 @@ export async function updateSystemCursorSettings(opts: {
 }): Promise<SystemSettings> {
   const existing = await getSystemSettings();
   const now = new Date().toISOString();
-  const $set: Record<string, unknown> = { updatedAt: now };
+  const $set: Record<string, unknown> = {
+    updatedAt: now,
+    ...softDeleteActiveFields(),
+  };
   const $unset: Record<string, ""> = {};
 
   if (opts.cursorApiKey !== undefined) {
@@ -672,6 +682,7 @@ export async function updateSystemTaskTypeLabels(
         taskTypeLabels: merged,
         taskTypeLabelsUpdatedAt: now,
         updatedAt: now,
+        ...softDeleteActiveFields(),
       },
     },
     { upsert: true },
@@ -788,7 +799,7 @@ export async function createBaThread(opts: {
     createdAt: now,
     updatedAt: now,
   };
-  await (await threadsCol()).insertOne(doc);
+  await (await threadsCol()).insertOne({ ...doc, ...softDeleteActiveFields() });
   return doc;
 }
 
@@ -797,7 +808,7 @@ export async function updateBaThreadKind(
   kind: BaThreadKind,
 ): Promise<void> {
   await (await threadsCol()).updateOne(
-    { id: id.trim() },
+    withActive({ id: id.trim() }),
     { $set: { kind, updatedAt: new Date().toISOString() } },
   );
 }
@@ -808,7 +819,7 @@ export async function updateBaThreadTitle(
 ): Promise<BaThread | null> {
   const now = new Date().toISOString();
   await (await threadsCol()).updateOne(
-    { id: id.trim() },
+    withActive({ id: id.trim() }),
     { $set: { title: title.trim() || "New chat", updatedAt: now } },
   );
   return getBaThread(id);
@@ -816,7 +827,7 @@ export async function updateBaThreadTitle(
 
 export async function touchBaThread(id: string): Promise<void> {
   await (await threadsCol()).updateOne(
-    { id: id.trim() },
+    withActive({ id: id.trim() }),
     { $set: { updatedAt: new Date().toISOString() } },
   );
 }
@@ -866,7 +877,7 @@ export async function bumpBaThreadIssueDraftVersion(
 ): Promise<number> {
   const now = new Date().toISOString();
   const res = await (await threadsCol()).findOneAndUpdate(
-    { id: threadId.trim() },
+    withActive({ id: threadId.trim() }),
     {
       $inc: { issueDraftVersion: 1 },
       $set: { updatedAt: now },
@@ -883,7 +894,7 @@ export async function setBaThreadIssueDraftCache(
 ): Promise<void> {
   const now = new Date().toISOString();
   await (await threadsCol()).updateOne(
-    { id: threadId.trim() },
+    withActive({ id: threadId.trim() }),
     {
       $set: {
         issueDraftCache: { version, draft, cachedAt: now },
@@ -906,7 +917,7 @@ export async function appendBaMessage(opts: {
     content: opts.content,
     createdAt: new Date().toISOString(),
   };
-  await (await messagesCol()).insertOne(doc);
+  await (await messagesCol()).insertOne({ ...doc, ...softDeleteActiveFields() });
   await bumpBaThreadIssueDraftVersion(opts.threadId);
   return doc;
 }
@@ -918,7 +929,7 @@ export async function updateBaMessageContent(
   const col = await messagesCol();
   const existing = await col.findOne(withActive({ id }));
   if (!existing) return;
-  await col.updateOne({ id }, { $set: { content } });
+  await col.updateOne(withActive({ id }), { $set: { content } });
   await bumpBaThreadIssueDraftVersion(existing.threadId);
 }
 
@@ -1010,7 +1021,7 @@ export async function createBaRequirement(opts: {
     createdAt: now,
     updatedAt: now,
   };
-  await (await requirementsCol()).insertOne(doc);
+  await (await requirementsCol()).insertOne({ ...doc, ...softDeleteActiveFields() });
   return doc;
 }
 
@@ -1049,7 +1060,10 @@ export async function updateBaRequirement(
   }
   if (patch.inputStale !== undefined) existing.inputStale = patch.inputStale;
   existing.updatedAt = now;
-  await (await requirementsCol()).updateOne({ id }, { $set: existing });
+  await (await requirementsCol()).updateOne(
+    withActive({ id }),
+    { $set: existing },
+  );
   return existing;
 }
 
@@ -1210,7 +1224,7 @@ export async function createBaTaskDraft(opts: {
     createdAt: now,
     updatedAt: now,
   };
-  await (await taskDraftsCol()).insertOne(doc);
+  await (await taskDraftsCol()).insertOne({ ...doc, ...softDeleteActiveFields() });
   return doc;
 }
 
@@ -1260,7 +1274,10 @@ export async function updateBaTaskDraft(
   if (patch.gitlabIid !== undefined) existing.gitlabIid = patch.gitlabIid;
   if (patch.gitlabUrl !== undefined) existing.gitlabUrl = patch.gitlabUrl;
   existing.updatedAt = now;
-  await (await taskDraftsCol()).updateOne({ id }, { $set: existing });
+  await (await taskDraftsCol()).updateOne(
+    withActive({ id }),
+    { $set: existing },
+  );
   return existing;
 }
 

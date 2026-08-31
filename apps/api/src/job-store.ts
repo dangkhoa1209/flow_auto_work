@@ -4,6 +4,7 @@ import {
   getJobDoc,
   getJobDocByIssue,
   listJobDocs,
+  purgeSoftDeletedJobsForIssue,
   rekeyJobSideDocs,
   upsertJobDoc,
 } from "./models/job.js";
@@ -196,6 +197,11 @@ export async function ensureJob(
   }
 
   const id = jobIdForIssue(issue.projectId, issue.issueIid, workspaceProjectId);
+  await purgeSoftDeletedJobsForIssue(
+    issue.projectId,
+    issue.issueIid,
+    workspaceProjectId,
+  );
   const commitMode = await projectDefaultCommitMode();
   const job: JobRecord = {
     id,

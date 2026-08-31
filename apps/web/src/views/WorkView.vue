@@ -71,7 +71,7 @@ function confirmMergeFromMenu() {
     <!-- Desktop: resizable IDE panes — flush like mockup -->
     <div class="hidden lg:flex flex-1 min-h-0 relative">
       <Splitpanes
-        class="work-split faw-split default-theme flex-1 min-h-0"
+        class="work-split faw-split flex-1 min-h-0"
         @resized="onPaneResize"
       >
         <Pane :size="panes.leftSize" :min-size="16" :max-size="40">

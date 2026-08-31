@@ -19,6 +19,7 @@ import {
   type QcSampleFileDoc,
   type QcTestCaseDoc,
 } from "../../models/qc.js";
+import { purgeSoftDeleted } from "../../models/base.js";
 import { getRepoRoot } from "../../repoRoot.js";
 import { AppError } from "../../utils/AppError.js";
 
@@ -83,6 +84,10 @@ export async function createQcProject(opts: {
   if (!name) throw new AppError("name required", 400);
   if (!targetBaseUrl) throw new AppError("targetBaseUrl required", 400);
   const now = new Date().toISOString();
+  await purgeSoftDeleted(await QcProjectModel.col(), {
+    ownerUsername: opts.username,
+    name,
+  });
   return QcProjectModel.insert({
     _id: slugId("qcp", name),
     ownerUsername: opts.username,
@@ -174,6 +179,10 @@ export async function createQcFlow(opts: {
   const name = opts.name.trim();
   if (!name) throw new AppError("name required", 400);
   const now = new Date().toISOString();
+  await purgeSoftDeleted(await QcFlowModel.col(), {
+    qcProjectId: opts.qcProjectId,
+    name,
+  });
   return QcFlowModel.insert({
     _id: slugId("flow", name),
     qcProjectId: opts.qcProjectId,
@@ -254,6 +263,10 @@ export async function createQcTestCase(opts: {
   const name = opts.name.trim();
   if (!name) throw new AppError("name required", 400);
   const now = new Date().toISOString();
+  await purgeSoftDeleted(await QcTestCaseModel.col(), {
+    qcProjectId: opts.qcProjectId,
+    name,
+  });
   return QcTestCaseModel.insert({
     _id: slugId("tc", name),
     qcProjectId: opts.qcProjectId,

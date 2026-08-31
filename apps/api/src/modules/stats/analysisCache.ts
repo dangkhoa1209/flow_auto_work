@@ -1,4 +1,5 @@
 import { StatsAnalysisCacheModel } from "../../models/stats.js";
+import { softDeleteActiveFields } from "../../models/base.js";
 import type { DevAnalysisResult } from "./analyze.js";
 
 function cacheKey(opts: {
@@ -53,8 +54,7 @@ export async function saveDevAnalysisCache(opts: {
         engine: opts.engine,
         analyzedAt,
         result: opts.result,
-        deleted: false,
-        deletedAt: null,
+        ...softDeleteActiveFields(),
       },
     },
     { upsert: true },

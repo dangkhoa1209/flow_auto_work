@@ -116,6 +116,24 @@ export function softUniquePartialFilter(): Document {
   return { deleted: false };
 }
 
+/** Stamp on insert/upsert so rows participate in partial unique indexes. */
+export function softDeleteActiveFields(): SoftDeleteFields {
+  return { deleted: false, deletedAt: null };
+}
+
+/** Hard-remove soft-deleted rows before recreate/upsert (avoids reviving stale docs). */
+export async function purgeSoftDeleted<T extends Document>(
+  c: Collection<T>,
+  filter: Filter<T> = {} as Filter<T>,
+): Promise<number> {
+  const merged =
+    filter && Object.keys(filter).length > 0
+      ? ({ $and: [filter, { deleted: true }] } as Filter<T>)
+      : ({ deleted: true } as unknown as Filter<T>);
+  const result = await c.deleteMany(merged);
+  return result.deletedCount;
+}
+
 async function normalizeSoftDeleteField(c: Collection<Document>): Promise<void> {
   const result = await c.updateMany(
     { $or: [{ deleted: { $exists: false } }, { deleted: null }] },

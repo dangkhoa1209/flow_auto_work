@@ -50,10 +50,8 @@ export async function addNote(input: {
     body: input.body.trim(),
     createdAt: new Date().toISOString(),
   };
-  const result = await (await NoteModel.col()).insertOne(
-    doc as NoteDoc & { _id?: unknown },
-  );
-  return { ...doc, _id: String(result.insertedId) };
+  const inserted = await NoteModel.insert(doc);
+  return { ...inserted, _id: String(inserted._id) };
 }
 
 export async function listNotes(opts: {

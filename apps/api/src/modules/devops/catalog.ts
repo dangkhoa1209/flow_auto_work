@@ -4,7 +4,7 @@ import { z } from "zod";
 import { type Collection } from "mongodb";
 import { getConfig } from "../../config.js";
 import { connectMongo } from "../../models/connection.js";
-import { withActive } from "../../models/base.js";
+import { withActive, softDeleteActiveFields, purgeSoftDeleted } from "../../models/base.js";
 import { BuildScriptModel, type BuildScriptDoc } from "../../models/devops.js";
 import { logger } from "../../logger.js";
 import { AppError } from "../../utils/AppError.js";
@@ -189,7 +189,7 @@ function envSeedScripts(): WhitelistedScript[] {
 
 export async function seedBuildScriptsIfEmpty(): Promise<number> {
   const col = await scriptsCol();
-  const count = await col.countDocuments();
+  const count = await col.countDocuments(withActive({}));
   if (count > 0) return 0;
   const seed = envSeedScripts();
   if (!seed.length) return 0;
@@ -200,6 +200,7 @@ export async function seedBuildScriptsIfEmpty(): Promise<number> {
       createdBy: "env",
       createdAt: now,
       updatedAt: now,
+      ...softDeleteActiveFields(),
     })),
   );
   logger.info("Seeded build scripts from env", {
@@ -266,14 +267,15 @@ export async function createBuildScript(
 ): Promise<WhitelistedScript> {
   const data = normalizeScriptInput(raw, { requireId: true });
   const now = new Date().toISOString();
+  const col = await scriptsCol();
+  await purgeSoftDeleted(col, { id: data.id });
   try {
-    await (
-      await scriptsCol()
-    ).insertOne({
+    await col.insertOne({
       ...data,
       createdBy,
       createdAt: now,
       updatedAt: now,
+      ...softDeleteActiveFields(),
     });
   } catch (err) {
     if (

@@ -1,5 +1,5 @@
 import type { SoftDeleteFields } from "./base.js";
-import { createModel, softUniquePartialFilter, withActive } from "./base.js";
+import { createModel, purgeSoftDeleted, softUniquePartialFilter, withActive } from "./base.js";
 import { connectMongo } from "./connection.js";
 import { ChatModel } from "./chat.js";
 import { NoteModel } from "./note.js";
@@ -50,7 +50,7 @@ export async function upsertJobDoc(
 ): Promise<void> {
   await connectMongo();
   const col = await JobModel.col();
-  // Never $set `source` together with $setOnInsert.source — Mongo conflict.
+  // Never put the same path in $set and $setOnInsert — Mongo conflict (source, deleted, …).
   const { source: _ignoredSource, ...jobFields } = job as JobRecord & {
     source?: string;
   };
@@ -65,10 +65,7 @@ export async function upsertJobDoc(
     setDoc.source = extra.source;
     await col.updateOne(
       { _id: job.id },
-      {
-        $set: setDoc,
-        $setOnInsert: { deleted: false, deletedAt: null },
-      },
+      { $set: setDoc },
       { upsert: true },
     );
     return;
@@ -78,7 +75,7 @@ export async function upsertJobDoc(
     { _id: job.id },
     {
       $set: setDoc,
-      $setOnInsert: { source: "unknown", deleted: false, deletedAt: null },
+      $setOnInsert: { source: "unknown" },
     },
     { upsert: true },
   );
@@ -111,6 +108,29 @@ export async function getJobDoc(id: string): Promise<JobDoc | null> {
 
 export async function deleteJobDoc(id: string): Promise<boolean> {
   return JobModel.softDeleteById(id);
+}
+
+/** Hard-remove soft-deleted rows for an issue so ensure starts a fresh draft. */
+export async function purgeSoftDeletedJobsForIssue(
+  projectId: number,
+  issueIid: number,
+  workspaceProjectId?: string,
+): Promise<number> {
+  await connectMongo();
+  const filter: Record<string, unknown> = {
+    "issue.projectId": projectId,
+    "issue.issueIid": issueIid,
+  };
+  const ws = workspaceProjectId?.trim();
+  if (ws) {
+    filter.$or = [
+      { workspaceProjectId: ws },
+      { workspaceProjectId: { $exists: false } },
+      { workspaceProjectId: null },
+      { workspaceProjectId: "" },
+    ];
+  }
+  return purgeSoftDeleted(await JobModel.col(), filter);
 }
 
 /** Soft-delete chat + notes for a job (before soft-deleting the job doc). */

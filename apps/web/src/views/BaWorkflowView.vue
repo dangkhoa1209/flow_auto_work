@@ -760,7 +760,7 @@ onUnmounted(() => {
   <div class="faw-ba-workflow h-full min-h-0 flex flex-col overflow-hidden">
     <div class="hidden lg:flex flex-1 min-h-0">
       <Splitpanes
-        class="work-split faw-split default-theme flex-1 min-h-0"
+        class="work-split faw-split flex-1 min-h-0"
         @resized="panes.onResized"
       >
         <!-- Cột 1: danh sách YC -->
