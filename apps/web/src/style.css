@@ -3185,21 +3185,14 @@ a.faw-mseg__btn {
 }
 .faw-ba-topbar-project.faw-crumb {
   max-width: 320px;
-  min-width: 180px;
-  flex: 0 1 auto;
+  flex: 1 1 auto;
+  min-width: 0;
 }
-.faw-ba-project-bar {
-  flex: none;
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--app-border);
-  background: var(--app-panel);
-}
-.faw-ba-project-bar .faw-ba-select,
-.faw-ba-project-bar .ant-select {
-  width: 100%;
-}
-.faw-ba-project-bar .ant-select-selector {
-  min-height: 36px !important;
+@media (min-width: 1024px) {
+  .faw-ba-topbar-project.faw-crumb {
+    flex: 0 1 auto;
+    min-width: 180px;
+  }
 }
 .faw-ba-top-right {
   display: flex !important;
@@ -3437,14 +3430,8 @@ a.faw-mseg__btn {
     transition: transform 0.2s ease;
     box-shadow: 8px 0 24px rgba(0, 0, 0, 0.35);
   }
-  /* Push drawer below project bar + section tabs when present */
-  .faw-ba-shell:has(> .faw-ba-project-bar):has(> .faw-mseg) .faw-ba-side {
-    top: calc(48px + 53px + 37px);
-  }
-  .faw-ba-shell:has(> .faw-ba-project-bar):not(:has(> .faw-mseg)) .faw-ba-side {
-    top: calc(48px + 53px);
-  }
-  .faw-ba-shell:not(:has(> .faw-ba-project-bar)):has(> .faw-mseg) .faw-ba-side {
+  /* Push drawer below section tabs when present */
+  .faw-ba-shell:has(> .faw-mseg) .faw-ba-side {
     top: calc(48px + 37px);
   }
   .faw-ba-shell.is-side-open .faw-ba-side {

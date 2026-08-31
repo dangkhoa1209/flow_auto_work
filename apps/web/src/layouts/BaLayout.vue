@@ -137,16 +137,16 @@ onMounted(async () => {
         </RouterLink>
       </nav>
 
-      <!-- Desktop: project in topbar -->
+      <!-- Project in topbar (mobile + desktop) — one picker only -->
       <div
         v-if="showProjectSelect"
-        class="faw-crumb faw-ba-topbar-project hidden lg:flex min-w-[180px] max-w-[320px]"
+        class="faw-crumb faw-ba-topbar-project min-w-0 flex-1 lg:flex-none lg:min-w-[180px] max-w-[320px]"
         title="Project — shared for Chat / Workflow / Tasks"
       >
         <BaProjectSelect :show-label="false" embedded size="small" />
       </div>
 
-      <div class="faw-topbar__spacer" />
+      <div class="faw-topbar__spacer hidden lg:block" />
 
       <AppTopbarRight
         settings-to="/ba/settings/gitlab"
@@ -170,14 +170,6 @@ onMounted(async () => {
         class="lg:hidden !gap-1"
       />
     </header>
-
-    <!-- Mobile: full-width project row (not squeezed in topbar) -->
-    <div
-      v-if="showProjectSelect"
-      class="faw-ba-project-bar lg:hidden"
-    >
-      <BaProjectSelect :show-label="false" size="middle" />
-    </div>
 
     <nav
       v-if="navActive !== 'settings'"
