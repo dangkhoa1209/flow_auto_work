@@ -17,7 +17,7 @@ import {
   figmaIncludeKey,
   type FigmaRef,
 } from "../../plugins/figma/refs.js";
-import { getProject, getProjectSecrets } from "../../workspace/store.js";
+import { getProjectSecrets } from "../../workspace/store.js";
 import { requireJobRecord } from "../job/lifecycle.js";
 
 export async function collectJobFigmaRefs(
@@ -181,7 +181,6 @@ export async function prepareFigmaForJob(
   const secrets = await getProjectSecrets(projectId);
   const pat = secrets?.figmaToken?.trim();
   if (!pat) {
-    const project = await getProject(projectId);
     job.status = "awaiting_figma_auth";
     job.pendingFigmaUrls = refs.map((r) => r.url);
     job.error = "Add Figma PAT in Settings → Integrations";
@@ -192,7 +191,7 @@ export async function prepareFigmaForJob(
       role: "agent",
       kind: "qa",
       body:
-        `🔗 Đã chọn **${refs.length}** link Figma nhưng project **${project?.displayName || projectId}** chưa có Figma PAT.\n` +
+        `🔗 Đã chọn **${refs.length}** link Figma nhưng chưa có Figma PAT.\n` +
         `Vào **Settings → Integrations**, dán Personal Access Token (scope \`file_content:read\`), rồi **Continue Run**.`,
     });
     return { gate: true };

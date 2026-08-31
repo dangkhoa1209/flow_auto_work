@@ -10,6 +10,12 @@ export type GoogleStatus = {
   authorizedAt?: string;
   revokedAt?: string;
   pendingSheetUrls: string[];
+  source?: "job" | "user" | "none";
+  jobAuthorized?: boolean;
+  userAuthorized?: boolean;
+  needsDriveScope?: boolean;
+  readyToRead?: boolean;
+  settingsAppliesToAllJobs?: boolean;
 };
 
 export type GoogleDetect = {
@@ -288,6 +294,12 @@ export const jobApi = {
       authorizedAt?: string;
       revokedAt?: string;
       pendingSheetUrls: string[];
+      source?: "job" | "user" | "none";
+      jobAuthorized?: boolean;
+      userAuthorized?: boolean;
+      needsDriveScope?: boolean;
+      readyToRead?: boolean;
+      settingsAppliesToAllJobs?: boolean;
     }>({
       url: API.jobs.googleStatus(id),
       method: "GET",

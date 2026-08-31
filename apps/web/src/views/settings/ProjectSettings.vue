@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 import { message, Modal } from "ant-design-vue";
+import { MoreOutlined } from "@ant-design/icons-vue";
 import { api } from "@/api/client";
 import { API } from "@/api/endpoints";
 import { useSessionStore } from "@/stores/session";
@@ -27,7 +28,6 @@ type ProjectPublic = {
   mainBranch?: string | null;
   workingBranch?: string | null;
   defaultCommitMode?: "manual" | "auto" | null;
-  allowedMilestones?: string[];
   isActive?: boolean;
   cloneStatus?: string;
   cloneError?: string | null;
@@ -45,15 +45,12 @@ const form = reactive({
   localPath: "",
   /** Project default for new jobs — per-job toggle can still override */
   defaultCommitMode: "auto" as "manual" | "auto",
-  /** Empty = no Workbench milestone restriction */
-  allowedMilestones: [] as string[],
 });
 
 const gitlabProjects = ref<
   Array<{ pathWithNamespace: string; name?: string; id?: number }>
 >([]);
 const branches = ref<string[]>([]);
-const milestoneOptions = ref<string[]>([]);
 const previewDefaultPath = ref("");
 
 const steps = [
@@ -77,9 +74,6 @@ const tableRows = computed(() =>
       workBranch: p.workingBranch || m.workBranch || "—",
       defaultCommitMode:
         p.defaultCommitMode === "manual" ? "manual" : "auto",
-      allowedMilestones: Array.isArray(p.allowedMilestones)
-        ? p.allowedMilestones
-        : [],
       localPath: p.localPath || p.repoPath || "—",
       cloneStatus: p.cloneStatus || "—",
       cloneError: p.cloneError,
@@ -97,8 +91,7 @@ const columns = [
   { title: "Commit", dataIndex: "defaultCommitMode", key: "defaultCommitMode", width: 90 },
   { title: "Path", dataIndex: "localPath", key: "localPath", ellipsis: true },
   { title: "Clone", dataIndex: "cloneStatus", key: "cloneStatus", width: 100 },
-  { title: "Active", key: "active", width: 80 },
-  { title: "", key: "actions", width: 220 },
+  { title: "Action", key: "actions", width: 72, align: "center" as const },
 ];
 
 const wizardWidth = computed(() => {
@@ -141,10 +134,8 @@ function resetWizard() {
   form.workingBranch = "";
   form.localPath = "";
   form.defaultCommitMode = "auto";
-  form.allowedMilestones = [];
   gitlabProjects.value = [];
   branches.value = [];
-  milestoneOptions.value = [];
 }
 
 function openCreate() {
@@ -169,31 +160,9 @@ function openEdit(row: (typeof tableRows.value)[0]) {
   form.localPath = (p?.localPath || p?.repoPath || "") as string;
   form.defaultCommitMode =
     p?.defaultCommitMode === "manual" ? "manual" : "auto";
-  form.allowedMilestones = Array.isArray(p?.allowedMilestones)
-    ? [...p.allowedMilestones]
-    : [];
   form.gitlabToken = "";
   wizardStep.value = 0;
   wizardOpen.value = true;
-  void loadMilestoneOptionsForEdit();
-}
-
-async function loadMilestoneOptionsForEdit() {
-  if (!editId.value) return;
-  try {
-    const res = await api<{ milestones: string[] }>(
-      API.me.projectMilestones(editId.value),
-    );
-    milestoneOptions.value = res.milestones || [];
-    // Keep selected titles that GitLab no longer returns
-    for (const t of form.allowedMilestones) {
-      if (t && !milestoneOptions.value.includes(t)) {
-        milestoneOptions.value.push(t);
-      }
-    }
-  } catch {
-    milestoneOptions.value = [...form.allowedMilestones];
-  }
 }
 
 async function loadPreviewProjects() {
@@ -241,7 +210,6 @@ async function loadBranchesForPath() {
       const res = await api<{
         branches: Array<{ name: string; default?: boolean }>;
         defaultBranch?: string | null;
-        milestones?: string[];
       }>("/api/gitlab/preview", {
         method: "POST",
         body: JSON.stringify({
@@ -250,7 +218,6 @@ async function loadBranchesForPath() {
         }),
       });
       branches.value = (res.branches || []).map((b) => b.name).filter(Boolean);
-      milestoneOptions.value = res.milestones || [];
       if (!form.mainBranch || form.mainBranch === "main") {
         form.mainBranch =
           res.defaultBranch ||
@@ -258,8 +225,6 @@ async function loadBranchesForPath() {
           branches.value[0] ||
           "main";
       }
-    } else if (editId.value) {
-      await loadMilestoneOptionsForEdit();
     }
     wizardStep.value = 2;
   } catch (e) {
@@ -398,7 +363,6 @@ async function saveWizard() {
           baseBranch: form.mainBranch || "",
           workBranch: form.workingBranch || "",
           defaultCommitMode: form.defaultCommitMode,
-          allowedMilestones: form.allowedMilestones,
           localPath: renaming ? undefined : resolvedPath || undefined,
           gitlabToken: form.gitlabToken || undefined,
           gitlabHost: form.gitlabHost || undefined,
@@ -464,7 +428,6 @@ async function saveWizard() {
         mainBranch: form.mainBranch || undefined,
         workingBranch: form.workingBranch || undefined,
         defaultCommitMode: form.defaultCommitMode,
-        allowedMilestones: form.allowedMilestones,
         displayName: flowName,
         activate: true,
       }),
@@ -530,6 +493,15 @@ async function remove(id: string) {
   });
 }
 
+type ProjectRow = (typeof tableRows.value)[number];
+
+function onProjectAction(key: string, record: ProjectRow) {
+  if (key === "active") void activate(record.id);
+  else if (key === "edit") openEdit(record);
+  else if (key === "clone") void startClone(record.id);
+  else if (key === "delete") void remove(record.id);
+}
+
 onMounted(async () => {
   await session.refreshMe().catch(() => undefined);
 });
@@ -559,16 +531,23 @@ onMounted(async () => {
         :scroll="{ x: 960 }"
       >
         <template #bodyCell="{ column, record }">
-          <template v-if="column.key === 'defaultCommitMode'">
+          <template v-if="column.key === 'name'">
+            <span class="inline-flex items-center gap-1.5 min-w-0">
+              <span class="truncate">{{ record.name }}</span>
+              <a-tag
+                v-if="record.isActive"
+                class="!m-0 shrink-0"
+                color="green"
+              >
+                Active
+              </a-tag>
+            </span>
+          </template>
+          <template v-else-if="column.key === 'defaultCommitMode'">
             <a-tag
               :color="record.defaultCommitMode === 'manual' ? 'orange' : 'blue'"
             >
               {{ record.defaultCommitMode === "manual" ? "Manual" : "Auto" }}
-            </a-tag>
-          </template>
-          <template v-else-if="column.key === 'active'">
-            <a-tag :color="record.isActive ? 'green' : 'default'">
-              {{ record.isActive ? "Active" : "—" }}
             </a-tag>
           </template>
           <template v-else-if="column.key === 'cloneStatus'">
@@ -588,24 +567,27 @@ onMounted(async () => {
             >
           </template>
           <template v-else-if="column.key === 'actions'">
-            <div class="flex flex-wrap gap-1">
-              <a-button
-                size="small"
-                :disabled="record.isActive"
-                @click="activate(record.id)"
-                >Active</a-button
-              >
-              <a-button size="small" @click="openEdit(record)">Edit</a-button>
-              <a-button
-                size="small"
-                :loading="cloningId === record.id"
-                @click="startClone(record.id)"
-                >Clone</a-button
-              >
-              <a-button size="small" danger @click="remove(record.id)"
-                >Delete</a-button
-              >
-            </div>
+            <a-dropdown :trigger="['click']">
+              <a-button size="small" type="text" class="!px-1.5">
+                <MoreOutlined />
+              </a-button>
+              <template #overlay>
+                <a-menu @click="({ key }) => onProjectAction(String(key), record)">
+                  <a-menu-item key="active" :disabled="record.isActive">
+                    Set active
+                  </a-menu-item>
+                  <a-menu-item key="edit">Edit</a-menu-item>
+                  <a-menu-item
+                    key="clone"
+                    :disabled="cloningId === record.id"
+                  >
+                    {{ cloningId === record.id ? "Cloning…" : "Clone" }}
+                  </a-menu-item>
+                  <a-menu-divider />
+                  <a-menu-item key="delete" danger>Delete</a-menu-item>
+                </a-menu>
+              </template>
+            </a-dropdown>
           </template>
         </template>
       </a-table>
@@ -620,17 +602,38 @@ onMounted(async () => {
       >
         <div class="flex items-start justify-between gap-2">
           <div class="min-w-0">
-            <div class="font-semibold text-ink truncate">{{ record.name }}</div>
+            <div class="font-semibold text-ink truncate">
+              {{ record.name }}
+              <a-tag
+                v-if="record.isActive"
+                class="!m-0 !ml-1 !text-[10px] align-middle"
+                color="green"
+              >
+                Active
+              </a-tag>
+            </div>
             <div class="text-[11px] text-ink-faint font-mono truncate mt-0.5">
               {{ record.gitlabPath }}
             </div>
           </div>
-          <a-tag
-            class="shrink-0 m-0"
-            :color="record.isActive ? 'green' : 'default'"
-          >
-            {{ record.isActive ? "Active" : "—" }}
-          </a-tag>
+          <a-dropdown :trigger="['click']">
+            <a-button size="small" type="text" class="shrink-0 !px-1.5">
+              <MoreOutlined />
+            </a-button>
+            <template #overlay>
+              <a-menu @click="({ key }) => onProjectAction(String(key), record)">
+                <a-menu-item key="active" :disabled="record.isActive">
+                  Set active
+                </a-menu-item>
+                <a-menu-item key="edit">Edit</a-menu-item>
+                <a-menu-item key="clone" :disabled="cloningId === record.id">
+                  {{ cloningId === record.id ? "Cloning…" : "Clone" }}
+                </a-menu-item>
+                <a-menu-divider />
+                <a-menu-item key="delete" danger>Delete</a-menu-item>
+              </a-menu>
+            </template>
+          </a-dropdown>
         </div>
         <div class="faw-project-card__meta">
           <span>Main <b>{{ record.mainBranch }}</b></span>
@@ -661,24 +664,6 @@ onMounted(async () => {
         </div>
         <div class="text-[11px] text-ink-faint truncate" :title="String(record.localPath)">
           {{ record.localPath }}
-        </div>
-        <div class="faw-project-card__actions">
-          <a-button
-            size="small"
-            :disabled="record.isActive"
-            @click="activate(record.id)"
-            >Active</a-button
-          >
-          <a-button size="small" @click="openEdit(record)">Edit</a-button>
-          <a-button
-            size="small"
-            :loading="cloningId === record.id"
-            @click="startClone(record.id)"
-            >Clone</a-button
-          >
-          <a-button size="small" danger @click="remove(record.id)"
-            >Delete</a-button
-          >
         </div>
       </div>
       <a-empty v-if="!tableRows.length" description="No projects yet" />
@@ -860,24 +845,6 @@ onMounted(async () => {
                 (form.defaultCommitMode = v ? 'auto' : 'manual')
             "
           />
-        </div>
-        <div>
-          <label class="text-sm text-slate-600">Allowed milestones</label>
-          <a-select
-            v-model:value="form.allowedMilestones"
-            mode="multiple"
-            allow-clear
-            show-search
-            class="w-full mt-1"
-            placeholder="Leave empty → all milestones"
-            :options="
-              milestoneOptions.map((m) => ({ value: m, label: m }))
-            "
-          />
-          <p class="text-xs text-ink-muted mt-1 mb-0">
-            If set, Workbench only shows open tasks whose milestone is in this
-            list.
-          </p>
         </div>
         <div class="flex justify-between gap-2 pt-2">
           <a-button @click="wizardStep = 2">Back</a-button>

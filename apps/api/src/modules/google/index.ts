@@ -9,12 +9,10 @@ import {
   publicGoogleAuthStatus,
   redactJobGoogleAuthForClient,
   revokeGoogleToken,
-  ensureJobGoogleAccessToken,
   ensureGoogleAccessTokenFromAuth,
 } from "../../plugins/google/oauth.js";
 import {
   consumeGoogleOAuthState,
-  createGoogleOAuthState,
   createBaGoogleOAuthState,
 } from "../../plugins/google/oauth-state.js";
 import {
@@ -46,6 +44,68 @@ export {
   redactJobGoogleAuthForClient,
 };
 
+function resolveJobOwnerUsername(job: JobRecord): string {
+  const rt = getRuntimeContext();
+  return (
+    job.ownerUsername?.trim().toLowerCase() ||
+    rt?.gitlabUsername?.trim().toLowerCase() ||
+    ""
+  );
+}
+
+function authHasDriveReadonly(scopes: string[]): boolean {
+  return scopes.some(
+    (s) => s.includes("auth/drive.readonly") || s.includes("auth/drive"),
+  );
+}
+
+function refsNeedDriveScope(refs: GoogleSheetRef[]): boolean {
+  return refs.some((r) => /drive\.google\.com/i.test(r.url));
+}
+
+/** Settings user auth first, then legacy per-job token. */
+export async function resolveJobGoogleAccess(job: JobRecord): Promise<
+  | {
+      ok: true;
+      accessToken: string;
+      auth: JobGoogleAuth;
+      source: "job" | "user";
+    }
+  | { ok: false; reason: "missing" | "refresh_failed" }
+> {
+  const owner = resolveJobOwnerUsername(job);
+  if (owner) {
+    const user = await getUserByUsername(owner);
+    const userResult = await ensureGoogleAccessTokenFromAuth(
+      user?.googleAuth as JobGoogleAuth | undefined,
+    );
+    if (userResult.ok) {
+      if (userResult.refreshed) {
+        await setUserGoogleAuth(owner, userResult.auth);
+      }
+      return {
+        ok: true,
+        accessToken: userResult.accessToken,
+        auth: userResult.auth,
+        source: "user",
+      };
+    }
+  }
+
+  const jobResult = await ensureGoogleAccessTokenFromAuth(job.googleAuth);
+  if (jobResult.ok) {
+    if (jobResult.refreshed) job.googleAuth = jobResult.auth;
+    return {
+      ok: true,
+      accessToken: jobResult.accessToken,
+      auth: jobResult.auth,
+      source: "job",
+    };
+  }
+
+  return { ok: false, reason: jobResult.reason };
+}
+
 export async function getGoogleAuthUrlForJob(jobId: string): Promise<{
   authUrl: string;
   state: string;
@@ -71,9 +131,9 @@ export async function getGoogleAuthUrlForJob(jobId: string): Promise<{
   ) {
     throw new AppError("Job belongs to another user", 403);
   }
-  const state = createGoogleOAuthState({
-    jobId: job.id,
+  const state = createBaGoogleOAuthState({
     ownerUsername: owner,
+    continueJobId: job.id,
   });
   return {
     authUrl: buildGoogleAuthUrl(state),
@@ -106,7 +166,7 @@ export async function handleGoogleOAuthCallback(input: {
     };
   }
 
-  // BA Settings OAuth (Docs / Sheets / Drive)
+  // User-level Google (Settings / BA / workbench task OAuth)
   if (payload.purpose === "ba") {
     try {
       const tokens = await exchangeGoogleCode(code);
@@ -119,18 +179,43 @@ export async function handleGoogleOAuthCallback(input: {
         sheetIds: [],
       });
       await setUserGoogleAuth(payload.ownerUsername, auth);
-      logger.info("Google OAuth saved for BA user", {
+      logger.info("Google OAuth saved for user", {
         user: payload.ownerUsername,
         email: tokens.email,
       });
+      const continueJobId = payload.continueJobId?.trim();
+      if (continueJobId) {
+        try {
+          const cont = await continueJobAfterGoogleAuth(continueJobId);
+          const emailLabel = tokens.email ? ` (${tokens.email})` : "";
+          return {
+            ok: true,
+            jobId: continueJobId,
+            message: cont.enqueued
+              ? `Google authorized${emailLabel} — Run đang tiếp tục`
+              : `Google authorized${emailLabel} — ${cont.reason || "thử Run lại"}`,
+          };
+        } catch (contErr) {
+          logger.warn("User Google OAuth auto-continue failed", {
+            jobId: continueJobId,
+            err: String(contErr),
+          });
+          return {
+            ok: true,
+            jobId: continueJobId,
+            message:
+              "Google authorized — chưa tiếp tục Run tự động, hãy bấm Run lại",
+          };
+        }
+      }
       return {
         ok: true,
         message:
-          "Google authorized for BA — Docs / Sheets / Excel trên Drive có thể đọc từ YC & chat.",
+          "Google authorized — Docs / Sheets / Excel trên Drive có thể đọc từ task & YC.",
       };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      logger.warn("BA Google OAuth callback failed", { err: msg });
+      logger.warn("User Google OAuth callback failed", { err: msg });
       return { ok: false, message: msg };
     }
   }
@@ -162,6 +247,9 @@ export async function handleGoogleOAuthCallback(input: {
       sheetIds,
       previous: job.googleAuth,
     });
+    if (payload.ownerUsername) {
+      await setUserGoogleAuth(payload.ownerUsername, job.googleAuth);
+    }
     job.error = undefined;
     await saveJob(job, { source: "google-oauth-callback" });
     const emailLabel = tokens.email ? ` (${tokens.email})` : "";
@@ -227,7 +315,60 @@ export async function handleGoogleOAuthCallback(input: {
 
 export async function getJobGoogleStatus(jobId: string) {
   const job = await requireJobRecord(jobId);
-  return publicGoogleAuthStatus(job);
+  const jobStatus = publicGoogleAuthStatus(job);
+  const owner = resolveJobOwnerUsername(job);
+  const userStatus = owner
+    ? await getBaGoogleStatus(owner)
+    : {
+        configured: isGoogleOAuthConfigured(),
+        authorized: false as const,
+        scopes: [] as string[],
+      };
+
+  const refs = await collectJobSheetRefs(job);
+  const includeIds = new Set(
+    (job.googleSheetsIncludeIds ?? []).map((s) => s.trim()).filter(Boolean),
+  );
+  const selectedRefs = includeIds.size
+    ? refs.filter((r) => includeIds.has(r.spreadsheetId))
+    : refs;
+  const needsDriveScope = refsNeedDriveScope(selectedRefs);
+
+  const tokenResult = await resolveJobGoogleAccess(job);
+  const scopes = tokenResult.ok
+    ? tokenResult.auth.scopes ?? []
+    : userStatus.authorized
+      ? userStatus.scopes ?? []
+      : jobStatus.scopes;
+  const readyToRead =
+    tokenResult.ok &&
+    (!needsDriveScope || authHasDriveReadonly(scopes));
+
+  const authorized =
+    userStatus.authorized || jobStatus.authorized || tokenResult.ok;
+  const email =
+    (userStatus.authorized && "email" in userStatus ? userStatus.email : undefined) ||
+    jobStatus.email;
+  const source: "job" | "user" | "none" = userStatus.authorized
+    ? "user"
+    : jobStatus.authorized
+      ? "job"
+      : tokenResult.ok
+        ? tokenResult.source
+        : "none";
+
+  return {
+    ...jobStatus,
+    authorized,
+    email,
+    scopes,
+    source,
+    jobAuthorized: jobStatus.authorized,
+    userAuthorized: userStatus.authorized,
+    needsDriveScope,
+    readyToRead,
+    settingsAppliesToAllJobs: userStatus.authorized,
+  };
 }
 
 export async function revokeJobGoogleAuth(jobId: string): Promise<{
@@ -400,14 +541,14 @@ export async function prepareGoogleSheetsForJob(
     return { gate: false, promptBlock: "" };
   }
 
-  const tokenResult = await ensureJobGoogleAccessToken(job);
+  const tokenResult = await resolveJobGoogleAccess(job);
   if (!tokenResult.ok) {
-    if (tokenResult.reason === "refresh_failed") {
+    if (tokenResult.reason === "refresh_failed" && job.googleAuth) {
       job.googleAuth = undefined;
     }
     job.status = "awaiting_google_auth";
     job.pendingGoogleSheetUrls = refs.map((r) => r.url);
-    job.error = "Authorize Google to read linked Sheets";
+    job.error = "Authorize Google in Settings → Integrations";
     await saveJob(job, { source: "awaiting-google-auth" });
     await addChatMessage({
       jobId: job.id,
@@ -416,21 +557,19 @@ export async function prepareGoogleSheetsForJob(
       kind: "qa",
       body:
         tokenResult.reason === "refresh_failed"
-          ? "⚠️ Google token hết hạn / refresh thất bại — **chưa đọc** được Sheets đã chọn.\nCấp quyền Google lại (popup) — hệ thống sẽ tự tiếp tục Run."
-          : "🔗 Đã chọn đọc Google Sheets/Excel. Cấp quyền Google (readonly) — hệ thống sẽ tự tiếp tục Run sau khi ủy quyền.",
+          ? "⚠️ Google token hết hạn / refresh thất bại — **chưa đọc** được Sheets đã chọn.\nCấp quyền lại trong **Settings → Integrations** (hoặc popup trên task) — hệ thống sẽ tự tiếp tục Run."
+          : "🔗 Đã chọn đọc Google Sheets/Excel. Cấp quyền Google (readonly) trong **Settings → Integrations** — hệ thống sẽ tự tiếp tục Run sau khi ủy quyền.",
     });
     return { gate: true };
   }
 
-  // Excel on Drive needs drive.readonly — old tokens may only have spreadsheets.readonly
-  const scopes = job.googleAuth?.scopes ?? [];
-  const hasDrive = scopes.some(
-    (s) => s.includes("auth/drive.readonly") || s.includes("auth/drive"),
-  );
-  if (!hasDrive) {
+  const scopes = tokenResult.auth.scopes ?? [];
+  const needsDrive = refsNeedDriveScope(refs);
+  const hasDrive = authHasDriveReadonly(scopes);
+  if (needsDrive && !hasDrive) {
     job.status = "awaiting_google_auth";
     job.pendingGoogleSheetUrls = refs.map((r) => r.url);
-    job.error = "Re-authorize Google (Drive readonly) to read Excel files";
+    job.error = "Re-authorize Google (Drive readonly) in Settings → Integrations";
     await saveJob(job, { source: "awaiting-google-drive-scope" });
     await addChatMessage({
       jobId: job.id,
@@ -438,11 +577,15 @@ export async function prepareGoogleSheetsForJob(
       role: "agent",
       kind: "qa",
       body:
-        "🔗 File Sheets/Excel trên Drive cần thêm quyền **Drive readonly**.\n" +
-        "Bấm **Revoke** (nếu có) → cấp quyền Google lại (chấp nhận Drive + Sheets) — hệ thống tự tiếp tục Run.\n" +
+        "🔗 File Excel trên Drive cần thêm quyền **Drive readonly**.\n" +
+        "Vào **Settings → Integrations** → ủy quyền lại Google (chấp nhận Drive + Sheets) — hệ thống tự tiếp tục Run.\n" +
         "Nhớ Enable **Google Drive API** trên Cloud project.",
     });
     return { gate: true };
+  }
+
+  if (tokenResult.source === "user" && job.googleAuth) {
+    job.googleAuth = undefined;
   }
 
   const toFetch = refs;
@@ -456,14 +599,23 @@ export async function prepareGoogleSheetsForJob(
 
   const sheetIds = [
     ...new Set([
-      ...(job.googleAuth?.sheetIds ?? []),
+      ...(tokenResult.auth.sheetIds ?? []),
       ...toFetch.map((r) => r.spreadsheetId),
     ]),
   ];
-  if (job.googleAuth) {
+  if (tokenResult.source === "job" && job.googleAuth) {
     job.googleAuth = { ...job.googleAuth, sheetIds };
+  } else if (tokenResult.source === "user") {
+    const owner = resolveJobOwnerUsername(job);
+    if (owner) {
+      await setUserGoogleAuth(owner, { ...tokenResult.auth, sheetIds });
+    }
   }
   job.pendingGoogleSheetUrls = undefined;
+  if (job.status === "awaiting_google_auth") {
+    job.status = "draft";
+    job.error = undefined;
+  }
   await saveJob(job, { source: "google-sheets-fetch" });
 
   const okBlocks = blocks.filter((b) => !b.error);
@@ -565,7 +717,10 @@ function escapeHtml(s: string): string {
 
 /* ── BA user Google (Docs / Sheets / Drive Excel) ── */
 
-export async function getBaGoogleAuthUrl(username: string): Promise<{
+export async function getBaGoogleAuthUrl(
+  username: string,
+  continueJobId?: string,
+): Promise<{
   authUrl: string;
   state: string;
   configured: boolean;
@@ -579,7 +734,10 @@ export async function getBaGoogleAuthUrl(username: string): Promise<{
   }
   const owner = username.trim().toLowerCase().replace(/^@/, "");
   if (!owner) throw new AppError("Missing user", 401);
-  const state = createBaGoogleOAuthState({ ownerUsername: owner });
+  const state = createBaGoogleOAuthState({
+    ownerUsername: owner,
+    continueJobId: continueJobId?.trim() || undefined,
+  });
   return {
     authUrl: buildGoogleAuthUrl(state),
     state,

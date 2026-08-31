@@ -2721,20 +2721,85 @@ code {
   padding-left: 1.1em;
 }
 
-/* —— Settings mobile —— */
-.faw-settings__inner {
-  max-width: 48rem;
-  margin: 0 auto;
-  padding: 16px 16px 24px;
+/* —— Settings —— */
+.faw-settings__shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+.faw-settings__nav {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-bottom: 1px solid var(--app-border);
+  background: var(--app-panel);
 }
 .faw-settings__head {
-  margin-bottom: 12px;
+  flex: none;
+  padding: 14px 16px 10px;
 }
 .faw-settings__title {
   margin: 0;
   font-size: 18px;
   font-weight: 650;
   color: var(--app-ink);
+}
+.faw-settings__nav-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0 8px 12px;
+}
+.faw-settings__nav-item {
+  display: block;
+  padding: 8px 12px;
+  border-radius: 0;
+  border-left: 2px solid transparent;
+  color: var(--app-muted);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    border-color 0.15s ease;
+}
+.faw-settings__nav-item:hover {
+  color: var(--app-ink);
+  background: var(--app-panel-soft);
+  text-decoration: none;
+}
+.faw-settings__nav-item.is-active {
+  color: var(--app-accent);
+  background: var(--accent-dim);
+  border-left-color: var(--app-accent);
+}
+.faw-settings__detail {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0;
+}
+.faw-settings__panel {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  border: 0;
+  border-radius: 0;
+  background: var(--app-bg);
+  padding: 16px 20px;
+  min-width: 0;
+}
+.faw-settings__inner {
+  max-width: 48rem;
+  margin: 0 auto;
+  padding: 16px 16px 24px;
 }
 .faw-settings__tabs {
   display: flex;
@@ -2770,14 +2835,6 @@ code {
   color: var(--app-accent);
   background: var(--accent-dim);
 }
-.faw-settings__panel {
-  border: 1px solid var(--app-border);
-  border-radius: 12px;
-  background: var(--app-panel);
-  padding: 14px;
-  min-width: 0;
-  overflow-x: hidden;
-}
 .faw-project-card {
   border: 1px solid var(--app-border);
   border-radius: 10px;
@@ -2811,6 +2868,223 @@ code {
   word-break: break-word;
 }
 
+/* Shared settings detail column (title + body) */
+.faw-settings-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 40rem;
+}
+.faw-settings-detail > h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--app-ink);
+}
+.faw-settings-detail > .faw-settings-detail__lead {
+  margin: -8px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--app-muted);
+}
+
+/* —— Integrations (list + detail) —— */
+.faw-integrations {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+.faw-integrations__head {
+  flex: none;
+  margin-bottom: 14px;
+}
+.faw-integrations__shell {
+  flex: 1;
+  min-height: 24rem;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--app-border);
+  background: var(--app-panel);
+}
+.faw-integrations__list {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  border-bottom: 1px solid var(--app-border);
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.faw-integrations__item {
+  flex: none;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 0;
+  border-left: 2px solid transparent;
+  border-bottom: 1px solid var(--line-soft);
+  background: transparent;
+  color: var(--app-ink);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
+}
+.faw-integrations__item:last-child {
+  border-bottom: 0;
+}
+.faw-integrations__item:hover {
+  background: var(--app-panel-soft);
+}
+.faw-integrations__item.is-active {
+  border-left-color: var(--app-accent);
+  background: var(--accent-dim);
+}
+.faw-integrations__item-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+}
+.faw-integrations__item-label {
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--app-ink);
+}
+.faw-integrations__item-hint {
+  font-size: 11px;
+  color: var(--app-faint);
+  line-height: 1.35;
+}
+.faw-integrations__item-badge {
+  flex: none;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--app-border);
+  color: var(--app-faint);
+  white-space: nowrap;
+}
+.faw-integrations__item-badge.is-ok {
+  border-color: rgba(16, 185, 129, 0.35);
+  color: #059669;
+}
+.faw-integrations__detail {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 16px 18px;
+}
+
+@media (min-width: 1024px) {
+  .faw-integrations__shell {
+    flex-direction: row;
+  }
+  .faw-integrations__list {
+    width: 260px;
+    border-bottom: 0;
+    border-right: 1px solid var(--app-border);
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+  .faw-integrations__item {
+    border-bottom: 1px solid var(--line-soft);
+  }
+  .faw-integrations__detail {
+    padding: 20px 24px;
+  }
+}
+
+/* —— AI Engine provider (nested PAT list) —— */
+.faw-ai-engine-provider__model {
+  margin-bottom: 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--app-border);
+}
+.faw-ai-engine-provider__pats {
+  min-height: 18rem;
+}
+.faw-ai-engine-provider__add {
+  border-top: 1px dashed var(--app-border);
+}
+@media (min-width: 1024px) {
+  .faw-ai-engine-provider__pats .faw-integrations__list {
+    width: 220px;
+  }
+}
+
+/* —— Account settings —— */
+.faw-account__profile {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 24px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--app-border);
+}
+.faw-account__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.faw-account__label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--app-faint);
+}
+.faw-account__value {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--app-ink);
+}
+.faw-account__section {
+  margin-bottom: 24px;
+}
+.faw-account__section-title {
+  margin: 0 0 12px;
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--app-ink);
+}
+.faw-account__form {
+  max-width: 24rem;
+}
+.faw-account__logout {
+  padding-top: 8px;
+  border-top: 1px solid var(--app-border);
+}
+
+@media (min-width: 1024px) {
+  .faw-settings__shell {
+    flex-direction: row;
+  }
+  .faw-settings__nav {
+    width: 220px;
+    border-bottom: 0;
+    border-right: 1px solid var(--app-border);
+    overflow-y: auto;
+  }
+  .faw-settings__head {
+    padding: 20px 16px 12px;
+  }
+  .faw-settings__nav-list {
+    padding: 0 8px 16px;
+  }
+  .faw-settings__panel {
+    padding: 20px 24px;
+  }
+}
+
 @media (max-width: 1023px) {
   .faw-settings__inner {
     padding: 12px 12px 20px;
@@ -2821,9 +3095,14 @@ code {
     padding-left: 12px;
     padding-right: 12px;
   }
+  .faw-settings__head {
+    padding: 12px 12px 8px;
+  }
+  .faw-settings__nav-list {
+    padding: 0 8px 10px;
+  }
   .faw-settings__panel {
-    padding: 12px;
-    border-radius: 10px;
+    padding: 12px 16px;
   }
   .faw-settings-modal .ant-modal {
     max-width: calc(100vw - 24px) !important;

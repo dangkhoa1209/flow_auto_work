@@ -36,14 +36,27 @@ export type Membership = {
   };
 };
 
+export type CursorPatPublic = {
+  id: string;
+  label: string;
+  createdAt: string;
+  updatedAt: string;
+  isActive: boolean;
+};
+
 export type UserPublic = {
   id?: string;
   gitlabUsername?: string;
   username?: string;
+  displayName?: string;
+  hasPassword?: boolean;
   hasCursorApiKey?: boolean;
+  cursorPats?: CursorPatPublic[];
+  activeCursorPatId?: string | null;
   hasGitlabToken?: boolean;
   hasGoogleAuth?: boolean;
   googleEmail?: string;
+  hasFigmaToken?: boolean;
   cursorModel?: string;
   roles?: string[];
 };
@@ -98,13 +111,17 @@ export const useSessionStore = defineStore("session", () => {
 
   const isAdmin = computed(() => Boolean(me.value?.roles?.includes("admin")));
 
-  /** BA / PD / QC-only audience (not Dev+QC toggle). */
+  /** pd / ba / qc → Project chat (not dev or devops). */
   const isBaAudience = computed(() => {
     const roles = me.value?.roles || [];
     if (roles.includes("admin")) return false;
-    if (roles.includes("ba") || roles.includes("pd")) return true;
-    if (roles.includes("qc") && !roles.includes("dev")) return true;
-    return false;
+    if (roles.includes("dev")) return false;
+    if (roles.includes("devops")) return false;
+    return (
+      roles.includes("ba") ||
+      roles.includes("pd") ||
+      roles.includes("qc")
+    );
   });
 
   const canAccessDevops = computed(() => {
@@ -112,18 +129,20 @@ export const useSessionStore = defineStore("session", () => {
     return roles.includes("admin") || roles.includes("devops");
   });
 
-  /** Dedicated Devops home — not admin, not BA, not WorkBench dev. */
+  /** devops role, not dev (dev → /work). */
   const isDevopsAudience = computed(() => {
     const roles = me.value?.roles || [];
     if (roles.includes("admin")) return false;
-    if (isBaAudience.value) return false;
-    return roles.includes("devops") && !roles.includes("dev");
+    if (roles.includes("dev")) return false;
+    return roles.includes("devops");
   });
 
   const homeRoute = computed(() => {
-    if (isAdmin.value) return "/admin";
+    const roles = me.value?.roles || [];
+    if (roles.includes("admin")) return "/admin";
+    if (roles.includes("dev")) return "/work";
+    if (roles.includes("devops")) return "/devops";
     if (isBaAudience.value) return "/ba";
-    if (isDevopsAudience.value) return "/devops";
     return "/work";
   });
 

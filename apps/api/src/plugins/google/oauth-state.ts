@@ -3,6 +3,8 @@ import { randomBytes } from "node:crypto";
 export type GoogleOAuthStatePayload = {
   /** Job OAuth — required when purpose=job */
   jobId?: string;
+  /** After user OAuth, auto-continue this job (workbench). */
+  continueJobId?: string;
   purpose: "job" | "ba";
   ownerUsername: string;
   nonce: string;
@@ -32,19 +34,22 @@ export function createGoogleOAuthState(input: {
   });
 }
 
-/** BA Settings — Authorize Google (Docs / Sheets / Drive Excel). */
+/** User-level Google (Settings / BA) — optional job auto-continue after OAuth. */
 export function createBaGoogleOAuthState(input: {
   ownerUsername: string;
+  continueJobId?: string;
 }): string {
   return createGoogleOAuthStateRaw({
     purpose: "ba",
     ownerUsername: input.ownerUsername,
+    continueJobId: input.continueJobId,
   });
 }
 
 function createGoogleOAuthStateRaw(input: {
   purpose: "job" | "ba";
   jobId?: string;
+  continueJobId?: string;
   ownerUsername: string;
 }): string {
   prune();
@@ -53,6 +58,7 @@ function createGoogleOAuthStateRaw(input: {
   store.set(state, {
     purpose: input.purpose,
     jobId: input.jobId,
+    continueJobId: input.continueJobId?.trim() || undefined,
     ownerUsername: input.ownerUsername.trim().toLowerCase(),
     nonce: randomBytes(8).toString("hex"),
     createdAt: now,

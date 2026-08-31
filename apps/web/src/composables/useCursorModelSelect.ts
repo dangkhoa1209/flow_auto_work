@@ -39,7 +39,10 @@ export function useCursorModelSelect(modelsUrl: string) {
   const modelsSource = ref<"cursor" | "fallback" | null>(null);
   const modelsWarning = ref<string | null>(null);
 
-  async function loadModels(selectedFallback?: string | null) {
+  async function loadModels(
+    selectedFallback?: string | null,
+    modelsUrlOverride?: string,
+  ) {
     modelsLoading.value = true;
     modelsWarning.value = null;
     try {
@@ -48,7 +51,7 @@ export function useCursorModelSelect(modelsUrl: string) {
         selected?: string;
         source?: "cursor" | "fallback";
         warning?: string;
-      }>(modelsUrl);
+      }>(modelsUrlOverride ?? modelsUrl);
       if (data.models?.length) {
         models.value = toSelectOptions(data.models);
       }

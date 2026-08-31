@@ -76,12 +76,7 @@ export const requireAdmin = asyncHandler(
 export const requireBa = asyncHandler(
   async (req: Request, _res: Response, next: NextFunction) => {
     const { username, roles } = await resolveBearerUser(req);
-    const allowed =
-      isAdminRole(roles) ||
-      isBaAudience(roles) ||
-      roles.includes("qc") ||
-      roles.includes("ba") ||
-      roles.includes("pd");
+    const allowed = isAdminRole(roles) || isBaAudience(roles);
     if (!allowed) {
       throw new AppError(
         "BA Chat role required (ba, pd, or qc)",

@@ -1,40 +1,87 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, ref } from "vue";
 import { message } from "ant-design-vue";
 import { api } from "@/api/client";
+import { API } from "@/api/endpoints";
 import { useSessionStore } from "@/stores/session";
+import { useUserGoogleAuth } from "@/composables/useUserGoogleAuth";
+import SettingsGoogleAuthPanel from "@/components/settings/SettingsGoogleAuthPanel.vue";
+
+type IntegrationId = "google" | "figma";
 
 const session = useSessionStore();
+const {
+  googleConfigured,
+  googleAuthorized,
+  hasDriveScope,
+} = useUserGoogleAuth();
+
+const activeId = ref<IntegrationId>("google");
 const loading = ref(false);
 const figmaToken = ref("");
 const clearFigma = ref(false);
 
-const projectId = computed(() => session.projectId || "");
-const projectName = computed(
-  () =>
-    session.currentMembership?.project?.displayName ||
-    session.currentMembership?.project?.projectName ||
-    projectId.value ||
-    "—",
-);
 const hasFigmaToken = computed(
-  () => Boolean(session.currentMembership?.project?.hasFigmaToken),
+  () => Boolean(session.me?.hasFigmaToken),
 );
 
-watch(
-  () => projectId.value,
-  () => {
-    figmaToken.value = "";
-    clearFigma.value = false;
-  },
+const googleStatusLabel = computed(() => {
+  if (!googleConfigured.value) return "Chưa cấu hình server";
+  if (googleAuthorized.value) {
+    if (!hasDriveScope()) return "Thiếu scope Drive";
+    return "Đã ủy quyền";
+  }
+  return "Chưa ủy quyền";
+});
+
+const googleStatusOk = computed(
+  () =>
+    googleConfigured.value &&
+    googleAuthorized.value &&
+    hasDriveScope(),
 );
+
+const figmaStatusLabel = computed(() =>
+  hasFigmaToken.value ? "PAT đã lưu" : "Chưa có PAT",
+);
+
+const integrations = computed(() => [
+  {
+    id: "google" as const,
+    label: "Google Auth",
+    hint: "Tài khoản · mọi project",
+    status: googleStatusLabel.value,
+    ok: googleStatusOk.value,
+  },
+  {
+    id: "figma" as const,
+    label: "Figma",
+    hint: "Tài khoản · mọi project",
+    status: figmaStatusLabel.value,
+    ok: hasFigmaToken.value,
+  },
+]);
+
+const figmaAlert = computed(() =>
+  hasFigmaToken.value
+    ? {
+        type: "success" as const,
+        message: "PAT đã lưu",
+        description:
+          "Dùng chung mọi project — task tick link Figma sẽ dùng PAT này.",
+      }
+    : {
+        type: "warning" as const,
+        message: "Chưa có Figma PAT",
+        description: "Dán Personal access token bên dưới (một lần cho mọi project).",
+      },
+);
+
+function selectIntegration(id: IntegrationId) {
+  activeId.value = id;
+}
 
 async function saveFigma() {
-  const id = projectId.value;
-  if (!id) {
-    message.warning("Chọn project trước (header / Settings → Project)");
-    return;
-  }
   const clearing = clearFigma.value;
   if (!clearing && !figmaToken.value.trim()) {
     message.warning("Dán Figma PAT hoặc tick Xóa token");
@@ -42,26 +89,26 @@ async function saveFigma() {
   }
   loading.value = true;
   try {
-    const res = await api<{
-      memberships?: unknown[];
-      project?: { hasFigmaToken?: boolean };
-    }>(`/api/me/projects/${encodeURIComponent(id)}`, {
-      method: "PUT",
-      body: JSON.stringify({
-        figmaToken: clearing ? "" : figmaToken.value.trim(),
-      }),
-    });
-    if (res.memberships) {
-      session.setMemberships(res.memberships as never);
+    const res = await api<{ user?: { hasFigmaToken?: boolean }; ok?: boolean }>(
+      API.me.integrations,
+      {
+        method: "PUT",
+        body: JSON.stringify({
+          figmaToken: clearing ? "" : figmaToken.value.trim(),
+        }),
+      },
+    );
+    if (res.user) {
+      session.me = { ...session.me, ...res.user };
     } else {
       await session.refreshMe();
     }
     figmaToken.value = "";
     clearFigma.value = false;
     message.success(
-      clearing || res.project?.hasFigmaToken === false
+      clearing || res.user?.hasFigmaToken === false
         ? "Đã xóa Figma PAT"
-        : "Đã lưu Figma PAT cho project",
+        : "Đã lưu Figma PAT",
     );
   } catch (e) {
     message.error(e instanceof Error ? e.message : String(e));
@@ -72,60 +119,72 @@ async function saveFigma() {
 </script>
 
 <template>
-  <div class="space-y-6 max-w-xl">
-    <div>
-      <h2 class="text-base font-semibold text-ink mb-1">Integrations</h2>
-      <p class="text-[13px] text-ink-muted">
-        Token cấp <strong>project / workspace</strong> — dùng chung mọi job của
-        project đang chọn (<span class="text-ink-soft">{{ projectName }}</span
-        >).
-      </p>
-    </div>
+  <div class="faw-integrations">
+    <header class="faw-settings-detail faw-integrations__head">
+      <h2>Integrations</h2>
+    </header>
 
-    <section
-      class="rounded-xl border border-[var(--app-border)] bg-[var(--app-panel)] p-4 space-y-3"
-    >
-      <div class="flex items-center justify-between gap-2">
-        <h3 class="text-sm font-medium text-ink">Figma</h3>
-        <span
-          class="text-[11px] px-2 py-0.5 rounded-full border"
-          :class="
-            hasFigmaToken
-              ? 'border-emerald-500/40 text-emerald-600'
-              : 'border-[var(--app-border)] text-ink-faint'
-          "
+    <div class="faw-integrations__shell">
+      <aside class="faw-integrations__list" aria-label="Danh sách integrations">
+        <button
+          v-for="item in integrations"
+          :key="item.id"
+          type="button"
+          class="faw-integrations__item"
+          :class="{ 'is-active': activeId === item.id }"
+          @click="selectIntegration(item.id)"
         >
-          {{ hasFigmaToken ? "PAT đã lưu" : "Chưa có PAT" }}
-        </span>
+          <span class="faw-integrations__item-top">
+            <span class="faw-integrations__item-label">{{ item.label }}</span>
+            <span
+              class="faw-integrations__item-badge"
+              :class="item.ok ? 'is-ok' : ''"
+            >
+              {{ item.status }}
+            </span>
+          </span>
+          <span class="faw-integrations__item-hint">{{ item.hint }}</span>
+        </button>
+      </aside>
+
+      <div class="faw-integrations__detail">
+        <SettingsGoogleAuthPanel v-if="activeId === 'google'" />
+
+        <div v-else class="faw-settings-detail">
+          <h2>Figma</h2>
+          <a-alert
+            :type="figmaAlert.type"
+            show-icon
+            :message="figmaAlert.message"
+            :description="figmaAlert.description"
+          />
+          <a-form layout="vertical">
+            <a-form-item label="Personal access token">
+              <a-input-password
+                v-model:value="figmaToken"
+                placeholder="figu_… (để trống nếu chỉ xóa)"
+                autocomplete="new-password"
+                :disabled="clearFigma"
+              />
+              <p class="text-xs text-ink-faint m-0 mt-1">
+                Figma → Settings → Security → Personal access tokens, scope
+                <code>file_content:read</code>.
+              </p>
+            </a-form-item>
+            <a-form-item>
+              <a-checkbox
+                v-model:checked="clearFigma"
+                :disabled="!hasFigmaToken"
+              >
+                Xóa Figma PAT đã lưu
+              </a-checkbox>
+            </a-form-item>
+            <a-button type="primary" :loading="loading" @click="saveFigma">
+              Lưu Figma PAT
+            </a-button>
+          </a-form>
+        </div>
       </div>
-      <p class="text-[12px] text-ink-muted leading-relaxed">
-        Tạo token tại Figma → Settings → Security →
-        <em>Personal access tokens</em>, scope
-        <code class="text-[11px]">file_content:read</code>. Flow đọc structure /
-        text / variables khi bạn tick link Figma trên task (không OAuth).
-      </p>
-      <div>
-        <label class="text-[12px] text-ink-soft">Personal access token</label>
-        <a-input-password
-          v-model:value="figmaToken"
-          class="mt-1"
-          placeholder="figu_… (để trống nếu chỉ xóa)"
-          autocomplete="new-password"
-          :disabled="!projectId || clearFigma"
-        />
-      </div>
-      <label class="flex items-center gap-2 text-[12px] text-ink-soft">
-        <a-checkbox v-model:checked="clearFigma" :disabled="!hasFigmaToken" />
-        Xóa Figma PAT đã lưu trên project này
-      </label>
-      <a-button
-        type="primary"
-        :loading="loading"
-        :disabled="!projectId"
-        @click="saveFigma"
-      >
-        Lưu Figma PAT
-      </a-button>
-    </section>
+    </div>
   </div>
 </template>

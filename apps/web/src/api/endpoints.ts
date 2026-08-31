@@ -16,7 +16,17 @@ export const API = {
     handoffPrefs: "/api/me/handoff-prefs",
     secrets: "/api/me/secrets",
     cursorKey: "/api/me/cursor-key",
+    cursorPats: "/api/me/cursor-pats",
+    cursorPat: (patId: string) =>
+      `/api/me/cursor-pats/${encodeURIComponent(patId)}`,
+    cursorPatActive: (patId: string) =>
+      `/api/me/cursor-pats/${encodeURIComponent(patId)}/active`,
     cursorModels: "/api/me/cursor-models",
+    googleStatus: "/api/me/google/status",
+    googleAuthUrl: "/api/me/google/auth-url",
+    googleRevoke: "/api/me/google/revoke",
+    integrations: "/api/me/integrations",
+    password: "/api/me/password",
     project: (projectId: string) =>
       `/api/me/projects/${encodeURIComponent(projectId)}`,
     projectMilestones: (projectId: string) =>

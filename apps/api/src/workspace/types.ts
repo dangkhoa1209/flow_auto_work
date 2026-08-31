@@ -25,7 +25,11 @@ export type WorkspaceUser = {
   displayName?: string;
   /** Legacy — prefer project-level token */
   gitlabTokenEnc?: string;
+  /** @deprecated Migrated to cursorPats — kept for one-time read */
   cursorApiKeyEnc?: string;
+  /** Cursor API keys (encrypted) — user picks one as active */
+  cursorPats?: CursorPat[];
+  activeCursorPatId?: string;
   cursorModel?: string;
   /**
    * Google OAuth (BA / shared) — đọc Docs, Sheets, Excel trên Drive.
@@ -41,6 +45,8 @@ export type WorkspaceUser = {
     authorizedAt: string;
     revokedAt?: string;
   };
+  /** Figma PAT (encrypted) — user level, shared across projects */
+  figmaTokenEnc?: string;
   /** Capability roles — include `"qc"` for QC Automation APIs */
   roles?: UserRole[];
   /**
@@ -50,6 +56,22 @@ export type WorkspaceUser = {
   handoffPrefsByProject?: Record<string, HandoffPrefs>;
   createdAt: string;
   updatedAt: string;
+};
+
+export type CursorPat = {
+  id: string;
+  label: string;
+  keyEnc: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type CursorPatPublic = {
+  id: string;
+  label: string;
+  createdAt: string;
+  updatedAt: string;
+  isActive: boolean;
 };
 
 /** Prefill for Start / Done awaiting handoff — stored per user+project. */
@@ -68,8 +90,11 @@ export type WorkspaceUserPublic = {
   displayName?: string;
   hasGitlabToken: boolean;
   hasCursorApiKey: boolean;
+  cursorPats: CursorPatPublic[];
+  activeCursorPatId?: string | null;
   hasGoogleAuth: boolean;
   googleEmail?: string;
+  hasFigmaToken: boolean;
   hasPassword: boolean;
   cursorModel: string;
   roles: UserRole[];
@@ -88,7 +113,7 @@ export type WorkspaceProject = {
   gitlabPath: string;
   /** PAT encrypted — attached to project */
   gitlabTokenEnc?: string;
-  /** Figma Personal Access Token (encrypted) — workspace/project level */
+  /** Figma Personal Access Token (encrypted) — legacy per-project; prefer user.figmaTokenEnc */
   figmaTokenEnc?: string;
   gitlabProjectId?: number;
   /** Absolute clone path */
@@ -158,7 +183,7 @@ export function userHasRole(
   return normalizeUserRoles(u?.roles).includes(role);
 }
 
-/** BA Chat audience: ba / pd / qc-only (not Dev who also toggled QC). */
+/** Project chat audience: pd / ba / qc (not dev or devops — those have their own home). */
 export function isBaAudience(
   roles?: UserRole[] | null | Pick<WorkspaceUser, "roles">,
 ): boolean {
@@ -169,9 +194,9 @@ export function isBaAudience(
       );
   const r = normalizeUserRoles(list as UserRole[]);
   if (r.includes("admin")) return false;
-  if (r.includes("ba") || r.includes("pd")) return true;
-  if (r.includes("qc") && !r.includes("dev")) return true;
-  return false;
+  if (r.includes("dev")) return false;
+  if (r.includes("devops")) return false;
+  return r.includes("ba") || r.includes("pd") || r.includes("qc");
 }
 
 export function isAdminRole(roles?: UserRole[] | null): boolean {
@@ -185,8 +210,7 @@ export function canAccessDevops(roles?: UserRole[] | null): boolean {
 }
 
 /**
- * Dedicated Devops home: has devops, not admin, not BA audience, not WorkBench dev.
- * Users with both `dev` + `devops` still land on /work and open /devops from nav.
+ * Dedicated Devops home: devops role, not admin, not dev (dev → /work).
  */
 export function isDevopsAudience(
   roles?: UserRole[] | null | Pick<WorkspaceUser, "roles">,
@@ -198,16 +222,17 @@ export function isDevopsAudience(
       );
   const r = normalizeUserRoles(list as UserRole[]);
   if (r.includes("admin")) return false;
-  if (isBaAudience(r)) return false;
-  return r.includes("devops") && !r.includes("dev");
+  if (r.includes("dev")) return false;
+  return r.includes("devops");
 }
 
 /** Post-login / guard home path. */
 export function primaryHomePath(roles?: UserRole[] | null): string {
   const r = normalizeUserRoles(roles);
   if (r.includes("admin")) return "/admin";
+  if (r.includes("dev")) return "/work";
+  if (r.includes("devops")) return "/devops";
   if (isBaAudience(r)) return "/ba";
-  if (isDevopsAudience(r)) return "/devops";
   return "/work";
 }
 
@@ -222,17 +247,49 @@ export function baProjectLocalPath(slug: string): string {
   return path.join(resolveProjectRoot(), "_ba", name, "source");
 }
 
+export function effectiveActiveCursorPatId(u: WorkspaceUser): string | null {
+  const activeId = u.activeCursorPatId?.trim();
+  if (activeId && u.cursorPats?.some((p) => p.id === activeId && p.keyEnc)) {
+    return activeId;
+  }
+  const first = u.cursorPats?.find((p) => p.keyEnc);
+  return first?.id ?? null;
+}
+
+export function toPublicCursorPats(
+  u: WorkspaceUser,
+): { pats: CursorPatPublic[]; activeId: string | null } {
+  const activeId = effectiveActiveCursorPatId(u);
+  const pats = (u.cursorPats ?? []).map((p) => ({
+    id: p.id,
+    label: p.label,
+    createdAt: p.createdAt,
+    updatedAt: p.updatedAt,
+    isActive: Boolean(activeId && p.id === activeId),
+  }));
+  return { pats, activeId };
+}
+
+export function userHasActiveCursorKey(u: WorkspaceUser): boolean {
+  if (u.cursorApiKeyEnc) return true;
+  return Boolean(effectiveActiveCursorPatId(u));
+}
+
 export function toPublicUser(u: WorkspaceUser): WorkspaceUserPublic {
   const g = u.googleAuth;
   const hasGoogleAuth = Boolean(g?.refreshTokenEnc && !g.revokedAt);
+  const { pats, activeId } = toPublicCursorPats(u);
   return {
     id: u.id,
     gitlabUsername: u.gitlabUsername,
     displayName: u.displayName,
     hasGitlabToken: Boolean(u.gitlabTokenEnc),
-    hasCursorApiKey: Boolean(u.cursorApiKeyEnc),
+    hasCursorApiKey: userHasActiveCursorKey(u),
+    cursorPats: pats,
+    activeCursorPatId: activeId,
     hasGoogleAuth,
     googleEmail: hasGoogleAuth ? g?.email : undefined,
+    hasFigmaToken: Boolean(u.figmaTokenEnc),
     hasPassword: Boolean(u.passwordHash),
     cursorModel: u.cursorModel?.trim() || "auto",
     roles: normalizeUserRoles(u.roles),

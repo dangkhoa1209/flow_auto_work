@@ -291,14 +291,6 @@ async function onKillAll() {
         >
           <SettingOutlined />
         </button>
-        <button
-          type="button"
-          class="faw-icon-btn"
-          title="Manage projects"
-          @click="goManageProjects"
-        >
-          +
-        </button>
       </div>
 
       <!-- Mobile: status + avatar only -->

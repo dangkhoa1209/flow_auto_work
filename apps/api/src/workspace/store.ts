@@ -6,8 +6,9 @@ import {
 } from "../models/workspace.js";
 import { rename as fsRename } from "node:fs/promises";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 import { decryptSecret, encryptSecret } from "../plugins/crypto/secrets.js";
-import { hashPassword } from "../auth/password.js";
+import { hashPassword, verifyPassword } from "../auth/password.js";
 import { logger } from "../logger.js";
 import { pathExists } from "./clone.js";
 import {
@@ -26,6 +27,8 @@ import {
   type WorkspaceUser,
   type WorkspaceUserPublic,
   type CloneStatus,
+  type CursorPat,
+  effectiveActiveCursorPatId,
   type HandoffPrefs,
   type UserRole,
 } from "./types.js";
@@ -91,6 +94,35 @@ export async function createOrUpdateUserPassword(opts: {
   return toPublicUser(doc);
 }
 
+export async function changeUserPassword(opts: {
+  username: string;
+  currentPassword?: string;
+  newPassword: string;
+}): Promise<WorkspaceUserPublic> {
+  const id = normUserId(opts.username);
+  const existing = await getUserByUsername(id);
+  if (!existing) throw new Error("User not found");
+  const newPassword = opts.newPassword.trim();
+  if (newPassword.length < 6) {
+    throw new Error("Password must be at least 6 characters");
+  }
+  if (existing.passwordHash) {
+    const current = opts.currentPassword?.trim() ?? "";
+    if (!current) throw new Error("currentPassword required");
+    const ok = await verifyPassword(current, existing.passwordHash);
+    if (!ok) throw new Error("Current password incorrect");
+  }
+  const now = new Date().toISOString();
+  const passwordHash = await hashPassword(newPassword);
+  await WorkspaceUserModel.updateOne(
+    { id },
+    { $set: { passwordHash, updatedAt: now } },
+  );
+  const updated = await getUserByUsername(id);
+  if (!updated) throw new Error("User not found after password change");
+  return toPublicUser(updated);
+}
+
 export async function upsertUserLogin(opts: {
   gitlabUsername: string;
   displayName?: string;
@@ -113,9 +145,6 @@ export async function upsertUserLogin(opts: {
   if (opts.gitlabToken?.trim()) {
     doc.gitlabTokenEnc = encryptSecret(opts.gitlabToken);
   }
-  if (opts.cursorApiKey?.trim()) {
-    doc.cursorApiKeyEnc = encryptSecret(opts.cursorApiKey);
-  }
   if (opts.passwordHash) doc.passwordHash = opts.passwordHash;
   if (opts.cursorModel !== undefined) {
     doc.cursorModel = opts.cursorModel.trim() || "auto";
@@ -128,7 +157,12 @@ export async function upsertUserLogin(opts: {
     await WorkspaceUserModel.purgeSoftDeleted({ id });
   }
   await WorkspaceUserModel.upsertOne({ id }, doc);
-  return toPublicUser(doc);
+  if (opts.cursorApiKey?.trim()) {
+    await addOrUpdateCursorPatKey(id, opts.cursorApiKey.trim());
+  }
+  const saved = await getUserByUsername(id);
+  const normalized = saved ? await normalizeUserCursorState(saved) : null;
+  return toPublicUser(normalized ?? doc);
 }
 
 export async function updateUserPreferences(opts: {
@@ -226,14 +260,282 @@ export async function clearCursorApiKey(
   const id = normUserId(username);
   const existing = await getUserByUsername(id);
   if (!existing) throw new Error("User not found");
-  const now = new Date().toISOString();
-  await WorkspaceUserModel.updateOne(
-    { id },
-    { $unset: { cursorApiKeyEnc: "" }, $set: { updatedAt: now } },
-  );
+  const migrated = await migrateLegacyCursorKeyIfNeeded(existing);
+  const activeId = migrated.activeCursorPatId?.trim();
+  if (!activeId) {
+    const now = new Date().toISOString();
+    await WorkspaceUserModel.updateOne(
+      { id },
+      {
+        $unset: { cursorApiKeyEnc: "", cursorPats: "", activeCursorPatId: "" },
+        $set: { updatedAt: now },
+      },
+    );
+  } else {
+    await deleteCursorPat(username, activeId);
+  }
   const updated = await getUserByUsername(id);
   if (!updated) throw new Error("User not found after clear");
   return toPublicUser(updated);
+}
+
+function resolveActiveCursorPat(user: WorkspaceUser): CursorPat | null {
+  const activeId = effectiveActiveCursorPatId(user);
+  if (!activeId) return null;
+  return user.cursorPats?.find((p) => p.id === activeId && p.keyEnc) ?? null;
+}
+
+function decryptCursorPatKey(pat: CursorPat): string {
+  return decryptSecret(pat.keyEnc);
+}
+
+/** Migrate legacy single key into cursorPats (persisted). */
+export async function migrateLegacyCursorKeyIfNeeded(
+  user: WorkspaceUser,
+): Promise<WorkspaceUser> {
+  if (user.cursorPats?.length) return user;
+  if (!user.cursorApiKeyEnc) return user;
+  const now = new Date().toISOString();
+  const id = randomUUID();
+  const pat: CursorPat = {
+    id,
+    label: "Default",
+    keyEnc: user.cursorApiKeyEnc,
+    createdAt: now,
+    updatedAt: now,
+  };
+  await WorkspaceUserModel.updateOne(
+    { id: user.id },
+    {
+      $set: { cursorPats: [pat], activeCursorPatId: id, updatedAt: now },
+      $unset: { cursorApiKeyEnc: "" },
+    },
+  );
+  const updated = await getUserByUsername(user.id);
+  return updated ?? user;
+}
+
+/** Migrate legacy key + ensure active PAT id (single-key users work without manual step). */
+export async function normalizeUserCursorState(
+  user: WorkspaceUser,
+): Promise<WorkspaceUser> {
+  let u = await migrateLegacyCursorKeyIfNeeded(user);
+  const nextActiveId = effectiveActiveCursorPatId(u);
+  const storedActive = u.activeCursorPatId?.trim() || null;
+  if (nextActiveId && nextActiveId !== storedActive) {
+    const now = new Date().toISOString();
+    await WorkspaceUserModel.updateOne(
+      { id: u.id },
+      { $set: { activeCursorPatId: nextActiveId, updatedAt: now } },
+    );
+    const updated = await getUserByUsername(u.id);
+    return updated ?? u;
+  }
+  return u;
+}
+
+async function addOrUpdateCursorPatKey(
+  username: string,
+  apiKey: string,
+): Promise<void> {
+  const id = normUserId(username);
+  let user = await getUserByUsername(id);
+  if (!user) throw new Error("User not found");
+  user = await migrateLegacyCursorKeyIfNeeded(user);
+  const now = new Date().toISOString();
+  const active = resolveActiveCursorPat(user);
+  if (active) {
+    const pats = (user.cursorPats ?? []).map((p) =>
+      p.id === active.id
+        ? {
+            ...p,
+            keyEnc: encryptSecret(apiKey),
+            updatedAt: now,
+          }
+        : p,
+    );
+    await WorkspaceUserModel.updateOne(
+      { id },
+      { $set: { cursorPats: pats, updatedAt: now } },
+    );
+    return;
+  }
+  const patId = randomUUID();
+  const pat: CursorPat = {
+    id: patId,
+    label: "PAT 1",
+    keyEnc: encryptSecret(apiKey),
+    createdAt: now,
+    updatedAt: now,
+  };
+  await WorkspaceUserModel.updateOne(
+    { id },
+    {
+      $set: {
+        cursorPats: [...(user.cursorPats ?? []), pat],
+        activeCursorPatId: patId,
+        updatedAt: now,
+      },
+    },
+  );
+}
+
+export async function listCursorPats(
+  username: string,
+): Promise<WorkspaceUserPublic> {
+  const id = normUserId(username);
+  let user = await getUserByUsername(id);
+  if (!user) throw new Error("User not found");
+  user = await normalizeUserCursorState(user);
+  return toPublicUser(user);
+}
+
+export async function createCursorPat(
+  username: string,
+  opts: { label?: string; apiKey: string },
+): Promise<WorkspaceUserPublic> {
+  const id = normUserId(username);
+  let user = await getUserByUsername(id);
+  if (!user) throw new Error("User not found");
+  user = await migrateLegacyCursorKeyIfNeeded(user);
+  const key = opts.apiKey.trim();
+  if (!key) throw new Error("apiKey required");
+  const now = new Date().toISOString();
+  const patId = randomUUID();
+  const label =
+    opts.label?.trim() ||
+    `PAT ${(user.cursorPats?.length ?? 0) + 1}`;
+  const pat: CursorPat = {
+    id: patId,
+    label,
+    keyEnc: encryptSecret(key),
+    createdAt: now,
+    updatedAt: now,
+  };
+  const pats = [...(user.cursorPats ?? []), pat];
+  const setActive = !user.activeCursorPatId?.trim();
+  await WorkspaceUserModel.updateOne(
+    { id },
+    {
+      $set: {
+        cursorPats: pats,
+        ...(setActive ? { activeCursorPatId: patId } : {}),
+        updatedAt: now,
+      },
+    },
+  );
+  const updated = await getUserByUsername(id);
+  if (!updated) throw new Error("User not found after create");
+  return toPublicUser(updated);
+}
+
+export async function updateCursorPat(
+  username: string,
+  patId: string,
+  opts: { label?: string; apiKey?: string },
+): Promise<WorkspaceUserPublic> {
+  const id = normUserId(username);
+  let user = await getUserByUsername(id);
+  if (!user) throw new Error("User not found");
+  user = await migrateLegacyCursorKeyIfNeeded(user);
+  const pid = patId.trim();
+  const idx = user.cursorPats?.findIndex((p) => p.id === pid) ?? -1;
+  if (idx < 0) throw new Error("PAT not found");
+  const now = new Date().toISOString();
+  const pats = [...(user.cursorPats ?? [])];
+  const current = { ...pats[idx] };
+  if (opts.label !== undefined) {
+    current.label = opts.label.trim() || current.label;
+  }
+  if (opts.apiKey?.trim()) {
+    current.keyEnc = encryptSecret(opts.apiKey.trim());
+  }
+  current.updatedAt = now;
+  pats[idx] = current;
+  await WorkspaceUserModel.updateOne(
+    { id },
+    { $set: { cursorPats: pats, updatedAt: now } },
+  );
+  const updated = await getUserByUsername(id);
+  if (!updated) throw new Error("User not found after update");
+  return toPublicUser(updated);
+}
+
+export async function setActiveCursorPat(
+  username: string,
+  patId: string,
+): Promise<WorkspaceUserPublic> {
+  const id = normUserId(username);
+  let user = await getUserByUsername(id);
+  if (!user) throw new Error("User not found");
+  user = await migrateLegacyCursorKeyIfNeeded(user);
+  const pid = patId.trim();
+  if (!user.cursorPats?.some((p) => p.id === pid)) {
+    throw new Error("PAT not found");
+  }
+  const now = new Date().toISOString();
+  await WorkspaceUserModel.updateOne(
+    { id },
+    { $set: { activeCursorPatId: pid, updatedAt: now } },
+  );
+  const updated = await getUserByUsername(id);
+  if (!updated) throw new Error("User not found after set active");
+  return toPublicUser(updated);
+}
+
+export async function deleteCursorPat(
+  username: string,
+  patId: string,
+): Promise<WorkspaceUserPublic> {
+  const id = normUserId(username);
+  let user = await getUserByUsername(id);
+  if (!user) throw new Error("User not found");
+  user = await migrateLegacyCursorKeyIfNeeded(user);
+  const pid = patId.trim();
+  const pats = (user.cursorPats ?? []).filter((p) => p.id !== pid);
+  if (pats.length === user.cursorPats?.length) {
+    throw new Error("PAT not found");
+  }
+  const now = new Date().toISOString();
+  let activeCursorPatId = user.activeCursorPatId;
+  if (activeCursorPatId === pid) {
+    activeCursorPatId = pats[0]?.id;
+  }
+  if (activeCursorPatId) {
+    await WorkspaceUserModel.updateOne(
+      { id },
+      {
+        $set: {
+          cursorPats: pats,
+          activeCursorPatId,
+          updatedAt: now,
+        },
+      },
+    );
+  } else {
+    await WorkspaceUserModel.updateOne(
+      { id },
+      {
+        $set: { cursorPats: pats, updatedAt: now },
+        $unset: { activeCursorPatId: "" },
+      },
+    );
+  }
+  const updated = await getUserByUsername(id);
+  if (!updated) throw new Error("User not found after delete");
+  return toPublicUser(updated);
+}
+
+export async function getActiveCursorApiKey(
+  username: string,
+): Promise<string | undefined> {
+  const user = await getUserByUsername(username);
+  if (!user) return undefined;
+  const migrated = await normalizeUserCursorState(user);
+  const pat = resolveActiveCursorPat(migrated);
+  if (pat) return decryptCursorPatKey(pat);
+  if (migrated.cursorApiKeyEnc) return decryptSecret(migrated.cursorApiKeyEnc);
+  return undefined;
 }
 
 export async function setUserGoogleAuth(
@@ -269,6 +571,35 @@ export async function clearUserGoogleAuth(
   return toPublicUser(updated);
 }
 
+export async function setUserFigmaToken(
+  username: string,
+  figmaToken: string | null,
+): Promise<WorkspaceUserPublic> {
+  const id = normUserId(username);
+  const existing = await getUserByUsername(id);
+  if (!existing) throw new Error("User not found");
+  const now = new Date().toISOString();
+  if (figmaToken === null || figmaToken === "") {
+    await WorkspaceUserModel.updateOne(
+      { id },
+      { $unset: { figmaTokenEnc: "" }, $set: { updatedAt: now } },
+    );
+  } else {
+    await WorkspaceUserModel.updateOne(
+      { id },
+      {
+        $set: {
+          figmaTokenEnc: encryptSecret(figmaToken.trim()),
+          updatedAt: now,
+        },
+      },
+    );
+  }
+  const updated = await getUserByUsername(id);
+  if (!updated) throw new Error("User not found after update");
+  return toPublicUser(updated);
+}
+
 /** Cursor key from user; GitLab token from project if projectId given, else user legacy / active project. */
 export async function getUserSecrets(
   username: string,
@@ -279,9 +610,13 @@ export async function getUserSecrets(
 } | null> {
   const user = await getUserByUsername(username);
   if (!user) return null;
-  const cursorApiKey = user.cursorApiKeyEnc
-    ? decryptSecret(user.cursorApiKeyEnc)
-    : undefined;
+  const migrated = await normalizeUserCursorState(user);
+  const pat = resolveActiveCursorPat(migrated);
+  const cursorApiKey = pat
+    ? decryptCursorPatKey(pat)
+    : migrated.cursorApiKeyEnc
+      ? decryptSecret(migrated.cursorApiKeyEnc)
+      : undefined;
 
   let gitlabToken: string | undefined;
   if (projectId) {
@@ -312,7 +647,10 @@ export async function getProjectSecrets(projectId: string): Promise<{
   if (project.gitlabTokenEnc) {
     out.gitlabToken = decryptSecret(project.gitlabTokenEnc);
   }
-  if (project.figmaTokenEnc) {
+  const user = await getUserByUsername(project.userId);
+  if (user?.figmaTokenEnc) {
+    out.figmaToken = decryptSecret(user.figmaTokenEnc);
+  } else if (project.figmaTokenEnc) {
     out.figmaToken = decryptSecret(project.figmaTokenEnc);
   }
   if (!out.gitlabToken && !out.figmaToken) return null;

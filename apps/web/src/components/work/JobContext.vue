@@ -87,6 +87,11 @@ const googleStatus = ref<{
   email?: string;
   sheetIds: string[];
   pendingSheetUrls: string[];
+  source?: "job" | "user" | "none";
+  jobAuthorized?: boolean;
+  userAuthorized?: boolean;
+  readyToRead?: boolean;
+  needsDriveScope?: boolean;
 } | null>(null);
 const detectedSheets = ref<
   { spreadsheetId: string; url: string; gid?: string }[]
@@ -108,8 +113,12 @@ const includeFigmaKeys = ref<string[]>([]);
 const figmaIncludeSaving = ref(false);
 const hasFigmaToken = ref(false);
 
-const awaitingGoogleAuth = computed(
+const jobAwaitingGoogle = computed(
   () => props.currentJob?.status === "awaiting_google_auth",
+);
+/** Chỉ hỏi quyền trên task khi Settings chưa đủ / token lỗi */
+const awaitingGoogleAuth = computed(
+  () => jobAwaitingGoogle.value && !googleStatus.value?.readyToRead,
 );
 const awaitingFigmaAuth = computed(
   () => props.currentJob?.status === "awaiting_figma_auth",
@@ -122,6 +131,13 @@ const showGoogleCard = computed(
     Boolean(props.currentJob?.googleAuth?.email) ||
     Boolean(props.currentJob?.pendingGoogleSheetUrls?.length) ||
     detectedSheets.value.length > 0,
+);
+
+const canRevokeJobGoogle = computed(
+  () =>
+    Boolean(
+      googleStatus.value?.jobAuthorized || props.currentJob?.googleAuth?.email,
+    ),
 );
 
 function sheetLabel(s: { spreadsheetId: string; url: string }): string {
@@ -163,6 +179,13 @@ async function refreshGoogleStatus(opts?: { force?: boolean }) {
       detectedFigs.value = figma.figs || [];
       includeFigmaKeys.value = [...(figma.includeKeys || [])];
       hasFigmaToken.value = Boolean(figma.hasFigmaToken);
+    }
+    if (
+      props.selectedJobId === id &&
+      props.currentJob?.status === "awaiting_google_auth" &&
+      snap.status.readyToRead
+    ) {
+      await continueAfterGoogle(true);
     }
   } catch {
     if (props.selectedJobId === id) googleStatus.value = null;
@@ -254,7 +277,7 @@ async function authorizeGoogle() {
   }
 }
 
-async function continueAfterGoogle() {
+async function continueAfterGoogle(silent = false) {
   const id = props.selectedJobId;
   if (!id) return;
   googleBusy.value = true;
@@ -262,7 +285,7 @@ async function continueAfterGoogle() {
     const res = await jobApi.googleContinue(id);
     if (!res.enqueued && !res.ok) {
       message.warning(res.reason || "Could not enqueue job");
-    } else {
+    } else if (!silent) {
       message.success("Run đang tiếp tục…");
     }
     await reloadJob();
@@ -338,15 +361,16 @@ function onGoogleOAuthMessage(ev: MessageEvent) {
   }
 }
 
-/** Lần đầu (mỗi lần) job cần Google → modal xin quyền */
+/** Modal xin quyền — chỉ khi Settings chưa đủ */
 watch(
   () =>
     [
       props.selectedJobId,
       props.currentJob?.status === "awaiting_google_auth",
+      googleStatus.value?.readyToRead,
     ] as const,
-  ([jobId, awaiting]) => {
-    if (!jobId || !awaiting) {
+  ([jobId, jobAwaiting, readyToRead]) => {
+    if (!jobId || !jobAwaiting || readyToRead) {
       googleAuthModalOpen.value = false;
       if (jobId && googleAuthModalKey.value === `${jobId}:awaiting`) {
         googleAuthModalKey.value = null;
@@ -371,7 +395,7 @@ watch(
 /** Primitive key — watching a new array each tick retriggered Google APIs. */
 watch(
   () =>
-    `${props.selectedJobId || ""}|${props.currentJob?.status === "awaiting_google_auth" ? "1" : "0"}|${props.currentJob?.status === "awaiting_figma_auth" ? "1" : "0"}`,
+    `${props.selectedJobId || ""}|${props.currentJob?.status === "awaiting_google_auth" ? "1" : "0"}|${googleStatus.value?.readyToRead ? "1" : "0"}|${props.currentJob?.status === "awaiting_figma_auth" ? "1" : "0"}`,
   () => {
     void refreshGoogleStatus();
   },
@@ -465,16 +489,21 @@ onUnmounted(() => {
               show-icon
               class="mb-3"
               message="Cần ủy quyền Google để đọc Sheets/Excel"
-              description="Sau khi cấp quyền, Run sẽ tự tiếp tục — không cần bấm Continue."
+              description="Cấu hình trong Settings → Integrations (Google Auth) hoặc Authorize ngay trên task. Sau khi ủy quyền, Run tự tiếp tục."
             >
               <template #action>
-                <a-button
-                  size="small"
-                  type="primary"
-                  :loading="googleBusy"
-                  @click="authorizeGoogle"
-                  >Authorize Google</a-button
-                >
+                <div class="flex flex-col gap-1.5 items-end">
+                  <RouterLink to="/settings/integrations">
+                    <a-button size="small">Mở Integrations</a-button>
+                  </RouterLink>
+                  <a-button
+                    size="small"
+                    type="primary"
+                    :loading="googleBusy"
+                    @click="authorizeGoogle"
+                    >Authorize Google</a-button
+                  >
+                </div>
               </template>
             </a-alert>
 
@@ -513,9 +542,22 @@ onUnmounted(() => {
                   currentJob?.googleAuth?.email ||
                   "linked"
                 }}
+                <span
+                  v-if="googleStatus?.source === 'user'"
+                  class="text-ink-faint"
+                >
+                  (Settings)
+                </span>
               </span>
+              <RouterLink
+                v-if="googleStatus?.source === 'user'"
+                to="/settings/integrations"
+                class="text-[11px] text-accent hover:underline"
+              >
+                Integrations
+              </RouterLink>
               <a-button
-                v-if="googleStatus?.authorized || currentJob?.googleAuth?.email"
+                v-if="canRevokeJobGoogle"
                 size="small"
                 danger
                 type="link"
@@ -890,7 +932,7 @@ onUnmounted(() => {
               >Authorize Google</a-button
             >
             <a-button
-              v-else-if="googleStatus?.authorized || currentJob?.googleAuth?.email"
+              v-else-if="canRevokeJobGoogle"
               size="small"
               danger
               type="link"
@@ -1052,9 +1094,9 @@ onUnmounted(() => {
       @ok="authorizeGoogle"
     >
       <p class="m-0 text-sm text-ink-soft">
-        Task này có link Google Sheets hoặc file Excel trên Drive. Cần cấp quyền
-        đọc (readonly) một lần — sau khi ủy quyền, Run sẽ
-        <strong>tự tiếp tục</strong>, không cần bấm Continue.
+        Task này có link Google Sheets hoặc file Excel trên Drive. Nếu chưa cấu
+        hình trong <strong>Settings → Integrations</strong>, cấp quyền đọc
+        (readonly) tại đây — sau khi ủy quyền, Run sẽ <strong>tự tiếp tục</strong>.
       </p>
       <p class="m-0 mt-2 text-xs text-ink-faint">
         Popup Google sẽ mở; hãy chấp nhận quyền Sheets + Drive nếu được hỏi.

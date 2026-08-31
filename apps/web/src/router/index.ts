@@ -119,10 +119,11 @@ const router = createRouter({
                 import("@/views/settings/IntegrationsSettings.vue"),
             },
             {
-              path: "cursor",
-              name: "settings-cursor",
-              component: () => import("@/views/settings/CursorSettings.vue"),
+              path: "ai-engine",
+              name: "settings-ai-engine",
+              component: () => import("@/views/settings/AiEngineSettings.vue"),
             },
+            { path: "cursor", redirect: "/settings/ai-engine" },
             {
               path: "labels",
               name: "settings-labels",

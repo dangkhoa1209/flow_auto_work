@@ -533,8 +533,8 @@ export function useWorkbench() {
 
   async function ensureCursorKey() {
     if (session.me?.hasCursorApiKey) return true;
-    message.warning("Cursor API key required — open Settings → Cursor");
-    router.push({ name: "settings-cursor" });
+    message.warning("Cần API key AI Engine — mở Settings → AI Engine");
+    router.push({ name: "settings-ai-engine" });
     return false;
   }
 
