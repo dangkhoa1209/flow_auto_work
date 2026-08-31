@@ -14,6 +14,7 @@ export const WorkspaceUserModel = createModel<WorkspaceUserDoc>({
   collection: "workspace_users",
   softDelete: true,
   defaultSort: { updatedAt: -1 },
+  idField: "id",
   parseId: (id) => id,
   indexes: [
     {
@@ -27,6 +28,8 @@ export const WorkspaceProjectModel = createModel<WorkspaceProjectDoc>({
   collection: "workspace_projects",
   softDelete: true,
   defaultSort: { updatedAt: -1 },
+  idField: "id",
+  parseId: (id) => id,
   indexes: [
     {
       keys: { userId: 1, projectName: 1 },
@@ -40,6 +43,8 @@ export const WorkspaceMembershipModel = createModel<WorkspaceMembershipDoc>({
   collection: "workspace_memberships",
   softDelete: true,
   defaultSort: { updatedAt: -1 },
+  idField: "id",
+  parseId: (id) => id,
   indexes: [
     {
       keys: { userId: 1, projectId: 1 },

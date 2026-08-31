@@ -20,6 +20,8 @@ Boot (`ensureAllModelIndexes`) drops legacy full uniques (`gitlabUsername_1`, `s
 
 Reads use `withActive(filter)` or model `find*` (auto-excludes soft-deleted).
 
+Domain stores (`workspace/store`, `baStore`) call **Model.\*** only (`findOne`, `insert`, `upsertOne`, `updateOne`, …) — not raw `collection()`. Business key is field `id` (`idField` on models), not Mongo `_id`.
+
 Auth refresh sessions stay hard-delete + TTL (not soft-deleted).
 
 ## Response formatter

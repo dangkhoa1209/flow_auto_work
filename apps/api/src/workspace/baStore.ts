@@ -1,13 +1,11 @@
-import type { Collection } from "mongodb";
 import crypto from "node:crypto";
-import { connectMongo } from "../models/connection.js";
-import { purgeSoftDeleted, softDeleteActiveFields, withActive } from "../models/base.js";
 import {
   BaMessageModel,
   BaProjectModel,
   BaRequirementModel,
   BaTaskDraftModel,
   BaThreadModel,
+  SystemSettingsModel,
 } from "../models/ba.js";
 import { decryptSecret, encryptSecret } from "../plugins/crypto/secrets.js";
 import {
@@ -158,22 +156,13 @@ const DEFAULT_PORTS: Record<BaDbDialect, number> = {
   mongodb: 27017,
 };
 
-async function baProjectsCol(): Promise<Collection<BaProject>> {
-  const db = await connectMongo();
-  return db.collection<BaProject>("ba_projects");
-}
-
-async function systemSettingsCol(): Promise<Collection<SystemSettings>> {
-  const db = await connectMongo();
-  return db.collection<SystemSettings>("system_settings");
-}
-
 export async function ensureBaIndexes(): Promise<void> {
   await BaProjectModel.ensureIndexes();
   await BaThreadModel.ensureIndexes();
   await BaMessageModel.ensureIndexes();
   await BaRequirementModel.ensureIndexes();
   await BaTaskDraftModel.ensureIndexes();
+  await SystemSettingsModel.ensureIndexes();
 }
 
 function slugify(raw: string): string {
@@ -260,11 +249,11 @@ export function toPublicBaProject(p: BaProject): BaProjectPublic {
 }
 
 export async function listBaProjects(): Promise<BaProject[]> {
-  return (await baProjectsCol()).find(withActive({})).sort({ displayName: 1 }).toArray();
+  return BaProjectModel.findMany({ sort: { displayName: 1 } });
 }
 
 export async function getBaProject(id: string): Promise<BaProject | null> {
-  return (await baProjectsCol()).findOne(withActive({ id: id.trim() }));
+  return BaProjectModel.findOne({ id: id.trim() });
 }
 
 export async function createBaProject(opts: {
@@ -303,8 +292,8 @@ export async function createBaProject(opts: {
   if (opts.gitlabToken?.trim()) {
     doc.gitlabTokenEnc = encryptSecret(opts.gitlabToken.trim());
   }
-  await purgeSoftDeleted(await baProjectsCol(), { id });
-  await (await baProjectsCol()).insertOne({ ...doc, ...softDeleteActiveFields() });
+  await BaProjectModel.purgeSoftDeleted({ id });
+  await BaProjectModel.insert(doc);
   return doc;
 }
 
@@ -417,10 +406,7 @@ export async function updateBaProject(
   }
 
   existing.updatedAt = now;
-  await (await baProjectsCol()).updateOne(
-    withActive({ id }),
-    { $set: existing },
-  );
+  await BaProjectModel.updateOne({ id }, { $set: existing });
   return existing;
 }
 
@@ -478,18 +464,15 @@ export async function resolveBaProjectDbForTest(
 }
 
 export async function getSystemSettings(): Promise<SystemSettings> {
-  const col = await systemSettingsCol();
-  const existing = await col.findOne(withActive({ id: "default" }));
+  const existing = await SystemSettingsModel.findOne({ id: "default" });
   if (existing) return existing;
   const doc: SystemSettings = {
     id: "default",
     cursorModel: "auto",
     updatedAt: new Date().toISOString(),
-    ...softDeleteActiveFields(),
   };
-  await purgeSoftDeleted(col, { id: "default" });
-  await col.updateOne({ id: "default" }, { $set: doc }, { upsert: true });
-  return doc;
+  await SystemSettingsModel.purgeSoftDeleted({ id: "default" });
+  return SystemSettingsModel.upsertOne({ id: "default" }, doc);
 }
 
 function defaultTaskTypeLabels(): TaskTypeLabelMapping {
@@ -575,20 +558,16 @@ export async function updateSystemBaFeatures(
     ...(existing.baFeatures ?? {}),
     ...patch,
   });
-  await (await systemSettingsCol()).updateOne(
+  await SystemSettingsModel.upsertOne(
     { id: "default" },
     {
-      $set: {
-        baFeatures: {
-          ...merged.flags,
-          workflowTabLabel: merged.workflowTabLabel,
-        },
-        baFeaturesUpdatedAt: now,
-        updatedAt: now,
-        ...softDeleteActiveFields(),
+      baFeatures: {
+        ...merged.flags,
+        workflowTabLabel: merged.workflowTabLabel,
       },
+      baFeaturesUpdatedAt: now,
+      updatedAt: now,
     },
-    { upsert: true },
   );
   return toPublicSystemSettings(await getSystemSettings());
 }
@@ -611,10 +590,7 @@ export async function updateSystemCursorSettings(opts: {
 }): Promise<SystemSettings> {
   const existing = await getSystemSettings();
   const now = new Date().toISOString();
-  const $set: Record<string, unknown> = {
-    updatedAt: now,
-    ...softDeleteActiveFields(),
-  };
+  const $set: Record<string, unknown> = { updatedAt: now };
   const $unset: Record<string, ""> = {};
 
   if (opts.cursorApiKey !== undefined) {
@@ -635,8 +611,9 @@ export async function updateSystemCursorSettings(opts: {
   const update: Record<string, unknown> = { $set };
   if (Object.keys($unset).length) update.$unset = $unset;
 
-  await (await systemSettingsCol()).updateOne({ id: "default" }, update, {
+  await SystemSettingsModel.updateOne({ id: "default" }, update, {
     upsert: true,
+    raw: true,
   });
   return getSystemSettings();
 }
@@ -675,17 +652,13 @@ export async function updateSystemTaskTypeLabels(
     ...(existing.taskTypeLabels ?? {}),
     ...body,
   });
-  await (await systemSettingsCol()).updateOne(
+  await SystemSettingsModel.upsertOne(
     { id: "default" },
     {
-      $set: {
-        taskTypeLabels: merged,
-        taskTypeLabelsUpdatedAt: now,
-        updatedAt: now,
-        ...softDeleteActiveFields(),
-      },
+      taskTypeLabels: merged,
+      taskTypeLabelsUpdatedAt: now,
+      updatedAt: now,
     },
-    { upsert: true },
   );
   return toPublicSystemSettings(await getSystemSettings());
 }
@@ -733,15 +706,6 @@ export type BaMessage = {
   createdAt: string;
 };
 
-async function threadsCol(): Promise<Collection<BaThread>> {
-  const db = await connectMongo();
-  return db.collection<BaThread>("ba_threads");
-}
-
-async function messagesCol(): Promise<Collection<BaMessage>> {
-  const db = await connectMongo();
-  return db.collection<BaMessage>("ba_messages");
-}
 
 export async function listBaThreads(
   userId: string,
@@ -761,10 +725,7 @@ export async function listBaThreads(
   };
   if (baProjectId?.trim()) reqFilter.baProjectId = baProjectId.trim();
   const linkedIds = (
-    await (await requirementsCol())
-      .find(withActive(reqFilter))
-      .project({ linkedThreadId: 1 })
-      .toArray()
+    await BaRequirementModel.findMany({ filter: reqFilter })
   )
     .map((r) => r.linkedThreadId)
     .filter((id): id is string => Boolean(id));
@@ -773,14 +734,14 @@ export async function listBaThreads(
     filter.id = { $nin: linkedIds };
   }
 
-  return (await threadsCol())
-    .find(withActive(filter))
-    .sort({ updatedAt: -1 })
-    .toArray();
+  return BaThreadModel.findMany({
+    filter,
+    sort: { updatedAt: -1 },
+  });
 }
 
 export async function getBaThread(id: string): Promise<BaThread | null> {
-  return (await threadsCol()).findOne(withActive({ id: id.trim() }));
+  return BaThreadModel.findOne({ id: id.trim() });
 }
 
 export async function createBaThread(opts: {
@@ -799,7 +760,7 @@ export async function createBaThread(opts: {
     createdAt: now,
     updatedAt: now,
   };
-  await (await threadsCol()).insertOne({ ...doc, ...softDeleteActiveFields() });
+  await BaThreadModel.insert(doc);
   return doc;
 }
 
@@ -807,8 +768,8 @@ export async function updateBaThreadKind(
   id: string,
   kind: BaThreadKind,
 ): Promise<void> {
-  await (await threadsCol()).updateOne(
-    withActive({ id: id.trim() }),
+  await BaThreadModel.updateOne(
+    { id: id.trim() },
     { $set: { kind, updatedAt: new Date().toISOString() } },
   );
 }
@@ -818,16 +779,16 @@ export async function updateBaThreadTitle(
   title: string,
 ): Promise<BaThread | null> {
   const now = new Date().toISOString();
-  await (await threadsCol()).updateOne(
-    withActive({ id: id.trim() }),
+  await BaThreadModel.updateOne(
+    { id: id.trim() },
     { $set: { title: title.trim() || "New chat", updatedAt: now } },
   );
   return getBaThread(id);
 }
 
 export async function touchBaThread(id: string): Promise<void> {
-  await (await threadsCol()).updateOne(
-    withActive({ id: id.trim() }),
+  await BaThreadModel.updateOne(
+    { id: id.trim() },
     { $set: { updatedAt: new Date().toISOString() } },
   );
 }
@@ -842,10 +803,10 @@ export async function deleteBaThread(id: string, userId: string): Promise<boolea
 }
 
 export async function listBaMessages(threadId: string): Promise<BaMessage[]> {
-  return (await messagesCol())
-    .find(withActive({ threadId: threadId.trim() }))
-    .sort({ createdAt: 1 })
-    .toArray();
+  return BaMessageModel.findMany({
+    filter: { threadId: threadId.trim() },
+    sort: { createdAt: 1 },
+  });
 }
 
 /** Fingerprint of thread messages (debug / legacy). Prefer issueDraftVersion for cache. */
@@ -876,13 +837,12 @@ export async function bumpBaThreadIssueDraftVersion(
   threadId: string,
 ): Promise<number> {
   const now = new Date().toISOString();
-  const res = await (await threadsCol()).findOneAndUpdate(
-    withActive({ id: threadId.trim() }),
+  const res = await BaThreadModel.findOneAndUpdate(
+    { id: threadId.trim() },
     {
       $inc: { issueDraftVersion: 1 },
       $set: { updatedAt: now },
     },
-    { returnDocument: "after" },
   );
   return res?.issueDraftVersion ?? 1;
 }
@@ -893,8 +853,8 @@ export async function setBaThreadIssueDraftCache(
   draft: BaThreadIssueDraftSnapshot,
 ): Promise<void> {
   const now = new Date().toISOString();
-  await (await threadsCol()).updateOne(
-    withActive({ id: threadId.trim() }),
+  await BaThreadModel.updateOne(
+    { id: threadId.trim() },
     {
       $set: {
         issueDraftCache: { version, draft, cachedAt: now },
@@ -917,7 +877,7 @@ export async function appendBaMessage(opts: {
     content: opts.content,
     createdAt: new Date().toISOString(),
   };
-  await (await messagesCol()).insertOne({ ...doc, ...softDeleteActiveFields() });
+  await BaMessageModel.insert(doc);
   await bumpBaThreadIssueDraftVersion(opts.threadId);
   return doc;
 }
@@ -926,10 +886,9 @@ export async function updateBaMessageContent(
   id: string,
   content: string,
 ): Promise<void> {
-  const col = await messagesCol();
-  const existing = await col.findOne(withActive({ id }));
+  const existing = await BaMessageModel.findOne({ id });
   if (!existing) return;
-  await col.updateOne(withActive({ id }), { $set: { content } });
+  await BaMessageModel.updateOne({ id }, { $set: { content } });
   await bumpBaThreadIssueDraftVersion(existing.threadId);
 }
 
@@ -973,25 +932,20 @@ export type BaRequirement = {
   updatedAt: string;
 };
 
-async function requirementsCol(): Promise<Collection<BaRequirement>> {
-  const db = await connectMongo();
-  return db.collection<BaRequirement>("ba_requirements");
-}
-
 export async function listBaRequirements(
   userId: string,
   baProjectId?: string,
 ): Promise<BaRequirement[]> {
   const filter: Record<string, string> = { userId: userId.toLowerCase() };
   if (baProjectId?.trim()) filter.baProjectId = baProjectId.trim();
-  return (await requirementsCol())
-    .find(withActive(filter))
-    .sort({ updatedAt: -1 })
-    .toArray();
+  return BaRequirementModel.findMany({
+    filter,
+    sort: { updatedAt: -1 },
+  });
 }
 
 export async function getBaRequirement(id: string): Promise<BaRequirement | null> {
-  return (await requirementsCol()).findOne(withActive({ id: id.trim() }));
+  return BaRequirementModel.findOne({ id: id.trim() });
 }
 
 export async function createBaRequirement(opts: {
@@ -1021,7 +975,7 @@ export async function createBaRequirement(opts: {
     createdAt: now,
     updatedAt: now,
   };
-  await (await requirementsCol()).insertOne({ ...doc, ...softDeleteActiveFields() });
+  await BaRequirementModel.insert(doc);
   return doc;
 }
 
@@ -1060,10 +1014,7 @@ export async function updateBaRequirement(
   }
   if (patch.inputStale !== undefined) existing.inputStale = patch.inputStale;
   existing.updatedAt = now;
-  await (await requirementsCol()).updateOne(
-    withActive({ id }),
-    { $set: existing },
-  );
+  await BaRequirementModel.updateOne({ id }, { $set: existing });
   return existing;
 }
 
@@ -1073,9 +1024,7 @@ export async function getBaRequirementByThread(
 ): Promise<BaRequirement | null> {
   const id = threadId.trim();
   if (!id) return null;
-  return (await requirementsCol()).findOne(
-    withActive({ linkedThreadId: id }),
-  );
+  return BaRequirementModel.findOne({ linkedThreadId: id });
 }
 
 export async function upsertBaRequirementStep(
@@ -1161,11 +1110,6 @@ export type BaTaskDraft = {
   updatedAt: string;
 };
 
-async function taskDraftsCol(): Promise<Collection<BaTaskDraft>> {
-  const db = await connectMongo();
-  return db.collection<BaTaskDraft>("ba_task_drafts");
-}
-
 export async function listBaTaskDrafts(opts: {
   userId: string;
   baProjectId?: string;
@@ -1176,14 +1120,14 @@ export async function listBaTaskDrafts(opts: {
   if (opts.baProjectId?.trim()) filter.baProjectId = opts.baProjectId.trim();
   if (opts.requirementId?.trim()) filter.requirementId = opts.requirementId.trim();
   if (opts.status) filter.status = opts.status;
-  return (await taskDraftsCol())
-    .find(withActive(filter))
-    .sort({ updatedAt: -1 })
-    .toArray();
+  return BaTaskDraftModel.findMany({
+    filter,
+    sort: { updatedAt: -1 },
+  });
 }
 
 export async function getBaTaskDraft(id: string): Promise<BaTaskDraft | null> {
-  return (await taskDraftsCol()).findOne(withActive({ id: id.trim() }));
+  return BaTaskDraftModel.findOne({ id: id.trim() });
 }
 
 export async function createBaTaskDraft(opts: {
@@ -1224,7 +1168,7 @@ export async function createBaTaskDraft(opts: {
     createdAt: now,
     updatedAt: now,
   };
-  await (await taskDraftsCol()).insertOne({ ...doc, ...softDeleteActiveFields() });
+  await BaTaskDraftModel.insert(doc);
   return doc;
 }
 
@@ -1274,10 +1218,7 @@ export async function updateBaTaskDraft(
   if (patch.gitlabIid !== undefined) existing.gitlabIid = patch.gitlabIid;
   if (patch.gitlabUrl !== undefined) existing.gitlabUrl = patch.gitlabUrl;
   existing.updatedAt = now;
-  await (await taskDraftsCol()).updateOne(
-    withActive({ id }),
-    { $set: existing },
-  );
+  await BaTaskDraftModel.updateOne({ id }, { $set: existing });
   return existing;
 }
 

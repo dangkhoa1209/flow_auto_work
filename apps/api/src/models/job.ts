@@ -1,5 +1,5 @@
 import type { SoftDeleteFields } from "./base.js";
-import { createModel, purgeSoftDeleted, softUniquePartialFilter, withActive } from "./base.js";
+import { createModel, softUniquePartialFilter, withActive } from "./base.js";
 import { connectMongo } from "./connection.js";
 import { ChatModel } from "./chat.js";
 import { NoteModel } from "./note.js";
@@ -130,7 +130,7 @@ export async function purgeSoftDeletedJobsForIssue(
       { workspaceProjectId: "" },
     ];
   }
-  return purgeSoftDeleted(await JobModel.col(), filter);
+  return JobModel.purgeSoftDeleted(filter);
 }
 
 /** Soft-delete chat + notes for a job (before soft-deleting the job doc). */

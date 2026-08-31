@@ -1,13 +1,11 @@
-import { type Collection } from "mongodb";
-import { rename as fsRename } from "node:fs/promises";
-import path from "node:path";
 import { connectMongo } from "../models/connection.js";
-import { withActive, softDeleteActiveFields, purgeSoftDeleted } from "../models/base.js";
 import {
   WorkspaceMembershipModel,
   WorkspaceProjectModel,
   WorkspaceUserModel,
 } from "../models/workspace.js";
+import { rename as fsRename } from "node:fs/promises";
+import path from "node:path";
 import { decryptSecret, encryptSecret } from "../plugins/crypto/secrets.js";
 import { hashPassword } from "../auth/password.js";
 import { logger } from "../logger.js";
@@ -40,18 +38,6 @@ export function projectFolderSegment(projectName: string): string {
   );
 }
 
-async function usersCol(): Promise<Collection<WorkspaceUser>> {
-  return (await WorkspaceUserModel.col()) as Collection<WorkspaceUser>;
-}
-
-async function projectsCol(): Promise<Collection<WorkspaceProject>> {
-  return (await WorkspaceProjectModel.col()) as Collection<WorkspaceProject>;
-}
-
-async function membershipsCol(): Promise<Collection<WorkspaceMembership>> {
-  return (await WorkspaceMembershipModel.col()) as Collection<WorkspaceMembership>;
-}
-
 export async function ensureWorkspaceIndexes(): Promise<void> {
   await WorkspaceUserModel.ensureIndexes();
   await WorkspaceProjectModel.ensureIndexes();
@@ -69,7 +55,7 @@ export async function getUserByUsername(
 ): Promise<WorkspaceUser | null> {
   const id = normUserId(username);
   if (!id) return null;
-  return (await usersCol()).findOne(withActive({ id }));
+  return WorkspaceUserModel.findOne({ id });
 }
 
 export async function createOrUpdateUserPassword(opts: {
@@ -99,10 +85,9 @@ export async function createOrUpdateUserPassword(opts: {
   doc.updatedAt = now;
   doc.gitlabUsername = opts.username.trim().replace(/^@/, "");
   if (!existing) {
-    await purgeSoftDeleted(await usersCol(), { id });
+    await WorkspaceUserModel.purgeSoftDeleted({ id });
   }
-  Object.assign(doc, softDeleteActiveFields());
-  await (await usersCol()).updateOne({ id }, { $set: doc }, { upsert: true });
+  await WorkspaceUserModel.upsertOne({ id }, doc);
   return toPublicUser(doc);
 }
 
@@ -140,10 +125,9 @@ export async function upsertUserLogin(opts: {
   doc.updatedAt = now;
   if (!existing) {
     doc.gitlabUsername = opts.gitlabUsername.trim().replace(/^@/, "");
-    await purgeSoftDeleted(await usersCol(), { id });
+    await WorkspaceUserModel.purgeSoftDeleted({ id });
   }
-  Object.assign(doc, softDeleteActiveFields());
-  await (await usersCol()).updateOne({ id }, { $set: doc }, { upsert: true });
+  await WorkspaceUserModel.upsertOne({ id }, doc);
   return toPublicUser(doc);
 }
 
@@ -159,7 +143,7 @@ export async function updateUserPreferences(opts: {
     existing.cursorModel = opts.cursorModel.trim() || "auto";
   }
   existing.updatedAt = now;
-  await (await usersCol()).updateOne({ id }, { $set: existing });
+  await WorkspaceUserModel.updateOne({ id }, { $set: existing });
   return toPublicUser(existing);
 }
 
@@ -177,7 +161,7 @@ export async function setUserQcRole(opts: {
   const now = new Date().toISOString();
   existing.roles = [...roles];
   existing.updatedAt = now;
-  await (await usersCol()).updateOne(
+  await WorkspaceUserModel.updateOne(
     { id },
     { $set: { roles: existing.roles, updatedAt: now } },
   );
@@ -229,7 +213,7 @@ export async function setHandoffPrefs(opts: {
   const map = { ...(existing.handoffPrefsByProject ?? {}) };
   map[pid] = next;
   const now = new Date().toISOString();
-  await (await usersCol()).updateOne(
+  await WorkspaceUserModel.updateOne(
     { id },
     { $set: { handoffPrefsByProject: map, updatedAt: now } },
   );
@@ -243,7 +227,7 @@ export async function clearCursorApiKey(
   const existing = await getUserByUsername(id);
   if (!existing) throw new Error("User not found");
   const now = new Date().toISOString();
-  await (await usersCol()).updateOne(
+  await WorkspaceUserModel.updateOne(
     { id },
     { $unset: { cursorApiKeyEnc: "" }, $set: { updatedAt: now } },
   );
@@ -262,7 +246,7 @@ export async function setUserGoogleAuth(
   const now = new Date().toISOString();
   existing.googleAuth = googleAuth;
   existing.updatedAt = now;
-  await (await usersCol()).updateOne(
+  await WorkspaceUserModel.updateOne(
     { id },
     { $set: { googleAuth, updatedAt: now } },
   );
@@ -276,7 +260,7 @@ export async function clearUserGoogleAuth(
   const existing = await getUserByUsername(id);
   if (!existing) throw new Error("User not found");
   const now = new Date().toISOString();
-  await (await usersCol()).updateOne(
+  await WorkspaceUserModel.updateOne(
     { id },
     { $unset: { googleAuth: "" }, $set: { updatedAt: now } },
   );
@@ -336,36 +320,39 @@ export async function getProjectSecrets(projectId: string): Promise<{
 }
 
 export async function listProjects(): Promise<WorkspaceProject[]> {
-  return (await projectsCol()).find(withActive({})).sort({ displayName: 1 }).toArray();
+  return WorkspaceProjectModel.findMany({ sort: { displayName: 1 } });
 }
 
 export async function listProjectsForUser(
   username: string,
 ): Promise<WorkspaceProject[]> {
   const userId = normUserId(username);
-  return (await projectsCol())
-    .find(withActive({ userId }))
-    .sort({ isActive: -1, updatedAt: -1 })
-    .toArray();
+  return WorkspaceProjectModel.findMany({
+    filter: { userId },
+    sort: { isActive: -1, updatedAt: -1 },
+  });
 }
 
 export async function getProject(
   projectId: string,
 ): Promise<WorkspaceProject | null> {
-  return (await projectsCol()).findOne(withActive({ id: projectId }));
+  return WorkspaceProjectModel.findOne({ id: projectId });
 }
 
 export async function getActiveProjectForUser(
   username: string,
 ): Promise<WorkspaceProject | null> {
   const userId = normUserId(username);
-  const active = await (await projectsCol()).findOne(withActive({ userId, isActive: true }));
+  const active = await WorkspaceProjectModel.findOne({
+    userId,
+    isActive: true,
+  });
   if (active) return active;
-  const first = await (await projectsCol())
-    .find(withActive({ userId }))
-    .sort({ updatedAt: -1 })
-    .limit(1)
-    .toArray();
+  const first = await WorkspaceProjectModel.findMany({
+    filter: { userId },
+    sort: { updatedAt: -1 },
+    limit: 1,
+  });
   return first[0] ?? null;
 }
 
@@ -373,14 +360,12 @@ export async function getProjectByPath(
   gitlabPath: string,
 ): Promise<WorkspaceProject | null> {
   const path = gitlabPath.trim().replace(/^\/+|\/+$/g, "");
-  return (await projectsCol()).findOne(
-    withActive({
-      gitlabPath: {
-        $regex: `^${path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`,
-        $options: "i",
-      },
-    }),
-  );
+  return WorkspaceProjectModel.findOne({
+    gitlabPath: {
+      $regex: `^${path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`,
+      $options: "i",
+    },
+  });
 }
 
 function syncRepoPath(doc: WorkspaceProject): WorkspaceProject {
@@ -417,9 +402,7 @@ export async function createUserProject(opts: {
 
   // Case-insensitive + folder-segment clash (path …/{name}/source)
   const nameKey = projectFolderSegment(projectName).toLowerCase();
-  const siblings = await (await projectsCol())
-    .find(withActive({ userId }))
-    .toArray();
+  const siblings = await WorkspaceProjectModel.findMany({ filter: { userId } });
   const clash = siblings.find(
     (p) =>
       p.projectName.trim().toLowerCase() === projectName.toLowerCase() ||
@@ -460,13 +443,13 @@ export async function createUserProject(opts: {
     doc.gitlabTokenEnc = encryptSecret(opts.gitlabToken.trim());
   }
   if (doc.isActive) {
-    await (await projectsCol()).updateMany(
-      withActive({ userId }),
-      { $set: { isActive: false, updatedAt: now } },
+    await WorkspaceProjectModel.updateMany(
+      { userId },
+      { isActive: false, updatedAt: now },
     );
   }
-  await purgeSoftDeleted(await projectsCol(), { id });
-  await (await projectsCol()).insertOne({ ...doc, ...softDeleteActiveFields() });
+  await WorkspaceProjectModel.purgeSoftDeleted({ id });
+  await WorkspaceProjectModel.insert(doc);
   return syncRepoPath(doc);
 }
 
@@ -519,10 +502,9 @@ export async function upsertProject(opts: {
     doc.gitlabTokenEnc = encryptSecret(opts.gitlabToken.trim());
   }
   if (!existing) {
-    await purgeSoftDeleted(await projectsCol(), { id });
+    await WorkspaceProjectModel.purgeSoftDeleted({ id });
   }
-  Object.assign(doc, softDeleteActiveFields());
-  await (await projectsCol()).updateOne({ id }, { $set: doc }, { upsert: true });
+  await WorkspaceProjectModel.upsertOne({ id }, doc);
   return syncRepoPath(doc);
 }
 
@@ -556,9 +538,9 @@ export async function updateProjectFields(
     if (!nextName) throw new Error("projectName required");
     if (nextName !== existing.projectName) {
       const nameKey = projectFolderSegment(nextName).toLowerCase();
-      const siblings = await (await projectsCol())
-        .find(withActive({ userId: existing.userId, id: { $ne: projectId } }))
-        .toArray();
+      const siblings = await WorkspaceProjectModel.findMany({
+        filter: { userId: existing.userId, id: { $ne: projectId } },
+      });
       const clash = siblings.find(
         (p) =>
           p.projectName.trim().toLowerCase() === nextName.toLowerCase() ||
@@ -630,17 +612,17 @@ export async function updateProjectFields(
     existing.cloneError = patch.cloneError;
   }
   if (patch.isActive === true) {
-    await (await projectsCol()).updateMany(
-      withActive({ userId: existing.userId }),
-      { $set: { isActive: false, updatedAt: now } },
+    await WorkspaceProjectModel.updateMany(
+      { userId: existing.userId },
+      { isActive: false, updatedAt: now },
     );
     existing.isActive = true;
   } else if (patch.isActive === false) {
     existing.isActive = false;
   }
   existing.updatedAt = now;
-  await (await projectsCol()).updateOne(
-    withActive({ id: projectId }),
+  await WorkspaceProjectModel.updateOne(
+    { id: projectId },
     { $set: existing },
   );
   return syncRepoPath(existing);
@@ -765,9 +747,8 @@ export async function upsertMembership(opts: {
   // Legacy membership collection
   const id = membershipId(userId, opts.projectId);
   const now = new Date().toISOString();
-  const col = await membershipsCol();
-  const existing = await col.findOne(withActive({ id }));
-  await purgeSoftDeleted(col, { id });
+  const existing = await WorkspaceMembershipModel.findOne({ id });
+  await WorkspaceMembershipModel.purgeSoftDeleted({ id });
   const $set: Record<string, unknown> = {
     id,
     userId,
@@ -792,8 +773,11 @@ export async function upsertMembership(opts: {
   const update: { $set: Record<string, unknown>; $unset?: Record<string, ""> } =
     { $set };
   if (Object.keys($unset).length) update.$unset = $unset;
-  await col.updateOne({ id }, update, { upsert: true });
-  const saved = await col.findOne(withActive({ id }));
+  await WorkspaceMembershipModel.updateOne({ id }, update, {
+    upsert: true,
+    raw: true,
+  });
+  const saved = await WorkspaceMembershipModel.findOne({ id });
   if (!saved) throw new Error("Failed to save membership");
   return saved;
 }
@@ -807,10 +791,10 @@ export async function listMembershipsForUser(
   }
   // Legacy fallback
   const userId = normUserId(username);
-  const mems = await (await membershipsCol())
-    .find(withActive({ userId }))
-    .sort({ updatedAt: -1 })
-    .toArray();
+  const mems = await WorkspaceMembershipModel.findMany({
+    filter: { userId },
+    sort: { updatedAt: -1 },
+  });
   const out: MembershipWithProject[] = [];
   for (const m of mems) {
     const project = await getProject(m.projectId);
@@ -828,5 +812,5 @@ export async function getMembership(
     return projectToMembership(username, project);
   }
   const id = membershipId(normUserId(username), projectId);
-  return (await membershipsCol()).findOne(withActive({ id }));
+  return WorkspaceMembershipModel.findOne({ id });
 }

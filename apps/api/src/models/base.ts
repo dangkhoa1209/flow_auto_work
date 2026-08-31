@@ -3,8 +3,10 @@ import type {
   CreateIndexesOptions,
   Document,
   Filter,
+  FindOneAndUpdateOptions,
   OptionalUnlessRequiredId,
   Sort,
+  UpdateFilter,
   WithId,
 } from "mongodb";
 import { connectMongo } from "./connection.js";
@@ -54,6 +56,19 @@ export type ModelApi<T extends Document> = {
     filter: Filter<T>,
     opts?: { withDeleted?: boolean },
   ) => Promise<WithId<T> | null>;
+  updateOne: (
+    filter: Filter<T>,
+    update: UpdateFilter<T>,
+    opts?: { upsert?: boolean; /** Match without active filter (e.g. upsert after purge). */ raw?: boolean },
+  ) => Promise<void>;
+  updateMany: (filter: Filter<T>, patch: Partial<T>) => Promise<number>;
+  upsertOne: (matchFilter: Filter<T>, doc: Partial<T>) => Promise<WithId<T>>;
+  findOneAndUpdate: (
+    filter: Filter<T>,
+    update: UpdateFilter<T>,
+    opts?: FindOneAndUpdateOptions,
+  ) => Promise<WithId<T> | null>;
+  purgeSoftDeleted: (filter?: Filter<T>) => Promise<number>;
   insert: (doc: OptionalUnlessRequiredId<T>) => Promise<WithId<T>>;
   updateById: (
     id: string,
@@ -70,8 +85,21 @@ export type CreateModelOpts = {
   softDelete?: boolean;
   defaultSort?: Sort;
   parseId?: (id: string) => unknown;
+  /** Business key field — default Mongo `_id`. */
+  idField?: string;
   indexes?: ModelIndexSpec[];
 };
+
+function idKeyFilter<T extends Document>(
+  idField: string | undefined,
+  parseId: (id: string) => unknown,
+  id: string,
+): Filter<T> {
+  if (idField) {
+    return { [idField]: parseId(id) } as Filter<T>;
+  }
+  return { _id: parseId(id) } as Filter<T>;
+}
 
 /** Match docs that are not soft-deleted (missing `deleted` or `false`). */
 export function activeFilter<T extends Document = Document>(): Filter<T> {
@@ -207,6 +235,7 @@ export function createModel<T extends Document>(
   const softDelete = opts.softDelete ?? false;
   const defaultSort: Sort = opts.defaultSort ?? { updatedAt: -1 };
   const parseId = opts.parseId ?? ((id: string) => id);
+  const idField = opts.idField;
   let indexesReady = false;
 
   async function col(): Promise<Collection<T>> {
@@ -277,12 +306,10 @@ export function createModel<T extends Document>(
 
     async findById(id, findOpts) {
       await ensureIndexes();
-      const filter = mergeFilter(
-        softDelete,
-        { _id: parseId(id) } as Filter<T>,
-        findOpts?.withDeleted,
+      const filter = idKeyFilter<T>(idField, parseId, id);
+      return (await col()).findOne(
+        mergeFilter(softDelete, filter, findOpts?.withDeleted),
       );
-      return (await col()).findOne(filter);
     },
 
     async findOne(filter, findOpts) {
@@ -290,6 +317,55 @@ export function createModel<T extends Document>(
       return (await col()).findOne(
         mergeFilter(softDelete, filter, findOpts?.withDeleted),
       );
+    },
+
+    async updateOne(filter, update, updateOpts) {
+      await ensureIndexes();
+      const merged = updateOpts?.raw
+        ? filter
+        : mergeFilter(softDelete, filter, false);
+      await (await col()).updateOne(merged, update, {
+        upsert: updateOpts?.upsert,
+      });
+    },
+
+    async updateMany(filter, patch) {
+      await ensureIndexes();
+      const merged = mergeFilter(softDelete, filter, false);
+      const result = await (await col()).updateMany(merged, {
+        $set: patch as Partial<T>,
+      });
+      return result.modifiedCount;
+    },
+
+    async upsertOne(matchFilter, doc) {
+      await ensureIndexes();
+      const c = await col();
+      const payload = softDelete
+        ? ({ ...doc, ...softDeleteActiveFields() } as Partial<T>)
+        : doc;
+      await c.updateOne(matchFilter, { $set: payload }, { upsert: true });
+      const saved = await c.findOne(
+        mergeFilter(softDelete, matchFilter, false),
+      );
+      if (!saved) {
+        throw new Error(`upsert failed for ${opts.collection}`);
+      }
+      return saved;
+    },
+
+    async findOneAndUpdate(filter, update, updateOpts) {
+      await ensureIndexes();
+      const merged = mergeFilter(softDelete, filter, false);
+      return (await col()).findOneAndUpdate(merged, update, {
+        returnDocument: "after",
+        ...updateOpts,
+      });
+    },
+
+    async purgeSoftDeleted(filter = {} as Filter<T>) {
+      await ensureIndexes();
+      return purgeSoftDeleted(await col(), filter);
     },
 
     async insert(doc) {
@@ -311,16 +387,9 @@ export function createModel<T extends Document>(
     async updateById(id, patch) {
       await ensureIndexes();
       const c = await col();
-      await c.updateOne({ _id: parseId(id) } as Filter<T>, {
-        $set: patch as Partial<T>,
-      });
-      return c.findOne(
-        mergeFilter(
-          softDelete,
-          { _id: parseId(id) } as Filter<T>,
-          false,
-        ),
-      );
+      const keyFilter = idKeyFilter<T>(idField, parseId, id);
+      await c.updateOne(keyFilter, { $set: patch as Partial<T> });
+      return c.findOne(mergeFilter(softDelete, keyFilter, false));
     },
 
     async softDeleteById(id) {
@@ -328,15 +397,13 @@ export function createModel<T extends Document>(
         return this.forceDeleteById(id);
       }
       await ensureIndexes();
-      const result = await (await col()).updateOne(
-        { _id: parseId(id) } as Filter<T>,
-        {
-          $set: {
-            deleted: true,
-            deletedAt: new Date().toISOString(),
-          } as unknown as Partial<T>,
-        },
-      );
+      const keyFilter = idKeyFilter<T>(idField, parseId, id);
+      const result = await (await col()).updateOne(keyFilter, {
+        $set: {
+          deleted: true,
+          deletedAt: new Date().toISOString(),
+        } as unknown as Partial<T>,
+      });
       return result.matchedCount > 0;
     },
 
@@ -356,9 +423,8 @@ export function createModel<T extends Document>(
 
     async forceDeleteById(id) {
       await ensureIndexes();
-      const result = await (await col()).deleteOne({
-        _id: parseId(id),
-      } as Filter<T>);
+      const keyFilter = idKeyFilter<T>(idField, parseId, id);
+      const result = await (await col()).deleteOne(keyFilter);
       return result.deletedCount > 0;
     },
 
