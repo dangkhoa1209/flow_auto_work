@@ -110,8 +110,25 @@ function mergeFilter<T extends Document>(
 
 /**
  * Unique among active rows only — soft-deleted rows do not collide.
- * `$ne: true` matches missing `deleted` and `deleted: false`.
+ * Mongo partial indexes only allow equality / range — not `$ne` or `$exists: false`.
  */
+export function softUniquePartialFilter(): Document {
+  return { deleted: false };
+}
+
+async function normalizeSoftDeleteField(c: Collection<Document>): Promise<void> {
+  const result = await c.updateMany(
+    { $or: [{ deleted: { $exists: false } }, { deleted: null }] },
+    { $set: { deleted: false, deletedAt: null } },
+  );
+  if (result.modifiedCount > 0) {
+    logger.info("Normalized legacy soft-delete field", {
+      collection: c.collectionName,
+      count: result.modifiedCount,
+    });
+  }
+}
+
 export function softUniqueOptions(
   name: string,
   extra?: CreateIndexesOptions,
@@ -120,7 +137,7 @@ export function softUniqueOptions(
     ...extra,
     name,
     unique: true,
-    partialFilterExpression: { deleted: { $ne: true } },
+    partialFilterExpression: softUniquePartialFilter(),
   };
 }
 
@@ -182,6 +199,9 @@ export function createModel<T extends Document>(
   async function ensureIndexes(): Promise<void> {
     if (indexesReady) return;
     const c = (await col()) as unknown as Collection<Document>;
+    if (softDelete) {
+      await normalizeSoftDeleteField(c);
+    }
     if (opts.indexes?.length) {
       for (const idx of opts.indexes) {
         const { softUnique, ...rest } = idx.options ?? {};

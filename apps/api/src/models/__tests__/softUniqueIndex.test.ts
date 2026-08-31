@@ -1,6 +1,6 @@
 /**
  * Soft-delete + unique index interaction.
- * Unique indexes MUST use partialFilterExpression `{ deleted: { $ne: true } }`
+ * Unique indexes MUST use partialFilterExpression for active rows only
  * (or softUnique) so soft-deleted rows do not block re-create of username/slug/job.
  */
 import { describe, expect, it } from "vitest";
@@ -11,7 +11,7 @@ describe("soft-delete index helpers", () => {
     const opts = softUniqueOptions("slug_soft_unique");
     expect(opts.unique).toBe(true);
     expect(opts.name).toBe("slug_soft_unique");
-    expect(opts.partialFilterExpression).toEqual({ deleted: { $ne: true } });
+    expect(opts.partialFilterExpression).toEqual({ deleted: false });
   });
 
   it("withActive excludes deleted:true and keeps missing/false", () => {

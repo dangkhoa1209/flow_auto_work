@@ -1,5 +1,5 @@
 import type { SoftDeleteFields } from "./base.js";
-import { createModel, withActive } from "./base.js";
+import { createModel, softUniquePartialFilter, withActive } from "./base.js";
 import { connectMongo } from "./connection.js";
 import { ChatModel } from "./chat.js";
 import { NoteModel } from "./note.js";
@@ -32,7 +32,7 @@ export const JobModel = createModel<JobDoc>({
         unique: true,
         partialFilterExpression: {
           $and: [
-            { deleted: { $ne: true } },
+            softUniquePartialFilter(),
             { workspaceProjectId: { $type: "string" } },
           ],
         },

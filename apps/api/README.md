@@ -14,7 +14,7 @@ Flow API keeps **Express + native Mongo** (no Mongoose / tsoa). Patterns adapted
 
 All domain collections use soft-delete (`deleted` / `deletedAt`).
 
-**Unique indexes** use `partialFilterExpression: { deleted: { $ne: true } }` (`softUnique`) so a soft-deleted username / slug / job / script **does not** block creating the same key again.
+**Unique indexes** use `partialFilterExpression: { deleted: false }` (`softUnique`) so a soft-deleted username / slug / job / script **does not** block creating the same key again.
 
 Boot (`ensureAllModelIndexes`) drops legacy full uniques (`gitlabUsername_1`, `slug_1`, `ws_project_issue_unique`, …) then recreates soft-unique indexes.
 
