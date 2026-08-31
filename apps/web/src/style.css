@@ -2022,7 +2022,8 @@ a.faw-mseg__btn {
     font-size: var(--faw-ctrl-fs);
     font-weight: 650;
   }
-  .faw-app-shell .faw-btn--run {
+  /* Only stretch Run in task filters — not console-head Process/Terminal active state */
+  .faw-app-shell .faw-filters__row .faw-btn--run {
     flex: 1 1 0 !important;
     min-width: 0 !important;
     max-width: none !important;
