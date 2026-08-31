@@ -146,7 +146,7 @@ export async function baGetGitlabIssueMeta(
   await assertProjectReady(baProjectId);
 
   const [currentUser, members, labels, milestones] = await Promise.all([
-    resolveBaAssigneeUsername(token),
+    resolveBaAssigneeUsername(token, undefined, project.gitlabHost),
     fetchBaProjectMembers(project.gitlabHost, token, project.gitlabPath),
     fetchBaProjectLabels(project.gitlabHost, token, project.gitlabPath),
     fetchBaProjectMilestones(project.gitlabHost, token, project.gitlabPath),
@@ -614,7 +614,11 @@ export async function baPublishTaskDraft(
     throw new AppError(`Milestone không tồn tại: ${milestoneTitle}`, 400);
   }
 
-  const assignee = await resolveBaAssigneeUsername(token, body.assignee);
+  const assignee = await resolveBaAssigneeUsername(
+    token,
+    body.assignee,
+    project.gitlabHost,
+  );
 
   const labels = labelsForPublish(draft.labels);
 
