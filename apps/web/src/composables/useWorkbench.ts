@@ -3,6 +3,7 @@ import { message, Modal } from "ant-design-vue";
 import { storeToRefs } from "pinia";
 import { useRouter } from "vue-router";
 import { api } from "@/api/client";
+import { useProjectClone } from "@/composables/useProjectClone";
 import { useSessionStore } from "@/stores/session";
 import { useSettingsStore } from "@/stores/settings";
 import { useWorkStore, isAdhocJob, type TaskDetail } from "@/stores/work";
@@ -14,6 +15,7 @@ export type MidTab = "detail" | "diff";
 export function useWorkbench() {
   const router = useRouter();
   const session = useSessionStore();
+  const projectClone = useProjectClone();
   const settings = useSettingsStore();
   const work = useWorkStore();
   const {
@@ -538,6 +540,12 @@ export function useWorkbench() {
     return false;
   }
 
+  async function ensureWorkReady(): Promise<boolean> {
+    if (!(await ensureCursorKey())) return false;
+    if (!(await projectClone.ensureCloned())) return false;
+    return true;
+  }
+
   /** IIDs not in Open (assigned-to-you) list — confirm before Run only. */
   function confirmRunIfNotAssigned(iids: number[]): Promise<boolean> {
     const openSet = new Set(tasks.value.map((t) => t.issueIid));
@@ -569,7 +577,7 @@ export function useWorkbench() {
       message.warning(runBlockedReason.value);
       return;
     }
-    if (!(await ensureCursorKey())) return;
+    if (!(await ensureWorkReady())) return;
     if (!selectedJobId.value) {
       message.warning("Select a job first");
       return;
@@ -580,12 +588,15 @@ export function useWorkbench() {
 
     busy.value = true;
     try {
-      const res = await work.startJobs({
-        mode: "selected",
-        jobIds: [selectedJobId.value],
-        devNotes: notesDraft.value.trim() || undefined,
-        requireDocsFirst: requireDocsFirst.value,
-      });
+      const res = await projectClone.withCloneRetry(() =>
+        work.startJobs({
+          mode: "selected",
+          jobIds: [selectedJobId.value!],
+          devNotes: notesDraft.value.trim() || undefined,
+          requireDocsFirst: requireDocsFirst.value,
+        }),
+      );
+      if (!res) return;
       mobilePane.value = "chat";
       const n = res.enqueued ?? 0;
       if (n > 0) message.success("Job queued for agent run");
@@ -608,7 +619,7 @@ export function useWorkbench() {
       message.warning(runBlockedReason.value);
       return;
     }
-    if (!(await ensureCursorKey())) return;
+    if (!(await ensureWorkReady())) return;
     const iids = selectedIids.value.filter((id) => id > 0);
     if (!iids.length) {
       message.warning("Select a task");
@@ -618,12 +629,15 @@ export function useWorkbench() {
 
     busy.value = true;
     try {
-      const res = await work.startJobs({
-        mode: "selected",
-        issueIids: iids,
-        devNotes: notesDraft.value.trim() || undefined,
-        requireDocsFirst: requireDocsFirst.value,
-      });
+      const res = await projectClone.withCloneRetry(() =>
+        work.startJobs({
+          mode: "selected",
+          issueIids: iids,
+          devNotes: notesDraft.value.trim() || undefined,
+          requireDocsFirst: requireDocsFirst.value,
+        }),
+      );
+      if (!res) return;
       mobilePane.value = "chat";
       const n = res.enqueued ?? 0;
       if (n > 0) {
@@ -695,11 +709,14 @@ export function useWorkbench() {
 
   /** Tasks column Run all — assigned open tasks only. */
   async function runAll() {
-    if (!(await ensureCursorKey())) return;
+    if (!(await ensureWorkReady())) return;
     if (!(await confirmRunAllTasks())) return;
     busy.value = true;
     try {
-      const res = await work.startJobs({ mode: "all" });
+      const res = await projectClone.withCloneRetry(() =>
+        work.startJobs({ mode: "all" }),
+      );
+      if (!res) return;
       const n = res.enqueued ?? 0;
       if (n > 0) message.success(`${n} task(s) queued`);
       else message.warning("Nothing queued — all skipped or already busy");
@@ -721,24 +738,24 @@ export function useWorkbench() {
       message.warning("Agent đang bận — đợi xong hoặc Force Stop rồi gửi lại");
       return;
     }
-    if (!(await ensureCursorKey())) return;
+    if (!(await ensureWorkReady())) return;
     chatInput.value = "";
     await nextTick();
     busy.value = true;
     work.watchProgress();
     try {
-      // Clarification replies always go through continue (same chat)
       const useContinue =
         mode === "continue" ||
         currentJob.value?.status === "awaiting_clarification";
       if (useContinue) {
-        const res = await work.sendContinue(msg);
+        const res = await projectClone.withCloneRetry(() => work.sendContinue(msg));
+        if (!res) return;
         if (res?.kind === "bad_context") {
           message.warning("Bad Context — bổ sung Dev Notes / chat rồi Send lại");
         }
         // queued → agentTyping + SSE; no blocking wait
       } else {
-        await work.sendAsk(msg);
+        await projectClone.withCloneRetry(() => work.sendAsk(msg));
       }
     } catch (e) {
       const msgText = e instanceof Error ? e.message : String(e);
@@ -815,16 +832,19 @@ export function useWorkbench() {
   /** Quick merge work→base (AI auto-fix conflicts like Sync base). */
   async function quickMerge() {
     if (!selectedJobId.value || !canQuickMerge.value) return;
-    if (!(await ensureCursorKey())) return;
+    if (!(await ensureWorkReady())) return;
     mergeBusy.value = true;
     work.watchProgress();
     try {
-      const res = await api<{
-        merge?: { aiResolved?: boolean; target?: string; wipWarning?: string };
-      }>(`/api/jobs/${selectedJobId.value}/merge`, {
-        method: "POST",
-        body: JSON.stringify({}),
-      });
+      const res = await projectClone.withCloneRetry(() =>
+        api<{
+          merge?: { aiResolved?: boolean; target?: string; wipWarning?: string };
+        }>(`/api/jobs/${selectedJobId.value}/merge`, {
+          method: "POST",
+          body: JSON.stringify({}),
+        }),
+      );
+      if (!res) return;
       const m = res?.merge;
       if (m?.aiResolved) {
         message.success(
@@ -846,15 +866,19 @@ export function useWorkbench() {
   /** Open MR only (no accept) + Issue Ready to Release. */
   async function createMr() {
     if (!selectedJobId.value || !canCreateMr.value) return;
+    if (!(await ensureWorkReady())) return;
     createMrBusy.value = true;
     try {
-      const res = await api<{
-        mrUrl?: string;
-        created?: boolean;
-      }>(`/api/jobs/${selectedJobId.value}/create-mr`, {
-        method: "POST",
-        body: JSON.stringify({}),
-      });
+      const res = await projectClone.withCloneRetry(() =>
+        api<{
+          mrUrl?: string;
+          created?: boolean;
+        }>(`/api/jobs/${selectedJobId.value}/create-mr`, {
+          method: "POST",
+          body: JSON.stringify({}),
+        }),
+      );
+      if (!res) return;
       message.success(
         res.created === false
           ? "MR already open"
@@ -872,12 +896,14 @@ export function useWorkbench() {
 
   async function generateTestcases() {
     if (!selectedJobId.value || !canGenerateTestcases.value) return;
-    if (!(await ensureCursorKey())) return;
+    if (!(await ensureWorkReady())) return;
     testcasesBusy.value = true;
     work.watchProgress();
     try {
       const { jobApi } = await import("@/api/jobApi");
-      await jobApi.generateTestcases(selectedJobId.value);
+      await projectClone.withCloneRetry(() =>
+        jobApi.generateTestcases(selectedJobId.value!),
+      );
       message.success(
         "Đã xếp hàng sinh testcase — sẽ comment lên GitLab khi xong",
       );
@@ -949,19 +975,23 @@ export function useWorkbench() {
       await openSyncBasePicker();
       return;
     }
+    if (!(await ensureWorkReady())) return;
     syncBaseBusy.value = true;
     try {
-      const res = await api<{
-        sync?: {
-          target?: string;
-          aiResolved?: boolean;
-          alreadyUpToDate?: boolean;
-          wipWarning?: string;
-        };
-      }>(`/api/jobs/${selectedJobId.value}/sync-base`, {
-        method: "POST",
-        body: JSON.stringify(targetBranch ? { targetBranch } : {}),
-      });
+      const res = await projectClone.withCloneRetry(() =>
+        api<{
+          sync?: {
+            target?: string;
+            aiResolved?: boolean;
+            alreadyUpToDate?: boolean;
+            wipWarning?: string;
+          };
+        }>(`/api/jobs/${selectedJobId.value}/sync-base`, {
+          method: "POST",
+          body: JSON.stringify(targetBranch ? { targetBranch } : {}),
+        }),
+      );
+      if (!res) return;
       const s = res?.sync;
       if (s?.alreadyUpToDate) {
         message.info(`Đã mới nhất so với ${s?.target || "base"} — không có gì để pull`);
@@ -1004,16 +1034,19 @@ export function useWorkbench() {
     }
     handoffBusy.value = true;
     try {
-      await api(`/api/jobs/${selectedJobId.value}/completion-actions`, {
-        method: "POST",
-        body: JSON.stringify({
-          assignees: loc.assignee ? [loc.assignee] : [],
-          labels: loc.addLabels || [],
-          removeLabels: loc.removeLabels || [],
-          comment: loc.comment || undefined,
-          labelMode: "add",
+      const ok = await projectClone.withCloneRetry(() =>
+        api(`/api/jobs/${selectedJobId.value}/completion-actions`, {
+          method: "POST",
+          body: JSON.stringify({
+            assignees: loc.assignee ? [loc.assignee] : [],
+            labels: loc.addLabels || [],
+            removeLabels: loc.removeLabels || [],
+            comment: loc.comment || undefined,
+            labelMode: "add",
+          }),
         }),
-      });
+      );
+      if (!ok) return;
       message.success("Handoff OK");
       await Promise.all([work.loadJobs(), work.loadTasks()]);
       if (selectedJobId.value) {
@@ -1075,13 +1108,16 @@ export function useWorkbench() {
       message.warning("Enter a session title");
       return;
     }
-    if (!(await ensureCursorKey())) return;
+    if (!(await ensureWorkReady())) return;
     adhocBusy.value = true;
     try {
-      const res = await work.createAdhocSession({
-        title,
-        message: adhocMessage.value.trim() || undefined,
-      });
+      const res = await projectClone.withCloneRetry(() =>
+        work.createAdhocSession({
+          title,
+          message: adhocMessage.value.trim() || undefined,
+        }),
+      );
+      if (!res) return;
       adhocOpen.value = false;
       mobilePane.value = res.started ? "chat" : "detail";
       if (res.started) work.watchProgress();
