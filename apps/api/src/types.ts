@@ -213,7 +213,7 @@ export type JobRecord = {
   pendingFollowUpKind?: "send" | "ask";
   /** Status to restore if a queued follow-up is cancelled / fails soft. */
   followUpRestoreStatus?: JobStatus;
-  /** Hard gate: read/update AiHR feature docs before any app code */
+  /** Hard gate: read/update project feature docs before any app code */
   requireDocsFirst?: boolean;
   /** Feature doc paths from docs phase (.md / .mdc under docs/), for PM review */
   docsPaths?: string[];

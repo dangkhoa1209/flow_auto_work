@@ -93,7 +93,36 @@ ${lines.join("\n\n")}
 }
 
 /**
- * Phase A: read/update AiHR feature docs under docs/modules/... (NOT per-issue files).
+ * Shared “how to load project conventions” — AGENTS.md first, then rules/skills/docs
+ * that exist in the checkout (not hard-coded to one product).
+ */
+function projectConventionsBlock(opts?: { forDocsPhase?: boolean }): string {
+  const docsHint = opts?.forDocsPhase
+    ? `
+Project knowledge (when present — adapt to this repo’s layout):
+- **Feature / product docs**: often under \`docs/\` (hub README → module → feature). Prefer \`.md\` / \`.mdc\`.
+- **Rules**: \`.cursor/rules/**/*.mdc\` — conventions for this codebase.
+- Templates / shared docs if the tree has them (e.g. \`docs/_templates/\`, \`docs/shared/\`).
+Do **not** invent a fixed product-specific docs tree if this repo uses a different layout — follow what \`AGENTS.md\` and the docs hub describe.
+`
+    : `
+Also load (only what exists and is relevant):
+- \`.cursor/skills/**/SKILL.md\` if the project ships skills for this workflow
+- Relevant \`.cursor/rules/**/*.mdc\` (project, docs-loading, domain)
+- Feature/product docs under \`docs/\` (or paths named in \`AGENTS.md\`) for modules you touch — keep the set small (~3)
+`;
+
+  return `# PROJECT CONVENTIONS (MANDATORY)
+This checkout may be **any** customer/product repo — follow **this** repo’s conventions, not a hard-coded product stack.
+
+**Read first:** \`AGENTS.md\` at the repo root (if missing, say so and use \`.cursor/rules\` + code exploration).
+${docsHint}
+Obey those sources. Do not invent patterns that contradict them.
+`;
+}
+
+/**
+ * Phase A: read/update feature docs (paths from AGENTS.md / docs hub — NOT per-issue files).
  */
 export function buildDocsPhasePrompt(
   issue: IssueJob,
@@ -124,19 +153,10 @@ export function buildDocsPhasePrompt(
     : "";
 
   return `# MISSION — DOCS PHASE ONLY (NO APP CODE)
-You are preparing documentation for GitLab issue #${issue.issueIid} on AiHR v3 BEFORE any implementation.
+You are preparing documentation for GitLab issue #${issue.issueIid} on the **current project checkout** BEFORE any implementation.
 
-Follow AGENTS.md, .cursor/skills/aihr/SKILL.md, and relevant \`.cursor/rules/**/*.mdc\` (docs-loading, project, domain rules).
+${projectConventionsBlock({ forDocsPhase: true })}
 Ignore image/file attachments — text only.
-
-AiHR knowledge is:
-- **Feature docs**: \`docs/\` — module → feature (NOT by GitLab issue/task). Files may be \`.md\` or \`.mdc\`.
-- **Rules**: \`.cursor/rules/**/*.mdc\` — system conventions (read; do not invent conflicting guidance).
-- Hub: \`docs/README.md\`
-- Modules: \`docs/modules/<module>/\`
-- Features: \`docs/modules/<module>/<feature>/\` (README + overview / topic docs)
-- Templates: \`docs/_templates/\`
-- Shared: \`docs/shared/\`
 
 ${qualityBlock}${chatBlock}${notesBlock}# BUSINESS REQUIREMENTS (GITLAB ISSUE #${issue.issueIid})
 Title: ${issue.title}
@@ -148,29 +168,29 @@ ${description}
 ${linkedBlock}${sheetsBlock}${figmaBlock}
 
 # HARD RULES (DOCS PHASE)
-1. DO NOT modify application code (no PHP/JS/Vue/TS/CSS outside docs, no migrations, no app config).
-2. You MAY create/update docs under \`docs/\` (\`.md\` or \`.mdc\` only). Do NOT edit \`.cursor/rules/\` in this phase unless explicitly required by DEV NOTES.
-3. Find the matching **feature** docs (read \`docs/README.md\` then module hub, then feature README). Also skim relevant AiHR rules (\`.cursor/rules/\`, esp. docs-loading). Max ~5 feature docs + needed rules.
-4. Update existing feature docs when they already cover this area. Create a new feature folder only if none fits — follow \`docs/_templates/\` and link from the module README.
-5. Do NOT create per-issue files like \`docs/flow-auto-work/issues/...\` or \`*-issue-123.md\`. Docs belong to the product feature, not the ticket.
+1. DO NOT modify application code (no app source outside docs, no migrations, no app config).
+2. You MAY create/update docs under the project’s docs tree (usually \`docs/\`, \`.md\` or \`.mdc\` only). Do NOT edit \`.cursor/rules/\` in this phase unless DEV NOTES explicitly require it.
+3. Find the matching **feature** docs: start from \`AGENTS.md\`, then the docs hub (e.g. \`docs/README.md\`) → module → feature. Skim relevant \`.cursor/rules/\` (e.g. docs-loading). Max ~5 feature docs + needed rules.
+4. Update existing feature docs when they already cover this area. Create a new feature folder only if none fits — follow project templates if present and link from the module/hub README.
+5. Do NOT create per-issue files like \`docs/.../issues/...\` or \`*-issue-123.md\`. Docs belong to the product feature, not the ticket.
 6. Docs should cover (as appropriate for the feature):
-   - Mục tiêu / hành vi
-   - Phạm vi
-   - Code map / API / DB / FE
-   - Rủi ro & giả định liên quan task này (có thể ghi ngắn trong doc feature)
-   - Plan implement ngắn nếu cần — chưa code
+   - Goal / behavior
+   - Scope
+   - Code map / API / DB / FE (as this stack uses)
+   - Risks & assumptions for this task (short notes in the feature doc OK)
+   - Short implement plan if needed — no app code yet
 7. Do NOT \`git commit\`, \`git push\`, open/merge MRs, or switch branches. Stay on the current branch. Flow Auto Work will commit your file changes to GitLab via API after you finish.
 8. When docs are ready, end with EXACTLY this block (paths = feature docs you created/updated; may include \`.md\` / \`.mdc\`):
 
 <<<DOCS_READY>>>
-ANALYZED: Tiếng Việt — đã phân tích gì (2–5 gạch đầu dòng hoặc đoạn ngắn): scope issue, hành vi/flow chính, docs/rules đã đọc, giả định hoặc gap nổi bật. Không chỉ liệt kê path.
-SUMMARY: Tiếng Việt (1–3 câu): đã tạo/cập nhật docs feature nào và điểm chính đã ghi.
+ANALYZED: Vietnamese — what you analyzed (2–5 bullets or a short paragraph): issue scope, main behavior/flow, docs/rules read, notable assumptions or gaps. Not only a path list.
+SUMMARY: Vietnamese (1–3 sentences): which feature docs you created/updated and the main points recorded.
 DOCS:
 - docs/modules/<module>/<feature>/README.md
 - docs/modules/<module>/<feature>/overview.md
 <<<END_DOCS_READY>>>
 
-List every \`docs/**/*.{md,mdc}\` file you created or substantially updated under DOCS.
+List every docs file you created or substantially updated under DOCS (use real paths for this repo).
 Both ANALYZED and SUMMARY are required — Flow shows them in chat for the PM.
 9. If blocked, use NEED_CLARIFICATION for the Flow Auto Work UI.
 ${gitlabCommentInstructions(issue)}`;
@@ -233,23 +253,17 @@ export function buildWorkPrompt(
     paths.length > 0
       ? `
 # APPROVED FEATURE DOCS (MUST FOLLOW)
-PM approved these AiHR docs (\`.md\` / \`.mdc\`). Read them fully and implement accordingly — still obey \`.cursor/rules/**/*.mdc\`:
+PM approved these project docs (\`.md\` / \`.mdc\`). Read them fully and implement accordingly — still obey \`AGENTS.md\` and \`.cursor/rules/**/*.mdc\`:
 ${paths.map((p) => `- \`${p}\``).join("\n")}
 Do not contradict these docs unless DEV NOTES or UI CHAT REQUESTS override a specific point.
 `
       : "";
 
   return `# MISSION
-You are an expert developer implementing a feature based on a GitLab issue for AiHR v3.
+You are an expert developer implementing a feature based on a GitLab issue for the **current project checkout** (any product — follow this repo’s own conventions).
 
-# AIHR RULES (MANDATORY WHEN CODING)
-You MUST follow AiHR conventions — do not invent patterns that contradict them:
-1. \`AGENTS.md\`
-2. \`.cursor/skills/aihr/SKILL.md\` (workflow)
-3. \`.cursor/rules/\` — especially \`00-project.mdc\`, \`docs-loading.mdc\`, plus domain rules that apply (core/, backend/, frontend/, database/, …). Prefer loading only the relevant \`.mdc\` files.
-4. Feature docs under \`docs/\` (\`.md\` or \`.mdc\`) for the module/feature you touch.
-
-Load the relevant module/feature docs (max ~3) and applicable rules before changing code.
+${projectConventionsBlock()}
+Load the relevant module/feature docs and applicable rules before changing code.
 Do not touch .env, credentials, or secrets.
 Do NOT \`git commit\`, \`git push\`, force-push, amend remote commits, or create/merge MRs.
 Do NOT switch git branches. Stay on the branch that is already checked out.
@@ -271,7 +285,7 @@ Ignore image/file attachments — only use text. Do not try to download or open 
 Real tickets are often incomplete. When something is unclear or missing:
 1. **SELF-RESOLVE first.** Search the repo, feature docs, and the linked issues/comments above. Most "missing" info (file paths, existing patterns, field names, similar screens) is discoverable in the codebase — never ask the human for something the code can answer.
 2. **SAFE ASSUMPTION.** If the gap is minor and one interpretation is clearly standard for this codebase (naming, placement, UI copy, default sort/validation style), proceed — but record it and report it under \`ASSUMPTIONS:\` in the DONE block.
-   NEVER assume on: deleting/migrating data, permissions/security, money/payroll/attendance formulas, external API contracts, or anything irreversible → those go to tier 3.
+   NEVER assume on: deleting/migrating data, permissions/security, money or regulated formulas, external API contracts, or anything irreversible → those go to tier 3.
 3. **ASK (last resort).** Only when the gap genuinely blocks a correct implementation. The human answers in the **Flow Auto Work UI**. End your reply with EXACTLY this block (nothing after it):
 
 <<<NEED_CLARIFICATION>>>
@@ -281,7 +295,7 @@ Your question(s) for the human here (in Vietnamese).
 Question quality rules (strict):
 - ${clarifyBudgetLine(opts?.clarifyRoundsLeft) || "Clarification rounds are limited — batch ALL open questions into ONE block."}
 - Number each question; each must be answerable in one short sentence.
-- Where possible give concrete options with your recommended default, e.g. \`1. Sắp xếp theo? (A) created_at mới nhất — đề xuất (B) tên A→Z\` so the human can reply "1A, 2B".
+- Where possible give concrete options with your recommended default, e.g. \`1. Sort by? (A) newest created_at — recommended (B) name A→Z\` so the human can reply "1A, 2B".
 - Say briefly what you already checked (files/docs/keywords searched) so the human doesn't repeat known info.
 - Do NOT ask about things you can decide via tier 1/2.
 
@@ -300,10 +314,10 @@ If the task spans multiple modules, touches shared logic, or is risky:
 6. When finished successfully, end with EXACTLY this block:
 
 <<<DONE>>>
-SUMMARY: Tóm tắt ngắn tiếng Việt (1–3 câu): đã làm gì / thay đổi chính.
-ASSUMPTIONS: (chỉ khi có) các giả định tự quyết ở tier 2 — mỗi giả định một gạch đầu dòng.
-RISKS: (chỉ khi có) rủi ro / phần bị cắt / điểm reviewer cần chú ý.
-TESTED: đã verify bằng gì (lint/build/test/manual) hoặc "chưa chạy được vì …".
+SUMMARY: Short Vietnamese summary (1–3 sentences): what you did / main changes.
+ASSUMPTIONS: (only if any) tier-2 assumptions — one bullet each.
+RISKS: (only if any) risks / cut scope / reviewer notes.
+TESTED: how you verified (lint/build/test/manual) or "could not run because …".
 <<<END_DONE>>>
 
 The DONE block MUST be written in Vietnamese (tiếng Việt). Omit ASSUMPTIONS/RISKS lines when empty.
@@ -363,6 +377,7 @@ ${history}
 
   return `You are working on GitLab issue #${issue.issueIid} ("${issue.title}") in a Cursor agent window.
 This may be a **new** window — use prior chat + the repo (inspect if needed). Do not assume old tool state is still loaded.
+Prefer \`AGENTS.md\` (then \`.cursor/rules\` / project docs) when you need conventions for **this** checkout.
 ${qualityBlock}${sheetsBlock}${figmaBlock}${historyBlock}## Human follow-up (this turn)
 ${message.trim()}
 
@@ -417,6 +432,7 @@ ${history}
   return `You are in a **free Cursor agent session** (hotfix / ad-hoc) titled "${title}".
 There is **no GitLab issue yet** — a human may create one later from your summary.
 This may be a **new** window — use prior chat + the repo (inspect if needed).
+Prefer \`AGENTS.md\` (then \`.cursor/rules\` / project docs) when you need conventions for **this** checkout.
 ${qualityBlock}${sheetsBlock}${figmaBlock}${historyBlock}## Human request (this turn)
 ${message.trim()}
 
