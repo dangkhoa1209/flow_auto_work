@@ -1,6 +1,7 @@
 import {
   createBuildScript,
   deleteBuildScript,
+  ensureLocalDevSmokeScript,
   listWhitelistedScripts,
   requireWhitelistedScript,
   seedBuildScriptsIfEmpty,
@@ -119,6 +120,7 @@ export async function readBuildLog(jobId: string): Promise<{
 export async function restoreBuildQueue(): Promise<number> {
   await ensureBuildIndexes();
   await seedBuildScriptsIfEmpty();
+  await ensureLocalDevSmokeScript();
   return buildQueue.restoreQueued();
 }
 

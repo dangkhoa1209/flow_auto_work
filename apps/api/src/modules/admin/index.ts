@@ -14,6 +14,11 @@ import {
   updateSystemCursorSettings,
   updateSystemTaskTypeLabels,
   resolveSystemCursorApiKey,
+  getSystemCursorSettingsPublic,
+  addSystemCursorPat,
+  updateSystemCursorPat,
+  setActiveSystemCursorPat,
+  deleteSystemCursorPat,
   isBaDevMode,
   normalizeBaFeatures,
   type BaDbConnectionPatch,
@@ -238,7 +243,7 @@ export async function adminGetBaCloneStatus(idRaw: string) {
 }
 
 export async function adminGetCursorSettings() {
-  return toPublicSystemSettings(await getSystemSettings());
+  return getSystemCursorSettingsPublic();
 }
 
 /** Cursor model list for shared BA key (same shape as /api/me/cursor-models). */
@@ -259,6 +264,56 @@ export async function adminUpdateCursorSettings(body: {
 }) {
   const s = await updateSystemCursorSettings(body);
   return toPublicSystemSettings(s);
+}
+
+export async function adminAddCursorPat(body: {
+  label?: string;
+  apiKey?: string;
+}) {
+  const apiKey = body.apiKey?.trim();
+  if (!apiKey) throw new AppError("apiKey required", 400);
+  try {
+    const s = await addSystemCursorPat({
+      label: body.label,
+      apiKey,
+    });
+    return toPublicSystemSettings(s);
+  } catch (err) {
+    throw new AppError(err instanceof Error ? err.message : String(err), 400);
+  }
+}
+
+export async function adminUpdateCursorPat(
+  patId: string,
+  body: { label?: string; apiKey?: string },
+) {
+  try {
+    const s = await updateSystemCursorPat(patId, body);
+    return toPublicSystemSettings(s);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new AppError(msg, /not found/i.test(msg) ? 404 : 400);
+  }
+}
+
+export async function adminSetActiveCursorPat(patId: string) {
+  try {
+    const s = await setActiveSystemCursorPat(patId);
+    return toPublicSystemSettings(s);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new AppError(msg, /not found/i.test(msg) ? 404 : 400);
+  }
+}
+
+export async function adminDeleteCursorPat(patId: string) {
+  try {
+    const s = await deleteSystemCursorPat(patId);
+    return toPublicSystemSettings(s);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new AppError(msg, /not found/i.test(msg) ? 404 : 400);
+  }
 }
 
 export async function adminGetTaskTypeLabels() {
@@ -316,3 +371,14 @@ export async function adminUpdateBaFeatures(body: {
     updatedAt: settings.baFeaturesUpdatedAt,
   };
 }
+
+export {
+  adminListUsers,
+  adminGetUser,
+  adminCreateUserHandler,
+  adminUpdateUserHandler,
+  adminDisableUser,
+  adminEnableUser,
+  adminDeleteUser,
+  adminResetPasswordHandler,
+} from "./users.js";

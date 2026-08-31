@@ -6,6 +6,7 @@ import type { AuthTokensResponse } from "@/api/authApi";
 import { LAST_LOGIN_KEY } from "@/api/tokenStorage";
 import { useAuthStore } from "@/stores/auth";
 import { useSessionStore, type Membership } from "@/stores/session";
+import { isPathAllowed, resolveHomeRoute } from "@/utils/routeAccess";
 
 const router = useRouter();
 const route = useRoute();
@@ -50,9 +51,16 @@ function safeRedirectTarget(): string | null {
 }
 
 function postAuthPath(): string {
+  const access = {
+    isAdmin: session.isAdmin,
+    isDevopsAudience: session.isDevopsAudience,
+    canAccessWork: session.canAccessWork,
+    canAccessBa: session.canAccessBa,
+    canAccessDevops: session.canAccessDevops,
+  };
   const redirect = safeRedirectTarget();
-  if (redirect) return redirect;
-  return session.homeRoute;
+  if (redirect && isPathAllowed(redirect, access)) return redirect;
+  return resolveHomeRoute(access);
 }
 
 function onPointerMove(e: PointerEvent) {
@@ -120,12 +128,10 @@ async function applyAuthAndGo(res: AuthTokensResponse) {
   session.setMemberships((res.memberships || []) as Membership[]);
   session.setSession({ username, projectId });
   if (res.user) {
-    session.me = {
-      ...session.me,
-      ...res.user,
+    session.setMe({
       gitlabUsername: res.user.gitlabUsername || username,
-      roles: res.user.roles,
-    };
+      ...res.user,
+    });
   }
 
   try {

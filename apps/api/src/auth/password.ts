@@ -24,3 +24,14 @@ export async function verifyPassword(
   if (derived.length !== expected.length) return false;
   return timingSafeEqual(derived, expected);
 }
+
+/** Random password for admin handoff — avoids ambiguous chars. */
+export function generateTemporaryPassword(length = 14): string {
+  const chars = "abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  const bytes = randomBytes(length);
+  let out = "";
+  for (let i = 0; i < length; i++) {
+    out += chars[bytes[i]! % chars.length]!;
+  }
+  return out;
+}

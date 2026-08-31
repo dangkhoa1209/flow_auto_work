@@ -23,6 +23,7 @@ import {
   getUserByUsername,
   upsertUserLogin,
 } from "../../workspace/store.js";
+import { WorkspaceUserModel } from "../../models/workspace.js";
 import { isRegisterableRole, toPublicUser } from "../../workspace/types.js";
 import { AppError } from "../../utils/AppError.js";
 import { listPublicMemberships } from "../project/index.js";
@@ -159,6 +160,17 @@ export async function loginUser(body: LoginBody) {
   const bypass = config.AUTH_BYPASS_PASSWORD?.trim();
   const existing = await getUserByUsername(username);
   if (!existing) {
+    const disabled = await WorkspaceUserModel.findById(
+      normalizeAuthUsername(username),
+      { withDeleted: true },
+    );
+    if (disabled?.deleted) {
+      throw new AppError(
+        "Account is disabled. Contact an admin to reactivate.",
+        403,
+        "account_disabled",
+      );
+    }
     throw new AppError(
       "User not found. Registration is disabled — use a seeded account or ask an admin to create a user.",
       401,

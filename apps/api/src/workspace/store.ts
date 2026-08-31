@@ -21,6 +21,9 @@ import {
   projectIdFromPath,
   projectToMembership,
   toPublicUser,
+  toAdminUser,
+  isRootAdminUsername,
+  type AdminUserPublic,
   type MembershipWithProject,
   type WorkspaceMembership,
   type WorkspaceProject,
@@ -1151,4 +1154,147 @@ export async function getMembership(
   }
   const id = membershipId(normUserId(username), projectId);
   return WorkspaceMembershipModel.findOne({ id });
+}
+
+/** Admin: list all users including disabled (soft-deleted). */
+export async function listUsersForAdmin(): Promise<AdminUserPublic[]> {
+  const docs = await WorkspaceUserModel.findMany({
+    withDeleted: true,
+    sort: { updatedAt: -1 },
+  });
+  return docs.map((d) => toAdminUser(d));
+}
+
+export async function getUserForAdmin(
+  username: string,
+): Promise<AdminUserPublic | null> {
+  const id = normUserId(username);
+  const doc = await WorkspaceUserModel.findById(id, { withDeleted: true });
+  if (!doc) return null;
+  return toAdminUser(doc);
+}
+
+export async function adminCreateUser(opts: {
+  username: string;
+  password: string;
+  displayName?: string;
+  roles?: UserRole[];
+}): Promise<AdminUserPublic> {
+  const id = normUserId(opts.username);
+  if (!id) throw new Error("username required");
+  const existing = await WorkspaceUserModel.findById(id, { withDeleted: true });
+  if (existing && !existing.deleted) {
+    throw new Error("Username already exists");
+  }
+  await createOrUpdateUserPassword({
+    username: opts.username,
+    password: opts.password,
+    displayName: opts.displayName,
+    roles: opts.roles,
+  });
+  const row = await getUserForAdmin(id);
+  if (!row) throw new Error("Failed to create user");
+  return row;
+}
+
+export async function adminUpdateUser(opts: {
+  username: string;
+  displayName?: string;
+  roles?: UserRole[];
+}): Promise<AdminUserPublic> {
+  const id = normUserId(opts.username);
+  if (isRootAdminUsername(id)) {
+    throw new Error("Root admin account is protected");
+  }
+  const existing = await WorkspaceUserModel.findById(id, { withDeleted: true });
+  if (!existing) throw new Error("User not found");
+  const now = new Date().toISOString();
+  const $set: Record<string, unknown> = { updatedAt: now };
+  if (opts.displayName !== undefined) {
+    $set.displayName = opts.displayName.trim() || undefined;
+  }
+  if (opts.roles !== undefined) {
+    $set.roles = normalizeUserRoles(opts.roles);
+  }
+  await WorkspaceUserModel.updateOne({ id }, { $set }, { raw: true });
+  const updated = await getUserForAdmin(id);
+  if (!updated) throw new Error("User not found");
+  return updated;
+}
+
+export async function adminSetUserDisabled(
+  username: string,
+  disabled: boolean,
+): Promise<AdminUserPublic> {
+  const id = normUserId(username);
+  if (isRootAdminUsername(id)) {
+    throw new Error("Root admin account is protected");
+  }
+  const existing = await WorkspaceUserModel.findById(id, { withDeleted: true });
+  if (!existing) throw new Error("User not found");
+  if (disabled) {
+    const ok = await WorkspaceUserModel.softDeleteById(id);
+    if (!ok) throw new Error("Failed to disable user");
+  } else {
+    await WorkspaceUserModel.updateOne(
+      { id },
+      {
+        $set: {
+          deleted: false,
+          deletedAt: null,
+          updatedAt: new Date().toISOString(),
+        },
+      },
+      { raw: true },
+    );
+  }
+  const updated = await getUserForAdmin(id);
+  if (!updated) throw new Error("User not found");
+  return updated;
+}
+
+export async function adminPurgeUser(username: string): Promise<{ ok: true }> {
+  const id = normUserId(username);
+  if (isRootAdminUsername(id)) {
+    throw new Error("Root admin account is protected");
+  }
+  const existing = await WorkspaceUserModel.findById(id, { withDeleted: true });
+  if (!existing) throw new Error("User not found");
+  if (!existing.deleted) {
+    await WorkspaceUserModel.softDeleteById(id);
+  }
+  const n = await WorkspaceUserModel.purgeSoftDeleted({ id });
+  if (n < 1) {
+    await WorkspaceUserModel.forceDeleteById(id);
+  }
+  return { ok: true };
+}
+
+export async function adminResetUserPassword(opts: {
+  username: string;
+  newPassword: string;
+}): Promise<AdminUserPublic> {
+  const id = normUserId(opts.username);
+  if (isRootAdminUsername(id)) {
+    throw new Error("Root admin account is protected");
+  }
+  const existing = await WorkspaceUserModel.findById(id, { withDeleted: true });
+  if (!existing) throw new Error("User not found");
+  if (existing.deleted) {
+    throw new Error("Cannot reset password for disabled user");
+  }
+  const newPassword = opts.newPassword.trim();
+  if (newPassword.length < 6) {
+    throw new Error("Password must be at least 6 characters");
+  }
+  const passwordHash = await hashPassword(newPassword);
+  const now = new Date().toISOString();
+  await WorkspaceUserModel.updateOne(
+    { id },
+    { $set: { passwordHash, updatedAt: now } },
+    { raw: true },
+  );
+  const updated = await getUserForAdmin(id);
+  if (!updated) throw new Error("User not found");
+  return updated;
 }

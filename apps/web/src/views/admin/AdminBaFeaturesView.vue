@@ -16,7 +16,7 @@ type BaFeaturesResponse = {
 const loading = ref(false);
 const saving = ref(false);
 const devMode = ref(false);
-const workflowTabLabel = ref("Phân tích YC");
+const workflowTabLabel = ref("Requirements");
 const flags = ref<Record<"createIssue" | "workflow" | "tasks", FeatureState>>({
   createIssue: "hide",
   workflow: "hide",
@@ -24,26 +24,26 @@ const flags = ref<Record<"createIssue" | "workflow" | "tasks", FeatureState>>({
 });
 
 const STATE_OPTIONS: { value: FeatureState; label: string }[] = [
-  { value: "hide", label: "Hide — ẩn hoàn toàn" },
-  { value: "lab", label: "Lab — hiện kèm nhãn (lab)" },
-  { value: "production", label: "Production — hiện bình thường" },
+  { value: "hide", label: "Hide — fully hidden" },
+  { value: "lab", label: "Lab — visible with (lab) badge" },
+  { value: "production", label: "Production — fully visible" },
 ];
 
 const FEATURES: { key: "createIssue" | "workflow" | "tasks"; name: string; desc: string }[] = [
   {
     key: "createIssue",
     name: "Create issue (BA Chat)",
-    desc: "Nút tạo issue GitLab từ hội thoại chat.",
+    desc: "Button to create a GitLab issue from chat.",
   },
   {
     key: "workflow",
-    name: "Phân tích YC",
-    desc: "Tab phân tích yêu cầu: YC gốc → làm rõ → hiện trạng → đề xuất → kết quả (task).",
+    name: "Requirements analysis",
+    desc: "Requirements tab: source → clarify → current state → proposal → result (tasks).",
   },
   {
     key: "tasks",
     name: "Tasks",
-    desc: "Tab quản lý task draft và đưa lên GitLab.",
+    desc: "Tab to manage task drafts and publish to GitLab.",
   },
 ];
 
@@ -52,7 +52,7 @@ async function load() {
   try {
     const data = await api<BaFeaturesResponse>(API.admin.baFeatures);
     flags.value = { ...data.flags };
-    workflowTabLabel.value = data.workflowTabLabel || "Phân tích YC";
+    workflowTabLabel.value = data.workflowTabLabel || "Requirements";
     devMode.value = Boolean(data.devMode);
   } catch (e) {
     message.error(e instanceof Error ? e.message : String(e));
@@ -71,7 +71,7 @@ async function save() {
         workflowTabLabel: workflowTabLabel.value.trim(),
       }),
     });
-    message.success("Đã lưu cấu hình tính năng BA");
+    message.success("BA features saved");
     await load();
   } catch (e) {
     message.error(e instanceof Error ? e.message : String(e));
@@ -87,9 +87,9 @@ onMounted(() => {
 
 <template>
   <div class="max-w-2xl mx-auto px-4 py-6">
-    <h1 class="text-xl font-semibold text-ink m-0 mb-1">Tính năng BA</h1>
+    <h1 class="text-xl font-semibold text-ink m-0 mb-1">BA features</h1>
     <p class="text-sm text-ink-muted mb-4">
-      Đóng / mở từng tính năng cho người dùng BA. Chat và BA mode luôn mở.
+      Toggle features for BA users. Chat and BA mode stay always on.
     </p>
 
     <a-alert
@@ -97,7 +97,7 @@ onMounted(() => {
       type="info"
       show-icon
       class="mb-4"
-      message="Đang chạy dev mode (DEV=true hoặc PRODUCTION=false) — mọi tính năng đều hiện cho dev, bất kể cấu hình bên dưới. Cấu hình này vẫn áp dụng khi lên production."
+      message="Running in dev mode (DEV=true or PRODUCTION=false) — all features are visible to developers regardless of settings below. These settings still apply in production."
     />
 
     <div class="p-4 rounded-lg border border-line bg-surface-raised space-y-5">
@@ -123,10 +123,10 @@ onMounted(() => {
           v-if="f.key === 'workflow'"
           class="flex flex-col gap-1 text-sm mt-2"
         >
-          <span class="text-ink-muted">Tên hiển thị tab workflow</span>
+          <span class="text-ink-muted">Workflow tab label</span>
           <a-input
             v-model:value="workflowTabLabel"
-            placeholder="Phân tích YC"
+            placeholder="Requirements"
             class="max-w-xs"
           />
         </label>
@@ -138,7 +138,7 @@ onMounted(() => {
         :disabled="saving || loading"
         @click="save"
       >
-        {{ saving ? "Đang lưu…" : "Lưu cấu hình" }}
+        {{ saving ? "Saving…" : "Save settings" }}
       </button>
     </div>
   </div>

@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from "vue-router";
 import { useSessionStore } from "@/stores/session";
+import { isPathAllowed, isRouteAllowed, resolveHomeRoute } from "@/utils/routeAccess";
 
 const router = createRouter({
   history: createWebHistory(),
@@ -32,8 +33,27 @@ const router = createRouter({
         },
         {
           path: "settings",
-          name: "ba-settings",
-          component: () => import("@/views/BaSettingsView.vue"),
+          component: () => import("@/layouts/BaSettingsLayout.vue"),
+          children: [
+            { path: "", redirect: "/ba/settings/gitlab" },
+            {
+              path: "gitlab",
+              name: "ba-settings-gitlab",
+              component: () =>
+                import("@/views/ba/settings/BaGitPatSettings.vue"),
+            },
+            {
+              path: "google",
+              name: "ba-settings-google",
+              component: () =>
+                import("@/views/ba/settings/BaGoogleSettings.vue"),
+            },
+            {
+              path: "account",
+              name: "ba-settings-account",
+              component: () => import("@/views/settings/AccountSettings.vue"),
+            },
+          ],
         },
       ],
     },
@@ -47,6 +67,18 @@ const router = createRouter({
           name: "devops",
           component: () => import("@/views/DevopsView.vue"),
         },
+        {
+          path: "settings",
+          component: () => import("@/layouts/DevopsSettingsLayout.vue"),
+          children: [
+            { path: "", redirect: "/devops/settings/account" },
+            {
+              path: "account",
+              name: "devops-settings-account",
+              component: () => import("@/views/settings/AccountSettings.vue"),
+            },
+          ],
+        },
       ],
     },
     {
@@ -56,13 +88,26 @@ const router = createRouter({
       children: [
         {
           path: "",
+          redirect: { name: "admin-users" },
+        },
+        {
+          path: "users",
+          name: "admin-users",
+          component: () => import("@/views/admin/AdminUsersView.vue"),
+        },
+        {
+          path: "chatbox",
           name: "admin",
           component: () => import("@/views/admin/AdminProjectsView.vue"),
         },
         {
-          path: "cursor",
-          name: "admin-cursor",
+          path: "ai-engine",
+          name: "admin-ai-engine",
           component: () => import("@/views/admin/AdminCursorView.vue"),
+        },
+        {
+          path: "cursor",
+          redirect: { name: "admin-ai-engine" },
         },
         {
           path: "task-types",
@@ -73,6 +118,18 @@ const router = createRouter({
           path: "ba-features",
           name: "admin-ba-features",
           component: () => import("@/views/admin/AdminBaFeaturesView.vue"),
+        },
+        {
+          path: "settings",
+          component: () => import("@/layouts/AdminSettingsLayout.vue"),
+          children: [
+            { path: "", redirect: "/admin/settings/account" },
+            {
+              path: "account",
+              name: "admin-settings-account",
+              component: () => import("@/views/settings/AccountSettings.vue"),
+            },
+          ],
         },
       ],
     },
@@ -140,6 +197,23 @@ router.beforeEach(async (to) => {
   const session = useSessionStore();
   if (!session.bootstrapped) await session.bootstrap();
 
+  if (session.isLoggedIn && !session.me) {
+    try {
+      await session.refreshMe();
+    } catch {
+      await session.logout();
+      return { name: "login" };
+    }
+  }
+
+  const access = {
+    isAdmin: session.isAdmin,
+    isDevopsAudience: session.isDevopsAudience,
+    canAccessWork: session.canAccessWork,
+    canAccessBa: session.canAccessBa,
+    canAccessDevops: session.canAccessDevops,
+  };
+
   if (to.meta.public) {
     if (session.isLoggedIn && to.name === "login") {
       const raw = to.query.redirect;
@@ -148,11 +222,17 @@ router.beforeEach(async (to) => {
         typeof path === "string" &&
         path.startsWith("/") &&
         !path.startsWith("//") &&
-        !path.startsWith("/login")
+        !path.startsWith("/login") &&
+        isPathAllowed(path, access)
       ) {
         return path;
       }
-      return session.homeRoute;
+      const home = resolveHomeRoute(access);
+      if (home === "/login") {
+        await session.logout();
+        return true;
+      }
+      return home;
     }
     return true;
   }
@@ -160,30 +240,15 @@ router.beforeEach(async (to) => {
     return { name: "login", query: { redirect: to.fullPath } };
   }
 
-  if (to.meta.requiresAdmin && !session.isAdmin) {
-    return session.homeRoute;
-  }
-  if (to.meta.requiresDevops) {
-    if (!session.canAccessDevops) {
-      return session.homeRoute;
+  if (!isRouteAllowed(to, access)) {
+    const home = resolveHomeRoute(access);
+    if (home === "/login") {
+      return { name: "login", query: { error: "no_access" } };
     }
-  }
-  if (to.meta.requiresBa) {
-    if (!(session.isBaAudience || session.isAdmin)) {
-      return session.homeRoute;
+    if (to.path === home) {
+      return true;
     }
-  }
-  if (to.meta.requiresDev) {
-    if (session.isBaAudience) {
-      return { name: "ba-chat" };
-    }
-    if (session.isDevopsAudience) {
-      return { name: "devops" };
-    }
-    if (session.isAdmin && !to.path.startsWith("/settings")) {
-      // Admin should use Admin / BA, not WorkBench (except we block entirely)
-      return { name: "admin" };
-    }
+    return home;
   }
   return true;
 });

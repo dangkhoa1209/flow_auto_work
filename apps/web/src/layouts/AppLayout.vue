@@ -3,15 +3,15 @@ import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter, RouterLink, RouterView } from "vue-router";
 import { message } from "ant-design-vue";
 import {
-  SettingOutlined,
   DownOutlined,
   PlusOutlined,
   CheckOutlined,
 } from "@ant-design/icons-vue";
+import AppTopbarRight from "@/components/layout/AppTopbarRight.vue";
+import AppSwitcher from "@/components/layout/AppSwitcher.vue";
 import { useSessionStore } from "@/stores/session";
 import { useSettingsStore } from "@/stores/settings";
 import { useWorkStore } from "@/stores/work";
-import { useThemeStore } from "@/stores/theme";
 import { connectRealtime } from "@/realtime/client";
 import MobileBottomNav from "@/components/MobileBottomNav.vue";
 
@@ -20,19 +20,12 @@ const router = useRouter();
 const session = useSessionStore();
 const work = useWorkStore();
 const settings = useSettingsStore();
-const themeStore = useThemeStore();
 
-const nav = computed(() => {
-  const items = [
-    { to: "/work", label: "Work" },
-    { to: "/handoff", label: "Handoff" },
-    { to: "/stats", label: "Stats" },
-  ];
-  if (session.canAccessDevops) {
-    items.push({ to: "/devops", label: "Devops" });
-  }
-  return items;
-});
+const nav = computed(() => [
+  { to: "/work", label: "Work" },
+  { to: "/handoff", label: "Handoff" },
+  { to: "/stats", label: "Stats" },
+]);
 
 const switching = ref(false);
 const selectedProjectId = ref(session.session.projectId || "");
@@ -185,6 +178,8 @@ async function onKillAll() {
         />
       </RouterLink>
 
+      <AppSwitcher />
+
       <!-- Desktop: inline project select -->
       <div class="faw-crumb hidden lg:flex">
         <a-select
@@ -245,53 +240,33 @@ async function onKillAll() {
 
       <div class="faw-topbar__spacer hidden lg:block" />
 
-      <div class="faw-topbar__right hidden lg:flex">
-        <span class="faw-idle">
-          <span class="faw-idle__dot" :class="idleDot" />
-          {{ work.statusText || "Idle" }}
-        </span>
-        <a-popconfirm
-          v-if="work.canKillAll"
-          title="Stop all running and queued jobs?"
-          ok-text="Kill all"
-          cancel-text="Cancel"
-          ok-type="danger"
-          @confirm="onKillAll"
-        >
-          <button
-            type="button"
-            class="faw-btn faw-btn--danger"
-            :disabled="work.killAllBusy"
-            title="Force stop all active jobs"
+      <AppTopbarRight settings-to="/settings/project" class="hidden lg:contents">
+        <template #status>
+          <span class="faw-idle">
+            <span class="faw-idle__dot" :class="idleDot" />
+            {{ work.statusText || "Idle" }}
+          </span>
+        </template>
+        <template #extra>
+          <a-popconfirm
+            v-if="work.canKillAll"
+            title="Stop all running and queued jobs?"
+            ok-text="Kill all"
+            cancel-text="Cancel"
+            ok-type="danger"
+            @confirm="onKillAll"
           >
-            {{ work.killAllBusy ? "Stopping…" : "Kill all" }}
-          </button>
-        </a-popconfirm>
-        <div class="faw-user-chip">
-          <span class="faw-avatar" />
-          @{{ session.session.username }}
-        </div>
-        <button
-          type="button"
-          class="faw-icon-btn"
-          :title="
-            themeStore.mode === 'dark'
-              ? 'Switch to light mode'
-              : 'Switch to dark mode'
-          "
-          @click="themeStore.toggle()"
-        >
-          {{ themeStore.mode === "dark" ? "☀" : "☾" }}
-        </button>
-        <button
-          type="button"
-          class="faw-icon-btn"
-          title="Settings"
-          @click="router.push('/settings')"
-        >
-          <SettingOutlined />
-        </button>
-      </div>
+            <button
+              type="button"
+              class="faw-btn faw-btn--danger"
+              :disabled="work.killAllBusy"
+              title="Force stop all active jobs"
+            >
+              {{ work.killAllBusy ? "Stopping…" : "Kill all" }}
+            </button>
+          </a-popconfirm>
+        </template>
+      </AppTopbarRight>
 
       <!-- Mobile: status + avatar only -->
       <button

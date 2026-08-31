@@ -2,7 +2,9 @@
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 import { message } from "ant-design-vue";
 import { devopsApi } from "@/api/devopsApi";
-import type { BuildJob, BuildScript, BuildStatus } from "@/api/devopsApi";
+import type { BuildJob, BuildLogLine, BuildScript, BuildStatus } from "@/api/devopsApi";
+import { SearchOutlined } from "@ant-design/icons-vue";
+import BuildFeedCard from "@/components/devops/BuildFeedCard.vue";
 import BuildTerminal from "@/components/devops/BuildTerminal.vue";
 import { useDevopsStore } from "@/stores/devops";
 
@@ -18,7 +20,10 @@ const configCompact = ref(
 const editingId = ref<string | null>(null);
 const stdinText = ref("");
 const stdinSecret = ref(false);
-const termRef = ref<{ clear: () => void } | null>(null);
+const lastFailedToastId = ref<string | null>(null);
+const scriptSearch = ref("");
+const expandedBuildId = ref<string | null>(null);
+const logCache = ref<Record<string, BuildLogLine[]>>({});
 
 /** Confirm re-run when the same script already has a queued/running job. */
 const dupConfirm = reactive({
@@ -34,10 +39,6 @@ const form = reactive({
   workingDir: "",
   timeoutSec: undefined as number | undefined,
 });
-
-const runningJob = computed(
-  () => devops.builds.find((b) => b.id === devops.queue.currentBuildId) || null,
-);
 
 /** Per-script queue/running counts — trust queue.currentBuildId for running. */
 function scriptQueueState(scriptId: string) {
@@ -70,37 +71,120 @@ function scriptBusyCount(scriptId: string) {
   return running + queued;
 }
 
-const queuedJobs = computed(() =>
-  devops.queue.queuedIds
-    .map((id, i) => ({
-      pos: i + 1,
-      job: devops.builds.find((b) => b.id === id),
-    }))
-    .filter((row): row is { pos: number; job: BuildJob } => Boolean(row.job)),
-);
-
 const activeScripts = computed(() =>
   devops.scripts.filter((s) => s.active !== false),
 );
+
+function scriptGroup(s: BuildScript): string {
+  if (s.id === "local-smoke") return "General";
+  if (["core", "ykksub", "ykk"].includes(s.id)) return "Hệ thống";
+  return "Khách hàng";
+}
+
+const filteredScripts = computed(() => {
+  const q = scriptSearch.value.trim().toLowerCase();
+  return activeScripts.value.filter((s) => {
+    if (!q) return true;
+    return (
+      s.label.toLowerCase().includes(q) ||
+      s.command.toLowerCase().includes(q) ||
+      s.id.toLowerCase().includes(q)
+    );
+  });
+});
+
+const groupedScripts = computed(() => {
+  const order = ["General", "Hệ thống", "Khách hàng"];
+  const map = new Map<string, BuildScript[]>();
+  for (const s of filteredScripts.value) {
+    const g = scriptGroup(s);
+    const list = map.get(g) || [];
+    list.push(s);
+    map.set(g, list);
+  }
+  return order
+    .filter((g) => map.has(g))
+    .map((g) => ({ group: g, items: map.get(g)! }));
+});
+
+const feedBuilds = computed(() => devops.builds);
+
+const queueActive = computed(() => {
+  const runId = devops.queue.running ? devops.queue.currentBuildId : null;
+  const running = devops.builds.filter((b) => b.status === "running");
+  const queued = devops.queue.queuedIds
+    .map((id) => devops.builds.find((b) => b.id === id))
+    .filter((b): b is BuildJob => Boolean(b))
+    .filter((b) => b.id !== runId);
+  const seen = new Set<string>();
+  const out: BuildJob[] = [];
+  for (const j of running) {
+    if (!seen.has(j.id)) {
+      seen.add(j.id);
+      out.push(j);
+    }
+  }
+  for (const j of queued) {
+    if (!seen.has(j.id)) {
+      seen.add(j.id);
+      out.push(j);
+    }
+  }
+  return out;
+});
+
+function linesForJob(job: BuildJob): BuildLogLine[] {
+  if (job.id === devops.liveBuildId && devops.logLines.length) {
+    return devops.logLines;
+  }
+  if (job.id === devops.viewingBuildId && devops.viewLogLines.length) {
+    return devops.viewLogLines;
+  }
+  return logCache.value[job.id] || [];
+}
+
+async function ensureCardLogs(job: BuildJob) {
+  if (job.status === "running") {
+    await devops.selectBuild(job.id);
+    return;
+  }
+  if (logCache.value[job.id]?.length) {
+    await devops.selectBuildJob(job);
+    return;
+  }
+  await devops.selectBuildJob(job);
+  if (devops.viewLogLines.length) {
+    logCache.value = {
+      ...logCache.value,
+      [job.id]: [...devops.viewLogLines],
+    };
+  }
+}
+
+async function toggleBuildCard(job: BuildJob) {
+  if (expandedBuildId.value === job.id) {
+    expandedBuildId.value = null;
+    return;
+  }
+  expandedBuildId.value = job.id;
+  await ensureCardLogs(job);
+}
+
+function copyCommand(job: BuildJob) {
+  void navigator.clipboard?.writeText(job.command).then(() => {
+    message.success("Đã copy lệnh");
+  });
+}
+
+async function onCancelCard(job: BuildJob) {
+  await onCancel(job.id);
+}
 
 const formTitle = computed(() =>
   editingId.value ? "Sửa lệnh" : "Thêm lệnh build",
 );
 
 const liveRunning = computed(() => devops.liveBuild?.status === "running");
-
-const liveClock = computed(() => {
-  void nowTick.value;
-  const job = devops.liveBuild;
-  if (!job) return "00:00:00";
-  if (job.status === "running" && job.startedAt) {
-    const t = Date.parse(job.startedAt);
-    if (!Number.isFinite(t)) return "00:00:00";
-    return formatClock(Date.now() - t);
-  }
-  if (job.durationMs != null) return formatClock(job.durationMs);
-  return "00:00:00";
-});
 
 const selectedRunning = computed(() => devops.selected?.status === "running");
 
@@ -148,14 +232,6 @@ const scriptColumns = computed(() => {
     { title: "", key: "actions", width: 96 },
   ];
 });
-
-function formatClock(ms: number) {
-  const total = Math.max(0, Math.floor(ms / 1000));
-  const h = Math.floor(total / 3600);
-  const m = Math.floor((total % 3600) / 60);
-  const s = total % 60;
-  return [h, m, s].map((n) => String(n).padStart(2, "0")).join(":");
-}
 
 function formatMs(ms: number) {
   const sec = Math.round(ms / 1000);
@@ -280,9 +356,11 @@ function queuedCount(scriptId: string) {
 
 async function doTrigger(scriptId: string) {
   try {
-    await devops.trigger(scriptId);
+    const job = await devops.trigger(scriptId);
     message.success("Build queued");
     devops.activeTab = "build";
+    expandedBuildId.value = job.id;
+    await ensureCardLogs(job);
   } catch (e) {
     message.error(e instanceof Error ? e.message : String(e));
   }
@@ -349,13 +427,29 @@ async function onDownloadLog(job?: BuildJob | null) {
   }
 }
 
-function onClearLog() {
-  termRef.value?.clear();
-}
-
 function onHistPageChange(page: number) {
   void devops.fetchHistory(page);
 }
+
+watch(
+  () => devops.logLines,
+  (lines) => {
+    const id = devops.liveBuildId;
+    if (!id || !lines.length) return;
+    logCache.value = { ...logCache.value, [id]: [...lines] };
+  },
+  { deep: true },
+);
+
+watch(
+  () => devops.liveBuild,
+  (job) => {
+    if (!job || job.status !== "failed") return;
+    if (lastFailedToastId.value === job.id) return;
+    lastFailedToastId.value = job.id;
+    message.error(job.errorMessage?.trim() || "Build failed", 8);
+  },
+);
 
 watch(
   () => devops.activeTab,
@@ -393,7 +487,11 @@ onMounted(async () => {
     devops.queue.currentBuildId ||
     devops.builds.find((b) => b.status === "running")?.id ||
     devops.builds[0]?.id;
-  if (current) await devops.selectBuild(current);
+  if (current) {
+    expandedBuildId.value = current;
+    const job = devops.builds.find((b) => b.id === current);
+    if (job) await ensureCardLogs(job);
+  }
 });
 
 onUnmounted(() => {
@@ -407,153 +505,169 @@ onUnmounted(() => {
 
 <template>
   <div class="faw-dev-dash">
-    <!-- Tab 1: Build (tabs + worker/queue live in DevopsLayout header) -->
-    <div v-if="devops.activeTab === 'build'" class="faw-dev-body">
-      <section class="faw-dev-left faw-col flex flex-col min-h-0 overflow-hidden">
-        <div class="faw-col-head">
-          <h2>Scripts</h2>
-          <span class="faw-count">{{ activeScripts.length }}</span>
+    <!-- Tab 1: Build -->
+    <div v-if="devops.activeTab === 'build'" class="faw-build-shell">
+      <!-- Sidebar: scripts -->
+      <aside class="faw-build-sidebar">
+        <div class="faw-build-sidebar__head">
+          <div class="faw-build-sidebar__title-row">
+            <span class="faw-build-sidebar__title">Scripts</span>
+            <span class="faw-build-sidebar__count">{{ activeScripts.length }}</span>
+          </div>
+          <div class="faw-build-search">
+            <SearchOutlined class="faw-build-search__icon" />
+            <input
+              v-model="scriptSearch"
+              type="search"
+              class="faw-build-search__input"
+              placeholder="Tìm script…"
+            />
+          </div>
         </div>
 
-        <div class="faw-list-scroll flex-1 min-h-0">
-          <div v-if="devops.loading" class="px-3 py-2 text-xs text-ink-muted">
-            Loading scripts…
-          </div>
+        <div class="faw-build-script-list">
+          <div v-if="devops.loading" class="faw-build-empty">Loading scripts…</div>
           <div
             v-else-if="!activeScripts.length"
-            class="px-3 py-4 text-xs text-ink-muted leading-relaxed"
+            class="faw-build-empty"
           >
-            Chưa có lệnh nào active. Sang tab
-            <strong class="text-ink font-semibold">Cấu hình</strong>
-            để thêm hoặc bật lệnh.
+            Chưa có lệnh active. Sang tab
+            <strong>Cấu hình</strong> để thêm hoặc bật lệnh.
+          </div>
+          <div
+            v-else-if="!filteredScripts.length"
+            class="faw-build-empty"
+          >
+            Không tìm thấy script phù hợp.
           </div>
           <template v-else>
-            <div class="faw-group-label">
-              Active <span class="n">{{ activeScripts.length }}</span>
-            </div>
-            <div
-              v-for="s in activeScripts"
-              :key="s.id"
-              class="faw-dev-script-row"
+            <section
+              v-for="grp in groupedScripts"
+              :key="grp.group"
+              class="faw-build-script-group"
             >
-              <div class="min-w-0 flex-1">
-                <div class="faw-task-row__title">{{ s.label }}</div>
-                <div class="faw-dev-script-row__cmd truncate">
-                  {{ s.command }}
+              <div class="faw-build-script-group__label">{{ grp.group }}</div>
+              <div
+                v-for="s in grp.items"
+                :key="s.id"
+                class="faw-build-script-row"
+                :class="{ 'is-running': scriptQueueState(s.id).running > 0 }"
+              >
+                <div class="faw-build-script-row__swatch" />
+                <div class="faw-build-script-row__body">
+                  <div class="faw-build-script-row__name">{{ s.label }}</div>
+                  <div class="faw-build-script-row__cmd">{{ s.command }}</div>
                 </div>
+                <button
+                  type="button"
+                  class="faw-build-run-btn"
+                  :class="{
+                    'is-disabled':
+                      scriptQueueState(s.id).running > 0 ||
+                      devops.triggeringId === s.id ||
+                      devops.queue.shuttingDown,
+                  }"
+                  :disabled="
+                    scriptQueueState(s.id).running > 0 ||
+                    devops.triggeringId === s.id ||
+                    devops.queue.shuttingDown
+                  "
+                  @click="onRun(s)"
+                >
+                  <span class="faw-build-run-btn__icon">▶</span>
+                  {{
+                    scriptQueueState(s.id).running > 0
+                      ? "Đang chạy"
+                      : devops.triggeringId === s.id
+                        ? "…"
+                        : "Run"
+                  }}
+                </button>
               </div>
-              <span
-                v-if="scriptQueueState(s.id).running"
-                class="faw-chip shrink-0 faw-dev-badge faw-dev-badge--run"
-                title="Build đang chạy"
-              >
-                running
-              </span>
-              <span
-                v-else-if="scriptQueueState(s.id).queued"
-                class="faw-chip shrink-0"
-                title="Job đang chờ trong queue"
-              >
-                {{ scriptQueueState(s.id).queued }} queued
-              </span>
-              <button
-                type="button"
-                class="faw-btn faw-btn--run faw-btn--tight shrink-0"
-                :disabled="
-                  devops.triggeringId === s.id || devops.queue.shuttingDown
-                "
-                @click="onRun(s)"
-              >
-                {{ devops.triggeringId === s.id ? "…" : "▶ Run" }}
-              </button>
-            </div>
+            </section>
           </template>
         </div>
-      </section>
+      </aside>
 
-      <section class="faw-dev-right">
-        <div class="faw-dev-term-head">
-          <div class="min-w-0 flex-1">
-            <div class="flex items-center gap-2 min-w-0">
-              <h2 class="faw-dev-term-head__title truncate">
-                {{ devops.liveBuild?.scriptLabel || "Live terminal" }}
-              </h2>
-              <span
-                v-if="devops.liveBuild"
-                :class="statusClass(devops.liveBuild.status)"
-              >
-                {{ devops.liveBuild.status }}
-              </span>
-            </div>
-            <p class="faw-dev-term-head__sub truncate">
-              {{ devops.liveBuild?.command || "Chọn một build để xem log" }}
-            </p>
+      <!-- Main: queue + feed -->
+      <div class="faw-build-main">
+        <section class="faw-build-queue-strip">
+          <div class="faw-build-queue-strip__title">
+            Hàng đợi build
+            <span class="faw-build-queue-strip__n">({{ queueActive.length }})</span>
           </div>
-          <div class="faw-dev-term-actions">
-            <span class="faw-dev-clock font-mono">{{ liveClock }}</span>
-            <a-popconfirm
-              v-if="liveRunning"
-              title="Dừng khẩn cấp build đang chạy?"
-              ok-text="Cancel Build"
-              cancel-text="Giữ"
-              ok-type="danger"
-              @confirm="onCancel(devops.liveBuildId!)"
-            >
+          <div v-if="!queueActive.length" class="faw-build-queue-empty">
+            Không có build nào đang chờ — FIFO, chạy tối đa 1 build cùng lúc.
+          </div>
+          <div v-else class="faw-build-queue-chips">
+            <template v-for="(job, idx) in queueActive" :key="job.id">
               <button
                 type="button"
-                class="faw-btn faw-btn--danger faw-btn--tight"
-                :disabled="devops.cancellingId === devops.liveBuildId"
+                class="faw-build-chip"
+                :class="{ 'is-running': job.status === 'running' }"
+                @click="toggleBuildCard(job)"
               >
-                Cancel
+                <span class="faw-build-chip__pos">
+                  {{ job.status === "running" ? "●" : `#${idx + 1}` }}
+                </span>
+                <span class="faw-build-chip__name">{{ job.scriptLabel }}</span>
               </button>
-            </a-popconfirm>
-            <button type="button" class="faw-btn faw-btn--tight" @click="onClearLog">
-              Clear
-            </button>
-            <button
-              type="button"
-              class="faw-btn faw-btn--tight"
-              :disabled="!devops.liveBuild"
-              @click="onDownloadLog"
-            >
-              Download
-            </button>
+              <span
+                v-if="idx < queueActive.length - 1"
+                class="faw-build-chip__arrow"
+              >→</span>
+            </template>
           </div>
-        </div>
+        </section>
 
-        <BuildTerminal
-          :key="devops.liveBuildId ?? 'idle'"
-          ref="termRef"
-          :lines="devops.logLines"
-          :build-id="devops.liveBuildId"
-        />
-
-        <form class="faw-dev-stdin" @submit.prevent="onSendStdin">
-          <input
-            v-model="stdinText"
-            class="faw-dev-stdin__input"
-            :type="stdinSecret ? 'password' : 'text'"
-            :disabled="!liveRunning || devops.stdinBusy"
-            :placeholder="
-              liveRunning
-                ? 'Gửi text/password vào stdin…'
-                : 'Stdin chỉ khi build đang RUNNING'
-            "
-            autocomplete="off"
+        <div class="faw-build-feed">
+          <div v-if="!feedBuilds.length" class="faw-build-feed-empty">
+            Chưa có build nào. Chọn một script bên trái để bắt đầu.
+          </div>
+          <BuildFeedCard
+            v-for="job in feedBuilds"
+            :key="job.id"
+            :job="job"
+            :open="expandedBuildId === job.id"
+            :lines="linesForJob(job)"
+            :now-ms="nowTick"
+            @toggle="toggleBuildCard(job)"
+            @copy="copyCommand(job)"
+            @download="onDownloadLog(job)"
+            @cancel="onCancelCard(job)"
           />
-          <label class="faw-dev-stdin__secret">
-            <input v-model="stdinSecret" type="checkbox" />
-            Password
-          </label>
-          <button
-            type="submit"
-            class="faw-btn faw-btn--run faw-btn--tight"
-            :disabled="!liveRunning || devops.stdinBusy"
+
+          <form
+            v-if="
+              expandedBuildId &&
+              devops.liveBuild?.status === 'running' &&
+              expandedBuildId === devops.liveBuildId
+            "
+            class="faw-build-stdin"
+            @submit.prevent="onSendStdin"
           >
-            Send
-          </button>
-        </form>
-      </section>
+            <input
+              v-model="stdinText"
+              class="faw-build-stdin__input"
+              :type="stdinSecret ? 'password' : 'text'"
+              :disabled="!liveRunning || devops.stdinBusy"
+              placeholder="Gửi text/password vào stdin (build đang chạy)…"
+              autocomplete="off"
+            />
+            <label class="faw-build-stdin__secret">
+              <input v-model="stdinSecret" type="checkbox" />
+              Password
+            </label>
+            <button
+              type="submit"
+              class="faw-build-run-btn faw-build-stdin__send"
+              :disabled="!liveRunning || devops.stdinBusy"
+            >
+              Send
+            </button>
+          </form>
+        </div>
+      </div>
     </div>
 
     <!-- Tab 2: History -->

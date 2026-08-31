@@ -2,6 +2,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import type { NextFunction, Request, Response } from "express";
 import { getUserByUsername } from "../../workspace/store.js";
 import {
+  canAccessBa,
   isAdminRole,
   isBaAudience,
   normalizeUserRoles,
@@ -70,16 +71,14 @@ export const requireAdmin = asyncHandler(
 );
 
 /**
- * BA Chat gate: ba | pd | qc | admin.
- * Dev WorkBench users are blocked on the frontend; admin may use BA to test.
+ * BA Chat gate: ba | pd | qc | dev | devops | admin.
  */
 export const requireBa = asyncHandler(
   async (req: Request, _res: Response, next: NextFunction) => {
     const { username, roles } = await resolveBearerUser(req);
-    const allowed = isAdminRole(roles) || isBaAudience(roles);
-    if (!allowed) {
+    if (!canAccessBa(roles)) {
       throw new AppError(
-        "BA Chat role required (ba, pd, or qc)",
+        "BA Chat role required (ba, pd, qc, dev, devops, or admin)",
         403,
         "ba_forbidden",
       );

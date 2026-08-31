@@ -1,88 +1,86 @@
 <script setup lang="ts">
-import { useRoute, useRouter, RouterLink, RouterView } from "vue-router";
-import { message } from "ant-design-vue";
+import { computed } from "vue";
+import { useRoute, RouterLink, RouterView } from "vue-router";
+import AppTopbarRight from "@/components/layout/AppTopbarRight.vue";
 import { useSessionStore } from "@/stores/session";
-import { useThemeStore } from "@/stores/theme";
 
 const route = useRoute();
-const router = useRouter();
 const session = useSessionStore();
-const themeStore = useThemeStore();
 
 const tabs = [
-  { to: "/admin", label: "Projects", exact: true },
-  { to: "/admin/cursor", label: "Cursor key" },
+  { to: "/admin/users", label: "Users" },
+  { to: "/admin/chatbox", label: "Project Chatbox" },
+  { to: "/admin/ai-engine", label: "AI Engine" },
   { to: "/admin/task-types", label: "Task labels" },
-  { to: "/admin/ba-features", label: "Tính năng BA" },
+  { to: "/admin/ba-features", label: "BA features" },
 ];
 
-async function logout() {
-  await session.logout();
-  message.success("Signed out");
-  await router.push({ name: "login" });
+const inSettings = computed(() => route.path.startsWith("/admin/settings"));
+
+function isTabActive(tab: (typeof tabs)[0]): boolean {
+  if (tab.to === "/admin/users") {
+    return route.path === "/admin" || route.path.startsWith("/admin/users");
+  }
+  return route.path === tab.to || route.path.startsWith(`${tab.to}/`);
 }
 </script>
 
 <template>
-  <div class="h-full min-h-0 flex flex-col bg-surface">
-    <header
-      class="shrink-0 flex items-center gap-4 px-4 py-3 border-b border-line bg-surface-raised"
-    >
-      <div class="flex items-center gap-2 min-w-0">
-        <img src="/logo.svg" alt="" class="h-7 w-auto" draggable="false" />
-        <span class="text-sm font-semibold text-ink truncate">Admin</span>
-      </div>
-      <nav class="flex gap-1 flex-1">
+  <div
+    class="faw-app-shell h-[100dvh] max-h-[100dvh] flex flex-col overflow-hidden bg-[var(--app-bg)]"
+  >
+    <header class="faw-topbar faw-topbar--admin">
+      <RouterLink to="/admin/users" class="faw-brand" title="Admin">
+        <img
+          class="faw-brand__logo faw-brand__logo--full"
+          src="/logo.svg"
+          alt="FLOW.AUTO"
+          width="148"
+          height="33"
+          draggable="false"
+        />
+        <img
+          class="faw-brand__logo faw-brand__logo--mark"
+          src="/favicon.svg"
+          alt="FLOW.AUTO"
+          width="28"
+          height="28"
+          draggable="false"
+        />
+      </RouterLink>
+
+      <nav v-if="!inSettings" class="faw-seg hidden lg:flex">
         <RouterLink
           v-for="t in tabs"
           :key="t.to"
           :to="t.to"
-          class="px-3 py-1.5 rounded-md text-sm text-ink-muted hover:text-ink hover:bg-surface transition"
-          :class="
-            (t.exact ? route.path === t.to : route.path.startsWith(t.to))
-              ? '!text-accent font-semibold bg-accent-soft'
-              : ''
-          "
+          class="faw-seg__btn"
+          :class="{ active: isTabActive(t) }"
         >
           {{ t.label }}
         </RouterLink>
-        <RouterLink
-          to="/ba"
-          class="px-3 py-1.5 rounded-md text-sm text-ink-muted hover:text-ink hover:bg-surface transition"
-        >
-          BA Chat
-        </RouterLink>
-        <RouterLink
-          to="/devops"
-          class="px-3 py-1.5 rounded-md text-sm text-ink-muted hover:text-ink hover:bg-surface transition"
-        >
-          Devops
-        </RouterLink>
       </nav>
-      <div class="flex items-center gap-3 text-sm text-ink-muted">
-        <button
-          type="button"
-          class="faw-icon-btn"
-          :title="
-            themeStore.mode === 'dark'
-              ? 'Switch to light mode'
-              : 'Switch to dark mode'
-          "
-          @click="themeStore.toggle()"
-        >
-          {{ themeStore.mode === "dark" ? "☀" : "☾" }}
-        </button>
-        <span class="truncate max-w-[10rem]">{{ session.me?.gitlabUsername }}</span>
-        <button
-          type="button"
-          class="text-accent hover:underline font-medium"
-          @click="logout"
-        >
-          Logout
-        </button>
-      </div>
+
+      <div class="faw-topbar__spacer" />
+
+      <AppTopbarRight settings-to="/admin/settings/account" class="hidden lg:contents">
+        <template #extra>
+          <RouterLink to="/ba" class="faw-btn">BA Chat</RouterLink>
+          <RouterLink
+            v-if="session.canAccessDevops"
+            to="/devops"
+            class="faw-btn"
+          >
+            Build
+          </RouterLink>
+        </template>
+      </AppTopbarRight>
     </header>
-    <main class="flex-1 min-h-0 overflow-y-auto">
+
+    <main
+      class="flex-1 min-h-0"
+      :class="inSettings ? 'overflow-hidden' : 'overflow-y-auto'"
+    >
       <RouterView />
     </main>
   </div>

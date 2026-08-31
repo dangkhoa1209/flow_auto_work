@@ -39,7 +39,7 @@ function tokenFromRequest(req: Request): string {
 
 /**
  * Devops console gate: Bearer JWT (or access_token query for EventSource) +
- * user.roles includes `devops` or `admin`.
+ * user.roles includes devops, dev, or admin.
  */
 export const requireDevops = asyncHandler(
   async (req: Request, _res: Response, next: NextFunction) => {

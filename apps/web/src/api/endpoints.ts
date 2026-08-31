@@ -44,8 +44,21 @@ export const API = {
       `/api/admin/ba-projects/${encodeURIComponent(id)}/test-db`,
     cursorSettings: "/api/admin/settings/cursor",
     cursorModels: "/api/admin/settings/cursor-models",
+    cursorPats: "/api/admin/settings/cursor-pats",
+    cursorPat: (patId: string) =>
+      `/api/admin/settings/cursor-pats/${encodeURIComponent(patId)}`,
+    cursorPatActive: (patId: string) =>
+      `/api/admin/settings/cursor-pats/${encodeURIComponent(patId)}/active`,
     taskTypeLabels: "/api/admin/settings/task-type-labels",
     baFeatures: "/api/admin/settings/ba-features",
+    users: "/api/admin/users",
+    user: (id: string) => `/api/admin/users/${encodeURIComponent(id)}`,
+    userDisable: (id: string) =>
+      `/api/admin/users/${encodeURIComponent(id)}/disable`,
+    userEnable: (id: string) =>
+      `/api/admin/users/${encodeURIComponent(id)}/enable`,
+    userPassword: (id: string) =>
+      `/api/admin/users/${encodeURIComponent(id)}/password`,
   },
   ba: {
     projects: "/api/ba/projects",

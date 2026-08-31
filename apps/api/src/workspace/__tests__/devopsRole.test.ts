@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  canAccessBa,
   canAccessDevops,
   isDevopsAudience,
   normalizeUserRoles,
@@ -11,10 +12,21 @@ describe("devops role helpers", () => {
     expect(normalizeUserRoles(["devops", "dev"])).toEqual(["devops", "dev"]);
   });
 
-  it("lets admin and devops open the console", () => {
+  it("defaults legacy empty roles to dev", () => {
+    expect(normalizeUserRoles([])).toEqual(["dev"]);
+    expect(normalizeUserRoles(null)).toEqual(["dev"]);
+  });
+
+  it("lets admin, devops, and dev open the console", () => {
     expect(canAccessDevops(["admin"])).toBe(true);
     expect(canAccessDevops(["devops"])).toBe(true);
-    expect(canAccessDevops(["dev"])).toBe(false);
+    expect(canAccessDevops(["dev"])).toBe(true);
+  });
+
+  it("lets devops open project chat", () => {
+    expect(canAccessBa(["devops"])).toBe(true);
+    expect(canAccessBa(["ba"])).toBe(true);
+    expect(canAccessBa(["qc"])).toBe(true);
   });
 
   it("sends devops-only users to /devops", () => {

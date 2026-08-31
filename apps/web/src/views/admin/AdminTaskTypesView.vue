@@ -26,22 +26,22 @@ const rows: Array<{ key: keyof TaskTypeLabels; label: string; hint: string }> = 
   {
     key: "bug",
     label: "Bug fix",
-    hint: "VD: bug, fix, hotfix, type::bug",
+    hint: "e.g. bug, fix, hotfix, type::bug",
   },
   {
     key: "feature",
-    label: "Tính năng",
-    hint: "VD: feature, enhancement, story",
+    label: "Feature",
+    hint: "e.g. feature, enhancement, story",
   },
   {
     key: "refactor",
     label: "Refactor",
-    hint: "VD: refactor, cleanup",
+    hint: "e.g. refactor, cleanup",
   },
   {
     key: "chore",
     label: "Chore / CI",
-    hint: "VD: chore, maintenance, ci, docs",
+    hint: "e.g. chore, maintenance, ci, docs",
   },
 ];
 
@@ -85,7 +85,7 @@ async function save() {
       };
     }
     updatedAt.value = data.taskTypeLabelsUpdatedAt ?? null;
-    message.success("Đã lưu mapping label");
+    message.success("Label mapping saved");
   } catch (e) {
     message.error(e instanceof Error ? e.message : String(e));
   } finally {
@@ -96,7 +96,7 @@ async function save() {
 function fmtUpdated(iso: string | null): string {
   if (!iso) return "—";
   try {
-    return new Intl.DateTimeFormat("vi-VN", {
+    return new Intl.DateTimeFormat("en-US", {
       dateStyle: "short",
       timeStyle: "short",
     }).format(new Date(iso));
@@ -112,21 +112,20 @@ onMounted(() => {
 
 <template>
   <div class="max-w-2xl mx-auto px-4 py-6">
-    <h1 class="text-xl font-semibold text-ink m-0 mb-1">Phân loại task (Stats)</h1>
+    <h1 class="text-xl font-semibold text-ink m-0 mb-1">Task types (Stats)</h1>
     <p class="text-sm text-ink-muted mb-2">
-      Map GitLab labels → loại task dùng cho thống kê và đánh giá dev.
+      Map GitLab labels → task types used for stats and developer review.
     </p>
     <p class="text-sm text-ink-muted mb-6">
-      Task <strong>không có label</strong> GitLab được xem là
-      <strong>Tính năng</strong>. Nhập đúng tên label trên GitLab (có thể gõ
-      tự do).
+      Tasks with <strong>no GitLab label</strong> are treated as
+      <strong>Feature</strong>. Enter exact GitLab label names (free-form tags).
     </p>
 
     <div
       v-if="loading"
       class="text-sm text-ink-muted py-8 text-center"
     >
-      Đang tải…
+      Loading…
     </div>
 
     <div
@@ -145,7 +144,7 @@ onMounted(() => {
           mode="tags"
           class="w-full"
           :token-separators="[',']"
-          placeholder="Chọn hoặc gõ label…"
+          placeholder="Select or type labels…"
         />
       </div>
 
@@ -156,10 +155,10 @@ onMounted(() => {
           :disabled="saving"
           @click="save"
         >
-          {{ saving ? "Đang lưu…" : "Lưu mapping" }}
+          {{ saving ? "Saving…" : "Save mapping" }}
         </button>
         <span class="text-xs text-ink-muted">
-          Cập nhật lần cuối: {{ fmtUpdated(updatedAt) }}
+          Last updated: {{ fmtUpdated(updatedAt) }}
         </span>
       </div>
     </div>

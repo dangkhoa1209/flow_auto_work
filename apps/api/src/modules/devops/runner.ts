@@ -26,6 +26,33 @@ type ActiveRun = {
 const active = new Map<string, ActiveRun>();
 const MAX_STDIN_BYTES = 4096;
 
+async function failBuildPreflight(
+  jobId: string,
+  script: { command: string; workingDir: string; label: string },
+  errorMessage: string,
+): Promise<BuildRunResult> {
+  const now = new Date().toISOString();
+  let job = await updateBuildJob(jobId, {
+    status: "failed",
+    startedAt: now,
+    finishedAt: now,
+    durationMs: 0,
+    exitCode: null,
+    errorMessage,
+    command: script.command,
+    workingDir: script.workingDir,
+    scriptLabel: script.label,
+  });
+  const log = await openBuildLog(job.id);
+  emitLog(job, log, "system", `preflight failed: ${errorMessage}`);
+  emitLog(job, log, "system", `command: ${script.command}`);
+  emitLog(job, log, "system", `cwd: ${script.workingDir}`);
+  await log.close();
+  publishBuildEvent({ type: "job", job });
+  publishBuildEvent({ type: "done", buildId: job.id, job });
+  return { job, status: "failed", exitCode: null, durationMs: 0 };
+}
+
 function emitLog(
   job: BuildJob,
   log: BuildLogWriter,
@@ -139,30 +166,18 @@ export async function runBuildJob(jobId: string): Promise<BuildRunResult> {
   const killGraceMs = Math.max(500, cfg.BUILD_KILL_GRACE_MS);
 
   if (!existsSync(script.workingDir)) {
-    const now = new Date().toISOString();
-    const job = await updateBuildJob(jobId, {
-      status: "failed",
-      startedAt: now,
-      finishedAt: now,
-      durationMs: 0,
-      exitCode: null,
-      errorMessage: `workingDir does not exist: ${script.workingDir}`,
-    });
-    publishBuildEvent({ type: "job", job });
-    return { job, status: "failed", exitCode: null, durationMs: 0 };
+    return failBuildPreflight(
+      jobId,
+      script,
+      `workingDir does not exist: ${script.workingDir}`,
+    );
   }
   if (!statSync(script.workingDir).isDirectory()) {
-    const now = new Date().toISOString();
-    const job = await updateBuildJob(jobId, {
-      status: "failed",
-      startedAt: now,
-      finishedAt: now,
-      durationMs: 0,
-      exitCode: null,
-      errorMessage: `workingDir is not a directory: ${script.workingDir}`,
-    });
-    publishBuildEvent({ type: "job", job });
-    return { job, status: "failed", exitCode: null, durationMs: 0 };
+    return failBuildPreflight(
+      jobId,
+      script,
+      `workingDir is not a directory: ${script.workingDir}`,
+    );
   }
 
   const startedAt = new Date();

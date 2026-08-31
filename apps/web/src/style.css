@@ -3995,4 +3995,602 @@ code {
   }
 }
 
+/* Build tab (Devops) */
+.faw-build-shell {
+  display: grid;
+  grid-template-columns: 308px 1fr;
+  min-height: 0;
+  height: 100%;
+}
+.faw-build-sidebar {
+  border-right: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--app-bg);
+}
+.faw-build-sidebar__head {
+  padding: 16px 16px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border-bottom: 1px solid var(--line-soft, var(--line));
+}
+.faw-build-sidebar__title-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+.faw-build-sidebar__title {
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--ink-faint, var(--ink-muted));
+  text-transform: uppercase;
+}
+.faw-build-sidebar__count {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11.5px;
+  color: var(--ink-faint, var(--ink-muted));
+  background: var(--surface-raised);
+  padding: 1px 7px;
+  border-radius: 99px;
+}
+.faw-build-search {
+  position: relative;
+}
+.faw-build-search__icon {
+  position: absolute;
+  left: 9px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--ink-faint, var(--ink-muted));
+  font-size: 13px;
+}
+.faw-build-search__input {
+  width: 100%;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 7px 10px 7px 30px;
+  font-size: 12.5px;
+  color: var(--ink);
+  outline: none;
+}
+.faw-build-search__input:focus {
+  border-color: var(--accent-dim, var(--accent));
+  background: var(--surface-raised);
+}
+.faw-build-script-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 8px 16px;
+}
+.faw-build-script-group__label {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  color: var(--ink-faint, var(--ink-muted));
+  text-transform: uppercase;
+  padding: 12px 8px 6px;
+}
+.faw-build-script-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px;
+  border-radius: 8px;
+  transition: background 0.12s;
+}
+.faw-build-script-row:hover {
+  background: var(--surface-raised);
+}
+.faw-build-script-row.is-running {
+  background: rgba(245, 166, 35, 0.06);
+}
+.faw-build-script-row__swatch {
+  width: 3px;
+  align-self: stretch;
+  border-radius: 3px;
+  flex-shrink: 0;
+  background: var(--line);
+}
+.faw-build-script-row.is-running .faw-build-script-row__swatch {
+  background: var(--warn, #f5a623);
+}
+.faw-build-script-row__body {
+  flex: 1;
+  min-width: 0;
+}
+.faw-build-script-row__name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.faw-build-script-row__cmd {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11px;
+  color: var(--ink-faint, var(--ink-muted));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 2px;
+}
+.faw-build-run-btn {
+  all: unset;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 11px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  background: rgba(27, 74, 60, 0.65);
+  color: var(--success, #34d399);
+  border: 1px solid rgba(52, 211, 153, 0.25);
+  flex-shrink: 0;
+}
+.faw-build-run-btn:hover:not(.is-disabled) {
+  background: rgba(52, 211, 153, 0.22);
+}
+.faw-build-run-btn.is-disabled,
+.faw-build-run-btn:disabled {
+  background: var(--surface-raised);
+  color: var(--ink-faint, var(--ink-muted));
+  border-color: var(--line);
+  cursor: default;
+  pointer-events: none;
+}
+.faw-build-main {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.faw-build-queue-strip {
+  padding: 14px 22px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+}
+.faw-build-queue-strip__title {
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  color: var(--ink-faint, var(--ink-muted));
+  text-transform: uppercase;
+  margin-bottom: 10px;
+}
+.faw-build-queue-strip__n {
+  color: var(--ink-muted);
+  font-family: var(--font-mono, ui-monospace, monospace);
+}
+.faw-build-queue-empty {
+  font-size: 12.5px;
+  color: var(--ink-faint, var(--ink-muted));
+  font-family: var(--font-mono, ui-monospace, monospace);
+}
+.faw-build-queue-chips {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.faw-build-chip {
+  all: unset;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 11px 6px 9px;
+  border-radius: 8px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  font-size: 12px;
+}
+.faw-build-chip.is-running {
+  border-color: rgba(245, 166, 35, 0.35);
+  background: rgba(245, 166, 35, 0.07);
+}
+.faw-build-chip__pos {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 10.5px;
+  color: var(--ink-faint, var(--ink-muted));
+}
+.faw-build-chip__name {
+  font-weight: 600;
+  color: var(--ink-muted);
+}
+.faw-build-chip.is-running .faw-build-chip__name {
+  color: var(--ink);
+}
+.faw-build-chip__arrow {
+  color: var(--ink-faint, var(--ink-muted));
+}
+.faw-build-feed {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 22px 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.faw-build-feed-empty,
+.faw-build-empty {
+  color: var(--ink-faint, var(--ink-muted));
+  font-size: 13px;
+  padding: 30px 4px;
+}
+.faw-build-card {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  overflow: hidden;
+}
+.faw-build-card__head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  cursor: pointer;
+  user-select: none;
+}
+.faw-build-card__head:hover {
+  background: var(--surface-raised);
+}
+.faw-build-card__chev {
+  color: var(--ink-faint, var(--ink-muted));
+  transition: transform 0.16s ease;
+  font-size: 10px;
+}
+.faw-build-card.is-open .faw-build-card__chev {
+  transform: rotate(90deg);
+}
+.faw-build-card__pulse {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--warn, #f5a623);
+  box-shadow: 0 0 0 0 rgba(245, 166, 35, 0.5);
+  animation: faw-build-pulse 1.6s infinite;
+  flex-shrink: 0;
+}
+@keyframes faw-build-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(245, 166, 35, 0.45); }
+  70% { box-shadow: 0 0 0 7px rgba(245, 166, 35, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(245, 166, 35, 0); }
+}
+.faw-build-card__badge {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 3px 8px;
+  border-radius: 5px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+}
+.faw-build-card__badge--success {
+  background: rgba(27, 74, 60, 0.65);
+  color: var(--success, #34d399);
+}
+.faw-build-card__badge--running {
+  background: rgba(74, 58, 23, 0.65);
+  color: var(--warn, #f5a623);
+}
+.faw-build-card__badge--queued {
+  background: var(--surface-raised);
+  color: var(--ink-muted);
+  border: 1px solid var(--line);
+}
+.faw-build-card__badge--failed {
+  background: rgba(74, 31, 42, 0.65);
+  color: var(--danger, #f0546b);
+}
+.faw-build-card__title-wrap {
+  flex: 1;
+  min-width: 0;
+}
+.faw-build-card__title {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.faw-build-card__cmd {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11px;
+  color: var(--ink-faint, var(--ink-muted));
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.faw-build-card__time {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11.5px;
+  color: var(--ink-faint, var(--ink-muted));
+  min-width: 52px;
+  text-align: right;
+}
+.faw-build-card__body {
+  border-top: 1px solid var(--line-soft, var(--line));
+}
+.faw-build-log {
+  padding: 13px 16px 16px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12px;
+  line-height: 1.75;
+  color: var(--ink-muted);
+  max-height: 340px;
+  overflow-y: auto;
+  background: var(--app-bg);
+}
+.faw-build-log__line--cmd { color: var(--accent); }
+.faw-build-log__line--out { color: var(--ink-muted); }
+.faw-build-log__line--ok { color: var(--success, #34d399); }
+.faw-build-log__line--err { color: var(--danger, #f0546b); }
+.faw-build-log__line--meta { color: var(--ink-faint, var(--ink-muted)); }
+.faw-build-log__caret {
+  display: inline-block;
+  width: 6px;
+  height: 12px;
+  background: var(--ink-muted);
+  vertical-align: -2px;
+  animation: faw-build-blink 1s step-start infinite;
+}
+@keyframes faw-build-blink {
+  50% { opacity: 0; }
+}
+.faw-build-card__err {
+  margin: 0;
+  padding: 0 16px 8px;
+  font-size: 12px;
+  color: var(--danger, #f0546b);
+}
+.faw-build-card__foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 8px 16px 12px;
+}
+.faw-build-card__foot-btn {
+  all: unset;
+  cursor: pointer;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--ink-faint, var(--ink-muted));
+  padding: 5px 9px;
+  border-radius: 6px;
+}
+.faw-build-card__foot-btn:hover {
+  background: var(--surface-raised);
+  color: var(--ink-muted);
+}
+.faw-build-card__foot-btn--danger:hover {
+  color: var(--danger, #f0546b);
+}
+.faw-build-stdin {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+}
+.faw-build-stdin__input {
+  flex: 1;
+  min-width: 160px;
+  background: var(--app-bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--ink);
+}
+.faw-build-stdin__secret {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--ink-muted);
+}
+@media (max-width: 900px) {
+  .faw-build-shell {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
+  }
+  .faw-build-sidebar {
+    max-height: 42vh;
+    border-right: none;
+    border-bottom: 1px solid var(--line);
+  }
+}
+
+/* Admin pages */
+.faw-admin-page {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 24px 20px 48px;
+}
+.faw-admin-page__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+.faw-admin-page__title {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+.faw-admin-page__desc {
+  margin: 6px 0 0;
+  font-size: 0.875rem;
+  color: var(--ink-muted);
+  line-height: 1.5;
+  max-width: 640px;
+}
+.faw-admin-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.faw-admin-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 14px;
+  min-width: 100px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-raised);
+}
+.faw-admin-stat__n {
+  font-size: 1.125rem;
+  font-weight: 700;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  color: var(--ink);
+}
+.faw-admin-stat__l {
+  font-size: 0.75rem;
+  color: var(--ink-muted);
+}
+.faw-admin-stat--ok .faw-admin-stat__n { color: var(--success, #34d399); }
+.faw-admin-stat--muted .faw-admin-stat__n { color: var(--ink-muted); }
+.faw-admin-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.faw-admin-toolbar__search {
+  flex: 1;
+  min-width: 200px;
+  max-width: 360px;
+}
+.faw-admin-toolbar__check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.8125rem;
+  color: var(--ink-muted);
+  cursor: pointer;
+}
+.faw-admin-empty {
+  text-align: center;
+  padding: 48px 16px;
+  color: var(--ink-muted);
+}
+.faw-admin-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-raised);
+}
+.faw-admin-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+}
+.faw-admin-table th {
+  text-align: left;
+  padding: 10px 14px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+}
+.faw-admin-table td {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: middle;
+}
+.faw-admin-table tbody tr:last-child td { border-bottom: none; }
+.faw-admin-table tbody tr.is-disabled td { opacity: 0.55; }
+.faw-admin-table__date {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.75rem;
+  color: var(--ink-muted);
+}
+.faw-admin-user-cell__name { font-weight: 600; color: var(--ink); }
+.faw-admin-user-cell__sub {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--ink-muted);
+  margin-top: 2px;
+}
+.faw-admin-user-cell__you {
+  margin-left: 6px;
+  font-size: 0.6875rem;
+  color: var(--accent);
+}
+.faw-admin-role-tags { display: flex; flex-wrap: wrap; gap: 4px; }
+.faw-admin-role-tag {
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  color: var(--ink-muted);
+}
+.faw-admin-role-tag--admin {
+  border-color: rgba(76, 141, 255, 0.35);
+  color: var(--accent);
+  background: rgba(76, 141, 255, 0.08);
+}
+.faw-admin-status {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 99px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+}
+.faw-admin-status--on {
+  background: rgba(52, 211, 153, 0.12);
+  color: var(--success, #34d399);
+}
+.faw-admin-status--off {
+  background: rgba(240, 84, 107, 0.1);
+  color: var(--danger, #f0546b);
+}
+.faw-admin-row-actions { display: flex; flex-wrap: wrap; gap: 4px; }
+.faw-admin-action {
+  all: unset;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 5px;
+  font-size: 0.75rem;
+  color: var(--ink-muted);
+}
+.faw-admin-action:hover:not(:disabled) {
+  background: var(--surface);
+  color: var(--ink);
+}
+.faw-admin-action:disabled { opacity: 0.4; cursor: default; }
+.faw-admin-action--danger:hover:not(:disabled) { color: var(--danger, #f0546b); }
+.faw-admin-card-list li {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-raised);
+}
+.faw-admin-users-table .faw-admin-users-table__row--off td {
+  opacity: 0.55;
+}
+@media (max-width: 768px) {
+  .faw-admin-page { padding: 16px 12px 32px; }
+  .faw-admin-page__head { flex-direction: column; }
+}
 

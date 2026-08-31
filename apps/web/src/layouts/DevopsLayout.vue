@@ -3,14 +3,15 @@ import { computed, ref } from "vue";
 import { useRouter, RouterLink, RouterView } from "vue-router";
 import { message } from "ant-design-vue";
 import type { BuildJob } from "@/api/devopsApi";
+import AppTopbarRight from "@/components/layout/AppTopbarRight.vue";
+import AppSwitcher from "@/components/layout/AppSwitcher.vue";
 import { useSessionStore } from "@/stores/session";
 import { useDevopsStore, type DevopsTab } from "@/stores/devops";
-import { useThemeStore } from "@/stores/theme";
+import MobileBottomNav from "@/components/MobileBottomNav.vue";
 
 const router = useRouter();
 const session = useSessionStore();
 const devops = useDevopsStore();
-const themeStore = useThemeStore();
 
 const queuePopOpen = ref(false);
 
@@ -19,6 +20,10 @@ const tabs: Array<{ key: DevopsTab; label: string }> = [
   { key: "history", label: "History" },
   { key: "config", label: "Cấu hình" },
 ];
+
+const inSettings = computed(() =>
+  router.currentRoute.value.path.startsWith("/devops/settings"),
+);
 
 const runningJob = computed(
   () => devops.builds.find((b) => b.id === devops.queue.currentBuildId) || null,
@@ -57,23 +62,17 @@ async function onCancelQueued(id: string) {
     message.error(e instanceof Error ? e.message : String(e));
   }
 }
-
-async function logout() {
-  await session.logout();
-  message.success("Signed out");
-  await router.push({ name: "login" });
-}
 </script>
 
 <template>
   <div
-    class="h-[100dvh] max-h-[100dvh] flex flex-col overflow-hidden bg-[var(--app-bg)]"
+    class="faw-app-shell h-[100dvh] max-h-[100dvh] flex flex-col overflow-hidden bg-[var(--app-bg)]"
   >
     <header class="faw-topbar faw-topbar--devops">
       <RouterLink
         to="/devops"
         class="faw-brand"
-        title="Flow Auto WorkBench — Devops"
+        title="Flow Auto WorkBench — Build"
       >
         <img
           class="faw-brand__logo faw-brand__logo--full"
@@ -93,7 +92,9 @@ async function logout() {
         />
       </RouterLink>
 
-      <nav class="faw-seg" role="tablist">
+      <AppSwitcher />
+
+      <nav v-if="!inSettings" class="faw-seg hidden lg:flex" role="tablist">
         <button
           v-for="t in tabs"
           :key="t.key"
@@ -110,97 +111,74 @@ async function logout() {
 
       <div class="faw-topbar__spacer" />
 
-      <div class="faw-topbar__right">
-        <span class="faw-idle" :title="workerLabel">
-          <span class="faw-idle__dot" :class="idleDot" />
-          {{ workerLabel }}
-        </span>
-
-        <a-popover
-          v-model:open="queuePopOpen"
-          trigger="click"
-          placement="bottomRight"
-        >
-          <template #content>
-            <div class="faw-dev-queue-pop">
-              <p v-if="!queuedJobs.length" class="faw-dev-queue-pop__empty">
-                Queue trống
-              </p>
-              <div
-                v-for="row in queuedJobs"
-                :key="row.job.id"
-                class="faw-dev-queue-pop__row"
-              >
-                <span class="faw-dev-pos">#{{ row.pos }}</span>
-                <button
-                  type="button"
-                  class="faw-dev-queue-pop__label"
-                  @click="onSelectQueued(row.job.id)"
-                >
-                  <span class="block truncate">{{ row.job.scriptLabel }}</span>
-                  <span class="faw-dev-queue-pop__meta">@{{ row.job.triggeredBy }}</span>
-                </button>
-                <a-popconfirm
-                  title="Xóa job này khỏi queue?"
-                  ok-text="Hủy job"
-                  cancel-text="Giữ"
-                  ok-type="danger"
-                  @confirm="onCancelQueued(row.job.id)"
-                >
-                  <button type="button" class="faw-dev-queue-pop__cancel">
-                    Hủy
-                  </button>
-                </a-popconfirm>
-              </div>
-            </div>
-          </template>
-          <button
-            type="button"
-            class="faw-btn"
-            title="Xem hàng đợi build"
+      <AppTopbarRight settings-to="/devops/settings/account" class="hidden lg:contents">
+        <template #status>
+          <span class="faw-idle" :title="workerLabel">
+            <span class="faw-idle__dot" :class="idleDot" />
+            {{ workerLabel }}
+          </span>
+        </template>
+        <template #extra>
+          <a-popover
+            v-if="!inSettings"
+            v-model:open="queuePopOpen"
+            trigger="click"
+            placement="bottomRight"
           >
-            Queue: {{ devops.queue.queued }}
-            {{ devops.queue.queued === 1 ? "job" : "jobs" }}
-          </button>
-        </a-popover>
-
-        <RouterLink v-if="session.isAdmin" to="/admin" class="faw-btn">
-          Admin
-        </RouterLink>
-        <RouterLink
-          v-if="session.me?.roles?.includes('dev')"
-          to="/work"
-          class="faw-btn"
-        >
-          Work
-        </RouterLink>
-
-        <div class="faw-user-chip">
-          <span class="faw-avatar" />
-          @{{ session.me?.gitlabUsername || session.session.username }}
-        </div>
-
-        <button
-          type="button"
-          class="faw-icon-btn"
-          :title="
-            themeStore.mode === 'dark'
-              ? 'Switch to light mode'
-              : 'Switch to dark mode'
-          "
-          @click="themeStore.toggle()"
-        >
-          {{ themeStore.mode === "dark" ? "☀" : "☾" }}
-        </button>
-
-        <button type="button" class="faw-btn" title="Logout" @click="logout">
-          Logout
-        </button>
-      </div>
+            <template #content>
+              <div class="faw-dev-queue-pop">
+                <p v-if="!queuedJobs.length" class="faw-dev-queue-pop__empty">
+                  Queue trống
+                </p>
+                <div
+                  v-for="row in queuedJobs"
+                  :key="row.job.id"
+                  class="faw-dev-queue-pop__row"
+                >
+                  <span class="faw-dev-pos">#{{ row.pos }}</span>
+                  <button
+                    type="button"
+                    class="faw-dev-queue-pop__label"
+                    @click="onSelectQueued(row.job.id)"
+                  >
+                    <span class="block truncate">{{ row.job.scriptLabel }}</span>
+                    <span class="faw-dev-queue-pop__meta"
+                      >@{{ row.job.triggeredBy }}</span
+                    >
+                  </button>
+                  <a-popconfirm
+                    title="Xóa job này khỏi queue?"
+                    ok-text="Hủy job"
+                    cancel-text="Giữ"
+                    ok-type="danger"
+                    @confirm="onCancelQueued(row.job.id)"
+                  >
+                    <button type="button" class="faw-dev-queue-pop__cancel">
+                      Hủy
+                    </button>
+                  </a-popconfirm>
+                </div>
+              </div>
+            </template>
+            <button type="button" class="faw-btn" title="Xem hàng đợi build">
+              Queue: {{ devops.queue.queued }}
+              {{ devops.queue.queued === 1 ? "job" : "jobs" }}
+            </button>
+          </a-popover>
+          <RouterLink v-if="session.isAdmin" to="/admin/users" class="faw-btn">
+            Admin
+          </RouterLink>
+        </template>
+      </AppTopbarRight>
     </header>
 
-    <main class="flex-1 min-h-0 overflow-hidden">
+    <main
+      class="flex-1 min-h-0 pb-[calc(3.25rem+env(safe-area-inset-bottom))] lg:pb-0"
+      :class="inSettings ? 'overflow-hidden' : 'overflow-hidden'"
+    >
       <RouterView />
     </main>
+
+    <MobileBottomNav />
   </div>
 </template>

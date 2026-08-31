@@ -3,10 +3,9 @@ import { computed } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import {
   ThunderboltOutlined,
-  CheckCircleOutlined,
-  BarChartOutlined,
-  SettingOutlined,
+  MessageOutlined,
   BuildOutlined,
+  SettingOutlined,
 } from "@ant-design/icons-vue";
 import { useSessionStore } from "@/stores/session";
 
@@ -14,32 +13,91 @@ const route = useRoute();
 const router = useRouter();
 const session = useSessionStore();
 
-const tabs = computed(() => {
-  const items = [
-    { to: "/work", label: "Work", icon: ThunderboltOutlined },
-    { to: "/handoff", label: "Handoff", icon: CheckCircleOutlined },
-    { to: "/stats", label: "Stats", icon: BarChartOutlined },
-  ];
-  if (session.canAccessDevops) {
-    items.push({ to: "/devops", label: "Devops", icon: BuildOutlined });
+function settingsTarget(): { to: string; match: (path: string) => boolean } {
+  if (route.path.startsWith("/ba")) {
+    return {
+      to: "/ba/settings/gitlab",
+      match: (p) => p.startsWith("/ba/settings"),
+    };
   }
-  items.push({ to: "/settings", label: "Settings", icon: SettingOutlined });
+  if (route.path.startsWith("/devops")) {
+    return {
+      to: "/devops/settings/account",
+      match: (p) => p.startsWith("/devops/settings"),
+    };
+  }
+  if (session.canAccessWork) {
+    return {
+      to: "/settings/project",
+      match: (p) => p.startsWith("/settings"),
+    };
+  }
+  if (session.canAccessBa) {
+    return {
+      to: "/ba/settings/gitlab",
+      match: (p) => p.startsWith("/ba/settings"),
+    };
+  }
+  return {
+    to: "/devops/settings/account",
+    match: (p) => p.startsWith("/devops/settings"),
+  };
+}
+
+/** Mobile: app-level tabs when user has multiple surfaces. */
+const tabs = computed(() => {
+  const items: Array<{
+    to: string;
+    label: string;
+    icon: typeof ThunderboltOutlined;
+    match: (path: string) => boolean;
+  }> = [];
+
+  if (session.canAccessWork) {
+    items.push({
+      to: "/work",
+      label: "Work",
+      icon: ThunderboltOutlined,
+      match: (p) =>
+        p.startsWith("/work") ||
+        p.startsWith("/handoff") ||
+        p.startsWith("/stats"),
+    });
+  }
+  if (session.canAccessBa) {
+    items.push({
+      to: "/ba",
+      label: "Chat",
+      icon: MessageOutlined,
+      match: (p) => p.startsWith("/ba") && !p.startsWith("/ba/settings"),
+    });
+  }
+  if (session.canAccessDevops) {
+    items.push({
+      to: "/devops",
+      label: "Build",
+      icon: BuildOutlined,
+      match: (p) =>
+        p.startsWith("/devops") && !p.startsWith("/devops/settings"),
+    });
+  }
+
+  const settings = settingsTarget();
+  items.push({
+    to: settings.to,
+    label: "Settings",
+    icon: SettingOutlined,
+    match: settings.match,
+  });
   return items;
 });
 
-const activePath = computed(() => route.path);
-
-function isActive(to: string) {
-  if (to === "/settings") return activePath.value.startsWith("/settings");
-  return activePath.value === to || activePath.value.startsWith(`${to}/`);
+function isActive(tab: (typeof tabs.value)[0]) {
+  return tab.match(route.path);
 }
 
-function go(to: string) {
-  if (to === "/settings" && !activePath.value.startsWith("/settings")) {
-    void router.push("/settings/project");
-    return;
-  }
-  void router.push(to);
+function go(tab: (typeof tabs.value)[0]) {
+  void router.push(tab.to);
 }
 </script>
 
@@ -51,11 +109,11 @@ function go(to: string) {
     >
       <button
         v-for="t in tabs"
-        :key="t.to"
+        :key="t.to + t.label"
         type="button"
         class="faw-mnav__tab touch-manipulation fx-colors"
-        :class="{ 'is-active': isActive(t.to) }"
-        @click="go(t.to)"
+        :class="{ 'is-active': isActive(t) }"
+        @click="go(t)"
       >
         <component :is="t.icon" class="faw-mnav__icon" />
         <span class="faw-mnav__label">{{ t.label }}</span>

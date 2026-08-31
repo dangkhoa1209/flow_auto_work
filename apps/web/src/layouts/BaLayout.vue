@@ -3,18 +3,19 @@ import { computed, onMounted, onUnmounted, provide, ref, watch } from "vue";
 import { useRouter, RouterLink, RouterView, useRoute } from "vue-router";
 import { message } from "ant-design-vue";
 import { MenuOutlined } from "@ant-design/icons-vue";
+import AppTopbarRight from "@/components/layout/AppTopbarRight.vue";
+import AppSwitcher from "@/components/layout/AppSwitcher.vue";
 import { useSessionStore } from "@/stores/session";
 import { useBaChatStore } from "@/stores/baChat";
-import { useThemeStore } from "@/stores/theme";
 import { connectRealtime } from "@/realtime/client";
 import BaProjectSelect from "@/components/ba/BaProjectSelect.vue";
 import BaGitPatModal from "@/components/ba/BaGitPatModal.vue";
+import MobileBottomNav from "@/components/MobileBottomNav.vue";
 
 const router = useRouter();
 const route = useRoute();
 const session = useSessionStore();
 const ba = useBaChatStore();
-const themeStore = useThemeStore();
 const sideOpen = ref(false);
 
 let disconnect: (() => void) | undefined;
@@ -29,16 +30,14 @@ const statusText = computed(() =>
 );
 
 const navActive = computed(() => {
+  if (route.path.startsWith("/ba/settings")) return "settings";
   if (route.name === "ba-workflow") return "workflow";
   if (route.name === "ba-tasks") return "tasks";
-  if (route.name === "ba-settings") return "settings";
   return "chat";
 });
 
-/** Project chọn ở header — dùng chung cho Chat / Phân tích YC / Tasks. */
 const showProjectSelect = computed(() => navActive.value !== "settings");
 
-/** Tabs theo feature flag: hide ẩn hẳn, lab hiện kèm nhãn "(lab)". */
 const showWorkflowTab = computed(() => ba.featureVisible("workflow"));
 const showTasksTab = computed(() => ba.featureVisible("tasks"));
 const workflowTabLabel = computed(() =>
@@ -46,7 +45,6 @@ const workflowTabLabel = computed(() =>
 );
 const tasksTabLabel = computed(() => ba.featureLabel("tasks", "Tasks"));
 
-// Route đang đứng bị admin ẩn → quay về Chat
 watch(
   () => [ba.featuresLoaded, route.name] as const,
   ([loaded, name]) => {
@@ -92,23 +90,11 @@ onMounted(async () => {
 onUnmounted(() => {
   disconnect?.();
 });
-
-async function logout() {
-  try {
-    const { useBaChatStore } = await import("@/stores/baChat");
-    useBaChatStore().reset();
-  } catch {
-    /* ignore */
-  }
-  await session.logout();
-  message.success("Signed out");
-  await router.push({ name: "login" });
-}
 </script>
 
 <template>
   <div
-    class="faw-ba-shell h-[100dvh] max-h-[100dvh] flex flex-col overflow-hidden overflow-x-hidden bg-[var(--app-bg)]"
+    class="faw-app-shell faw-ba-shell h-[100dvh] max-h-[100dvh] flex flex-col overflow-hidden overflow-x-hidden bg-[var(--app-bg)]"
     :class="{ 'is-side-open': sideOpen }"
   >
     <header class="faw-topbar faw-topbar--ba">
@@ -140,7 +126,9 @@ async function logout() {
         />
       </RouterLink>
 
-      <div class="faw-seg hidden sm:flex">
+      <AppSwitcher />
+
+      <nav v-if="navActive !== 'settings'" class="faw-seg hidden lg:flex">
         <RouterLink
           to="/ba"
           class="faw-seg__btn"
@@ -164,11 +152,11 @@ async function logout() {
         >
           {{ tasksTabLabel }}
         </RouterLink>
-      </div>
+      </nav>
 
       <div
         v-if="showProjectSelect"
-        class="faw-ba-topbar-project min-w-0 w-40 sm:w-52"
+        class="faw-crumb hidden lg:flex faw-ba-topbar-project"
         title="Project — dùng chung cho Chat / Phân tích YC / Tasks"
       >
         <BaProjectSelect :show-label="false" size="small" />
@@ -176,54 +164,30 @@ async function logout() {
 
       <div class="faw-topbar__spacer" />
 
-      <div class="faw-topbar__right faw-ba-top-right">
-        <span class="faw-idle faw-ba-idle">
-          <span class="faw-idle__dot" :class="statusDot" />
-          <span class="faw-ba-idle__text">{{ statusText }}</span>
-        </span>
-        <div class="faw-user-chip faw-ba-user">
-          <span class="faw-avatar" />
-          <span class="faw-ba-user__name">@{{ session.session.username }}</span>
-        </div>
-        <button
-          type="button"
-          class="faw-icon-btn"
-          :title="
-            themeStore.mode === 'dark'
-              ? 'Chuyển giao diện sáng'
-              : 'Chuyển giao diện tối'
-          "
-          @click="themeStore.toggle()"
-        >
-          {{ themeStore.mode === "dark" ? "☀" : "☾" }}
-        </button>
-        <RouterLink
-          v-if="session.isAdmin"
-          to="/admin"
-          class="faw-btn"
-          title="Admin"
-        >
-          Admin
-        </RouterLink>
-        <RouterLink
-          to="/ba/settings"
-          class="faw-btn"
-          :class="{ 'faw-btn--run': navActive === 'settings' }"
-          title="Settings"
-        >
-          Settings
-        </RouterLink>
-        <button type="button" class="faw-btn" title="Logout" @click="logout">
-          Logout
-        </button>
-      </div>
+      <AppTopbarRight settings-to="/ba/settings/gitlab" class="hidden lg:contents">
+        <template #status>
+          <span class="faw-idle faw-ba-idle">
+            <span class="faw-idle__dot" :class="statusDot" />
+            <span class="faw-ba-idle__text">{{ statusText }}</span>
+          </span>
+        </template>
+        <template #extra>
+          <RouterLink v-if="session.isAdmin" to="/admin/users" class="faw-btn">
+            Admin
+          </RouterLink>
+        </template>
+      </AppTopbarRight>
     </header>
 
-    <main class="flex-1 min-h-0 overflow-hidden flex flex-col">
+    <main
+      class="flex-1 min-h-0 overflow-hidden flex flex-col pb-[calc(3.25rem+env(safe-area-inset-bottom))] lg:pb-0"
+    >
       <div class="flex-1 min-h-0 overflow-hidden">
         <RouterView />
       </div>
     </main>
+
+    <MobileBottomNav />
 
     <button
       v-if="sideOpen"

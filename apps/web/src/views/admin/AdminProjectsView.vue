@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, reactive, ref } from "vue";
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 import { message, Modal } from "ant-design-vue";
+import { MoreOutlined } from "@ant-design/icons-vue";
 import { api } from "@/api/client";
 import { API } from "@/api/endpoints";
 
@@ -32,6 +33,10 @@ type BaProject = {
 
 const loading = ref(false);
 const projects = ref<BaProject[]>([]);
+const search = ref("");
+const page = ref(1);
+const pageSize = ref(10);
+const cloningId = ref<string | null>(null);
 const showForm = ref(false);
 const editingId = ref<string | null>(null);
 const wizardStep = ref(0);
@@ -65,7 +70,34 @@ const form = reactive({
   mainBranch: "main",
 });
 
-const steps = ["GitLab PAT", "Project", "Main branch"];
+const steps = ["GitLab PAT", "Project Chatbox", "Main branch"];
+
+const columns = [
+  { title: "Project", key: "project", width: 220 },
+  { title: "GitLab", key: "gitlab", width: 200 },
+  { title: "Clone path", key: "path", width: 240 },
+  { title: "Clone", key: "clone", width: 100 },
+  { title: "DB", key: "db", width: 120 },
+  { title: "", key: "actions", width: 52, align: "right" as const, fixed: "right" as const },
+];
+
+const filteredProjects = computed(() => {
+  const q = search.value.trim().toLowerCase();
+  if (!q) return projects.value;
+  return projects.value.filter((p) => {
+    return (
+      p.displayName.toLowerCase().includes(q) ||
+      p.slug.toLowerCase().includes(q) ||
+      p.gitlabPath.toLowerCase().includes(q) ||
+      p.localPath.toLowerCase().includes(q) ||
+      (p.mainBranch || "").toLowerCase().includes(q)
+    );
+  });
+});
+
+watch(search, () => {
+  page.value = 1;
+});
 
 const projectOptions = computed(() =>
   gitlabProjects.value.map((p) => ({
@@ -280,7 +312,7 @@ async function save() {
         method: "PATCH",
         body: JSON.stringify(body),
       });
-      message.success("Project updated");
+      message.success("Project chatbox updated");
     } else {
       if (!form.gitlabToken.trim()) {
         message.warning("GitLab PAT required for new projects");
@@ -290,7 +322,7 @@ async function save() {
         method: "POST",
         body: JSON.stringify(body),
       });
-      message.success("Project created");
+      message.success("Project chatbox created");
     }
     showForm.value = false;
     resetForm();
@@ -429,9 +461,11 @@ function confirmDelete(p: BaProject) {
     title: `Delete ${p.displayName}?`,
     content: "BA users will no longer see this project.",
     okType: "danger",
+    okText: "Delete",
+    cancelText: "Cancel",
     onOk: async () => {
       await api(API.admin.baProject(p.id), { method: "DELETE" });
-      message.success("Deleted");
+      message.success("Project chatbox deleted");
       await load();
     },
   });
@@ -456,6 +490,7 @@ function startPoll(id: string) {
       const status = data.project?.cloneStatus;
       if (status === "ready" || status === "failed") {
         stopPoll(id);
+        cloningId.value = null;
         await load();
         if (status === "ready") message.success("Clone ready");
         if (status === "failed") {
@@ -478,7 +513,10 @@ function confirmClone(p: BaProject) {
   Modal.confirm({
     title: `Clone ${p.displayName}?`,
     content: `Into ${p.localPath}`,
+    okText: "Clone",
+    cancelText: "Cancel",
     onOk: async () => {
+      cloningId.value = p.id;
       loading.value = true;
       try {
         await api(API.admin.baClone(p.id), {
@@ -492,16 +530,45 @@ function confirmClone(p: BaProject) {
         message.error(e instanceof Error ? e.message : String(e));
       } finally {
         loading.value = false;
+        if (projects.value.find((x) => x.id === p.id)?.cloneStatus !== "cloning") {
+          cloningId.value = null;
+        }
       }
     },
   });
 }
 
-function dbBadge(p: BaProject) {
-  if (!p.db?.configured) return { label: "DB: none", cls: "text-ink-muted" };
-  if (p.db.enabled)
-    return { label: `DB: ON (${p.db.dialect})`, cls: "text-green-600" };
-  return { label: `DB: off (${p.db.dialect})`, cls: "text-orange-600" };
+function cloneTagColor(status: string): string {
+  if (status === "ready") return "green";
+  if (status === "cloning") return "blue";
+  if (status === "failed") return "red";
+  return "default";
+}
+
+function dbTag(record: BaProject): { label: string; color: string } {
+  if (!record.db?.configured) return { label: "Not configured", color: "default" };
+  if (record.db.enabled) return { label: `ON · ${record.db.dialect}`, color: "green" };
+  return { label: `Off · ${record.db.dialect}`, color: "orange" };
+}
+
+function onProjectAction(key: string, record: BaProject) {
+  if (key === "edit") openEdit(record);
+  else if (key === "db") openDb(record);
+  else if (key === "clone") confirmClone(record);
+  else if (key === "delete") confirmDelete(record);
+}
+
+function onMenuClick(key: string | number, record: BaProject) {
+  onProjectAction(String(key), record);
+}
+
+function menuClickHandler(record: BaProject) {
+  return (info: { key: string | number }) => onMenuClick(info.key, record);
+}
+
+function onTableChange(pagination: { current?: number; pageSize?: number }) {
+  if (pagination.current != null) page.value = pagination.current;
+  if (pagination.pageSize != null) pageSize.value = pagination.pageSize;
 }
 
 onMounted(() => {
@@ -514,32 +581,28 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="max-w-4xl mx-auto px-4 py-6">
-    <div class="flex items-center justify-between gap-4 mb-6">
+  <div class="faw-admin-page">
+    <header class="faw-admin-page__head">
       <div>
-        <h1 class="text-xl font-semibold text-ink m-0">BA projects</h1>
-        <p class="text-sm text-ink-muted mt-1 mb-0">
-          Wizard: GitLab host + PAT → chọn project → main branch · clone vào
-          <code class="text-xs">project/_ba/&lt;slug&gt;/source</code>
-          · DB (tuỳ chọn) bật mới cho BA tra cứu read-only
+        <h1 class="faw-admin-page__title">Project Chatbox</h1>
+        <p class="faw-admin-page__desc">
+          Configure BA Chat projects — GitLab PAT → pick repo → main branch.
+          Clones into
+          <code class="text-xs">project/_ba/&lt;slug&gt;/source</code>.
+          Optional read-only DB.
         </p>
       </div>
-      <button
-        type="button"
-        class="faw-btn faw-btn--run"
-        :disabled="loading"
-        @click="openCreate"
-      >
-        New project
-      </button>
-    </div>
+      <a-button type="primary" size="small" :loading="loading" @click="openCreate">
+        + Project
+      </a-button>
+    </header>
 
     <div
       v-if="showForm"
       class="mb-6 p-4 rounded-lg border border-line bg-surface-raised shadow-sm"
     >
       <h2 class="text-base font-semibold text-ink mt-0 mb-3">
-        {{ editingId ? "Edit project" : "Create project" }}
+        {{ editingId ? "Edit project chatbox" : "Create project chatbox" }}
       </h2>
 
       <div class="flex gap-2 mb-4 flex-wrap">
@@ -570,7 +633,7 @@ onUnmounted(() => {
         <label class="flex flex-col gap-1 text-sm">
           <span class="text-ink-muted">
             GitLab PAT
-            {{ editingId ? "(bắt buộc để load lại list project)" : "" }}
+            {{ editingId ? "(required to reload project list)" : "" }}
           </span>
           <a-input-password
             v-model:value="form.gitlabToken"
@@ -679,13 +742,13 @@ onUnmounted(() => {
         Database — {{ dbEditingProject?.displayName || dbEditingId }}
       </h2>
       <p class="text-xs text-ink-muted mt-0 mb-3">
-        Password được mã hoá AES-GCM (FLOW_SECRETS_KEY). Chỉ khi
-        <strong class="text-ink font-medium">Active</strong> BA chat mới được
-        query read-only qua tool an toàn — không lộ credential vào agent shell.
+        Password is encrypted with AES-GCM (FLOW_SECRETS_KEY). Only when
+        <strong class="text-ink font-medium">Active</strong> can BA chat
+        run safe read-only queries — credentials are never exposed to the agent shell.
       </p>
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <label class="flex flex-col gap-1 text-sm sm:col-span-2">
-          <span class="text-ink-muted">Active (cho phép BA tra DB)</span>
+          <span class="text-ink-muted">Active (allow BA DB queries)</span>
           <a-switch v-model:checked="dbForm.enabled" />
         </label>
         <label class="flex flex-col gap-1 text-sm">
@@ -730,7 +793,7 @@ onUnmounted(() => {
               }})
             </template>
             <template v-else-if="dbEditingProject?.db?.configured">
-              (để trống = giữ password cũ)
+              (leave blank to keep current password)
             </template>
           </span>
           <a-input-password
@@ -778,93 +841,130 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <a-spin :spinning="loading && !showForm && !dbEditingId">
-      <div v-if="!projects.length" class="text-center py-16 text-ink-muted">
-        <p class="mb-3">No BA projects yet.</p>
-        <button type="button" class="faw-btn faw-btn--run" @click="openCreate">
-          Create first project
-        </button>
-      </div>
-      <ul v-else class="list-none m-0 p-0 flex flex-col gap-3">
-        <li
-          v-for="p in projects"
-          :key="p.id"
-          class="p-4 rounded-lg border border-line bg-surface-raised"
-        >
-          <div class="flex flex-wrap items-start justify-between gap-3">
-            <div class="min-w-0">
-              <div class="font-semibold text-ink">{{ p.displayName }}</div>
-              <div class="text-sm text-ink-muted mt-0.5">
-                {{ p.gitlabPath }} · {{ p.mainBranch || "—" }} · {{ p.slug }}
-              </div>
-              <div class="text-xs text-ink-muted mt-1 font-mono truncate">
-                {{ p.localPath }}
-              </div>
-              <div class="mt-2 flex items-center gap-2 text-xs flex-wrap">
-                <span
-                  class="px-2 py-0.5 rounded"
-                  :class="{
-                    'bg-gray-100 text-gray-700': p.cloneStatus === 'pending',
-                    'bg-blue-50 text-blue-700': p.cloneStatus === 'cloning',
-                    'bg-green-50 text-green-700': p.cloneStatus === 'ready',
-                    'bg-red-50 text-red-700': p.cloneStatus === 'failed',
-                  }"
-                >
-                  {{ p.cloneStatus }}
-                </span>
-                <span :class="dbBadge(p).cls">{{ dbBadge(p).label }}</span>
-                <span v-if="!p.hasGitlabToken" class="text-orange-600">
-                  No PAT
-                </span>
-                <span v-if="p.cloneError" class="text-red-600 truncate max-w-md">
-                  {{ p.cloneError }}
-                </span>
-              </div>
+    <div class="faw-admin-toolbar">
+      <a-input
+        v-model:value="search"
+        allow-clear
+        placeholder="Search name, slug, GitLab path…"
+        class="faw-admin-toolbar__search"
+      />
+    </div>
+
+    <a-table
+      class="faw-admin-chatbox-table"
+      size="small"
+      row-key="id"
+      :columns="columns"
+      :data-source="filteredProjects"
+      :loading="loading && !showForm && !dbEditingId"
+      :scroll="{ x: 980 }"
+      :pagination="{
+        current: page,
+        pageSize,
+        total: filteredProjects.length,
+        showSizeChanger: true,
+        pageSizeOptions: ['10', '20', '50'],
+        showTotal: (total: number) => `${total} project`,
+      }"
+      @change="onTableChange"
+    >
+      <template #emptyText>
+        <div class="faw-admin-empty py-8">
+          <p class="mb-3">No project chatbox yet.</p>
+          <a-button type="primary" size="small" @click="openCreate">
+            + Project
+          </a-button>
+        </div>
+      </template>
+
+      <template #bodyCell="{ column, record }">
+        <template v-if="column.key === 'project'">
+          <div class="min-w-0">
+            <div class="font-semibold text-ink truncate">
+              {{ (record as BaProject).displayName }}
             </div>
-            <div class="flex flex-wrap gap-2">
-              <button
-                type="button"
-                class="px-3 py-1.5 text-sm border border-line rounded-md hover:border-accent"
-                @click="openEdit(p)"
-              >
-                Edit
-              </button>
-              <button
-                type="button"
-                class="px-3 py-1.5 text-sm border border-line rounded-md hover:border-accent"
-                @click="openDb(p)"
-              >
-                Database
-              </button>
-              <a-tooltip
-                :title="
-                  !p.hasGitlabToken
-                    ? 'Add a GitLab PAT first'
-                    : p.cloneStatus === 'cloning'
-                      ? 'Clone in progress'
-                      : 'Clone repository'
-                "
-              >
-                <button
-                  type="button"
-                  class="px-3 py-1.5 text-sm border border-line rounded-md hover:border-accent disabled:opacity-50"
-                  :disabled="!p.hasGitlabToken || p.cloneStatus === 'cloning'"
-                  @click="confirmClone(p)"
-                >
-                  Clone
-                </button>
-              </a-tooltip>
-              <button
-                type="button"
-                class="px-3 py-1.5 text-sm text-red-600 border border-line rounded-md hover:border-red-400"
-                @click="confirmDelete(p)"
-              >
-                Delete
-              </button>
+            <div class="text-xs text-ink-muted mt-0.5 truncate">
+              {{ (record as BaProject).slug }}
+              <span v-if="!(record as BaProject).hasGitlabToken" class="text-orange-500">
+                · missing PAT
+              </span>
             </div>
           </div>
-        </li>
-      </ul>
-    </a-spin>
+        </template>
+
+        <template v-else-if="column.key === 'gitlab'">
+          <div class="min-w-0">
+            <div class="text-sm text-ink truncate">
+              {{ (record as BaProject).gitlabPath }}
+            </div>
+            <div class="text-xs text-ink-muted font-mono mt-0.5">
+              {{ (record as BaProject).mainBranch || "—" }}
+            </div>
+          </div>
+        </template>
+
+        <template v-else-if="column.key === 'path'">
+          <a-tooltip :title="(record as BaProject).localPath">
+            <span class="font-mono text-xs text-ink-muted truncate block max-w-[220px]">
+              {{ (record as BaProject).localPath }}
+            </span>
+          </a-tooltip>
+        </template>
+
+        <template v-else-if="column.key === 'clone'">
+          <a-tooltip
+            v-if="(record as BaProject).cloneError"
+            :title="(record as BaProject).cloneError || ''"
+          >
+            <a-tag :color="cloneTagColor((record as BaProject).cloneStatus)">
+              {{ (record as BaProject).cloneStatus }}
+            </a-tag>
+          </a-tooltip>
+          <a-tag
+            v-else
+            :color="cloneTagColor((record as BaProject).cloneStatus)"
+          >
+            {{ (record as BaProject).cloneStatus }}
+          </a-tag>
+        </template>
+
+        <template v-else-if="column.key === 'db'">
+          <a-tag :color="dbTag(record as BaProject).color">
+            {{ dbTag(record as BaProject).label }}
+          </a-tag>
+        </template>
+
+        <template v-else-if="column.key === 'actions'">
+          <a-dropdown :trigger="['click']">
+            <a-button size="small" type="text" class="!px-1.5">
+              <MoreOutlined />
+            </a-button>
+            <template #overlay>
+              <a-menu @click="menuClickHandler(record as BaProject)">
+                <a-menu-item key="edit">Edit</a-menu-item>
+                <a-menu-item key="db">Database</a-menu-item>
+                <a-menu-item
+                  key="clone"
+                  :disabled="
+                    !(record as BaProject).hasGitlabToken ||
+                    (record as BaProject).cloneStatus === 'cloning' ||
+                    cloningId === (record as BaProject).id
+                  "
+                >
+                  {{
+                    (record as BaProject).cloneStatus === "cloning" ||
+                    cloningId === (record as BaProject).id
+                      ? "Cloning…"
+                      : "Clone repo"
+                  }}
+                </a-menu-item>
+                <a-menu-divider />
+                <a-menu-item key="delete" danger>Delete</a-menu-item>
+              </a-menu>
+            </template>
+          </a-dropdown>
+        </template>
+      </template>
+    </a-table>
   </div>
 </template>

@@ -3,6 +3,8 @@ import { computed, ref } from "vue";
 import { API } from "@/api/endpoints";
 import { api } from "@/api/client";
 import { useAuthStore } from "@/stores/auth";
+import { resolveHomeRoute } from "@/utils/routeAccess";
+import { effectiveRoles, hasAnyRole } from "@/utils/userRoles";
 import {
   getAccessExpiresAt,
   getAccessToken,
@@ -109,42 +111,50 @@ export const useSessionStore = defineStore("session", () => {
 
   const isLoggedIn = computed(() => auth.isAuthenticated);
 
-  const isAdmin = computed(() => Boolean(me.value?.roles?.includes("admin")));
+  const roles = computed(() => effectiveRoles(me.value?.roles));
 
-  /** pd / ba / qc → Project chat (not dev or devops). */
+  const isAdmin = computed(() => roles.value.includes("admin"));
+
+/** pd / ba / qc only — primary home is Project chat. */
   const isBaAudience = computed(() => {
-    const roles = me.value?.roles || [];
-    if (roles.includes("admin")) return false;
-    if (roles.includes("dev")) return false;
-    if (roles.includes("devops")) return false;
-    return (
-      roles.includes("ba") ||
-      roles.includes("pd") ||
-      roles.includes("qc")
-    );
+    const r = roles.value;
+    if (r.includes("admin")) return false;
+    if (r.includes("dev")) return false;
+    if (r.includes("devops")) return false;
+    return r.includes("ba") || r.includes("pd") || r.includes("qc");
   });
 
-  const canAccessDevops = computed(() => {
-    const roles = me.value?.roles || [];
-    return roles.includes("admin") || roles.includes("devops");
-  });
+  const canAccessWork = computed(() =>
+    hasAnyRole(roles.value, "admin", "dev"),
+  );
+
+  const canAccessBa = computed(
+    () =>
+      isBaAudience.value ||
+      hasAnyRole(roles.value, "admin", "dev", "devops"),
+  );
+
+  const canAccessDevops = computed(() =>
+    hasAnyRole(roles.value, "admin", "devops", "dev"),
+  );
 
   /** devops role, not dev (dev → /work). */
   const isDevopsAudience = computed(() => {
-    const roles = me.value?.roles || [];
-    if (roles.includes("admin")) return false;
-    if (roles.includes("dev")) return false;
-    return roles.includes("devops");
+    const r = roles.value;
+    if (r.includes("admin")) return false;
+    if (r.includes("dev")) return false;
+    return r.includes("devops");
   });
 
-  const homeRoute = computed(() => {
-    const roles = me.value?.roles || [];
-    if (roles.includes("admin")) return "/admin";
-    if (roles.includes("dev")) return "/work";
-    if (roles.includes("devops")) return "/devops";
-    if (isBaAudience.value) return "/ba";
-    return "/work";
-  });
+  const homeRoute = computed(() =>
+    resolveHomeRoute({
+      isAdmin: isAdmin.value,
+      isDevopsAudience: isDevopsAudience.value,
+      canAccessWork: canAccessWork.value,
+      canAccessBa: canAccessBa.value,
+      canAccessDevops: canAccessDevops.value,
+    }),
+  );
 
   const currentMembership = computed(() =>
     memberships.value.find((m) => m.projectId === projectId.value),
@@ -199,6 +209,10 @@ export const useSessionStore = defineStore("session", () => {
       projectId.value = next;
       auth.setProjectId(next);
     }
+  }
+
+  function setMe(user: UserPublic | null) {
+    me.value = user;
   }
 
   async function refreshMe() {
@@ -346,12 +360,15 @@ export const useSessionStore = defineStore("session", () => {
     isLoggedIn,
     isAdmin,
     isBaAudience,
+    canAccessWork,
+    canAccessBa,
     canAccessDevops,
     isDevopsAudience,
     homeRoute,
     currentMembership,
     bootstrap,
     refreshMe,
+    setMe,
     setSession,
     setAuthTokens,
     setMemberships,

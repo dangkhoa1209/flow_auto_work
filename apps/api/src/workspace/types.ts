@@ -5,7 +5,7 @@ import { getRepoRoot } from "../repoRoot.js";
 export type CloneStatus = "pending" | "cloning" | "ready" | "failed";
 
 /** Platform capability roles (QC is independent of GitLab membership role). */
-export type UserRole = "dev" | "pm" | "admin" | "qc" | "ba" | "pd" | "devops";
+export type UserRole = "dev" | "admin" | "qc" | "ba" | "pd" | "devops";
 
 /** Roles selectable at registration (admin is seed-only). */
 export const REGISTERABLE_ROLES: readonly UserRole[] = [
@@ -102,6 +102,31 @@ export type WorkspaceUserPublic = {
   updatedAt: string;
 };
 
+/** Admin user list — includes disabled (soft-deleted) state. */
+export type AdminUserPublic = WorkspaceUserPublic & {
+  disabled: boolean;
+  disabledAt?: string | null;
+  /** Seeded root admin — immutable via admin user management. */
+  isRootAdmin: boolean;
+};
+
+/** Username of the seeded root admin (`npm run seed`). */
+export const ROOT_ADMIN_USERNAME = "admin";
+
+export function isRootAdminUsername(username: string): boolean {
+  return normUserId(username) === ROOT_ADMIN_USERNAME;
+}
+
+/** All roles an admin may assign. */
+export const ALL_USER_ROLES: readonly UserRole[] = [
+  "dev",
+  "admin",
+  "qc",
+  "ba",
+  "pd",
+  "devops",
+] as const;
+
 export type WorkspaceProject = {
   id: string;
   /** Owner user id */
@@ -149,7 +174,7 @@ export type WorkspaceMembership = {
   projectId: string;
   baseBranch?: string;
   workBranch?: string;
-  role: "dev" | "pm" | "admin";
+  role: "dev" | "admin";
   joinedAt: string;
   updatedAt: string;
 };
@@ -163,7 +188,6 @@ export function normalizeUserRoles(roles?: UserRole[] | null): UserRole[] {
   for (const r of roles || []) {
     if (
       r === "dev" ||
-      r === "pm" ||
       r === "admin" ||
       r === "qc" ||
       r === "ba" ||
@@ -173,7 +197,10 @@ export function normalizeUserRoles(roles?: UserRole[] | null): UserRole[] {
       set.add(r);
     }
   }
-  return [...set];
+  const out = [...set];
+  // Legacy accounts with no roles → dev. Admin always has explicit "admin" role.
+  if (out.length === 0) return ["dev"];
+  return out;
 }
 
 export function userHasRole(
@@ -203,10 +230,27 @@ export function isAdminRole(roles?: UserRole[] | null): boolean {
   return normalizeUserRoles(roles).includes("admin");
 }
 
-/** Build-script console: devops role or admin. */
+/** Build-script console: devops, dev, or admin. */
 export function canAccessDevops(roles?: UserRole[] | null): boolean {
   const r = normalizeUserRoles(roles);
-  return r.includes("admin") || r.includes("devops");
+  return r.includes("admin") || r.includes("devops") || r.includes("dev");
+}
+
+/** Workbench: dev or admin. */
+export function canAccessWork(roles?: UserRole[] | null): boolean {
+  const r = normalizeUserRoles(roles);
+  return r.includes("admin") || r.includes("dev");
+}
+
+/** Project chat UI/API: ba audience, dev, devops, or admin. */
+export function canAccessBa(roles?: UserRole[] | null): boolean {
+  const r = normalizeUserRoles(roles);
+  return (
+    isAdminRole(r) ||
+    canAccessWork(r) ||
+    isBaAudience(r) ||
+    r.includes("devops")
+  );
 }
 
 /**
@@ -295,6 +339,17 @@ export function toPublicUser(u: WorkspaceUser): WorkspaceUserPublic {
     roles: normalizeUserRoles(u.roles),
     createdAt: u.createdAt,
     updatedAt: u.updatedAt,
+  };
+}
+
+export function toAdminUser(
+  u: WorkspaceUser & { deleted?: boolean; deletedAt?: string | null },
+): AdminUserPublic {
+  return {
+    ...toPublicUser(u),
+    disabled: Boolean(u.deleted),
+    disabledAt: u.deleted ? u.deletedAt ?? null : null,
+    isRootAdmin: isRootAdminUsername(u.id),
   };
 }
 

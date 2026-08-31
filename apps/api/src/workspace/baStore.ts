@@ -12,6 +12,8 @@ import {
   baProjectLocalPath,
   normalizeGitlabHost,
   type CloneStatus,
+  type CursorPat,
+  type CursorPatPublic,
 } from "./types.js";
 
 export type BaDbDialect = "mysql" | "postgres" | "mongodb";
@@ -117,7 +119,11 @@ export type BaFeatureSettingsEffective = BaFeatureSettings & {
 
 export type SystemSettings = {
   id: "default";
+  /** @deprecated Migrated to cursorPats — kept for one-time read */
   cursorApiKeyEnc?: string;
+  /** Shared Cursor API keys for BA — one active */
+  cursorPats?: CursorPat[];
+  activeCursorPatId?: string;
   cursorModel?: string;
   taskTypeLabels?: TaskTypeLabelMapping;
   taskTypeLabelsUpdatedAt?: string;
@@ -128,6 +134,8 @@ export type SystemSettings = {
 
 export type SystemSettingsPublic = {
   hasCursorApiKey: boolean;
+  cursorPats: CursorPatPublic[];
+  activeCursorPatId: string | null;
   cursorModel: string;
   taskTypeLabels: TaskTypeLabelMapping;
   taskTypeLabelsUpdatedAt: string | null;
@@ -572,9 +580,86 @@ export async function updateSystemBaFeatures(
   return toPublicSystemSettings(await getSystemSettings());
 }
 
+function effectiveSystemActiveCursorPatId(s: SystemSettings): string | null {
+  const activeId = s.activeCursorPatId?.trim();
+  if (activeId && s.cursorPats?.some((p) => p.id === activeId && p.keyEnc)) {
+    return activeId;
+  }
+  const first = s.cursorPats?.find((p) => p.keyEnc);
+  return first?.id ?? null;
+}
+
+function toPublicSystemCursorPats(s: SystemSettings): {
+  pats: CursorPatPublic[];
+  activeId: string | null;
+} {
+  const activeId = effectiveSystemActiveCursorPatId(s);
+  const pats = (s.cursorPats ?? []).map((p) => ({
+    id: p.id,
+    label: p.label,
+    createdAt: p.createdAt,
+    updatedAt: p.updatedAt,
+    isActive: Boolean(activeId && p.id === activeId),
+  }));
+  return { pats, activeId };
+}
+
+/** Migrate legacy single system key into cursorPats. */
+export async function migrateSystemLegacyCursorKeyIfNeeded(
+  s: SystemSettings,
+): Promise<SystemSettings> {
+  if (s.cursorPats?.length) return s;
+  if (!s.cursorApiKeyEnc) return s;
+  const now = new Date().toISOString();
+  const id = crypto.randomUUID();
+  const pat: CursorPat = {
+    id,
+    label: "Default",
+    keyEnc: s.cursorApiKeyEnc,
+    createdAt: now,
+    updatedAt: now,
+  };
+  await SystemSettingsModel.updateOne(
+    { id: "default" },
+    {
+      $set: {
+        cursorPats: [pat],
+        activeCursorPatId: id,
+        updatedAt: now,
+      },
+      $unset: { cursorApiKeyEnc: "" },
+    },
+    { upsert: true, raw: true },
+  );
+  return getSystemSettings();
+}
+
+async function normalizeSystemCursorState(
+  s: SystemSettings,
+): Promise<SystemSettings> {
+  let cur = await migrateSystemLegacyCursorKeyIfNeeded(s);
+  const nextActiveId = effectiveSystemActiveCursorPatId(cur);
+  const storedActive = cur.activeCursorPatId?.trim() || null;
+  if (nextActiveId && nextActiveId !== storedActive) {
+    const now = new Date().toISOString();
+    await SystemSettingsModel.updateOne(
+      { id: "default" },
+      { $set: { activeCursorPatId: nextActiveId, updatedAt: now } },
+      { upsert: true, raw: true },
+    );
+    cur = await getSystemSettings();
+  }
+  return cur;
+}
+
 export function toPublicSystemSettings(s: SystemSettings): SystemSettingsPublic {
+  const { pats, activeId } = toPublicSystemCursorPats(s);
   return {
-    hasCursorApiKey: Boolean(s.cursorApiKeyEnc),
+    hasCursorApiKey: Boolean(
+      activeId || s.cursorApiKeyEnc || (s.cursorPats?.length ?? 0) > 0,
+    ),
+    cursorPats: pats,
+    activeCursorPatId: activeId,
     cursorModel: s.cursorModel?.trim() || "auto",
     taskTypeLabels: normalizeTaskTypeLabels(s.taskTypeLabels),
     taskTypeLabelsUpdatedAt: s.taskTypeLabelsUpdatedAt ?? null,
@@ -588,25 +673,44 @@ export async function updateSystemCursorSettings(opts: {
   cursorApiKey?: string | null;
   cursorModel?: string;
 }): Promise<SystemSettings> {
-  const existing = await getSystemSettings();
+  let existing = await normalizeSystemCursorState(await getSystemSettings());
   const now = new Date().toISOString();
   const $set: Record<string, unknown> = { updatedAt: now };
   const $unset: Record<string, ""> = {};
 
   if (opts.cursorApiKey !== undefined) {
     if (opts.cursorApiKey === null || opts.cursorApiKey === "") {
+      $set.cursorPats = [];
+      $unset.activeCursorPatId = "";
       $unset.cursorApiKeyEnc = "";
-      delete existing.cursorApiKeyEnc;
     } else if (opts.cursorApiKey.trim()) {
-      existing.cursorApiKeyEnc = encryptSecret(opts.cursorApiKey.trim());
-      $set.cursorApiKeyEnc = existing.cursorApiKeyEnc;
+      const keyEnc = encryptSecret(opts.cursorApiKey.trim());
+      const activeId = effectiveSystemActiveCursorPatId(existing);
+      if (activeId) {
+        const pats = (existing.cursorPats ?? []).map((p) =>
+          p.id === activeId ? { ...p, keyEnc, updatedAt: now } : p,
+        );
+        $set.cursorPats = pats;
+        $set.activeCursorPatId = activeId;
+      } else {
+        const id = crypto.randomUUID();
+        const pat: CursorPat = {
+          id,
+          label: "PAT 1",
+          keyEnc,
+          createdAt: now,
+          updatedAt: now,
+        };
+        $set.cursorPats = [pat];
+        $set.activeCursorPatId = id;
+      }
+      $unset.cursorApiKeyEnc = "";
     }
   }
   if (opts.cursorModel !== undefined) {
     existing.cursorModel = opts.cursorModel.trim() || "auto";
     $set.cursorModel = existing.cursorModel;
   }
-  existing.updatedAt = now;
 
   const update: Record<string, unknown> = { $set };
   if (Object.keys($unset).length) update.$unset = $unset;
@@ -615,20 +719,134 @@ export async function updateSystemCursorSettings(opts: {
     upsert: true,
     raw: true,
   });
+  return normalizeSystemCursorState(await getSystemSettings());
+}
+
+export async function addSystemCursorPat(opts: {
+  label?: string;
+  apiKey: string;
+}): Promise<SystemSettings> {
+  const key = opts.apiKey.trim();
+  if (!key) throw new Error("apiKey required");
+  let s = await normalizeSystemCursorState(await getSystemSettings());
+  const now = new Date().toISOString();
+  const id = crypto.randomUUID();
+  const label =
+    opts.label?.trim() || `PAT ${(s.cursorPats?.length ?? 0) + 1}`;
+  const pat: CursorPat = {
+    id,
+    label,
+    keyEnc: encryptSecret(key),
+    createdAt: now,
+    updatedAt: now,
+  };
+  const pats = [...(s.cursorPats ?? []), pat];
+  const activeId = effectiveSystemActiveCursorPatId(s) ?? id;
+  await SystemSettingsModel.updateOne(
+    { id: "default" },
+    {
+      $set: {
+        cursorPats: pats,
+        activeCursorPatId: activeId,
+        updatedAt: now,
+      },
+      $unset: { cursorApiKeyEnc: "" },
+    },
+    { upsert: true, raw: true },
+  );
+  return getSystemSettings();
+}
+
+export async function updateSystemCursorPat(
+  patId: string,
+  opts: { label?: string; apiKey?: string },
+): Promise<SystemSettings> {
+  let s = await normalizeSystemCursorState(await getSystemSettings());
+  const pid = patId.trim();
+  const idx = s.cursorPats?.findIndex((p) => p.id === pid) ?? -1;
+  if (idx < 0) throw new Error("Cursor PAT not found");
+  const now = new Date().toISOString();
+  const pats = [...(s.cursorPats ?? [])];
+  const cur = pats[idx]!;
+  pats[idx] = {
+    ...cur,
+    label: opts.label?.trim() || cur.label,
+    keyEnc: opts.apiKey?.trim()
+      ? encryptSecret(opts.apiKey.trim())
+      : cur.keyEnc,
+    updatedAt: now,
+  };
+  await SystemSettingsModel.updateOne(
+    { id: "default" },
+    { $set: { cursorPats: pats, updatedAt: now } },
+    { upsert: true, raw: true },
+  );
+  return getSystemSettings();
+}
+
+export async function setActiveSystemCursorPat(
+  patId: string,
+): Promise<SystemSettings> {
+  let s = await normalizeSystemCursorState(await getSystemSettings());
+  const pid = patId.trim();
+  if (!s.cursorPats?.some((p) => p.id === pid)) {
+    throw new Error("Cursor PAT not found");
+  }
+  const now = new Date().toISOString();
+  await SystemSettingsModel.updateOne(
+    { id: "default" },
+    { $set: { activeCursorPatId: pid, updatedAt: now } },
+    { upsert: true, raw: true },
+  );
+  return getSystemSettings();
+}
+
+export async function deleteSystemCursorPat(
+  patId: string,
+): Promise<SystemSettings> {
+  let s = await normalizeSystemCursorState(await getSystemSettings());
+  const pid = patId.trim();
+  const pats = (s.cursorPats ?? []).filter((p) => p.id !== pid);
+  if (pats.length === (s.cursorPats?.length ?? 0)) {
+    throw new Error("Cursor PAT not found");
+  }
+  const now = new Date().toISOString();
+  const nextActive =
+    s.activeCursorPatId === pid
+      ? pats.find((p) => p.keyEnc)?.id ?? null
+      : effectiveSystemActiveCursorPatId({ ...s, cursorPats: pats });
+  const $set: Record<string, unknown> = {
+    cursorPats: pats,
+    updatedAt: now,
+  };
+  const $unset: Record<string, ""> = { cursorApiKeyEnc: "" };
+  if (nextActive) $set.activeCursorPatId = nextActive;
+  else $unset.activeCursorPatId = "";
+  await SystemSettingsModel.updateOne(
+    { id: "default" },
+    { $set, $unset },
+    { upsert: true, raw: true },
+  );
   return getSystemSettings();
 }
 
 export async function resolveSystemCursorApiKey(): Promise<string> {
-  const s = await getSystemSettings();
-  if (!s.cursorApiKeyEnc) {
-    throw new Error("Shared Cursor API key not configured — ask admin");
-  }
-  return decryptSecret(s.cursorApiKeyEnc);
+  const s = await normalizeSystemCursorState(await getSystemSettings());
+  const activeId = effectiveSystemActiveCursorPatId(s);
+  const pat = s.cursorPats?.find((p) => p.id === activeId && p.keyEnc);
+  if (pat) return decryptSecret(pat.keyEnc);
+  if (s.cursorApiKeyEnc) return decryptSecret(s.cursorApiKeyEnc);
+  throw new Error("Shared Cursor API key not configured — ask admin");
 }
 
 export async function resolveSystemCursorModel(): Promise<string> {
   const s = await getSystemSettings();
   return s.cursorModel?.trim() || "auto";
+}
+
+export async function getSystemCursorSettingsPublic(): Promise<SystemSettingsPublic> {
+  const s = await normalizeSystemCursorState(await getSystemSettings());
+  return toPublicSystemSettings(s);
 }
 
 export async function getTaskTypeLabelMapping(): Promise<{

@@ -3,6 +3,7 @@ import path from "node:path";
 import { z } from "zod";
 import { type Collection } from "mongodb";
 import { getConfig } from "../../config.js";
+import { getRepoRoot } from "../../repoRoot.js";
 import { connectMongo } from "../../models/connection.js";
 import { withActive, softDeleteActiveFields, purgeSoftDeleted } from "../../models/base.js";
 import { BuildScriptModel, type BuildScriptDoc } from "../../models/devops.js";
@@ -208,6 +209,31 @@ export async function seedBuildScriptsIfEmpty(): Promise<number> {
     ids: seed.map((s) => s.id),
   });
   return seed.length;
+}
+
+const LOCAL_SMOKE_SCRIPT_ID = "local-smoke";
+
+/** Non-production: ensure one script with a valid repo-root cwd for local testing. */
+export async function ensureLocalDevSmokeScript(): Promise<void> {
+  if (getConfig().NODE_ENV === "production") return;
+  const existing = await getWhitelistedScript(LOCAL_SMOKE_SCRIPT_ID);
+  if (existing) return;
+  const workingDir = getRepoRoot();
+  await createBuildScript(
+    {
+      id: LOCAL_SMOKE_SCRIPT_ID,
+      label: "Local smoke test",
+      command: 'echo "Devops OK" && pwd',
+      workingDir,
+      description: "Auto-added for local dev (repo root). Production scripts may use /opt/build.",
+      active: true,
+    },
+    "system",
+  );
+  logger.info("Added local Devops smoke script", {
+    id: LOCAL_SMOKE_SCRIPT_ID,
+    workingDir,
+  });
 }
 
 function toPublic(doc: BuildScriptDoc): WhitelistedScript {
