@@ -21,6 +21,7 @@ import {
 } from "../../workspace/graphify.js";
 import { pullBaProjectLatest } from "../git/ba-pull.js";
 import { buildBaDbCustomTools } from "../baDb/tools.js";
+import { mergeBaAgentCustomTools } from "../ba/graphifyTools.js";
 import { loadBaLinkedContext } from "../ba/ba-linked-context.js";
 import { resolveBaUserGoogleAccessToken } from "../../modules/google/index.js";
 import {
@@ -303,6 +304,7 @@ ${baPresentationRules()}
 ${baGitlabBoundaryInstructions()}
 - Branch đọc: ${opts.mainBranch}
 ${dbBlock}
+- Case 3 / cần tra source: gọi tool \`code_map_query\` **trước** Grep.
 
 ${opts.graphifyBlock ? `${opts.graphifyBlock}\n\n` : ""}## Yêu cầu gốc (từ khách hàng / PD — nguyên văn)
 **Tiêu đề:** ${opts.title}
@@ -564,6 +566,10 @@ export async function runBaWorkflowStep(opts: {
 
     const work = async (): Promise<string> => {
       session.check();
+      const customTools = mergeBaAgentCustomTools(
+        project.localPath,
+        dbCfg ? (buildBaDbCustomTools(dbCfg) as never) : null,
+      );
       const agent = await Agent.create({
         apiKey,
         model: { id: modelId },
@@ -571,8 +577,8 @@ export async function runBaWorkflowStep(opts: {
         local: {
           cwd: project.localPath,
           ...(BA_GITLAB_INTERACTION_ENABLED ? {} : { settingSources: [] }),
-          ...(dbCfg
-            ? { customTools: buildBaDbCustomTools(dbCfg) as never }
+          ...(Object.keys(customTools).length
+            ? { customTools: customTools as never }
             : {}),
         },
       });

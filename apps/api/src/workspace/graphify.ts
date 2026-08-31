@@ -217,28 +217,73 @@ export async function queryProjectGraphify(
   question: string,
   opts?: { budget?: number; timeoutMs?: number },
 ): Promise<string | null> {
+  return runGraphifyReadCommand(sourcePath, ["query", question], opts);
+}
+
+export async function pathProjectGraphify(
+  sourcePath: string,
+  fromNode: string,
+  toNode: string,
+  opts?: { timeoutMs?: number },
+): Promise<string | null> {
+  return runGraphifyReadCommand(
+    sourcePath,
+    ["path", fromNode, toNode],
+    opts,
+  );
+}
+
+export async function explainProjectGraphify(
+  sourcePath: string,
+  concept: string,
+  opts?: { timeoutMs?: number },
+): Promise<string | null> {
+  return runGraphifyReadCommand(sourcePath, ["explain", concept], opts);
+}
+
+async function runGraphifyReadCommand(
+  sourcePath: string,
+  cmdArgs: string[],
+  opts?: { budget?: number; timeoutMs?: number },
+): Promise<string | null> {
   if (!graphifyEnabled()) return null;
   const source = path.resolve(sourcePath.trim());
   const graphJson = graphifyGraphJsonForSource(source);
   if (!(await pathExists(graphJson))) return null;
 
-  const q = question.trim().replace(/\s+/g, " ").slice(0, 400);
-  if (!q) return null;
+  const cleaned = cmdArgs.map((a) => a.trim().replace(/\s+/g, " ").slice(0, 400));
+  if (cleaned.some((a) => !a)) return null;
 
   const bin = await resolveGraphifyBin();
   if (!bin) return null;
 
-  const budget = opts?.budget ?? 1800;
+  const args = [...cleaned];
+  // insert after subcommand
+  const sub = args[0];
+  const rest = args.slice(1);
+  const fullArgs =
+    sub === "query"
+      ? [
+          "query",
+          ...rest,
+          "--graph",
+          graphJson,
+          "--budget",
+          String(opts?.budget ?? 1800),
+        ]
+      : [sub, ...rest, "--graph", graphJson];
+
   const { code, stdout, stderr } = await runSpawn(
     bin,
-    ["query", q, "--graph", graphJson, "--budget", String(budget)],
+    fullArgs,
     { ...process.env },
     path.dirname(graphJson),
     opts?.timeoutMs ?? 45_000,
   );
   if (code !== 0) {
-    logger.warn("graphify query failed", {
+    logger.warn("graphify command failed", {
       source,
+      cmd: sub,
       code,
       stderr: stderr.trim().slice(-400),
     });
@@ -248,7 +293,7 @@ export async function queryProjectGraphify(
   return text || null;
 }
 
-/** Prompt block for BA agents — map first, then targeted file reads. */
+/** Prompt block for BA agents — prefer custom tool code_map_* over grep. */
 export function formatBaGraphifyPromptBlock(opts: {
   sourcePath: string;
   queryText: string | null;
@@ -257,15 +302,16 @@ export function formatBaGraphifyPromptBlock(opts: {
   const outDir = graphifyOutDirForSource(opts.sourcePath);
   const map =
     opts.queryText?.trim() ||
-    "(graphify map chưa sẵn — dùng locale/grep có chủ đích; không quét lan man.)";
-  return `## Code map (graphify — WorkBench, ngoài source/)
-Graph (chỉ đọc): \`${graphJson}\`
-Output dir: \`${outDir}\` — **không** tạo/sửa gì trong working tree \`source/\`.
+    "(chưa có map sẵn — BẮT BUỘC gọi tool code_map_query trước khi Grep/Shell.)";
+  return `## Code map (graphify — WorkBench)
+Graph file (host): \`${graphJson}\` · out: \`${outDir}\` — **không** ghi gì trong \`source/\`.
 
-Khi INTENT TRIAGE = case 3 (cần tra source): **đọc map dưới đây trước**, rồi mới mở 1–3 file được map gợi ý (hoặc locale vi). Không quét toàn repo trước map.
+**BẮT BUỘC khi INTENT = case 3 (cần tra source):**
+1. Gọi tool **\`code_map_query\`** với câu hỏi nghiệp vụ (tiếng Việt OK) — **trước** mọi Grep / rg / find / Glob.
+2. Chỉ sau map: đọc 1–3 file được map gợi ý, hoặc locale \`vi\`.
+3. **Cấm** quét toàn repo bằng Grep/rg làm bước đầu. Grep chỉ khi map không đủ và đã thử \`code_map_query\` / \`code_map_explain\`.
+4. Tools: \`code_map_query\`, \`code_map_path\`, \`code_map_explain\` (đã gắn sẵn — gọi như DB tool).
 
-Shell được phép (read-only): \`graphify query|path|explain "…" --graph ${graphJson}\`
-
-### Map cho câu hỏi hiện tại
+### Map sẵn cho câu hỏi hiện tại (điểm khởi đầu)
 ${map}`;
 }

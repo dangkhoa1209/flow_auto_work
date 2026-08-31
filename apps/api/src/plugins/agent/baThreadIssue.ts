@@ -20,6 +20,7 @@ import {
 } from "../../workspace/graphify.js";
 import { pullBaProjectLatest } from "../git/ba-pull.js";
 import { buildBaDbCustomTools } from "../baDb/tools.js";
+import { mergeBaAgentCustomTools } from "../ba/graphifyTools.js";
 import { loadBaLinkedContext } from "../ba/ba-linked-context.js";
 import { resolveBaUserGoogleAccessToken } from "../../modules/google/index.js";
 import {
@@ -449,6 +450,10 @@ export async function runBaThreadIssueDraft(opts: {
 
     const work = async (): Promise<BaThreadIssueDraft> => {
       session.check();
+      const customTools = mergeBaAgentCustomTools(
+        project.localPath,
+        dbCfg ? (buildBaDbCustomTools(dbCfg) as never) : null,
+      );
       const agent = await Agent.create({
         apiKey,
         model: { id: modelId },
@@ -456,9 +461,9 @@ export async function runBaThreadIssueDraft(opts: {
         local: {
           cwd: project.localPath,
           ...(BA_GITLAB_INTERACTION_ENABLED ? {} : { settingSources: [] }),
-          // Không sandbox: customTools DB cần chạy không qua cổng phê duyệt headless.
-          ...(dbCfg
-            ? { customTools: buildBaDbCustomTools(dbCfg) as never }
+          // Không sandbox: customTools DB/graphify cần chạy không qua cổng phê duyệt headless.
+          ...(Object.keys(customTools).length
+            ? { customTools: customTools as never }
             : {}),
         },
       });

@@ -23,7 +23,7 @@ describe("baReadOnlyWorkspaceRules", () => {
     expect(text).toMatch(/Cấm sửa code/);
     expect(text).toMatch(/branch \*\*main\*\*/);
     expect(text).toMatch(/Cấm.*rm/);
-    expect(text).toMatch(/graphify/);
+    expect(text).toMatch(/code_map_query/);
   });
 });
 

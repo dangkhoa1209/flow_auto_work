@@ -31,6 +31,7 @@ import {
 } from "../../workspace/graphify.js";
 import { pullBaProjectLatest } from "../git/ba-pull.js";
 import { buildBaDbCustomTools } from "../baDb/tools.js";
+import { mergeBaAgentCustomTools } from "../ba/graphifyTools.js";
 import { loadBaLinkedContext } from "../ba/ba-linked-context.js";
 import { resolveBaUserGoogleAccessToken } from "../../modules/google/index.js";
 
@@ -58,7 +59,7 @@ export function baReadOnlyWorkspaceRules(opts: { mainBranch: string }): string {
 - **Deliverable chỉ trong chat:** mọi spec, tài liệu, draft issue → xuất **nguyên văn trong câu trả lời** để user copy. User nhờ "lưu file", "tạo doc", "export ra file" → **từ chối**, giải thích chat không ghi disk, dán nội dung từ chat.
 - **Cấm sửa code:** không patch, refactor, format, sửa config / locale / test.
 - **Git (chỉ đọc):** server đã pull branch **${opts.mainBranch}** — **không** checkout / tạo-đổi-xóa nhánh / merge / rebase / reset / stash / tag / commit / push / pull thêm.
-- **Shell an toàn:** chỉ lệnh đọc khi thật sự cần (grep, cat, head, find, ls, và \`graphify query|path|explain\` với \`--graph\` trỏ sibling graphify-out). **Cấm** rm, mv, cp, tee, chmod, chown, npm/yarn/pnpm install|run|exec, pip install, curl/wget upload, docker, kubectl apply, migrate, dump.
+- **Shell an toàn:** ưu tiên tool \`code_map_*\`. Shell chỉ khi thật sự cần (cat/head/ls file đã biết path). **Cấm** Grep/rg/find toàn repo trước khi đã gọi \`code_map_query\`. **Cấm** rm, mv, cp, tee, chmod, chown, npm/yarn/pnpm install|run|exec, pip install, curl/wget upload, docker, kubectl apply, migrate, dump.
 - **MCP / plugin ghi:** không gọi tool hoặc MCP nào ghi GitLab, Google Drive/Sheets/Docs, filesystem.`;
 }
 
@@ -306,7 +307,7 @@ ${baIntentTriageGate()}
 ## 1. Trả lời NHANH — quy trình bắt buộc
 0. **Thực hiện INTENT TRIAGE (mục 🛑) trước.** Case 1–2: KHÔNG scan codebase. Chỉ case 3 mới được tra cứu source.
 1. **Đọc "Hội thoại trước" trước tiên.** Nếu thông tin đã có trong hội thoại (tên màn hình, luồng, kết luận đã chốt) → dùng lại ngay, KHÔNG tìm lại trong source.
-2. Nếu cần tra cứu (chỉ case 3): **tìm có chủ đích** — grep từ khóa tiếng Việt trong câu hỏi vào locale/i18n trước, rồi mở đúng 1–3 file liên quan nhất. Không quét lan man toàn repo, không đọc file không phục vụ câu hỏi.
+2. Nếu cần tra cứu (chỉ case 3): **gọi tool \`code_map_query\` trước** — không Grep/rg/Glob trước map. Sau map mới mở 1–3 file hoặc locale vi. Không quét lan man toàn repo.
 3. **Tìm đủ bằng chứng là viết câu trả lời nghiệp vụ ngay** — không xác minh lặp, không dừng sau bước đọc file.
 4. Câu hỏi rộng/mơ hồ (case 2): hỏi làm rõ — không tự mở rộng phạm vi tra cứu.
 5. User kèm URL/path màn hình → ưu tiên map route → mô tả logic tại màn đó.
@@ -314,7 +315,7 @@ ${baIntentTriageGate()}
 ## 2. Chuẩn xác — bám sát sản phẩm thật (BẮT BUỘC)
 - Mọi tên nút / menu / ô nhập / thông báo phải khớp 100% chữ trên UI (locale \`vi\`). **Không thấy bằng chứng thì nói "chưa tìm thấy trên hệ thống" — tuyệt đối không bịa.**
 - Không tự đặt tên màn hình/tính năng không tồn tại. Không suy diễn hành vi ngoài những gì source/docs thể hiện.
-- Thứ tự nguồn tra cứu (case 3): (0) **Code map graphify** (mục dưới, nếu có) → (a) \`**/locales/vi*.json\`, \`**/i18n/**/vi*\`, \`**/lang/**\` → (b) component/view giao diện (template, label, title) → (c) docs/config trong repo.
+- Thứ tự nguồn tra cứu (case 3): (0) tool **\`code_map_query\`** (bắt buộc trước Grep) → (a) locale \`vi\` → (b) 1–3 file từ map → (c) docs. **Không** mở đầu bằng Grep toàn repo.
 - Tránh jargon kỹ thuật (API, class, commit…) trừ khi người dùng chủ động hỏi kỹ thuật; ưu tiên ngôn ngữ thao tác của người dùng cuối.
 
 ## 3. Ranh giới workspace (CHỈ ĐỌC — BẮT BUỘC)
@@ -479,6 +480,7 @@ export async function runBaChatAgent(opts: {
       model: modelId,
       analysisMode: Boolean(opts.analysisMode),
       dbAccess: dbAccess.allowed,
+      graphifyChars: graphifyQuery?.length ?? 0,
       gitlabIssueIids: linked.gitlabRefs.map((r) => r.iid),
       googleSheets: linked.sheetRefs.length,
       googleDocs: linked.docRefs.length,
@@ -498,6 +500,10 @@ export async function runBaChatAgent(opts: {
 
     const work = async (): Promise<string> => {
       session.check();
+      const customTools = mergeBaAgentCustomTools(
+        project.localPath,
+        dbCfg ? (buildBaDbCustomTools(dbCfg) as never) : null,
+      );
       const agent = await Agent.create({
         apiKey,
         model: { id: modelId },
@@ -512,14 +518,10 @@ export async function runBaChatAgent(opts: {
           ...(BA_GITLAB_INTERACTION_ENABLED
             ? {}
             : { settingSources: [] }),
-          // Không bật sandboxOptions: customTools (query_readonly_*) đi qua MCP
-          // custom-user-tools; sandbox headless chặn phê duyệt → agent báo "tool bị chặn".
-          // Read-only vẫn siết bằng baReadOnlyWorkspaceRules trong prompt.
-          ...(dbCfg
-            ? {
-                // SDKCustomTool typing is strict; our tools match runtime shape.
-                customTools: buildBaDbCustomTools(dbCfg) as never,
-              }
+          // Không bật sandboxOptions: customTools đi qua MCP custom-user-tools;
+          // sandbox headless chặn phê duyệt → agent báo "tool bị chặn".
+          ...(Object.keys(customTools).length
+            ? { customTools: customTools as never }
             : {}),
         },
       });
