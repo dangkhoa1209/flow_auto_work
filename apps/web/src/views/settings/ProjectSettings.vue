@@ -21,6 +21,7 @@ type ProjectPublic = {
   id: string;
   projectName?: string;
   displayName?: string;
+  gitProvider?: "gitlab" | "github";
   gitlabPath: string;
   gitlabHost?: string;
   localPath?: string;
@@ -35,6 +36,7 @@ type ProjectPublic = {
 };
 
 const form = reactive({
+  gitProvider: "gitlab" as "gitlab" | "github",
   gitlabHost: "https://gitlab.com",
   gitlabToken: "",
   gitlabPath: "",
@@ -53,13 +55,29 @@ const gitlabProjects = ref<
 const branches = ref<string[]>([]);
 const previewDefaultPath = ref("");
 
-const steps = [
-  "GitLab PAT",
+const isGithub = computed(() => form.gitProvider === "github");
+const forgeLabel = computed(() => (isGithub.value ? "GitHub" : "GitLab"));
+const patCreateUrl = computed(() =>
+  isGithub.value
+    ? "https://github.com/settings/tokens"
+    : "https://gitlab.com/-/user_settings/personal_access_tokens",
+);
+const patHint = computed(() =>
+  isGithub.value
+    ? "ghp_… classic PAT with repo scope"
+    : "glpat-… (api + read_repository)",
+);
+const pathPlaceholder = computed(() =>
+  isGithub.value ? "owner/repo" : "group/repo",
+);
+
+const steps = computed(() => [
+  `${forgeLabel.value} PAT`,
   "Project",
   "Main branch",
   "Work branch",
   "Local path",
-];
+]);
 
 const tableRows = computed(() =>
   session.memberships.map((m) => {
@@ -67,8 +85,8 @@ const tableRows = computed(() =>
     return {
       key: m.projectId,
       id: m.projectId,
-      // Flow name (= folder) — not GitLab slug
       name: p.projectName || p.displayName || p.gitlabPath,
+      gitProvider: p.gitProvider === "github" ? "github" : "gitlab",
       gitlabPath: p.gitlabPath,
       mainBranch: p.mainBranch || m.baseBranch || "—",
       workBranch: p.workingBranch || m.workBranch || "—",
@@ -85,7 +103,8 @@ const tableRows = computed(() =>
 
 const columns = [
   { title: "Name", dataIndex: "name", key: "name", ellipsis: true },
-  { title: "GitLab", dataIndex: "gitlabPath", key: "gitlabPath", ellipsis: true },
+  { title: "Forge", dataIndex: "gitProvider", key: "gitProvider", width: 90 },
+  { title: "Repo", dataIndex: "gitlabPath", key: "gitlabPath", ellipsis: true },
   { title: "Main", dataIndex: "mainBranch", key: "mainBranch", width: 100 },
   { title: "Work", dataIndex: "workBranch", key: "workBranch", width: 120 },
   { title: "Commit", dataIndex: "defaultCommitMode", key: "defaultCommitMode", width: 90 },
@@ -125,6 +144,7 @@ function resetWizard() {
   wizardStep.value = 0;
   editId.value = null;
   editOriginalName.value = null;
+  form.gitProvider = "gitlab";
   form.gitlabHost = "https://gitlab.com";
   form.gitlabToken = "";
   form.gitlabPath = "";
@@ -143,12 +163,26 @@ function openCreate() {
   wizardOpen.value = true;
 }
 
+function onProviderChange(v: "gitlab" | "github") {
+  form.gitProvider = v;
+  form.gitlabHost =
+    v === "github" ? "https://github.com" : "https://gitlab.com";
+  form.gitlabPath = "";
+  gitlabProjects.value = [];
+  branches.value = [];
+}
+
 function openEdit(row: (typeof tableRows.value)[0]) {
   resetWizard();
   editId.value = row.id;
   const m = session.memberships.find((x) => x.projectId === row.id);
   const p = m?.project as ProjectPublic | undefined;
-  form.gitlabHost = p?.gitlabHost || "https://gitlab.com";
+  form.gitProvider = p?.gitProvider === "github" ? "github" : "gitlab";
+  form.gitlabHost =
+    p?.gitlabHost ||
+    (form.gitProvider === "github"
+      ? "https://github.com"
+      : "https://gitlab.com");
   form.gitlabPath = p?.gitlabPath || row.gitlabPath;
   form.projectName = p?.projectName || row.name;
   form.displayName = p?.displayName || form.projectName;
@@ -167,7 +201,7 @@ function openEdit(row: (typeof tableRows.value)[0]) {
 
 async function loadPreviewProjects() {
   if (!form.gitlabToken.trim()) {
-    message.warning("Enter GitLab PAT");
+    message.warning(`Enter ${forgeLabel.value} PAT`);
     return;
   }
   loading.value = true;
@@ -180,11 +214,15 @@ async function loadPreviewProjects() {
       }>;
     }>("/api/gitlab/preview", {
       method: "POST",
-      body: JSON.stringify({ gitlabToken: form.gitlabToken.trim() }),
+      body: JSON.stringify({
+        gitlabToken: form.gitlabToken.trim(),
+        gitlabHost: form.gitlabHost,
+        gitProvider: form.gitProvider,
+      }),
     });
     gitlabProjects.value = res.projects || [];
     if (!gitlabProjects.value.length) {
-      message.warning("PAT found no projects");
+      message.warning("PAT found no repositories");
       return;
     }
     wizardStep.value = 1;
@@ -197,7 +235,7 @@ async function loadPreviewProjects() {
 
 async function loadBranchesForPath() {
   if (!form.gitlabPath.trim()) {
-    message.warning("Select a GitLab project");
+    message.warning(`Select a ${forgeLabel.value} repository`);
     return;
   }
   if (!form.projectName.trim()) {
@@ -215,6 +253,8 @@ async function loadBranchesForPath() {
         body: JSON.stringify({
           gitlabToken: form.gitlabToken.trim(),
           gitlabPath: form.gitlabPath.trim(),
+          gitlabHost: form.gitlabHost,
+          gitProvider: form.gitProvider,
         }),
       });
       branches.value = (res.branches || []).map((b) => b.name).filter(Boolean);
@@ -365,6 +405,7 @@ async function saveWizard() {
           defaultCommitMode: form.defaultCommitMode,
           localPath: renaming ? undefined : resolvedPath || undefined,
           gitlabToken: form.gitlabToken || undefined,
+          gitProvider: form.gitProvider,
           gitlabHost: form.gitlabHost || undefined,
           gitlabPath: form.gitlabPath || undefined,
           projectName: flowName,
@@ -422,7 +463,12 @@ async function saveWizard() {
       body: JSON.stringify({
         projectName: flowName,
         gitlabPath: form.gitlabPath.trim(),
-        gitlabHost: form.gitlabHost || "https://gitlab.com",
+        gitProvider: form.gitProvider,
+        gitlabHost:
+          form.gitlabHost ||
+          (form.gitProvider === "github"
+            ? "https://github.com"
+            : "https://gitlab.com"),
         gitlabToken: form.gitlabToken,
         localPath: pathEmpty ? undefined : form.localPath.trim(),
         mainBranch: form.mainBranch || undefined,
@@ -513,7 +559,7 @@ onMounted(async () => {
       <div class="min-w-0">
         <h2 class="text-lg font-medium m-0">Project management</h2>
         <p class="text-sm text-ink-muted m-0 mt-1 hidden sm:block">
-          CRUD project · wizard PAT → project → branch → path
+          GitLab or GitHub classic PAT → repository → branch → local path
         </p>
       </div>
       <a-button type="primary" size="small" :loading="loading" @click="openCreate"
@@ -542,6 +588,11 @@ onMounted(async () => {
                 Active
               </a-tag>
             </span>
+          </template>
+          <template v-else-if="column.key === 'gitProvider'">
+            <a-tag :color="record.gitProvider === 'github' ? 'purple' : 'geekblue'">
+              {{ record.gitProvider === "github" ? "GitHub" : "GitLab" }}
+            </a-tag>
           </template>
           <template v-else-if="column.key === 'defaultCommitMode'">
             <a-tag
@@ -613,6 +664,12 @@ onMounted(async () => {
               </a-tag>
             </div>
             <div class="text-[11px] text-ink-faint font-mono truncate mt-0.5">
+              <a-tag
+                class="!m-0 !mr-1 !text-[10px]"
+                :color="record.gitProvider === 'github' ? 'purple' : 'geekblue'"
+              >
+                {{ record.gitProvider === "github" ? "GH" : "GL" }}
+              </a-tag>
               {{ record.gitlabPath }}
             </div>
           </div>
@@ -688,22 +745,45 @@ onMounted(async () => {
       <!-- Step 0: PAT -->
       <div v-if="wizardStep === 0" class="space-y-3">
         <div>
-          <label class="text-sm text-slate-600">GitLab host</label>
+          <label class="text-sm text-slate-600">Forge</label>
+          <a-radio-group
+            class="mt-1 flex flex-wrap gap-3"
+            :value="form.gitProvider"
+            :disabled="Boolean(editId)"
+            @update:value="onProviderChange"
+          >
+            <a-radio value="gitlab">GitLab</a-radio>
+            <a-radio value="github">GitHub (classic PAT)</a-radio>
+          </a-radio-group>
+          <p v-if="editId" class="text-xs text-ink-muted m-0 mt-1">
+            Forge cannot be changed after create — create a new project instead.
+          </p>
+        </div>
+        <div>
+          <label class="text-sm text-slate-600">{{ forgeLabel }} host</label>
           <a-input
             v-model:value="form.gitlabHost"
             class="mt-1"
-            placeholder="https://gitlab.com"
+            :placeholder="
+              isGithub ? 'https://github.com' : 'https://gitlab.com'
+            "
           />
         </div>
         <div>
-          <label class="text-sm text-slate-600">GitLab PAT</label>
+          <label class="text-sm text-slate-600">{{ forgeLabel }} PAT</label>
           <a-input-password
             v-model:value="form.gitlabToken"
             class="mt-1"
             :placeholder="
-              editId ? 'Leave blank to keep existing token' : 'glpat-… (api + read_repository)'
+              editId ? 'Leave blank to keep existing token' : patHint
             "
           />
+          <p class="text-xs text-ink-muted m-0 mt-1">
+            <a :href="patCreateUrl" target="_blank" rel="noopener noreferrer">
+              Create {{ forgeLabel }} personal access token
+            </a>
+            <template v-if="isGithub"> — classic token with <code>repo</code> scope</template>
+          </p>
         </div>
         <div class="flex justify-end gap-2 pt-2">
           <a-button @click="wizardOpen = false">Cancel</a-button>
@@ -725,13 +805,15 @@ onMounted(async () => {
       <!-- Step 1: Project -->
       <div v-else-if="wizardStep === 1" class="space-y-3">
         <div>
-          <label class="text-sm text-slate-600">Select GitLab project</label>
+          <label class="text-sm text-slate-600"
+            >Select {{ forgeLabel }} repository</label
+          >
           <a-select
             v-if="gitlabProjects.length"
             v-model:value="form.gitlabPath"
             class="w-full mt-1"
             show-search
-            placeholder="group/repo"
+            :placeholder="pathPlaceholder"
             :options="
               gitlabProjects.map((p) => ({
                 value: p.pathWithNamespace,
@@ -749,7 +831,7 @@ onMounted(async () => {
             v-else
             v-model:value="form.gitlabPath"
             class="mt-1"
-            placeholder="group/repo"
+            :placeholder="pathPlaceholder"
           />
         </div>
         <div>

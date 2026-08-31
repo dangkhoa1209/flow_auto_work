@@ -21,6 +21,7 @@ export type Membership = {
     id: string;
     displayName?: string;
     projectName?: string;
+    gitProvider?: "gitlab" | "github";
     gitlabPath: string;
     gitlabHost?: string;
     repoPath?: string;

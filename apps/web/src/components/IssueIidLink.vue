@@ -30,6 +30,7 @@ const href = computed(() => {
     iid: props.iid,
     gitlabHost: project?.gitlabHost,
     gitlabPath: project?.gitlabPath,
+    gitProvider: project?.gitProvider,
   });
 });
 
@@ -37,6 +38,13 @@ const label = computed(() => {
   const iid = props.iid;
   if (!iid || iid <= 0) return null;
   return `#${iid}`;
+});
+
+const forgeTitle = computed(() => {
+  const project = memberships.value.find(
+    (m) => m.projectId === projectId.value,
+  )?.project;
+  return project?.gitProvider === "github" ? "GitHub" : "GitLab";
 });
 </script>
 
@@ -48,7 +56,7 @@ const label = computed(() => {
     rel="noopener noreferrer"
     class="issue-iid-link hover:underline"
     :class="linkClass"
-    :title="`Open GitLab ${label}`"
+    :title="`Open ${forgeTitle} ${label}`"
     @click.stop
   >
     {{ label }}

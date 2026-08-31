@@ -4,7 +4,7 @@ import { logger } from "../../logger.js";
 import { jobQueue } from "../../queue.js";
 import { busyIssueKey } from "../../types.js";
 import { getRuntimeContext } from "../../workspace/runtime.js";
-import { listAssignedOpenIssues } from "./client.js";
+import { listAssignedOpenIssues } from "../scm/index.js";
 
 function hasSkipLabel(labels: string[], skipLabels: string[]): boolean {
   const lower = labels.map((l) => l.toLowerCase());

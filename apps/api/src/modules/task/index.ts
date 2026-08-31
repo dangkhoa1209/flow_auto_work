@@ -3,7 +3,7 @@ import {
   applyIssueActions,
   getIssueUiDetail,
   listAssignedOpenIssues,
-} from "../../plugins/gitlab/client.js";
+} from "../../plugins/scm/index.js";
 import { resolveGitlabProjectPath } from "../../workspace/creds.js";
 import { AppError } from "../../utils/AppError.js";
 

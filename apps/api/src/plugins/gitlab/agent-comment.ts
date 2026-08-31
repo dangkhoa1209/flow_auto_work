@@ -1,10 +1,10 @@
-import { commentOnIssue } from "./client.js";
+import { commentOnIssue } from "../scm/index.js";
 import { logger } from "../../logger.js";
 
 export const AI_GENERATED_MARKER = "AI-Generated";
 
 const COMMENT_BLOCK_RE =
-  /<<<GITLAB_COMMENT>>>\s*([\s\S]*?)\s*<<<END_GITLAB_COMMENT>>>/gi;
+  /<<<(?:GITLAB_COMMENT|ISSUE_COMMENT)>>>\s*([\s\S]*?)\s*<<<END_(?:GITLAB_COMMENT|ISSUE_COMMENT)>>>/gi;
 
 /** Ensure comment body starts with AI-Generated (idempotent). */
 export function withAiGeneratedMarker(body: string): string {
@@ -14,7 +14,7 @@ export function withAiGeneratedMarker(body: string): string {
   return `${AI_GENERATED_MARKER}\n\n${t}`;
 }
 
-/** Extract comment bodies the agent asked Flow to post on GitLab. */
+/** Extract comment bodies the agent asked Flow to post on the issue. */
 export function extractGitlabCommentBodies(text: string): string[] {
   const out: string[] = [];
   const re = new RegExp(COMMENT_BLOCK_RE.source, COMMENT_BLOCK_RE.flags);
@@ -34,7 +34,7 @@ export function stripGitlabCommentBlocks(text: string): string {
 }
 
 /**
- * Post any <<<GITLAB_COMMENT>>> blocks from agent output onto the issue.
+ * Post any <<<GITLAB_COMMENT>>> / <<<ISSUE_COMMENT>>> blocks from agent output.
  * Used when the human asks in chat to comment — not for auto “code done” spam.
  * Always prefixes AI-Generated. No-op for adhoc (issueIid <= 0).
  */
@@ -57,7 +57,7 @@ export async function postAgentGitlabComments(opts: {
       await commentOnIssue(opts.projectId, opts.issueIid, marked);
       posted += 1;
     } catch (err) {
-      logger.error("Failed to post agent GitLab comment", {
+      logger.error("Failed to post agent issue comment", {
         jobId: opts.jobId,
         issueIid: opts.issueIid,
         err: String(err),
@@ -65,7 +65,7 @@ export async function postAgentGitlabComments(opts: {
       throw err;
     }
   }
-  logger.info("Posted agent GitLab comments", {
+  logger.info("Posted agent issue comments", {
     jobId: opts.jobId,
     issueIid: opts.issueIid,
     posted,

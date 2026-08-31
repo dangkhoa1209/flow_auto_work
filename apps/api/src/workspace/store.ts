@@ -15,6 +15,8 @@ import {
   defaultLocalPath,
   membershipId,
   normalizeGitlabHost,
+  normalizeGitProvider,
+  normalizeRemoteHost,
   normalizeUserRoles,
   normUserId,
   projectIdForUser,
@@ -34,6 +36,7 @@ import {
   effectiveActiveCursorPatId,
   type HandoffPrefs,
   type UserRole,
+  type GitProvider,
 } from "./types.js";
 
 /** Segment under PROJECT_ROOT/{user}/ — same rules as defaultLocalPath */
@@ -720,6 +723,7 @@ export async function createUserProject(opts: {
   gitlabPath: string;
   gitlabToken?: string;
   gitlabHost?: string;
+  gitProvider?: import("./types.js").GitProvider;
   localPath?: string;
   mainBranch?: string;
   workingBranch?: string;
@@ -734,7 +738,7 @@ export async function createUserProject(opts: {
   if (!projectName) throw new Error("projectName required");
   const gitlabPath = opts.gitlabPath.trim().replace(/^\/+|\/+$/g, "");
   if (!gitlabPath.includes("/")) {
-    throw new Error("gitlabPath must look like group/project");
+    throw new Error("gitlabPath must look like group/project or owner/repo");
   }
   const id = projectIdForUser(userId, projectName);
   const now = new Date().toISOString();
@@ -755,6 +759,7 @@ export async function createUserProject(opts: {
     );
   }
 
+  const gitProvider = normalizeGitProvider(opts.gitProvider);
   const localPath =
     opts.localPath?.trim() || defaultLocalPath(userId, projectName);
   const doc: WorkspaceProject = {
@@ -762,7 +767,8 @@ export async function createUserProject(opts: {
     userId,
     projectName,
     displayName: projectName,
-    gitlabHost: normalizeGitlabHost(opts.gitlabHost),
+    gitProvider,
+    gitlabHost: normalizeRemoteHost(gitProvider, opts.gitlabHost),
     gitlabPath,
     localPath,
     repoPath: localPath,
@@ -859,6 +865,7 @@ export async function updateProjectFields(
     allowedMilestones?: string[];
     displayName: string;
     projectName: string;
+    gitProvider: GitProvider;
     gitlabHost: string;
     gitlabPath: string;
     gitlabToken: string;
@@ -927,8 +934,14 @@ export async function updateProjectFields(
   if (patch.displayName !== undefined) {
     existing.displayName = patch.displayName.trim() || existing.projectName;
   }
+  if (patch.gitProvider !== undefined) {
+    existing.gitProvider = normalizeGitProvider(patch.gitProvider);
+  }
   if (patch.gitlabHost !== undefined) {
-    existing.gitlabHost = normalizeGitlabHost(patch.gitlabHost);
+    const provider = normalizeGitProvider(
+      patch.gitProvider ?? existing.gitProvider,
+    );
+    existing.gitlabHost = normalizeRemoteHost(provider, patch.gitlabHost);
   }
   if (patch.gitlabPath !== undefined) {
     existing.gitlabPath = patch.gitlabPath.trim().replace(/^\/+|\/+$/g, "");
@@ -1162,7 +1175,28 @@ export async function listUsersForAdmin(): Promise<AdminUserPublic[]> {
     withDeleted: true,
     sort: { updatedAt: -1 },
   });
-  return docs.map((d) => toAdminUser(d));
+  const { countBaChatUsageByUser } = await import("./baStore.js");
+  const usage = await countBaChatUsageByUser();
+  return docs.map((d) => {
+    const base = toAdminUser(d);
+    const u = usage[d.id.toLowerCase()];
+    if (!u) {
+      return {
+        ...base,
+        baChatMessageCount: 0,
+        baChatMessageActiveCount: 0,
+        baChatMessageDeletedCount: 0,
+        baChatThreadCount: 0,
+      };
+    }
+    return {
+      ...base,
+      baChatMessageCount: u.messageCount,
+      baChatMessageActiveCount: u.messageActiveCount,
+      baChatMessageDeletedCount: u.messageDeletedCount,
+      baChatThreadCount: u.threadCount,
+    };
+  });
 }
 
 export async function getUserForAdmin(
@@ -1171,7 +1205,17 @@ export async function getUserForAdmin(
   const id = normUserId(username);
   const doc = await WorkspaceUserModel.findById(id, { withDeleted: true });
   if (!doc) return null;
-  return toAdminUser(doc);
+  const base = toAdminUser(doc);
+  const { countBaChatUsageByUser } = await import("./baStore.js");
+  const usage = await countBaChatUsageByUser({ userId: id });
+  const u = usage[id];
+  return {
+    ...base,
+    baChatMessageCount: u?.messageCount ?? 0,
+    baChatMessageActiveCount: u?.messageActiveCount ?? 0,
+    baChatMessageDeletedCount: u?.messageDeletedCount ?? 0,
+    baChatThreadCount: u?.threadCount ?? 0,
+  };
 }
 
 export async function adminCreateUser(opts: {

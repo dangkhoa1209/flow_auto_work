@@ -10,6 +10,7 @@ import {
 } from "./store.js";
 import type { RuntimeContext } from "./runtime.js";
 import { AppError } from "../utils/AppError.js";
+import { normalizeGitProvider } from "./types.js";
 
 async function assertRepoPath(repoPath: string): Promise<void> {
   try {
@@ -21,7 +22,7 @@ async function assertRepoPath(repoPath: string): Promise<void> {
 
 /**
  * Build runtime context for a logged-in user + selected project.
- * GitLab PAT comes from the **project**; Cursor key from the user.
+ * Remote PAT comes from the **project**; Cursor key from the user.
  *
  * By default does **not** require a local git clone — stats/tasks/jobs list work without one.
  * Pass `requireLocalClone: true` for agent runs, terminal, and other source-dependent flows.
@@ -46,13 +47,16 @@ export async function resolveRuntimeContext(opts: {
     );
   }
 
+  const gitProvider = normalizeGitProvider(project.gitProvider);
+  const forgeLabel = gitProvider === "github" ? "GitHub" : "GitLab";
+
   const projectSecrets = await getProjectSecrets(opts.projectId);
   const userSecrets = await getUserSecrets(opts.gitlabUsername, opts.projectId);
   const gitlabToken =
     projectSecrets?.gitlabToken || userSecrets?.gitlabToken || "";
   if (!gitlabToken) {
     throw new Error(
-      "Missing GitLab token on project — add PAT in Settings → Project (then clone)",
+      `Missing ${forgeLabel} token on project — add PAT in Settings → Project (then clone)`,
     );
   }
 
@@ -75,6 +79,8 @@ export async function resolveRuntimeContext(opts: {
     cursorApiKey: userSecrets?.cursorApiKey,
     cursorModel: user.cursorModel?.trim() || "auto",
     projectId: project.id,
+    gitProvider,
+    gitlabHost: project.gitlabHost,
     gitlabPath: project.gitlabPath,
     gitlabProjectId: project.gitlabProjectId,
     repoPath,

@@ -19,6 +19,10 @@ type AdminUser = {
   isRootAdmin: boolean;
   createdAt: string;
   updatedAt: string;
+  baChatMessageCount?: number;
+  baChatMessageActiveCount?: number;
+  baChatMessageDeletedCount?: number;
+  baChatThreadCount?: number;
 };
 
 const ALL_ROLES: UserRole[] = ["dev", "admin", "qc", "ba", "pd", "devops"];
@@ -40,6 +44,7 @@ const roleOptions = ALL_ROLES.map((r) => ({
 const columns = [
   { title: "User", key: "user", width: 220 },
   { title: "Role", key: "roles", width: 120 },
+  { title: "Chatbox", key: "chatbox", width: 130 },
   { title: "Status", key: "status", width: 120 },
   { title: "Password", key: "password", width: 100 },
   { title: "Updated", key: "updatedAt", width: 110 },
@@ -110,6 +115,14 @@ function isSelf(u: AdminUser): boolean {
 
 function isProtected(u: AdminUser): boolean {
   return u.isRootAdmin;
+}
+
+function chatboxUsageTitle(u: AdminUser): string {
+  const total = u.baChatMessageCount ?? 0;
+  const active = u.baChatMessageActiveCount ?? 0;
+  const deleted = u.baChatMessageDeletedCount ?? 0;
+  const threads = u.baChatThreadCount ?? 0;
+  return `Project Chatbox usage (includes soft-deleted)\nMessages: ${total} total · ${active} active · ${deleted} deleted\nThreads: ${threads}`;
 }
 
 function resetCreateForm() {
@@ -351,7 +364,7 @@ onMounted(() => {
       <div>
         <h1 class="faw-admin-page__title">Users</h1>
         <p class="faw-admin-page__desc">
-          Create accounts, assign roles, and regenerate passwords (system-generated — copy and share with the user).
+          Create accounts, assign roles, and regenerate passwords. Chatbox column shows Project Chat message totals (including soft-deleted).
         </p>
       </div>
       <a-button type="primary" size="small" :loading="loading" @click="openCreate">
@@ -394,7 +407,7 @@ onMounted(() => {
       :columns="columns"
       :data-source="filteredUsers"
       :loading="loading"
-      :scroll="{ x: 860 }"
+      :scroll="{ x: 980 }"
       :pagination="{
         current: page,
         pageSize,
@@ -453,6 +466,29 @@ onMounted(() => {
           >
             {{ ROLE_LABELS[primaryRole(record as AdminUser)] }}
           </a-tag>
+        </template>
+
+        <template v-else-if="column.key === 'chatbox'">
+          <a-tooltip
+            :title="
+              chatboxUsageTitle(record as AdminUser)
+            "
+          >
+            <div class="leading-tight">
+              <span class="font-mono text-sm text-ink font-semibold">
+                {{ (record as AdminUser).baChatMessageCount ?? 0 }}
+              </span>
+              <span class="text-[11px] text-ink-muted ml-1">msgs</span>
+              <div class="text-[10px] text-ink-faint">
+                {{ (record as AdminUser).baChatThreadCount ?? 0 }} threads
+                <template
+                  v-if="((record as AdminUser).baChatMessageDeletedCount ?? 0) > 0"
+                >
+                  · {{ (record as AdminUser).baChatMessageDeletedCount }} deleted
+                </template>
+              </div>
+            </div>
+          </a-tooltip>
         </template>
 
         <template v-else-if="column.key === 'status'">

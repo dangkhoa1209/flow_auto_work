@@ -6,7 +6,7 @@ import {
 } from "./plugins/git/prep.js";
 import {
   getProjectDefaultBranch,
-} from "./plugins/gitlab/client.js";
+} from "./plugins/scm/index.js";
 import {
   finalizeGitlabCommitForJob,
   markPendingChangesIfDirty,
@@ -2021,7 +2021,7 @@ export class JobQueue {
         "Bad Context — đã dừng, không gọi Cursor Agent",
       );
       try {
-        const { applyIssueActions } = await import("./plugins/gitlab/client.js");
+        const { applyIssueActions } = await import("./plugins/scm/index.js");
         await applyIssueActions({
           projectId: job.issue.projectId,
           issueIid: job.issue.issueIid,

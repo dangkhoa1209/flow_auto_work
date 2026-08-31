@@ -5,7 +5,7 @@ import { Agent } from "@cursor/sdk";
 import { setMaxListeners } from "node:events";
 import { getReviewDiff } from "../git/diff.js";
 import { collectLinkedIssueContext } from "../gitlab/linked-context.js";
-import { commentOnIssue } from "../gitlab/client.js";
+import { commentOnIssue } from "../scm/index.js";
 import { withAiGeneratedMarker } from "../gitlab/agent-comment.js";
 import { logger } from "../../logger.js";
 import type { IssueJob } from "../../types.js";

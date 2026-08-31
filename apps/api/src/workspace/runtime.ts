@@ -1,5 +1,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 
+import type { GitProvider } from "./types.js";
+
 /**
  * Per-request / per-job runtime credentials.
  * Tokens are decrypted in memory only — never logged.
@@ -12,6 +14,10 @@ export type RuntimeContext = {
   /** Cursor model id — auto or concrete */
   cursorModel?: string;
   projectId: string;
+  /** gitlab | github — default gitlab */
+  gitProvider: GitProvider;
+  /** Remote host (gitlab.com / github.com / …) */
+  gitlabHost: string;
   gitlabPath: string;
   gitlabProjectId?: number;
   repoPath: string;

@@ -1,4 +1,4 @@
-import { applyIssueActions } from "../gitlab/client.js";
+import { applyIssueActions } from "../scm/index.js";
 import { logger } from "../../logger.js";
 
 const DEFAULT_PROCESSING_LABEL = "On-processing";

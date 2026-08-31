@@ -3,7 +3,7 @@ import {
   listProjectLabels,
   listProjectMembers,
   listProjectMilestones,
-} from "../../plugins/gitlab/client.js";
+} from "../../plugins/scm/index.js";
 
 export async function getCompletionDefaults() {
   const config = getConfig();

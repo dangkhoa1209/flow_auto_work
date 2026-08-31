@@ -1,26 +1,30 @@
-import { getConfig } from "../../config.js";
 import { logger } from "../../logger.js";
-import { buildOauthCloneUrl } from "../../workspace/clone.js";
+import { buildCloneUrl } from "../../workspace/clone.js";
 import { resolveRepoPath } from "../../workspace/creds.js";
 import { getRuntimeContext } from "../../workspace/runtime.js";
 import { autoWorkBranchName } from "./branch-name.js";
 import { git } from "./exec.js";
 
 /**
- * Push remote URL with current runtime GitLab PAT (same scheme as clone).
+ * Push remote URL with current runtime PAT (same scheme as clone).
  * Avoids relying on a stale `origin` that may lack / have an old token.
  */
 function resolvePatPushUrl(): string {
   const rt = getRuntimeContext();
   const token = rt?.gitlabToken?.trim();
   const gitlabPath = rt?.gitlabPath?.trim();
-  if (!token || !gitlabPath) {
+  if (!rt || !token || !gitlabPath) {
     throw new Error(
-      "No GitLab PAT in runtime — cannot push (clone/login with token first)",
+      "No remote PAT in runtime — cannot push (clone/login with token first)",
     );
   }
-  const host = getConfig().GITLAB_BASE_URL;
-  return buildOauthCloneUrl(host, token, gitlabPath);
+  const host = rt.gitlabHost || "https://gitlab.com";
+  return buildCloneUrl({
+    provider: rt.gitProvider,
+    host,
+    token,
+    path: gitlabPath,
+  });
 }
 
 /** Full HEAD SHA, or null if unavailable */

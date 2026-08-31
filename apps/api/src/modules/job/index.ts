@@ -7,7 +7,7 @@ import { getConfig } from "../../config.js";
 import {
   fetchIssueAsJob,
   listAssignedOpenIssues,
-} from "../../plugins/gitlab/client.js";
+} from "../../plugins/scm/index.js";
 import { scanExistingAssignedIssues } from "../../plugins/gitlab/startup-scan.js";
 import { jobQueue } from "../../queue.js";
 import { listPendingDiffApprovals } from "../../plugins/review/diff-wait.js";

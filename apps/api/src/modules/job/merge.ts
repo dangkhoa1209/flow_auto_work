@@ -47,7 +47,7 @@ export async function applyCompletionActions(
     throw new AppError("Need assignees, labels, removeLabels, or comment", 400);
   }
 
-  const { applyIssueActions } = await import("../../plugins/gitlab/client.js");
+  const { applyIssueActions } = await import("../../plugins/scm/index.js");
   const { resolveProcessingLabel } = await import(
     "../../plugins/gitlab/processing-label.js"
   );
@@ -126,7 +126,7 @@ async function postMergeSummaryComment(
   const iid = job.issue?.issueIid ?? 0;
   if (iid <= 0) return;
   try {
-    const { commentOnIssue } = await import("../../plugins/gitlab/client.js");
+    const { commentOnIssue } = await import("../../plugins/scm/index.js");
     const { withAiGeneratedMarker } = await import(
       "../../plugins/gitlab/agent-comment.js"
     );
@@ -344,7 +344,7 @@ export async function mergeJobBranch(
     acceptMergeRequest,
     getProjectDefaultBranch,
     waitUntilMrReady,
-  } = await import("../../plugins/gitlab/client.js");
+  } = await import("../../plugins/scm/index.js");
   const { syncLocalToRemoteCommit } = await import(
     "../../plugins/git/changes-for-api.js"
   );

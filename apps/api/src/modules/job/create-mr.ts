@@ -10,7 +10,7 @@ import {
   createMergeRequest,
   findOpenMergeRequest,
   getProjectDefaultBranch,
-} from "../../plugins/gitlab/client.js";
+} from "../../plugins/scm/index.js";
 import { withAiGeneratedMarker } from "../../plugins/gitlab/agent-comment.js";
 import { AppError } from "../../utils/AppError.js";
 import { resolveGitlabProjectPath } from "../../workspace/creds.js";

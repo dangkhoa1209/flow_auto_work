@@ -10,6 +10,13 @@ import {
   verifyGitlabTokenUser,
 } from "../../plugins/gitlab/client.js";
 import {
+  fetchGithubRepo,
+  listGithubBranches,
+  listMyGithubRepos,
+  listGithubMilestones,
+  verifyGithubToken,
+} from "../../plugins/github/client.js";
+import {
   activateProject,
   createUserProject,
   deleteUserProject,
@@ -21,9 +28,14 @@ import {
   updateProjectFields,
   upsertProject,
 } from "../../workspace/store.js";
-import { defaultLocalPath, normalizeGitlabHost } from "../../workspace/types.js";
+import {
+  defaultLocalPath,
+  normalizeGitProvider,
+  normalizeRemoteHost,
+  type GitProvider,
+} from "../../workspace/types.js";
 import { assertProjectCloneReady } from "../../workspace/resolve.js";
-import { buildOauthCloneUrl, isGitRepo, runGitClone } from "../../workspace/clone.js";
+import { buildCloneUrl, isGitRepo, runGitClone } from "../../workspace/clone.js";
 import { AppError } from "../../utils/AppError.js";
 import { logger } from "../../logger.js";
 
@@ -37,6 +49,7 @@ export function publicProject(project: Awaited<ReturnType<typeof getProject>>) {
     userId: project.userId,
     projectName: project.projectName,
     displayName: project.displayName,
+    gitProvider: normalizeGitProvider(project.gitProvider),
     gitlabHost: project.gitlabHost,
     gitlabPath: project.gitlabPath,
     gitlabProjectId: project.gitlabProjectId ?? null,
@@ -127,6 +140,7 @@ export type CreateProjectBody = {
   gitlabPath?: string;
   gitlabToken?: string;
   gitlabHost?: string;
+  gitProvider?: GitProvider | string;
   localPath?: string;
   mainBranch?: string;
   workingBranch?: string;
@@ -144,14 +158,28 @@ export async function createProject(username: string, body: CreateProjectBody) {
   if (!projectName || !gitlabPath) {
     throw new AppError("projectName and gitlabPath required", 400);
   }
+  const gitProvider = normalizeGitProvider(body.gitProvider);
   try {
     let gitlabProjectId: number | undefined;
     if (body.gitlabToken?.trim()) {
       try {
-        const gl = await fetchGitlabProject(gitlabPath, body.gitlabToken.trim());
-        gitlabProjectId = gl.id;
+        if (gitProvider === "github") {
+          const gh = await fetchGithubRepo(
+            gitlabPath,
+            body.gitlabToken.trim(),
+            body.gitlabHost,
+          );
+          gitlabProjectId = gh.id;
+        } else {
+          const gl = await fetchGitlabProject(
+            gitlabPath,
+            body.gitlabToken.trim(),
+          );
+          gitlabProjectId = gl.id;
+        }
       } catch (err) {
-        logger.warn("Could not resolve GitLab project id on create", {
+        logger.warn("Could not resolve remote project id on create", {
+          provider: gitProvider,
           err: String(err),
         });
       }
@@ -162,7 +190,8 @@ export async function createProject(username: string, body: CreateProjectBody) {
       projectName,
       gitlabPath,
       gitlabToken: body.gitlabToken,
-      gitlabHost: body.gitlabHost || normalizeGitlabHost(),
+      gitProvider,
+      gitlabHost: normalizeRemoteHost(gitProvider, body.gitlabHost),
       localPath: body.localPath?.trim() || defaultLocalPath(user, projectName),
       mainBranch: body.mainBranch,
       workingBranch: body.workingBranch,
@@ -222,7 +251,11 @@ export async function startProjectClone(
   const secrets = await getUserSecrets(user, projectId);
   const token = secrets?.gitlabToken;
   if (!token) {
-    throw new AppError("Project GitLab PAT required before clone", 400);
+    const forge =
+      normalizeGitProvider(project.gitProvider) === "github"
+        ? "GitHub"
+        : "GitLab";
+    throw new AppError(`Project ${forge} PAT required before clone`, 400);
   }
   if (await isGitRepo(project.localPath)) {
     await updateProjectFields(projectId, {
@@ -244,11 +277,12 @@ export async function startProjectClone(
     cloneError: null,
   });
 
-  const cloneUrl = buildOauthCloneUrl(
-    project.gitlabHost,
+  const cloneUrl = buildCloneUrl({
+    provider: project.gitProvider,
+    host: project.gitlabHost,
     token,
-    project.gitlabPath,
-  );
+    path: project.gitlabPath,
+  });
   const localPath = project.localPath;
 
   // Background clone — do not block HTTP
@@ -391,6 +425,7 @@ export type UpdateProjectBody = {
   figmaToken?: string | null;
   gitlabHost?: string;
   gitlabPath?: string;
+  gitProvider?: GitProvider | string;
   displayName?: string;
   /** UI “Flow project name” — also renames local folder when possible */
   projectName?: string;
@@ -475,6 +510,9 @@ export async function updateOwnedProject(
         : {}),
       ...(body.gitlabHost?.trim() ? { gitlabHost: body.gitlabHost } : {}),
       ...(body.gitlabPath?.trim() ? { gitlabPath: body.gitlabPath } : {}),
+      ...(body.gitProvider
+        ? { gitProvider: normalizeGitProvider(body.gitProvider) }
+        : {}),
       ...(requestedName
         ? {
             projectName: requestedName,
@@ -515,12 +553,14 @@ export async function listMyGitlabProjectsForUser(
   }
 }
 
-/** Branches: GitLab remote + local (if repoPath given) */
+/** Branches: remote + local (if repoPath given) */
 export async function listProjectBranches(opts: {
   username: string;
   gitlabPath?: string;
   repoPath?: string;
   projectId?: string;
+  gitProvider?: GitProvider | string;
+  gitlabHost?: string;
 }) {
   const user = requireUser(opts.username);
   const gitlabPath = (opts.gitlabPath || "").trim();
@@ -529,12 +569,24 @@ export async function listProjectBranches(opts: {
   const secrets = await getUserSecrets(user, opts.projectId || undefined);
   if (!secrets?.gitlabToken) {
     throw new AppError(
-      "Add GitLab PAT on the project (Settings → Project)",
+      "Add remote PAT on the project (Settings → Project)",
       401,
     );
   }
+  let gitProvider = normalizeGitProvider(opts.gitProvider);
+  let host = opts.gitlabHost;
+  if (opts.projectId) {
+    const project = await getProject(opts.projectId);
+    if (project) {
+      gitProvider = normalizeGitProvider(project.gitProvider);
+      host = project.gitlabHost;
+    }
+  }
   try {
-    const remote = await listGitlabBranches(gitlabPath, secrets.gitlabToken);
+    const remote =
+      gitProvider === "github"
+        ? await listGithubBranches(gitlabPath, secrets.gitlabToken, host)
+        : await listGitlabBranches(gitlabPath, secrets.gitlabToken);
     let local: string[] = [];
     if (repoPath) {
       try {
@@ -562,15 +614,40 @@ export async function listProjectBranches(opts: {
   }
 }
 
-/** Preview GitLab projects/branches/milestones with a raw PAT (wizard, before project saved). */
+/** Preview remote projects/branches/milestones with a raw PAT (wizard, before project saved). */
 export async function previewGitlab(
   username: string,
-  body: { gitlabToken?: string; gitlabPath?: string },
+  body: {
+    gitlabToken?: string;
+    gitlabPath?: string;
+    gitlabHost?: string;
+    gitProvider?: GitProvider | string;
+  },
 ) {
   requireUser(username);
   const token = body.gitlabToken?.trim();
   if (!token) throw new AppError("gitlabToken required", 400);
+  const gitProvider = normalizeGitProvider(body.gitProvider);
+  const host = normalizeRemoteHost(gitProvider, body.gitlabHost);
   try {
+    if (gitProvider === "github") {
+      await verifyGithubToken(token, host);
+      const projects = await listMyGithubRepos(token, host);
+      let branches: Array<{ name: string; default?: boolean }> = [];
+      let defaultBranch: string | null = null;
+      let milestones: string[] = [];
+      const gitlabPath = body.gitlabPath?.trim();
+      if (gitlabPath) {
+        branches = await listGithubBranches(gitlabPath, token, host);
+        defaultBranch = branches.find((b) => b.default)?.name ?? null;
+        const ms = await listGithubMilestones(gitlabPath, token, host);
+        milestones = [
+          ...new Set(ms.map((m) => m.title.trim()).filter(Boolean)),
+        ].sort((a, b) => a.localeCompare(b));
+      }
+      return { projects, branches, defaultBranch, milestones, gitProvider };
+    }
+
     await verifyGitlabTokenUser(token);
     const projects = await listMyGitlabProjects(token);
     let branches: Array<{ name: string; default?: boolean }> = [];
@@ -585,7 +662,7 @@ export async function previewGitlab(
         ...new Set(ms.map((m) => m.title.trim()).filter(Boolean)),
       ].sort((a, b) => a.localeCompare(b));
     }
-    return { projects, branches, defaultBranch, milestones };
+    return { projects, branches, defaultBranch, milestones, gitProvider };
   } catch (err) {
     throw asAppError(err, 400);
   }
@@ -606,15 +683,20 @@ export async function listOwnedProjectMilestones(
   const secrets = await getUserSecrets(user, projectId);
   if (!secrets?.gitlabToken) {
     throw new AppError(
-      "Add GitLab PAT on the project (Settings → Project)",
+      "Add remote PAT on the project (Settings → Project)",
       401,
     );
   }
   try {
-    const ms = await listProjectMilestones(
-      project.gitlabPath,
-      secrets.gitlabToken,
-    );
+    const provider = normalizeGitProvider(project.gitProvider);
+    const ms =
+      provider === "github"
+        ? await listGithubMilestones(
+            project.gitlabPath,
+            secrets.gitlabToken,
+            project.gitlabHost,
+          )
+        : await listProjectMilestones(project.gitlabPath, secrets.gitlabToken);
     const milestones = [
       ...new Set(ms.map((m) => m.title.trim()).filter(Boolean)),
     ].sort((a, b) => a.localeCompare(b));

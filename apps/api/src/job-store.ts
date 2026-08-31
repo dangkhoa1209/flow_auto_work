@@ -245,8 +245,14 @@ export async function createAdhocJob(opts: {
 
   let projectId = rt.gitlabProjectId;
   if (!projectId) {
-    const p = await fetchGitlabProject(rt.gitlabPath, rt.gitlabToken);
-    projectId = p.id;
+    if (rt.gitProvider === "github") {
+      const { fetchGithubRepo } = await import("./plugins/github/client.js");
+      const p = await fetchGithubRepo(rt.gitlabPath, rt.gitlabToken, rt.gitlabHost);
+      projectId = p.id;
+    } else {
+      const p = await fetchGitlabProject(rt.gitlabPath, rt.gitlabToken);
+      projectId = p.id;
+    }
   }
 
   const id = newAdhocJobId();

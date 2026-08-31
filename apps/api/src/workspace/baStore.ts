@@ -1450,3 +1450,98 @@ export async function deleteBaTaskDraft(
   const res = { deletedCount: n };
   return res.deletedCount > 0;
 }
+
+/** Chatbox usage per user — message totals include soft-deleted messages/threads. */
+export type BaChatUsageStats = {
+  /** All messages (active + soft-deleted) across the user's BA threads */
+  messageCount: number;
+  /** Messages not soft-deleted */
+  messageActiveCount: number;
+  /** Soft-deleted messages */
+  messageDeletedCount: number;
+  /** All threads (active + soft-deleted), chat + workflow */
+  threadCount: number;
+};
+
+/**
+ * Aggregate BA chatbox message counts keyed by lowercase userId.
+ * Includes soft-deleted threads and messages (admin usage stats).
+ */
+export async function countBaChatUsageByUser(opts?: {
+  /** When set, only aggregate for this userId (lowercase). */
+  userId?: string;
+}): Promise<Record<string, BaChatUsageStats>> {
+  await BaThreadModel.ensureIndexes();
+  await BaMessageModel.ensureIndexes();
+  const threadCol = await BaThreadModel.col();
+
+  type AggRow = {
+    _id: string;
+    threadCount: number;
+    messageCount: number;
+    messageActiveCount: number;
+  };
+
+  const uidFilter = opts?.userId?.trim().toLowerCase() || "";
+
+  const rows = await threadCol
+    .aggregate<AggRow>([
+      {
+        $project: {
+          id: 1,
+          userId: { $toLower: "$userId" },
+        },
+      },
+      ...(uidFilter ? [{ $match: { userId: uidFilter } }] : []),
+      {
+        $lookup: {
+          from: "ba_messages",
+          let: { tid: "$id" },
+          pipeline: [
+            { $match: { $expr: { $eq: ["$threadId", "$$tid"] } } },
+            {
+              $group: {
+                _id: null,
+                total: { $sum: 1 },
+                active: {
+                  $sum: {
+                    $cond: [{ $ne: ["$deleted", true] }, 1, 0],
+                  },
+                },
+              },
+            },
+          ],
+          as: "msg",
+        },
+      },
+      {
+        $group: {
+          _id: "$userId",
+          threadCount: { $sum: 1 },
+          messageCount: {
+            $sum: { $ifNull: [{ $arrayElemAt: ["$msg.total", 0] }, 0] },
+          },
+          messageActiveCount: {
+            $sum: { $ifNull: [{ $arrayElemAt: ["$msg.active", 0] }, 0] },
+          },
+        },
+      },
+    ])
+    .toArray();
+
+  const out: Record<string, BaChatUsageStats> = {};
+  for (const row of rows) {
+    const uid = (row._id || "").toLowerCase();
+    if (!uid) continue;
+    const messageCount = Number(row.messageCount) || 0;
+    const messageActiveCount = Number(row.messageActiveCount) || 0;
+    out[uid] = {
+      messageCount,
+      messageActiveCount,
+      messageDeletedCount: Math.max(0, messageCount - messageActiveCount),
+      threadCount: Number(row.threadCount) || 0,
+    };
+  }
+  return out;
+}
+

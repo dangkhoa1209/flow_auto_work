@@ -54,6 +54,7 @@ export function getAuthBootstrap() {
   return {
     gitlabBaseUrl,
     gitlabPatUrl: `${gitlabBaseUrl}/-/user_settings/personal_access_tokens`,
+    githubPatUrl: "https://github.com/settings/tokens",
     cursorApiKeyUrl: "https://cursor.com/dashboard?tab=integrations",
     defaultCursorModel: "auto",
     authMode: "password",

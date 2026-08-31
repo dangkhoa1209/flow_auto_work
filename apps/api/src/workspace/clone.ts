@@ -3,18 +3,55 @@ import { access, mkdir } from "node:fs/promises";
 import { constants } from "node:fs";
 import path from "node:path";
 import { logger } from "../logger.js";
-import { normalizeGitlabHost } from "./types.js";
+import {
+  normalizeGitlabHost,
+  type GitProvider,
+  normalizeGitProvider,
+} from "./types.js";
 
-/** `https://oauth2:TOKEN@host/group/repo.git` */
+function stripHost(host: string): string {
+  return normalizeGitlabHost(host).replace(/^https?:\/\//i, "");
+}
+
+function cleanRepoPath(repoPath: string): string {
+  return repoPath.replace(/^\/+|\/+$/g, "").replace(/\.git$/i, "");
+}
+
+/** `https://oauth2:TOKEN@host/group/repo.git` (GitLab) */
 export function buildOauthCloneUrl(
   gitlabHost: string,
   token: string,
   gitlabPath: string,
 ): string {
-  const host = normalizeGitlabHost(gitlabHost).replace(/^https?:\/\//i, "");
-  const repoPath = gitlabPath.replace(/^\/+|\/+$/g, "").replace(/\.git$/i, "");
+  const host = stripHost(gitlabHost);
+  const repoPath = cleanRepoPath(gitlabPath);
   const encToken = encodeURIComponent(token);
   return `https://oauth2:${encToken}@${host}/${repoPath}.git`;
+}
+
+/** `https://x-access-token:TOKEN@host/owner/repo.git` (GitHub classic PAT) */
+export function buildGithubCloneUrl(
+  githubHost: string,
+  token: string,
+  repoPath: string,
+): string {
+  const host = stripHost(githubHost || "https://github.com");
+  const clean = cleanRepoPath(repoPath);
+  const encToken = encodeURIComponent(token);
+  return `https://x-access-token:${encToken}@${host}/${clean}.git`;
+}
+
+export function buildCloneUrl(opts: {
+  provider?: GitProvider | string | null;
+  host: string;
+  token: string;
+  path: string;
+}): string {
+  const provider = normalizeGitProvider(opts.provider);
+  if (provider === "github") {
+    return buildGithubCloneUrl(opts.host, opts.token, opts.path);
+  }
+  return buildOauthCloneUrl(opts.host, opts.token, opts.path);
 }
 
 export async function pathExists(p: string): Promise<boolean> {
@@ -83,7 +120,9 @@ export function runGitClone(opts: {
         return;
       }
       // Redact token if it leaked into stderr
-      const safe = stderr.replace(/oauth2:[^@\s]+@/gi, "oauth2:***@");
+      const safe = stderr
+        .replace(/oauth2:[^@\s]+@/gi, "oauth2:***@")
+        .replace(/x-access-token:[^@\s]+@/gi, "x-access-token:***@");
       reject(new Error(`git clone failed (exit ${code}): ${safe.slice(-800)}`));
     });
   });

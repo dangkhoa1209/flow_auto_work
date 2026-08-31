@@ -4,6 +4,15 @@ import { getRepoRoot } from "../repoRoot.js";
 
 export type CloneStatus = "pending" | "cloning" | "ready" | "failed";
 
+/** Remote forge for Workbench projects (BA stays GitLab-only). */
+export type GitProvider = "gitlab" | "github";
+
+export function normalizeGitProvider(
+  raw?: string | null,
+): GitProvider {
+  return raw === "github" ? "github" : "gitlab";
+}
+
 /** Platform capability roles (QC is independent of GitLab membership role). */
 export type UserRole = "dev" | "admin" | "qc" | "ba" | "pd" | "devops";
 
@@ -108,6 +117,14 @@ export type AdminUserPublic = WorkspaceUserPublic & {
   disabledAt?: string | null;
   /** Seeded root admin — immutable via admin user management. */
   isRootAdmin: boolean;
+  /** BA Project Chatbox messages (includes soft-deleted). */
+  baChatMessageCount?: number;
+  /** Active (not soft-deleted) BA chat messages. */
+  baChatMessageActiveCount?: number;
+  /** Soft-deleted BA chat messages. */
+  baChatMessageDeletedCount?: number;
+  /** BA threads owned by user (includes soft-deleted). */
+  baChatThreadCount?: number;
 };
 
 /** Username of the seeded root admin (`npm run seed`). */
@@ -133,10 +150,16 @@ export type WorkspaceProject = {
   userId: string;
   projectName: string;
   displayName: string;
+  /**
+   * Remote forge. Missing / unknown → gitlab (legacy rows).
+   * Host/path/token/id fields below are forge-agnostic storage.
+   */
+  gitProvider?: GitProvider;
+  /** Remote host — gitlab.com / github.com / self-hosted */
   gitlabHost: string;
-  /** e.g. group/repo */
+  /** e.g. group/repo or owner/repo */
   gitlabPath: string;
-  /** PAT encrypted — attached to project */
+  /** PAT encrypted — attached to project (GitLab or GitHub classic) */
   gitlabTokenEnc?: string;
   /** Figma Personal Access Token (encrypted) — legacy per-project; prefer user.figmaTokenEnc */
   figmaTokenEnc?: string;
@@ -414,6 +437,21 @@ export function defaultLocalPath(username: string, projectName: string): string 
 export function normalizeGitlabHost(host?: string): string {
   const h = (host || "").trim() || "https://gitlab.com";
   return h.replace(/\/$/, "");
+}
+
+export function normalizeGithubHost(host?: string): string {
+  const h = (host || "").trim() || "https://github.com";
+  return h.replace(/\/$/, "");
+}
+
+/** Normalize forge host for storage (scheme + no trailing slash). */
+export function normalizeRemoteHost(
+  provider: GitProvider,
+  host?: string,
+): string {
+  return provider === "github"
+    ? normalizeGithubHost(host)
+    : normalizeGitlabHost(host);
 }
 
 export function projectToMembership(

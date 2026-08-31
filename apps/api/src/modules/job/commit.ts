@@ -17,6 +17,7 @@ import {
   forcePushBranch,
   getHeadSha,
   hasUncommittedChanges,
+  pushBranch,
 } from "../../plugins/git/prep.js";
 import {
   createRepositoryCommit,
@@ -25,6 +26,7 @@ import {
 import type { JobRecord } from "../../types.js";
 import { AppError } from "../../utils/AppError.js";
 import { getRuntimeContext } from "../../workspace/runtime.js";
+import { normalizeGitProvider } from "../../workspace/types.js";
 import { requireJobDoc } from "./lifecycle.js";
 
 export type CommitMode = "manual" | "auto";
@@ -40,7 +42,58 @@ export type FinalizeCommitResult = {
 };
 
 /**
- * Commit dirty worktree (and soft-reset any local agent commits) via GitLab API.
+ * GitHub: commit locally (keep agent commits) and push with PAT remote URL.
+ */
+async function finalizeGithubCommitForJob(
+  job: JobRecord,
+  repoPath: string,
+  headBefore: string | null,
+  commitMsg: string,
+): Promise<FinalizeCommitResult> {
+  const dirty = await hasUncommittedChanges(repoPath);
+  const headNow = await getHeadSha(repoPath);
+  const localCommits = Boolean(
+    headBefore && headNow && headBefore !== headNow,
+  );
+
+  if (!dirty && !localCommits) {
+    logger.info("No local changes to commit/push (GitHub)", { jobId: job.id });
+    job.hasPendingChanges = false;
+    return { commitSha: headNow, hasChange: false };
+  }
+
+  let commitSha = headNow;
+  if (dirty) {
+    const sha = await commitAllTracked(repoPath, commitMsg);
+    commitSha = sha ?? (await getHeadSha(repoPath));
+  }
+
+  const branch =
+    (job.branch || job.workBranch || "").trim() ||
+    (await currentBranch(repoPath));
+
+  logger.info("Pushing commit to GitHub", {
+    jobId: job.id,
+    branch,
+    commitSha: commitSha?.slice(0, 12),
+  });
+  await pushBranch(repoPath, branch);
+
+  if (commitSha) {
+    job.commitSha = commitSha;
+    const prev = Array.isArray(job.commitShas) ? job.commitShas : [];
+    if (!prev.includes(commitSha)) {
+      job.commitShas = [...prev, commitSha].slice(-20);
+    } else {
+      job.commitShas = prev;
+    }
+  }
+  job.hasPendingChanges = false;
+  return { commitSha: commitSha ?? null, hasChange: true };
+}
+
+/**
+ * Commit dirty worktree via GitLab Commits API, or local git push for GitHub.
  * Shared by queue auto-commit and manual Commit endpoint.
  */
 export async function finalizeGitlabCommitForJob(
@@ -50,6 +103,10 @@ export async function finalizeGitlabCommitForJob(
   commitMsg: string,
 ): Promise<FinalizeCommitResult> {
   const rt = getRuntimeContext();
+  if (normalizeGitProvider(rt?.gitProvider) === "github") {
+    return finalizeGithubCommitForJob(job, repoPath, headBefore, commitMsg);
+  }
+
   const headNow = await getHeadSha(repoPath);
   const dirty = await hasUncommittedChanges(repoPath);
 
@@ -152,7 +209,10 @@ export async function markPendingChangesIfDirty(
   const localCommits =
     Boolean(headBefore && headNow && headBefore !== headNow);
 
-  if (localCommits) {
+  const rt = getRuntimeContext();
+  const isGithub = normalizeGitProvider(rt?.gitProvider) === "github";
+
+  if (localCommits && !isGithub) {
     // Keep agent local commits as worktree changes (one soft-reset) so
     // manual Commit can ship them as a single GitLab API commit.
     await softResetTo(repoPath, headBefore!);

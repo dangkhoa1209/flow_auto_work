@@ -154,17 +154,21 @@ onUnmounted(() => {
         </RouterLink>
       </nav>
 
+      <!-- Desktop: project in topbar -->
       <div
         v-if="showProjectSelect"
-        class="faw-crumb faw-ba-topbar-project min-w-0 flex-1 lg:flex-none lg:max-w-[420px]"
+        class="faw-crumb faw-ba-topbar-project hidden lg:flex min-w-[180px] max-w-[320px]"
         title="Project — shared for Chat / Workflow / Tasks"
       >
         <BaProjectSelect :show-label="false" embedded size="small" />
       </div>
 
-      <div class="faw-topbar__spacer hidden lg:block" />
+      <div class="faw-topbar__spacer" />
 
-      <AppTopbarRight settings-to="/ba/settings/gitlab">
+      <AppTopbarRight
+        settings-to="/ba/settings/gitlab"
+        class="hidden lg:contents"
+      >
         <template #status>
           <span class="faw-idle faw-ba-idle">
             <span class="faw-idle__dot" :class="statusDot" />
@@ -177,7 +181,20 @@ onUnmounted(() => {
           </RouterLink>
         </template>
       </AppTopbarRight>
+
+      <AppTopbarRight
+        settings-to="/ba/settings/gitlab"
+        class="lg:hidden !gap-1"
+      />
     </header>
+
+    <!-- Mobile: full-width project row (not squeezed in topbar) -->
+    <div
+      v-if="showProjectSelect"
+      class="faw-ba-project-bar lg:hidden"
+    >
+      <BaProjectSelect :show-label="false" size="middle" />
+    </div>
 
     <nav
       v-if="navActive !== 'settings'"

@@ -49,6 +49,7 @@ const url = computed(() => {
       iid: iid.value,
       gitlabHost: project?.gitlabHost,
       gitlabPath: project?.gitlabPath,
+      gitProvider: project?.gitProvider,
     }) || ""
   );
 });

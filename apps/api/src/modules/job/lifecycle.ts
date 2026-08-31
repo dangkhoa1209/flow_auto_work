@@ -15,7 +15,7 @@ import {
   createIssue,
   fetchIssueAsJob,
   listAssignedOpenIssues,
-} from "../../plugins/gitlab/client.js";
+} from "../../plugins/scm/index.js";
 import {
   createAdhocJob,
   ensureJob,
