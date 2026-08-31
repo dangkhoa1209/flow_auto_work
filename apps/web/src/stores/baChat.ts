@@ -609,16 +609,46 @@ export const useBaChatStore = defineStore("baChat", () => {
   async function bootstrap() {
     loading.value = true;
     try {
-      activeThreadId.value = null;
-      messages.value = [];
-      streaming.value = false;
-      streamingMessageId.value = null;
-      errorText.value = "";
-      clearProgress();
+      // Keep in-flight chat when remounting layout (Chat ↔ Work).
+      const keepThreadId = activeThreadId.value;
+      const keepStreaming = streaming.value;
+      const keepMessages = keepStreaming ? messages.value.slice() : null;
+      const keepStreamingMessageId = streamingMessageId.value;
+      const keepProgress = keepStreaming ? progress.value.slice() : null;
+
       await loadProjects();
       await loadThreads();
+
+      if (
+        keepThreadId &&
+        threads.value.some((t) => t.id === keepThreadId)
+      ) {
+        activeThreadId.value = keepThreadId;
+        if (keepStreaming && keepMessages) {
+          messages.value = keepMessages;
+          streaming.value = true;
+          streamingMessageId.value = keepStreamingMessageId;
+          if (keepProgress) {
+            progress.value = keepProgress;
+            progressVisible.value = keepProgress.length > 0;
+          }
+        } else if (!keepStreaming) {
+          await selectThread(keepThreadId);
+        }
+      }
     } finally {
       loading.value = false;
+    }
+  }
+
+  /** After SSE wake — refresh open thread unless a stream is in flight. */
+  async function resyncRealtime() {
+    const id = activeThreadId.value;
+    if (!id || streaming.value) return;
+    try {
+      await selectThread(id);
+    } catch {
+      /* ignore */
     }
   }
 
@@ -647,6 +677,7 @@ export const useBaChatStore = defineStore("baChat", () => {
     progressPct,
     projectReady,
     bootstrap,
+    resyncRealtime,
     reset,
     loadProjects,
     loadThreads,

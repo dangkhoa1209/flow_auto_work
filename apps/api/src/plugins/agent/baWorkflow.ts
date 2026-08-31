@@ -14,6 +14,11 @@ import {
   type BaWorkflowStepKey,
 } from "../../workspace/baStore.js";
 import { isGitRepo } from "../../workspace/clone.js";
+import {
+  ensureProjectGraphifyReady,
+  formatBaGraphifyPromptBlock,
+  queryProjectGraphify,
+} from "../../workspace/graphify.js";
 import { pullBaProjectLatest } from "../git/ba-pull.js";
 import { buildBaDbCustomTools } from "../baDb/tools.js";
 import { loadBaLinkedContext } from "../ba/ba-linked-context.js";
@@ -227,6 +232,7 @@ function buildWorkflowPrompt(opts: {
   priorSteps: BaRequirementStep[];
   gitlabTaskBlock: string;
   threadBlock: string;
+  graphifyBlock?: string;
   dbAccess: { allowed: boolean; dialect?: string; database?: string };
 }): string {
   const dbBlock = opts.dbAccess.allowed
@@ -298,7 +304,7 @@ ${baGitlabBoundaryInstructions()}
 - Branch đọc: ${opts.mainBranch}
 ${dbBlock}
 
-## Yêu cầu gốc (từ khách hàng / PD — nguyên văn)
+${opts.graphifyBlock ? `${opts.graphifyBlock}\n\n` : ""}## Yêu cầu gốc (từ khách hàng / PD — nguyên văn)
 **Tiêu đề:** ${opts.title}
 
 ${opts.rawContent.trim()}
@@ -472,6 +478,20 @@ export async function runBaWorkflowStep(opts: {
     await pullBaProjectLatest(project);
     session.check();
 
+    await ensureProjectGraphifyReady(project.localPath, { timeoutMs: 90_000 });
+    session.check();
+    const graphifyQuery = await queryProjectGraphify(
+      project.localPath,
+      [opts.requirement.title, opts.requirement.rawContent, opts.step].join(
+        " | ",
+      ),
+    );
+    const graphifyBlock = formatBaGraphifyPromptBlock({
+      sourcePath: project.localPath,
+      queryText: graphifyQuery,
+    });
+    session.check();
+
     const apiKey = await resolveSystemCursorApiKey();
     const modelId = await resolveSystemCursorModel();
     const dbAllowed = isBaDbAccessAllowed(project);
@@ -528,6 +548,7 @@ export async function runBaWorkflowStep(opts: {
       priorSteps,
       gitlabTaskBlock: linked.block,
       threadBlock,
+      graphifyBlock,
       dbAccess,
     });
 

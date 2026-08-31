@@ -3,6 +3,7 @@ import { computed } from "vue";
 import { RightOutlined } from "@ant-design/icons-vue";
 import type { BuildJob, BuildLogLine } from "@/api/devopsApi";
 import BuildLogPane from "@/components/devops/BuildLogPane.vue";
+import { formatBuildDurationMs } from "@/utils/formatBuildDuration";
 
 const props = defineProps<{
   job: BuildJob;
@@ -33,14 +34,12 @@ const timeLabel = computed(() => {
   if (j.status === "queued") return "waiting…";
   if (j.status === "running" && j.startedAt) {
     const t = Date.parse(j.startedAt);
-    if (!Number.isFinite(t)) return "0:00";
-    const s = Math.floor((props.nowMs - t) / 1000);
-    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+    if (!Number.isFinite(t)) return "0s";
+    return formatBuildDurationMs(props.nowMs - t);
   }
   const ms = j.durationMs;
   if (ms == null) return "—";
-  if (ms < 1000) return `${ms}ms`;
-  return `${(ms / 1000).toFixed(1)}s`;
+  return formatBuildDurationMs(ms);
 });
 </script>
 

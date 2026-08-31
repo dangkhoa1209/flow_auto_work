@@ -45,7 +45,8 @@ export const useDevopsStore = defineStore("devops", () => {
   const history = ref<BuildJob[]>([]);
   const historyTotal = ref(0);
   const historyPage = ref(1);
-  const historyPageSize = ref(20);
+  /** History tab shows at most this many recent builds. */
+  const historyPageSize = ref(40);
   const historyStatus = ref<BuildStatus | undefined>(undefined);
   const historyLoading = ref(false);
   const triggeringId = ref<string | null>(null);
@@ -411,17 +412,18 @@ export const useDevopsStore = defineStore("devops", () => {
     await syncViewLogs(job.id);
   }
 
-  async function fetchHistory(page = historyPage.value) {
+  async function fetchHistory(page = 1) {
     historyLoading.value = true;
     try {
+      const limit = historyPageSize.value;
       const res = await devopsApi.listBuilds({
-        limit: historyPageSize.value,
-        offset: (Math.max(1, page) - 1) * historyPageSize.value,
+        limit,
+        offset: 0,
         status: historyStatus.value,
       });
-      history.value = res.builds;
-      historyTotal.value = res.total ?? res.builds.length;
-      historyPage.value = Math.max(1, page);
+      history.value = res.builds.slice(0, limit);
+      historyTotal.value = Math.min(limit, res.total ?? res.builds.length);
+      historyPage.value = 1;
       applyQueue(res.queue);
     } finally {
       historyLoading.value = false;
@@ -543,6 +545,7 @@ export const useDevopsStore = defineStore("devops", () => {
 
   let eventsEs: EventSource | null = null;
   let eventsStopped = false;
+  let eventsConnecting = false;
 
   async function ensureFreshToken() {
     const exp = getAccessExpiresAt();
@@ -551,56 +554,76 @@ export const useDevopsStore = defineStore("devops", () => {
     }
   }
 
+  /** Queue/job SSE — safe to call repeatedly; stays up across Chat/Work/Build nav. */
   function connectEvents() {
     eventsStopped = false;
     logStreamStopped = false;
+    if (
+      eventsEs &&
+      eventsEs.readyState !== EventSource.CLOSED
+    ) {
+      return;
+    }
+    if (eventsConnecting) return;
+    eventsConnecting = true;
     void (async () => {
-      await ensureFreshToken();
-      if (eventsStopped) return;
-      eventsEs?.close();
-      const es = new EventSource(devopsEventsUrl());
-      eventsEs = es;
-      es.addEventListener("queue", (e) => {
-        try {
-          const ev = JSON.parse((e as MessageEvent).data) as
-            | BuildQueueSnapshot
-            | { snapshot: BuildQueueSnapshot };
-          applyQueue("snapshot" in ev && ev.snapshot ? ev.snapshot : (ev as BuildQueueSnapshot));
-        } catch {
-          /* ignore */
-        }
-      });
-      es.addEventListener("job", (e) => {
-        try {
-          const ev = JSON.parse((e as MessageEvent).data) as { job: BuildJob };
-          if (ev.job) upsertBuild(ev.job);
-        } catch {
-          /* ignore */
-        }
-      });
-      es.addEventListener("done", (e) => {
-        try {
-          const ev = JSON.parse((e as MessageEvent).data) as { job: BuildJob };
-          if (ev.job) upsertBuild(ev.job);
-        } catch {
-          /* ignore */
-        }
-      });
-      es.onerror = () => {
-        es.close();
-        if (eventsEs === es) eventsEs = null;
-        if (!eventsStopped) {
-          setTimeout(() => {
-            if (!eventsStopped) connectEvents();
-          }, 2000);
-        }
-      };
+      try {
+        await ensureFreshToken();
+        if (eventsStopped) return;
+        if (eventsEs && eventsEs.readyState !== EventSource.CLOSED) return;
+        eventsEs?.close();
+        const es = new EventSource(devopsEventsUrl());
+        eventsEs = es;
+        es.addEventListener("queue", (e) => {
+          try {
+            const ev = JSON.parse((e as MessageEvent).data) as
+              | BuildQueueSnapshot
+              | { snapshot: BuildQueueSnapshot };
+            applyQueue(
+              "snapshot" in ev && ev.snapshot
+                ? ev.snapshot
+                : (ev as BuildQueueSnapshot),
+            );
+          } catch {
+            /* ignore */
+          }
+        });
+        es.addEventListener("job", (e) => {
+          try {
+            const ev = JSON.parse((e as MessageEvent).data) as { job: BuildJob };
+            if (ev.job) upsertBuild(ev.job);
+          } catch {
+            /* ignore */
+          }
+        });
+        es.addEventListener("done", (e) => {
+          try {
+            const ev = JSON.parse((e as MessageEvent).data) as { job: BuildJob };
+            if (ev.job) upsertBuild(ev.job);
+          } catch {
+            /* ignore */
+          }
+        });
+        es.onerror = () => {
+          es.close();
+          if (eventsEs === es) eventsEs = null;
+          if (!eventsStopped) {
+            setTimeout(() => {
+              if (!eventsStopped) connectEvents();
+            }, 2000);
+          }
+        };
+      } finally {
+        eventsConnecting = false;
+      }
     })();
   }
 
+  /** Full teardown — logout / lose devops access. */
   function disconnect() {
     eventsStopped = true;
     logStreamStopped = true;
+    eventsConnecting = false;
     eventsEs?.close();
     eventsEs = null;
     closeLogStream();

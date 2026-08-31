@@ -8,6 +8,7 @@ import BuildFeedCard from "@/components/devops/BuildFeedCard.vue";
 import BuildTerminal from "@/components/devops/BuildTerminal.vue";
 import { useDevopsStore } from "@/stores/devops";
 import { useSessionStore } from "@/stores/session";
+import { formatBuildDurationMs } from "@/utils/formatBuildDuration";
 
 const devops = useDevopsStore();
 const session = useSessionStore();
@@ -221,13 +222,7 @@ const scriptColumns = computed(() => {
 });
 
 function formatMs(ms: number) {
-  const sec = Math.round(ms / 1000);
-  if (sec < 60) return `${sec}s`;
-  const m = Math.floor(sec / 60);
-  const s = sec % 60;
-  if (m < 60) return `${m}m ${s}s`;
-  const h = Math.floor(m / 60);
-  return `${h}h ${m % 60}m`;
+  return formatBuildDurationMs(ms);
 }
 
 function formatDuration(job: BuildJob) {
@@ -498,7 +493,7 @@ onUnmounted(() => {
     configMq.removeEventListener("change", syncConfigCompact);
   }
   if (tickTimer) clearInterval(tickTimer);
-  devops.disconnect();
+  // Keep Build queue/job SSE + live logs across Chat/Work navigation.
 });
 </script>
 

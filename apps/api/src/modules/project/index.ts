@@ -36,6 +36,7 @@ import {
 } from "../../workspace/types.js";
 import { assertProjectCloneReady } from "../../workspace/resolve.js";
 import { buildCloneUrl, isGitRepo, runGitClone } from "../../workspace/clone.js";
+import { scheduleProjectGraphify } from "../../workspace/graphify.js";
 import { AppError } from "../../utils/AppError.js";
 import { logger } from "../../logger.js";
 
@@ -262,6 +263,7 @@ export async function startProjectClone(
       cloneStatus: "ready",
       cloneError: null,
     });
+    scheduleProjectGraphify(project.localPath, "already-cloned");
     return {
       ok: true,
       alreadyCloned: true,
@@ -294,6 +296,7 @@ export async function startProjectClone(
         cloneError: null,
       });
       logger.info("Project clone ready", { projectId, localPath });
+      scheduleProjectGraphify(localPath, "clone");
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       await updateProjectFields(projectId, {
@@ -407,6 +410,7 @@ export async function joinProject(username: string, body: JoinProjectBody) {
     mainBranch: body.baseBranch || "",
     workingBranch: body.workBranch || "",
   });
+  scheduleProjectGraphify(repoPath, "join");
   const memberships = await listPublicMemberships(user);
   return {
     project: publicProject(await getProject(project.id)),

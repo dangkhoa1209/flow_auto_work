@@ -7,6 +7,7 @@ import {
   getBaProjectGitlabToken,
   type BaProject,
 } from "../../workspace/baStore.js";
+import { scheduleProjectGraphify } from "../../workspace/graphify.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -62,6 +63,7 @@ export async function pullBaProjectLatest(project: BaProject): Promise<void> {
       projectId: project.id,
       branch,
     });
+    scheduleProjectGraphify(project.localPath, "ba-pull");
     return;
   }
 
@@ -76,6 +78,7 @@ export async function pullBaProjectLatest(project: BaProject): Promise<void> {
     projectId: project.id,
     branch,
   });
+  scheduleProjectGraphify(project.localPath, "ba-pull");
 }
 
 export async function pullBaProjectLatestById(projectId: string): Promise<void> {

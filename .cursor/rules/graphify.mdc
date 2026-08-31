@@ -11,23 +11,33 @@ Two corpora. Pick the graph that matches the code you are exploring — never mi
 - Graph: `graphify-out/graph.json`
 - After WorkBench code edits: `graphify update .`
 
-## B. Nested source under `project/`
+## B. Nested Work / BA checkouts under `project/`
 
-Path: `project/<username>/<slug>/source/` (e.g. `project/khoadev/ykk/source`).
+Checkout: `project/<username>/<slug>/source/` (e.g. `project/khoadev/ykk/source`).
+BA shared: `project/_ba/<slug>/source/`.
+
+**Graph lives outside source** (WorkBench-owned, never commit into customer git):
+
+- Graph: `project/<username>/<slug>/graphify-out/graph.json`
+- Manual rebuild: `scripts/graphify-work-project.sh <username>/<slug>`
+- Or: `GRAPHIFY_OUT="$(pwd)/project/<user>/<slug>/graphify-out" graphify update project/<user>/<slug>/source --force`
+
+API auto-runs that update after Work/BA clone (and BA pull). Disable with `GRAPHIFY_ENABLED=0`.
+
+**BA Chat / workflow / Create issue:** API runs `graphify query` against the sibling graph and injects a "Code map" block into the Cursor prompt (still never writes inside `source/`).
 
 Cursor does **not** auto-load nested rules from gitignored `project/`. When the task, open files, Run, or chat target that tree:
 
-1. **Rules first** — `Read` every `project/<username>/<slug>/source/.cursor/rules/*.mdc` and follow them for that session/task (include them in subagent prompts).
-2. **Graph** — use `project/<username>/<slug>/source/graphify-out/` only. Either:
-   - `cd project/<username>/<slug>/source && graphify query|path|explain|update ...`, or
-   - pass `--graph project/<username>/<slug>/source/graphify-out/graph.json`
-3. If that `graphify-out/graph.json` is missing, say so and explore with Read/Grep — do **not** fall back to the WorkBench root graph for customer-app questions.
+1. **Rules first** — `Read` every `…/source/.cursor/rules/*.mdc` and follow them for this session/task (include them in subagent prompts). Do **not** install graphify into customer `source/`.
+2. **Graph** — use sibling `…/graphify-out/` only:
+   - `graphify query|path|explain … --graph project/<user>/<slug>/graphify-out/graph.json`
+3. If that `graph.json` is missing, say so and explore with Read/Grep — do **not** fall back to the WorkBench root graph for customer-app questions. You may run `scripts/graphify-work-project.sh <user>/<slug>` to build it.
 
 ## Mandatory before Explore
 
 Before Read / Grep / Glob / Bash to explore a corpus, run graphify on **that** corpus first:
 
-- `graphify query "<question>"`
+- `graphify query "<question>"` (with `--graph` for nested)
 - `graphify path "<A>" "<B>"`
 - `graphify explain "<concept>"`
 

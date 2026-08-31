@@ -148,7 +148,7 @@ export type RealtimeBaWfStepError = {
   error: string;
 };
 
-type Handlers = {
+export type RealtimeHandlers = {
   onStatus?: (ev: RealtimeStatus) => void;
   onProgress?: (ev: RealtimeProgress) => void;
   onJobs?: (ev: RealtimeJobs) => void;
@@ -169,6 +169,9 @@ type Handlers = {
   onError?: () => void;
 };
 
+/** @deprecated use RealtimeHandlers */
+type Handlers = RealtimeHandlers;
+
 function eventsUrl(): string {
   const persisted = loadPersistedAuth();
   const qs = new URLSearchParams();
@@ -186,218 +189,185 @@ async function ensureFreshAccessToken(): Promise<void> {
   }
 }
 
-/**
- * SSE listen channel with explicit reconnect (tab close, mobile sleep, token expiry).
- * EventSource's built-in retry keeps a stale access_token in the URL.
- */
-export function connectRealtime(handlers: Handlers): () => void {
-  let stopped = false;
-  let es: EventSource | null = null;
-  let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
-  let attempt = 0;
-  let connecting = false;
+const subscribers = new Set<RealtimeHandlers>();
 
-  const bind = (source: EventSource) => {
-    source.addEventListener("open", () => {
-      attempt = 0;
-      handlers.onOpen?.();
-    });
-    source.onerror = () => {
-      handlers.onError?.();
-      source.close();
-      if (es === source) es = null;
-      scheduleReconnect();
-    };
-    source.addEventListener("status", (e) => {
-      try {
-        handlers.onStatus?.(JSON.parse((e as MessageEvent).data) as RealtimeStatus);
-      } catch {
-        /* ignore */
-      }
-    });
-    source.addEventListener("progress", (e) => {
-      try {
-        handlers.onProgress?.(
-          JSON.parse((e as MessageEvent).data) as RealtimeProgress,
-        );
-      } catch {
-        /* ignore */
-      }
-    });
-    source.addEventListener("jobs", (e) => {
-      try {
-        handlers.onJobs?.(JSON.parse((e as MessageEvent).data) as RealtimeJobs);
-      } catch {
-        /* ignore */
-      }
-    });
-    source.addEventListener("job", (e) => {
-      try {
-        handlers.onJob?.(JSON.parse((e as MessageEvent).data) as RealtimeJob);
-      } catch {
-        /* ignore */
-      }
-    });
-    source.addEventListener("chat", (e) => {
-      try {
-        handlers.onChat?.(JSON.parse((e as MessageEvent).data) as RealtimeChat);
-      } catch {
-        /* ignore */
-      }
-    });
-    source.addEventListener("ba_message", (e) => {
-      try {
-        handlers.onBaMessage?.(
-          JSON.parse((e as MessageEvent).data) as RealtimeBaMessage,
-        );
-      } catch {
-        /* ignore */
-      }
-    });
-    source.addEventListener("ba_delta", (e) => {
-      try {
-        handlers.onBaDelta?.(
-          JSON.parse((e as MessageEvent).data) as RealtimeBaDelta,
-        );
-      } catch {
-        /* ignore */
-      }
-    });
-    source.addEventListener("ba_done", (e) => {
-      try {
-        handlers.onBaDone?.(JSON.parse((e as MessageEvent).data) as RealtimeBaDone);
-      } catch {
-        /* ignore */
-      }
-    });
-    source.addEventListener("ba_error", (e) => {
-      try {
-        handlers.onBaError?.(
-          JSON.parse((e as MessageEvent).data) as RealtimeBaError,
-        );
-      } catch {
-        /* ignore */
-      }
-    });
-    source.addEventListener("ba_progress", (e) => {
-      try {
-        handlers.onBaProgress?.(
-          JSON.parse((e as MessageEvent).data) as RealtimeBaProgress,
-        );
-      } catch {
-        /* ignore */
-      }
-    });
-    source.addEventListener("ba_issue_draft_progress", (e) => {
-      try {
-        handlers.onBaIssueDraftProgress?.(
-          JSON.parse((e as MessageEvent).data) as RealtimeBaIssueDraftProgress,
-        );
-      } catch {
-        /* ignore */
-      }
-    });
-    source.addEventListener("ba_issue_draft_done", (e) => {
-      try {
-        handlers.onBaIssueDraftDone?.(
-          JSON.parse((e as MessageEvent).data) as RealtimeBaIssueDraftDone,
-        );
-      } catch {
-        /* ignore */
-      }
-    });
-    source.addEventListener("ba_issue_draft_error", (e) => {
-      try {
-        handlers.onBaIssueDraftError?.(
-          JSON.parse((e as MessageEvent).data) as RealtimeBaIssueDraftError,
-        );
-      } catch {
-        /* ignore */
-      }
-    });
-    source.addEventListener("ba_wf_step_progress", (e) => {
-      try {
-        handlers.onBaWfStepProgress?.(
-          JSON.parse((e as MessageEvent).data) as RealtimeBaWfStepProgress,
-        );
-      } catch {
-        /* ignore */
-      }
-    });
-    source.addEventListener("ba_wf_step_done", (e) => {
-      try {
-        handlers.onBaWfStepDone?.(
-          JSON.parse((e as MessageEvent).data) as RealtimeBaWfStepDone,
-        );
-      } catch {
-        /* ignore */
-      }
-    });
-    source.addEventListener("ba_wf_step_error", (e) => {
-      try {
-        handlers.onBaWfStepError?.(
-          JSON.parse((e as MessageEvent).data) as RealtimeBaWfStepError,
-        );
-      } catch {
-        /* ignore */
-      }
-    });
-  };
+let es: EventSource | null = null;
+let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+let attempt = 0;
+let connecting = false;
+let stopped = true;
+let wakeBound = false;
 
-  const connect = async () => {
-    if (stopped || connecting) return;
-    connecting = true;
-    try {
-      await ensureFreshAccessToken();
-      if (stopped) return;
-      es?.close();
-      es = new EventSource(eventsUrl());
-      bind(es);
-    } finally {
-      connecting = false;
+function fanout<K extends keyof RealtimeHandlers>(
+  key: K,
+  ...args: Parameters<NonNullable<RealtimeHandlers[K]>>
+) {
+  for (const h of subscribers) {
+    const fn = h[key];
+    if (typeof fn === "function") {
+      try {
+        (fn as (...a: typeof args) => void)(...args);
+      } catch {
+        /* ignore subscriber errors */
+      }
     }
-  };
+  }
+}
 
-  const scheduleReconnect = () => {
-    if (stopped || reconnectTimer) return;
-    const delay = Math.min(800 * 2 ** attempt, 12_000);
-    attempt += 1;
-    reconnectTimer = setTimeout(() => {
+function bind(source: EventSource) {
+  source.addEventListener("open", () => {
+    attempt = 0;
+    fanout("onOpen");
+  });
+  source.onerror = () => {
+    fanout("onError");
+    source.close();
+    if (es === source) es = null;
+    scheduleReconnect();
+  };
+  const listen = <T>(type: string, key: keyof RealtimeHandlers) => {
+    source.addEventListener(type, (e) => {
+      try {
+        const data = JSON.parse((e as MessageEvent).data) as T;
+        fanout(key, data as never);
+      } catch {
+        /* ignore */
+      }
+    });
+  };
+  listen<RealtimeStatus>("status", "onStatus");
+  listen<RealtimeProgress>("progress", "onProgress");
+  listen<RealtimeJobs>("jobs", "onJobs");
+  listen<RealtimeJob>("job", "onJob");
+  listen<RealtimeChat>("chat", "onChat");
+  listen<RealtimeBaMessage>("ba_message", "onBaMessage");
+  listen<RealtimeBaDelta>("ba_delta", "onBaDelta");
+  listen<RealtimeBaDone>("ba_done", "onBaDone");
+  listen<RealtimeBaError>("ba_error", "onBaError");
+  listen<RealtimeBaProgress>("ba_progress", "onBaProgress");
+  listen<RealtimeBaIssueDraftProgress>(
+    "ba_issue_draft_progress",
+    "onBaIssueDraftProgress",
+  );
+  listen<RealtimeBaIssueDraftDone>("ba_issue_draft_done", "onBaIssueDraftDone");
+  listen<RealtimeBaIssueDraftError>(
+    "ba_issue_draft_error",
+    "onBaIssueDraftError",
+  );
+  listen<RealtimeBaWfStepProgress>("ba_wf_step_progress", "onBaWfStepProgress");
+  listen<RealtimeBaWfStepDone>("ba_wf_step_done", "onBaWfStepDone");
+  listen<RealtimeBaWfStepError>("ba_wf_step_error", "onBaWfStepError");
+}
+
+async function connect() {
+  if (stopped || connecting || subscribers.size === 0) return;
+  connecting = true;
+  try {
+    await ensureFreshAccessToken();
+    if (stopped || subscribers.size === 0) return;
+    es?.close();
+    es = new EventSource(eventsUrl());
+    bind(es);
+  } finally {
+    connecting = false;
+  }
+}
+
+function scheduleReconnect() {
+  if (stopped || reconnectTimer || subscribers.size === 0) return;
+  const delay = Math.min(800 * 2 ** attempt, 12_000);
+  attempt += 1;
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = undefined;
+    void connect();
+  }, delay);
+}
+
+function wake() {
+  if (stopped || subscribers.size === 0) return;
+  if (document.visibilityState === "hidden") return;
+  if (!es || es.readyState === EventSource.CLOSED) {
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer);
       reconnectTimer = undefined;
-      void connect();
-    }, delay);
-  };
-
-  const wake = () => {
-    if (stopped) return;
-    if (document.visibilityState === "hidden") return;
-    if (!es || es.readyState === EventSource.CLOSED) {
-      if (reconnectTimer) {
-        clearTimeout(reconnectTimer);
-        reconnectTimer = undefined;
-      }
-      attempt = 0;
-      void connect();
-      return;
     }
-    if (es.readyState === EventSource.OPEN) {
-      handlers.onOpen?.();
-    }
-  };
+    attempt = 0;
+    void connect();
+    return;
+  }
+  if (es.readyState === EventSource.OPEN) {
+    fanout("onOpen");
+  }
+}
 
+function bindWakeListeners() {
+  if (wakeBound) return;
+  wakeBound = true;
   document.addEventListener("visibilitychange", wake);
   window.addEventListener("online", wake);
   window.addEventListener("pageshow", wake);
+}
 
+function unbindWakeListeners() {
+  if (!wakeBound) return;
+  wakeBound = false;
+  document.removeEventListener("visibilitychange", wake);
+  window.removeEventListener("online", wake);
+  window.removeEventListener("pageshow", wake);
+}
+
+function startHub() {
+  if (!stopped) return;
+  stopped = false;
+  bindWakeListeners();
+  attempt = 0;
   void connect();
+}
 
+function stopHub() {
+  stopped = true;
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = undefined;
+  }
+  unbindWakeListeners();
+  es?.close();
+  es = null;
+  connecting = false;
+  attempt = 0;
+}
+
+/**
+ * Subscribe to the shared SSE channel (one EventSource for the whole app).
+ * Stays open across Chat ↔ Work navigation; closes when the last subscriber leaves.
+ */
+export function subscribeRealtime(handlers: RealtimeHandlers): () => void {
+  subscribers.add(handlers);
+  startHub();
   return () => {
-    stopped = true;
-    if (reconnectTimer) clearTimeout(reconnectTimer);
-    document.removeEventListener("visibilitychange", wake);
-    window.removeEventListener("online", wake);
-    window.removeEventListener("pageshow", wake);
-    es?.close();
-    es = null;
+    subscribers.delete(handlers);
+    if (subscribers.size === 0) stopHub();
   };
+}
+
+/** Force reconnect (e.g. workbench project switch — URL embeds project id). */
+export function reconnectRealtime(): void {
+  if (subscribers.size === 0) return;
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = undefined;
+  }
+  attempt = 0;
+  es?.close();
+  es = null;
+  stopped = false;
+  bindWakeListeners();
+  void connect();
+}
+
+/**
+ * @deprecated Prefer subscribeRealtime — kept for call sites that expect connectRealtime.
+ */
+export function connectRealtime(handlers: Handlers): () => void {
+  return subscribeRealtime(handlers);
 }

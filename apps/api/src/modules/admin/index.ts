@@ -26,6 +26,7 @@ import {
   type BaFeatureState,
 } from "../../workspace/baStore.js";
 import { buildOauthCloneUrl, isGitRepo, runGitClone } from "../../workspace/clone.js";
+import { scheduleProjectGraphify } from "../../workspace/graphify.js";
 import { AppError } from "../../utils/AppError.js";
 import { logger } from "../../logger.js";
 import { testBaDbConnection } from "../../plugins/baDb/query.js";
@@ -191,6 +192,7 @@ export async function adminCloneBaProject(
 
   if (await isGitRepo(project.localPath)) {
     await updateBaProject(id, { cloneStatus: "ready", cloneError: null });
+    scheduleProjectGraphify(project.localPath, "ba-already-cloned");
     return {
       ok: true,
       alreadyCloned: true,
@@ -216,6 +218,7 @@ export async function adminCloneBaProject(
       await runGitClone({ cloneUrl, localPath });
       await updateBaProject(id, { cloneStatus: "ready", cloneError: null });
       logger.info("BA project clone ready", { id, localPath });
+      scheduleProjectGraphify(localPath, "ba-clone");
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       await updateBaProject(id, { cloneStatus: "failed", cloneError: msg });

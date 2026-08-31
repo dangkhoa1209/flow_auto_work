@@ -753,6 +753,7 @@ watch(
 );
 
 onMounted(() => {
+  // Share app SSE hub — only workflow-local handlers (core BA/Work stay subscribed).
   disconnectRealtime = connectRealtime({
     onBaMessage: applyWfMessage,
     onBaDone: applyWfDone,

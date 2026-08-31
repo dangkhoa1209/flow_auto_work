@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, provide, ref, watch } from "vue";
+import { computed, onMounted, provide, ref, watch } from "vue";
 import { useRouter, RouterLink, RouterView, useRoute } from "vue-router";
 import { message } from "ant-design-vue";
 import { MenuOutlined } from "@ant-design/icons-vue";
@@ -7,7 +7,6 @@ import AppTopbarRight from "@/components/layout/AppTopbarRight.vue";
 import AppSwitcher from "@/components/layout/AppSwitcher.vue";
 import { useSessionStore } from "@/stores/session";
 import { useBaChatStore } from "@/stores/baChat";
-import { connectRealtime } from "@/realtime/client";
 import BaProjectSelect from "@/components/ba/BaProjectSelect.vue";
 import BaGitPatModal from "@/components/ba/BaGitPatModal.vue";
 import MobileBottomNav from "@/components/MobileBottomNav.vue";
@@ -17,8 +16,6 @@ const route = useRoute();
 const session = useSessionStore();
 const ba = useBaChatStore();
 const sideOpen = ref(false);
-
-let disconnect: (() => void) | undefined;
 
 const statusDot = computed(() => (ba.streaming ? "wip" : "idle"));
 const statusText = computed(() =>
@@ -75,20 +72,6 @@ onMounted(async () => {
   } catch (e) {
     message.error(e instanceof Error ? e.message : String(e));
   }
-  disconnect = connectRealtime({
-    onBaMessage: (ev) => ba.applyBaMessage(ev),
-    onBaDelta: (ev) => ba.applyBaDelta(ev),
-    onBaDone: (ev) => ba.applyBaDone(ev),
-    onBaError: (ev) => ba.applyBaError(ev),
-    onBaProgress: (ev) => ba.applyBaProgress(ev),
-    onBaIssueDraftProgress: (ev) => ba.applyBaIssueDraftProgress(ev),
-    onBaIssueDraftDone: (ev) => ba.applyBaIssueDraftDone(ev),
-    onBaIssueDraftError: (ev) => ba.applyBaIssueDraftError(ev),
-  });
-});
-
-onUnmounted(() => {
-  disconnect?.();
 });
 </script>
 

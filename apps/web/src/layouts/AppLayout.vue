@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter, RouterLink, RouterView } from "vue-router";
 import { message } from "ant-design-vue";
 import {
@@ -12,7 +12,6 @@ import AppSwitcher from "@/components/layout/AppSwitcher.vue";
 import { useSessionStore } from "@/stores/session";
 import { useSettingsStore } from "@/stores/settings";
 import { useWorkStore } from "@/stores/work";
-import { connectRealtime } from "@/realtime/client";
 import MobileBottomNav from "@/components/MobileBottomNav.vue";
 
 const route = useRoute();
@@ -72,28 +71,6 @@ const projectSheetHeight = computed(() => {
   return Math.min(520, Math.round(window.innerHeight * 0.72));
 });
 
-let disconnectRealtime: (() => void) | undefined;
-
-function bindRealtime() {
-  disconnectRealtime?.();
-  disconnectRealtime = connectRealtime({
-    onOpen: () => {
-      void work.resyncRealtime();
-    },
-    onStatus: (ev) => {
-      work.applyStatusSnapshot({
-        currentJobId: ev.currentJobId,
-        currentJobIds: ev.currentJobIds,
-        queueLength: ev.queueLength,
-      });
-    },
-    onProgress: (ev) => work.applyRealtimeProgress(ev),
-    onJobs: () => work.scheduleLoadJobs(),
-    onJob: (ev) => work.applyRealtimeJob(ev),
-    onChat: (ev) => work.applyRealtimeChat(ev),
-  });
-}
-
 onMounted(async () => {
   selectedProjectId.value = session.session.projectId || "";
   try {
@@ -102,11 +79,6 @@ onMounted(async () => {
   } catch (e) {
     message.error(e instanceof Error ? e.message : String(e));
   }
-  bindRealtime();
-});
-
-onUnmounted(() => {
-  disconnectRealtime?.();
 });
 
 async function onSwitchProject(projectId: string) {
@@ -121,8 +93,7 @@ async function onSwitchProject(projectId: string) {
     await session.activateProject(projectId);
     selectedProjectId.value = projectId;
     projectPickerOpen.value = false;
-    // SSE URL embeds project id — reconnect so events aren't filtered for the old project
-    bindRealtime();
+    // SSE reconnects via appBridge when session.projectId changes
     await work.refreshAll();
     await settings.loadHandoffPrefs(projectId);
     message.success("Project switched");

@@ -24,6 +24,11 @@ import {
   updateBaThreadTitle,
 } from "../../workspace/baStore.js";
 import { isGitRepo } from "../../workspace/clone.js";
+import {
+  ensureProjectGraphifyReady,
+  formatBaGraphifyPromptBlock,
+  queryProjectGraphify,
+} from "../../workspace/graphify.js";
 import { pullBaProjectLatest } from "../git/ba-pull.js";
 import { buildBaDbCustomTools } from "../baDb/tools.js";
 import { loadBaLinkedContext } from "../ba/ba-linked-context.js";
@@ -53,7 +58,7 @@ export function baReadOnlyWorkspaceRules(opts: { mainBranch: string }): string {
 - **Deliverable chỉ trong chat:** mọi spec, tài liệu, draft issue → xuất **nguyên văn trong câu trả lời** để user copy. User nhờ "lưu file", "tạo doc", "export ra file" → **từ chối**, giải thích chat không ghi disk, dán nội dung từ chat.
 - **Cấm sửa code:** không patch, refactor, format, sửa config / locale / test.
 - **Git (chỉ đọc):** server đã pull branch **${opts.mainBranch}** — **không** checkout / tạo-đổi-xóa nhánh / merge / rebase / reset / stash / tag / commit / push / pull thêm.
-- **Shell an toàn:** chỉ lệnh đọc khi thật sự cần (grep, cat, head, find, ls). **Cấm** rm, mv, cp, tee, chmod, chown, npm/yarn/pnpm install|run|exec, pip install, curl/wget upload, docker, kubectl apply, migrate, dump.
+- **Shell an toàn:** chỉ lệnh đọc khi thật sự cần (grep, cat, head, find, ls, và \`graphify query|path|explain\` với \`--graph\` trỏ sibling graphify-out). **Cấm** rm, mv, cp, tee, chmod, chown, npm/yarn/pnpm install|run|exec, pip install, curl/wget upload, docker, kubectl apply, migrate, dump.
 - **MCP / plugin ghi:** không gọi tool hoặc MCP nào ghi GitLab, Google Drive/Sheets/Docs, filesystem.`;
 }
 
@@ -252,6 +257,8 @@ function buildBaPrompt(opts: {
   analysisMode: boolean;
   /** Context YC + Kết quả phân tích khi thread gắn với workflow YC. */
   workflowBlock?: string;
+  /** WorkBench graphify map (sibling graphify-out) */
+  graphifyBlock?: string;
   dbAccess: {
     allowed: boolean;
     dialect?: string;
@@ -307,7 +314,7 @@ ${baIntentTriageGate()}
 ## 2. Chuẩn xác — bám sát sản phẩm thật (BẮT BUỘC)
 - Mọi tên nút / menu / ô nhập / thông báo phải khớp 100% chữ trên UI (locale \`vi\`). **Không thấy bằng chứng thì nói "chưa tìm thấy trên hệ thống" — tuyệt đối không bịa.**
 - Không tự đặt tên màn hình/tính năng không tồn tại. Không suy diễn hành vi ngoài những gì source/docs thể hiện.
-- Thứ tự nguồn tra cứu: (a) \`**/locales/vi*.json\`, \`**/i18n/**/vi*\`, \`**/lang/**\` → (b) component/view giao diện (template, label, title) → (c) docs/config trong repo.
+- Thứ tự nguồn tra cứu (case 3): (0) **Code map graphify** (mục dưới, nếu có) → (a) \`**/locales/vi*.json\`, \`**/i18n/**/vi*\`, \`**/lang/**\` → (b) component/view giao diện (template, label, title) → (c) docs/config trong repo.
 - Tránh jargon kỹ thuật (API, class, commit…) trừ khi người dùng chủ động hỏi kỹ thuật; ưu tiên ngôn ngữ thao tác của người dùng cuối.
 
 ## 3. Ranh giới workspace (CHỈ ĐỌC — BẮT BUỘC)
@@ -316,7 +323,7 @@ ${baGitlabBoundaryInstructions()}
 
 ${dbBlock}
 
-${baDeliverAnswerRules()}
+${opts.graphifyBlock ? `${opts.graphifyBlock}\n\n` : ""}${baDeliverAnswerRules()}
 
 ${baPresentationRules()}
 
@@ -434,6 +441,25 @@ export async function runBaChatAgent(opts: {
       });
     }
 
+    publishBaProgress({
+      userId: opts.userId,
+      threadId: opts.threadId,
+      messageId: opts.assistantMessageId,
+      step: "read",
+      label: "Đang chuẩn bị code map (graphify)…",
+    });
+    await ensureProjectGraphifyReady(project.localPath, { timeoutMs: 90_000 });
+    session.check();
+    const graphifyQuery = await queryProjectGraphify(
+      project.localPath,
+      [opts.question, ...historyUserTexts.slice(-3)].join(" | "),
+    );
+    const graphifyBlock = formatBaGraphifyPromptBlock({
+      sourcePath: project.localPath,
+      queryText: graphifyQuery,
+    });
+    session.check();
+
     const prompt = buildBaPrompt({
       displayName: project.displayName,
       gitlabPath: project.gitlabPath,
@@ -443,6 +469,7 @@ export async function runBaChatAgent(opts: {
       question: opts.question,
       analysisMode: Boolean(opts.analysisMode),
       workflowBlock: opts.workflowBlock,
+      graphifyBlock,
       dbAccess,
     });
 
