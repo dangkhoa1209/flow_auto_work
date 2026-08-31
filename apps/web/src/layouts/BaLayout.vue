@@ -66,12 +66,15 @@ function toggleSide() {
 
 provide("baCloseSide", closeSide);
 
-onMounted(async () => {
-  try {
-    await ba.bootstrap();
-  } catch (e) {
-    message.error(e instanceof Error ? e.message : String(e));
-  }
+onMounted(() => {
+  // Remount after Work↔BA: keep bootstrap off the critical path when store is warm.
+  void (async () => {
+    try {
+      await ba.bootstrap();
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : String(e));
+    }
+  })();
 });
 </script>
 

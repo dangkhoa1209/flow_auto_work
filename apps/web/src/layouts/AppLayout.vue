@@ -71,14 +71,23 @@ const projectSheetHeight = computed(() => {
   return Math.min(520, Math.round(window.innerHeight * 0.72));
 });
 
-onMounted(async () => {
+onMounted(() => {
   selectedProjectId.value = session.session.projectId || "";
-  try {
-    await work.refreshAll();
-    await settings.loadHandoffPrefs(session.projectId);
-  } catch (e) {
-    message.error(e instanceof Error ? e.message : String(e));
-  }
+  // Remount after Work↔BA↔Build: pinia already warm — avoid blocking + loading flash.
+  void (async () => {
+    try {
+      const warm = work.jobs.length > 0 || work.tasks.length > 0;
+      if (warm) {
+        void work.loadStatus().catch(() => undefined);
+        work.scheduleLoadJobs();
+      } else {
+        await work.refreshAll();
+      }
+      await settings.loadHandoffPrefs(session.projectId);
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : String(e));
+    }
+  })();
 });
 
 async function onSwitchProject(projectId: string) {
