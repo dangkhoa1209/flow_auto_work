@@ -1570,11 +1570,22 @@ code {
   .faw-topbar--devops .faw-seg {
     display: none !important;
   }
+  /* `.faw-crumb { display:flex }` overrides Tailwind `hidden` — hide desktop picker on mobile */
+  .faw-topbar--work .faw-crumb {
+    display: none !important;
+  }
   .faw-topbar-chip {
     height: 30px;
     padding: 0 8px;
     border-radius: 6px;
     font-size: 11px;
+  }
+}
+
+@media (min-width: 1024px) {
+  /* `.faw-crumb-tap { display:flex }` overrides Tailwind `lg:hidden` */
+  .faw-topbar--work .faw-crumb-tap {
+    display: none !important;
   }
 }
 
