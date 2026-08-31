@@ -1,6 +1,7 @@
 import { logger } from "../../logger.js";
 import { buildCloneUrl } from "../../workspace/clone.js";
 import { resolveRepoPath } from "../../workspace/creds.js";
+import { scheduleProjectGraphify } from "../../workspace/graphify.js";
 import { getRuntimeContext } from "../../workspace/runtime.js";
 import { autoWorkBranchName } from "./branch-name.js";
 import { git } from "./exec.js";
@@ -200,6 +201,9 @@ export async function prepareRepoForIssue(opts: {
       created: autoCreated,
     });
   }
+
+  // Incremental graphify for this checkout only (not other projects).
+  scheduleProjectGraphify(repoPath, "work-prep");
 
   return { repoPath, branch, defaultBranch, autoCreated };
 }

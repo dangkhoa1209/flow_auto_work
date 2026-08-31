@@ -1,10 +1,15 @@
-import { access, constants } from "node:fs/promises";
-import { spawn } from "node:child_process";
+import { access, constants, mkdir, readFile, writeFile } from "node:fs/promises";
+import { spawn, execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { homedir } from "node:os";
 import path from "node:path";
 import { logger } from "../logger.js";
 
+const execFileAsync = promisify(execFile);
 const inFlight = new Set<string>();
+
+/** Stamp in graphify-out — skip rebuild when HEAD + dirty tree unchanged. */
+const STAMP_NAME = ".flow-graphify-stamp";
 
 /**
  * WorkBench-owned graphify output for a customer checkout.
@@ -115,9 +120,46 @@ function runSpawn(
   });
 }
 
+function stampPath(outDir: string): string {
+  return path.join(outDir, STAMP_NAME);
+}
+
+/** HEAD + porcelain status — detect commits and uncommitted edits. */
+async function sourceChangeStamp(source: string): Promise<string | null> {
+  try {
+    const { stdout: head } = await execFileAsync("git", ["rev-parse", "HEAD"], {
+      cwd: source,
+      encoding: "utf8",
+      maxBuffer: 1024 * 1024,
+    });
+    const { stdout: dirty } = await execFileAsync(
+      "git",
+      ["status", "--porcelain"],
+      { cwd: source, encoding: "utf8", maxBuffer: 10 * 1024 * 1024 },
+    );
+    return `${String(head).trim()}\n${String(dirty).trim()}`;
+  } catch {
+    return null;
+  }
+}
+
+async function readStamp(outDir: string): Promise<string | null> {
+  try {
+    return (await readFile(stampPath(outDir), "utf8")).trim();
+  } catch {
+    return null;
+  }
+}
+
+async function writeStamp(outDir: string, stamp: string): Promise<void> {
+  await mkdir(outDir, { recursive: true });
+  await writeFile(stampPath(outDir), `${stamp}\n`, "utf8");
+}
+
 async function runProjectGraphifyUpdate(
   source: string,
   reason: string,
+  opts?: { force?: boolean },
 ): Promise<boolean> {
   if (!(await pathExists(source))) {
     logger.warn("graphify skip — source missing", { source, reason });
@@ -129,19 +171,51 @@ async function runProjectGraphifyUpdate(
     return false;
   }
   const outDir = graphifyOutDirForSource(source);
-  logger.info("graphify update starting", { source, outDir, reason, bin });
+  const graphJson = path.join(outDir, "graph.json");
+  const hasGraph = await pathExists(graphJson);
+  const force = opts?.force === true || !hasGraph;
+
+  const currentStamp = await sourceChangeStamp(source);
+  if (!force && currentStamp) {
+    const prev = await readStamp(outDir);
+    if (prev && prev === currentStamp) {
+      logger.info("graphify skip — source unchanged since last build", {
+        source,
+        reason,
+      });
+      return true;
+    }
+  }
+
+  const args = force
+    ? ["update", source, "--force"]
+    : ["update", source];
+  logger.info("graphify update starting", {
+    source,
+    outDir,
+    reason,
+    bin,
+    mode: force ? "full" : "incremental",
+  });
   const { code, stdout, stderr } = await runSpawn(
     bin,
-    ["update", source, "--force"],
+    args,
     { ...process.env, GRAPHIFY_OUT: outDir },
     path.dirname(outDir),
-    5 * 60_000,
+    force ? 5 * 60_000 : 3 * 60_000,
   );
   if (code === 0) {
+    if (currentStamp) {
+      await writeStamp(outDir, currentStamp).catch(() => undefined);
+    } else {
+      const after = await sourceChangeStamp(source);
+      if (after) await writeStamp(outDir, after).catch(() => undefined);
+    }
     logger.info("graphify update ready", {
       source,
       outDir,
       reason,
+      mode: force ? "full" : "incremental",
       detail: stdout.trim().slice(-400),
     });
     return true;

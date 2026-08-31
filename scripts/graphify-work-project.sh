@@ -2,10 +2,13 @@
 # Build / refresh WorkBench graphify for customer checkouts — never writes inside source/.
 #
 # Usage:
-#   scripts/graphify-work-project.sh              # all project/**/source (+ _ba)
-#   scripts/graphify-work-project.sh khoadev/ykk
+#   scripts/graphify-work-project.sh khoadev/ykk     # one project (preferred after code changes)
+#   scripts/graphify-work-project.sh --force khoadev/ykk
 #   scripts/graphify-work-project.sh --source /abs/path/to/.../source
+#   scripts/graphify-work-project.sh                 # ALL checkouts (bootstrap only; slow on large repos)
+#   scripts/graphify-work-project.sh --force         # ALL full rebuild
 #
+# Work/BA API actions already refresh only the project that was cloned/pulled/run.
 # Layout:
 #   project/<user>/<slug>/source        ← scanned
 #   project/<user>/<slug>/graphify-out  ← WorkBench-owned output
@@ -15,6 +18,16 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 export PATH="${HOME}/.local/bin:/usr/local/bin:/usr/bin:${HOME}/Library/Python/3.12/bin:${HOME}/Library/Python/3.11/bin:${HOME}/Library/Python/3.10/bin:/opt/homebrew/bin:${PATH}"
+
+FORCE=0
+ARGS=()
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --force|-f) FORCE=1; shift ;;
+    *) ARGS+=("$1"); shift ;;
+  esac
+done
+set -- "${ARGS[@]+"${ARGS[@]}"}"
 
 if [[ -n "${GRAPHIFY_BIN:-}" && -x "${GRAPHIFY_BIN}" ]]; then
   GRAPHIFY_CMD=("$GRAPHIFY_BIN")
@@ -40,10 +53,34 @@ build_one() {
     OUT="${SOURCE}.graphify-out"
   fi
   mkdir -p "$OUT"
+
+  local STAMP_FILE="$OUT/.flow-graphify-stamp"
+  local CUR_STAMP=""
+  if [[ -d "$SOURCE/.git" ]]; then
+    CUR_STAMP="$(git -C "$SOURCE" rev-parse HEAD 2>/dev/null || true)"
+    CUR_STAMP+=$'\n'
+    CUR_STAMP+="$(git -C "$SOURCE" status --porcelain 2>/dev/null || true)"
+  fi
+
+  local MODE_ARGS=()
+  local MODE_LABEL="incremental"
+  if [[ "$FORCE" -eq 1 || ! -f "$OUT/graph.json" ]]; then
+    MODE_ARGS=(--force)
+    MODE_LABEL="full"
+  elif [[ -n "$CUR_STAMP" && -f "$STAMP_FILE" ]] && cmp -s "$STAMP_FILE" <(printf '%s\n' "$CUR_STAMP"); then
+    echo ""
+    echo "=== Skip (unchanged): $SOURCE"
+    echo "    Graph:    $OUT/graph.json"
+    return 0
+  fi
+
   echo ""
-  echo "=== Scanning: $SOURCE"
+  echo "=== Scanning: $SOURCE ($MODE_LABEL)"
   echo "    Output:   $OUT"
-  GRAPHIFY_OUT="$OUT" "${GRAPHIFY_CMD[@]}" update "$SOURCE" --force
+  GRAPHIFY_OUT="$OUT" "${GRAPHIFY_CMD[@]}" update "$SOURCE" "${MODE_ARGS[@]}"
+  if [[ -n "$CUR_STAMP" ]]; then
+    printf '%s\n' "$CUR_STAMP" >"$STAMP_FILE"
+  fi
   echo "    Graph:    $OUT/graph.json"
 }
 
@@ -58,7 +95,8 @@ if [[ -n "${1:-}" ]]; then
 fi
 
 # No args: every …/source under project/ (Work users + BA _ba)
-echo "Auto: all checkouts under $ROOT/project"
+# No args: every …/source under project/ (bootstrap). Prefer: $0 user/slug
+echo "Auto: ALL checkouts under $ROOT/project (for one project use: $0 <user>/<slug>)"
 ok=0
 fail=0
 total=0
