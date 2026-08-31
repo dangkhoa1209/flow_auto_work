@@ -1943,7 +1943,12 @@ a.faw-mseg__btn {
 }
 .faw-m-console-tabs__btn {
   flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   height: 32px;
+  padding: 0;
+  line-height: 1;
   border: 1px solid transparent;
   border-radius: 8px;
   background: transparent;
