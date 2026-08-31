@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Build / refresh WorkBench graphify for a customer checkout — never writes inside source/.
+# Build / refresh WorkBench graphify for customer checkouts — never writes inside source/.
 #
 # Usage:
-#   scripts/graphify-work-project.sh <user>/<slug>
+#   scripts/graphify-work-project.sh              # all project/**/source (+ _ba)
 #   scripts/graphify-work-project.sh khoadev/ykk
 #   scripts/graphify-work-project.sh --source /abs/path/to/.../source
 #
@@ -16,38 +16,67 @@ cd "$ROOT"
 
 export PATH="${HOME}/.local/bin:/usr/local/bin:/usr/bin:${HOME}/Library/Python/3.12/bin:${HOME}/Library/Python/3.11/bin:${HOME}/Library/Python/3.10/bin:/opt/homebrew/bin:${PATH}"
 
-if ! command -v graphify >/dev/null 2>&1; then
+if [[ -n "${GRAPHIFY_BIN:-}" && -x "${GRAPHIFY_BIN}" ]]; then
+  GRAPHIFY_CMD=("$GRAPHIFY_BIN")
+elif command -v graphify >/dev/null 2>&1; then
+  GRAPHIFY_CMD=(graphify)
+else
   echo "graphify not found on this host." >&2
   echo "Debian/Ubuntu: sudo apt install pipx && pipx ensurepath && pipx install graphifyy" >&2
-  echo "Or venv: python3 -m venv /opt/flow-graphify && /opt/flow-graphify/bin/pip install graphifyy" >&2
-  echo "Then set GRAPHIFY_BIN to that binary if it is not on PATH." >&2
+  echo "Or set GRAPHIFY_BIN=/root/.local/bin/graphify" >&2
   exit 1
 fi
 
-SOURCE=""
+build_one() {
+  local SOURCE="$1"
+  if [[ ! -d "$SOURCE" ]]; then
+    echo "Skip (missing): $SOURCE" >&2
+    return 1
+  fi
+  local OUT
+  if [[ "$(basename "$SOURCE")" == "source" ]]; then
+    OUT="$(cd "$(dirname "$SOURCE")" && pwd)/graphify-out"
+  else
+    OUT="${SOURCE}.graphify-out"
+  fi
+  mkdir -p "$OUT"
+  echo ""
+  echo "=== Scanning: $SOURCE"
+  echo "    Output:   $OUT"
+  GRAPHIFY_OUT="$OUT" "${GRAPHIFY_CMD[@]}" update "$SOURCE" --force
+  echo "    Graph:    $OUT/graph.json"
+}
+
 if [[ "${1:-}" == "--source" ]]; then
-  SOURCE="$(cd "${2:?need path}" && pwd)"
-elif [[ -n "${1:-}" ]]; then
-  SOURCE="$ROOT/project/$1/source"
-else
-  echo "Usage: $0 <user>/<slug> | --source <path-to-source>" >&2
+  build_one "$(cd "${2:?need path}" && pwd)"
+  exit 0
+fi
+
+if [[ -n "${1:-}" ]]; then
+  build_one "$ROOT/project/$1/source"
+  exit 0
+fi
+
+# No args: every …/source under project/ (Work users + BA _ba)
+echo "Auto: all checkouts under $ROOT/project"
+ok=0
+fail=0
+total=0
+while IFS= read -r SRC; do
+  [[ -z "$SRC" ]] && continue
+  total=$((total + 1))
+  if build_one "$SRC"; then
+    ok=$((ok + 1))
+  else
+    fail=$((fail + 1))
+  fi
+done < <(find "$ROOT/project" -mindepth 2 -maxdepth 3 -type d -name source 2>/dev/null | sort)
+
+if [[ "$total" -eq 0 ]]; then
+  echo "No project/**/source found under $ROOT/project" >&2
   exit 1
 fi
 
-if [[ ! -d "$SOURCE" ]]; then
-  echo "Source not found: $SOURCE" >&2
-  exit 1
-fi
-
-if [[ "$(basename "$SOURCE")" == "source" ]]; then
-  OUT="$(cd "$(dirname "$SOURCE")" && pwd)/graphify-out"
-else
-  OUT="${SOURCE}.graphify-out"
-fi
-
-mkdir -p "$OUT"
-echo "Scanning: $SOURCE"
-echo "Output:   $OUT"
-GRAPHIFY_OUT="$OUT" graphify update "$SOURCE" --force
-echo "Graph:    $OUT/graph.json"
-echo "Query:    graphify query \"…\" --graph \"$OUT/graph.json\""
+echo ""
+echo "Done: $ok ok, $fail failed ($total total)"
+[[ "$fail" -eq 0 ]]
