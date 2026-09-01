@@ -149,6 +149,11 @@ async function applyAuthAndGo(res: AuthTokensResponse) {
   );
 
   await router.replace(postAuthPath());
+  if (route.name === "login" || router.currentRoute.value.name === "login") {
+    throw new Error(
+      "Signed in but session was cleared — please try again",
+    );
+  }
 }
 
 async function onLogin(e?: Event) {
@@ -167,8 +172,8 @@ async function onLogin(e?: Event) {
   loading.value = true;
   try {
     const res = await auth.login(username, form.password);
-    message.success("Signed in");
     await applyAuthAndGo(res);
+    message.success("Signed in");
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     errorText.value = msg;
@@ -209,8 +214,8 @@ async function onRegister(e?: Event) {
       displayName: form.displayName.trim() || undefined,
       role: form.role,
     });
-    message.success("Account created");
     await applyAuthAndGo(res);
+    message.success("Account created");
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     errorText.value = msg;
