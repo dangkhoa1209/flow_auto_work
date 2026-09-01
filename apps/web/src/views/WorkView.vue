@@ -17,10 +17,13 @@ import IssueIidLink from "@/components/IssueIidLink.vue";
 import { useWorkbench } from "@/composables/useWorkbench";
 import { usePaneLayout } from "@/composables/usePaneLayout";
 import { useWorkbenchShortcuts } from "@/composables/useWorkbenchShortcuts";
+import { useIsDesktopLg } from "@/composables/useMatchMedia";
 
 /** reactive() unwraps nested refs in template */
 const wb = reactive(useWorkbench());
 const panes = reactive(usePaneLayout());
+/** Mobile must not mount desktop Splitpanes/console — dual tree freezes tab switches. */
+const isDesktop = useIsDesktopLg();
 
 useWorkbenchShortcuts({
   run: () => wb.runCheckedTasks(),
@@ -69,7 +72,7 @@ function confirmMergeFromMenu() {
 <template>
   <div class="faw-work h-full max-h-full flex flex-col min-h-0 overflow-hidden relative">
     <!-- Desktop: resizable IDE panes — flush like mockup -->
-    <div class="hidden lg:flex flex-1 min-h-0 relative">
+    <div v-if="isDesktop" class="flex flex-1 min-h-0 relative">
       <Splitpanes
         class="work-split faw-split flex-1 min-h-0"
         @resized="onPaneResize"
@@ -199,7 +202,7 @@ function confirmMergeFromMenu() {
     </div>
 
     <!-- Mobile: list ↔ job detail (Issue | Console) -->
-    <div class="lg:hidden flex-1 min-h-0 overflow-hidden flex flex-col">
+    <div v-else class="flex-1 min-h-0 overflow-hidden flex flex-col">
       <TaskList
         v-show="wb.mobilePane === 'tasks'"
         class="w-full h-full"
@@ -383,8 +386,8 @@ function confirmMergeFromMenu() {
 
     <!-- Mobile action dock: Run | Handoff equal pair + overflow -->
     <div
-      v-if="wb.mobilePane === 'detail'"
-      class="faw-m-dock lg:hidden"
+      v-if="!isDesktop && wb.mobilePane === 'detail'"
+      class="faw-m-dock"
     >
       <div class="faw-m-dock__pair">
         <a-tooltip :title="wb.runBlockedReason || 'Run agent'">
@@ -587,11 +590,5 @@ function confirmMergeFromMenu() {
       :error="wb.relatedPreviewError"
       :fallback="wb.relatedPreviewFallback"
     />
-
-    <!-- <p
-      class="hidden lg:block pointer-events-none absolute bottom-1 right-3 text-[10px] text-ink-faint/70 font-mono m-0"
-    >
-      ⌘/Ctrl+Enter Run · ⌘/Ctrl+S Notes · Esc Modal
-    </p> -->
   </div>
 </template>
