@@ -51,6 +51,21 @@ function processQueue(error: unknown, token: string | null) {
   failedQueue = [];
 }
 
+/**
+ * Drop in-flight refresh when tokens are replaced (login) or cleared.
+ * Prevents a stale refresh promise from applying/clearing the new session.
+ */
+export function invalidateInFlightAuthRefresh(): void {
+  refreshInFlight = null;
+  isRefreshing = false;
+  if (failedQueue.length) {
+    processQueue(
+      new ApiError("Auth session replaced", 401, "AUTH_RESET"),
+      null,
+    );
+  }
+}
+
 function emitSessionExpired() {
   if (typeof window !== "undefined") {
     window.dispatchEvent(new CustomEvent("flow:session-expired"));
@@ -65,11 +80,13 @@ function isPublicPath(url?: string): boolean {
 
 function isSessionExpiredError(err: unknown): boolean {
   if (err instanceof ApiError) {
+    if (err.code === "AUTH_RESET" || err.code === "STALE_REFRESH") return false;
     return err.status === 401 || err.code === "SESSION_EXPIRED";
   }
   if (axios.isAxiosError(err)) {
     const status = err.response?.status;
     const code = (err.response?.data as { code?: string } | undefined)?.code;
+    if (code === "AUTH_RESET" || code === "STALE_REFRESH") return false;
     return status === 401 || code === "SESSION_EXPIRED";
   }
   return false;
@@ -98,13 +115,16 @@ export function unwrapApiData<T = unknown>(body: unknown): T {
 export async function refreshAccessTokenRaw(): Promise<string> {
   if (refreshInFlight) return refreshInFlight;
 
-  refreshInFlight = (async () => {
-    const refreshToken = getRefreshToken();
-    if (!refreshToken) {
-      throw new ApiError("No refresh token", 401, "SESSION_EXPIRED");
-    }
+  const refreshTokenUsed = getRefreshToken();
+  if (!refreshTokenUsed) {
+    throw new ApiError("No refresh token", 401, "SESSION_EXPIRED");
+  }
+
+  const thisFlight = (async () => {
     try {
-      const res = await rawHttp.post(API.auth.refresh, { refreshToken });
+      const res = await rawHttp.post(API.auth.refresh, {
+        refreshToken: refreshTokenUsed,
+      });
 
       const data = unwrapApiData<{
         accessToken: string;
@@ -120,10 +140,19 @@ export async function refreshAccessTokenRaw(): Promise<string> {
           "SESSION_EXPIRED",
         );
       }
+      // Login may have replaced the session while this refresh was in flight.
+      const currentRt = getRefreshToken();
+      if (currentRt && currentRt !== refreshTokenUsed) {
+        throw new ApiError(
+          "Stale refresh discarded",
+          409,
+          "STALE_REFRESH",
+        );
+      }
       const persisted = loadPersistedAuth();
       applyTokenPair({
         accessToken: data.accessToken,
-        refreshToken: data.refreshToken || refreshToken,
+        refreshToken: data.refreshToken || refreshTokenUsed,
         expiresIn: data.expiresIn,
         accessExpiresAt: data.accessExpiresAt,
         username: data.user?.gitlabUsername || persisted.username,
@@ -141,11 +170,12 @@ export async function refreshAccessTokenRaw(): Promise<string> {
       }
       throw err;
     } finally {
-      refreshInFlight = null;
+      if (refreshInFlight === thisFlight) refreshInFlight = null;
     }
   })();
 
-  return refreshInFlight;
+  refreshInFlight = thisFlight;
+  return thisFlight;
 }
 
 export const http: AxiosInstance = axios.create({
@@ -201,8 +231,9 @@ http.interceptors.response.use(
       return Promise.reject(toApiError(error));
     }
 
-    if (!getRefreshToken()) {
-      clearAuthAndNotify();
+    const refreshTokenForAttempt = getRefreshToken();
+    if (!refreshTokenForAttempt) {
+      clearAuthAndNotify(null);
       return Promise.reject(
         new ApiError(
           "Session expired — please sign in again",
@@ -240,9 +271,9 @@ http.interceptors.response.use(
             )
         : toApiError(err as AxiosError<{ error?: string; code?: string }>);
       processQueue(apiErr, null);
-      // Only force logout on real auth failure — not network / 5xx blips
+      // Only force logout on real auth failure — not network / 5xx / stale-refresh
       if (isSessionExpiredError(apiErr)) {
-        clearAuthAndNotify();
+        clearAuthAndNotify(refreshTokenForAttempt);
       }
       return Promise.reject(apiErr);
     } finally {
@@ -251,7 +282,16 @@ http.interceptors.response.use(
   },
 );
 
-function clearAuthAndNotify() {
+/**
+ * Wipe session after auth failure. No-op if a newer refresh token is already
+ * stored (user re-logged-in while a stale refresh was still failing).
+ */
+function clearAuthAndNotify(failedRefreshToken: string | null) {
+  const current = getRefreshToken();
+  if (current && current !== failedRefreshToken) {
+    return;
+  }
+  invalidateInFlightAuthRefresh();
   clearPersistedAuth();
   setAccessToken(null, null);
   try {
@@ -276,6 +316,7 @@ function toApiError(
 }
 
 export function clearAuthSession(): void {
+  invalidateInFlightAuthRefresh();
   clearPersistedAuth();
   setAccessToken(null, null);
 }

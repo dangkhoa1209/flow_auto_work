@@ -1,7 +1,7 @@
 import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 import { authApi, type AuthTokensResponse } from "@/api/authApi";
-import { refreshAccessTokenRaw } from "@/api/http";
+import { refreshAccessTokenRaw, invalidateInFlightAuthRefresh } from "@/api/http";
 import {
   applyTokenPair,
   clearPersistedAuth,
@@ -62,6 +62,8 @@ export const useAuthStore = defineStore("auth", () => {
       username: opts.username,
       projectId: opts.projectId,
     });
+    // Drop stale HTTP refresh so it cannot wipe this new session.
+    invalidateInFlightAuthRefresh();
     if (opts.user) user.value = opts.user;
     syncFromBridge();
   }
@@ -113,8 +115,9 @@ export const useAuthStore = defineStore("auth", () => {
   }
 
   async function refresh(): Promise<boolean> {
+    const used = getRefreshToken();
     try {
-      if (!getRefreshToken()) return false;
+      if (!used) return false;
       await refreshAccessTokenRaw();
       syncFromBridge();
       return true;
@@ -128,13 +131,17 @@ export const useAuthStore = defineStore("auth", () => {
           ? String((err as { code?: string }).code || "")
           : "";
       if (status === 401 || code === "SESSION_EXPIRED") {
-        clearLocal();
+        // Do not clear if user already re-logged-in with a new refresh token.
+        if (!getRefreshToken() || getRefreshToken() === used) {
+          clearLocal();
+        }
       }
       return false;
     }
   }
 
   function clearLocal() {
+    invalidateInFlightAuthRefresh();
     clearPersistedAuth();
     setAccessToken(null, null);
     accessToken.value = null;

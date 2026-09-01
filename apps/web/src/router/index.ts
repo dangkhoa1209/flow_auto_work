@@ -200,9 +200,16 @@ router.beforeEach(async (to) => {
   if (session.isLoggedIn && !session.me) {
     try {
       await session.refreshMe();
-    } catch {
-      await session.logout();
-      return { name: "login" };
+    } catch (err) {
+      const status =
+        err && typeof err === "object" && "status" in err
+          ? Number((err as { status?: number }).status)
+          : 0;
+      // Network/5xx: stay on route and let UI retry. Only 401 → login.
+      if (status === 401) {
+        await session.logout();
+        return { name: "login" };
+      }
     }
   }
 
@@ -255,8 +262,6 @@ router.beforeEach(async (to) => {
 
 if (typeof window !== "undefined") {
   window.addEventListener("flow:session-expired", () => {
-    const session = useSessionStore();
-    session.handleSessionExpired();
     if (router.currentRoute.value.name !== "login") {
       void router.push({ name: "login" });
     }
