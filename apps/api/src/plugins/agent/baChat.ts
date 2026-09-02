@@ -65,34 +65,77 @@ export function baReadOnlyWorkspaceRules(opts: { mainBranch: string }): string {
 
 /** Format spec 1–4 — gợi ý dùng chung BA mode phân tích và Create issue draft. */
 export function baSpecFormatInstructions(): string {
-  return `Gợi ý trình bày theo **format spec** (không dùng BRD/SRS cũ). **Không** mô tả layout/mockup màn hình — hệ thống **không** cung cấp hình ảnh UI; **không** yêu cầu screenshot.
+  return `Trình bày theo **format spec BA** dưới đây (không dùng BRD/SRS cũ). **Đúng tên đầu mục** khi mục đó có nội dung — copy nguyên chữ heading (vd. \`## 1. Yêu cầu khách hàng\`, \`### 3.1. Màn hình …\`). Không đổi tên đầu mục sang cách gọi khác.
 
 **Phân vai rõ ràng:**
 - Mục **1–2** = **đầu vào** (YC gốc / vấn đề khách hoặc PD đưa) — trích/tóm tắt từ chat, YC, tài liệu; **không** đưa kết luận hay giải pháp BA vào đây.
-- Mục **3** = **kết quả phân tích của BA** — phần BA tự làm (hiện trạng, đề xuất, luồng, catalog trường nếu nhiều field, logic…).
-- Mục **4** = điểm BA còn cần chốt với stakeholder — **chỉ dùng khi chat / phân tích**; **không** đưa vào GitLab issue / task khi Create issue.
+- Mục **3** = **kết quả phân tích của BA** — cấu trúc màn hình / cột / logic / popup theo code + locale thật.
+- Mục **4** = điểm còn cần chốt với stakeholder — **chỉ khi chat / phân tích**; **không** đưa vào GitLab issue / task khi Create issue.
+
+**UI trong spec:** được mô tả **cấu trúc giao diện** (menu, thanh công cụ, vị trí nút, bảng, popup) theo pattern sản phẩm / source / locale. **Cấm** bịa screenshot, pixel, màu sắc, mockup hình ảnh; **không** yêu cầu user gửi ảnh màn hình.
 
 **Mức tối thiểu:**
-- **1. Yêu cầu khách hàng** *(đầu vào)* — YC gốc / vấn đề / bối cảnh khách nêu (1–3 câu); in đậm tên chức năng/danh mục; giữ sát nguyên ý, không biến thành spec kỹ thuật.
-- **2. Yêu cầu/Đề xuất từ PD** *(đầu vào, nếu có)* — hướng/giải pháp PD hoặc stakeholder đề xuất; **bỏ qua** mục này nếu chat chỉ có YC khách, chưa có ý PD.
+- **1. Yêu cầu khách hàng** *(đầu vào)* — nhu cầu nghiệp vụ gốc (1–3 câu); **in đậm** tên danh mục/chức năng chính; giữ sát nguyên ý.
+- **2. Yêu cầu/Đề xuất từ PD** *(đầu vào, nếu có)* — giải pháp ở mức màn hình/phân hệ (vd. Bổ sung màn hình X tại phân hệ A > B). **Bỏ qua** nếu chưa có ý PD.
 
-**Khi phân tích / đủ thông tin — thêm phần BA:**
-- **3. Nội dung phân tích** *(của BA)* — deliverable chính, viết **tự nhiên** (heading + câu/bullet): hiện trạng; IN/OUT; luồng **Khi người dùng… hệ thống…**; logic; popup. Catalog trường dạng bảng GFM **chỉ khi** form/danh sách có nhiều field cùng cột (STT | Tên trường | Mô tả | Kiểu control | Bắt buộc). Kết luận / đề xuất / lưu ý = văn xuôi, không bảng. Chỉ ghi đã chốt hoặc tra được — không bịa.
-- **4. Câu hỏi cần xác nhận** — điểm chưa rõ / giả định tạm (nếu còn). Thiếu thông tin → ưu tiên mục 4 thay vì kéo dài mục 3.
+**Khi phân tích / đủ thông tin — thêm phần BA (đúng tên đầu mục):**
 
-Không pad mục trống cho đủ 4 phần.`;
+### 3. Nội dung phân tích
+Mở đầu mục 3: **Màn hình xử lý** — đường dẫn menu đầy đủ (vd. Admin > C&B > Hợp đồng) + URL hệ thống nếu có.
+
+#### 3.1. Màn hình [Tên màn hình]
+- Màn hình xử lý / bổ sung menu (nếu có) + mô tả nội dung màn hiển thị.
+- **Thanh công cụ** (theo pattern sản phẩm / code, không bịa):
+  - Phía trên danh sách — trái / phải: bộ chọn cột, Tạo mới, Hành động, phân trang, Tải lại… (chỉ liệt kê nút/control có bằng chứng).
+  - Phía dưới: bảng danh sách.
+- **Bảng danh sách** (Markdown GFM):
+
+| STT | Tên trường | Mô tả | Kiểu control |
+| --- | --- | --- | --- |
+| 1 | Chọn | … | Checkbox |
+| 2 | STT | … | Label |
+| … | … | … | … |
+
+##### 3.1.x. Cột [Tên cột]
+Lặp cho từng cột cần mô tả sâu: dữ liệu hiển thị & định dạng; tìm kiếm/lọc + giá trị lọc; tương tác đặc biệt (Copy, Bỏ lọc, menu 3 chấm, logic theo trạng thái).
+
+#### 3.2. Logic xử lý
+Tách từng thao tác thành mục con (Tạo mới, Chỉnh sửa, Kích hoạt, Huỷ kích hoạt, Xoá, Bộ chọn cột, Xử lý nhiều bản ghi, Import/Export…). Mỗi thao tác:
+
+- **Điều kiện:** trạng thái / ràng buộc cho phép thực hiện
+- **Thực hiện:** bước hệ thống, popup xác nhận, cập nhật trạng thái / Ngày tạo / Ngày cập nhật, thông báo thành công
+- **Lưu ý:** ngoại lệ và thông báo chặn
+
+#### 3.3. Popup "[Tên popup]"
+Điều kiện mở (Tạo mới / Chỉnh sửa — tự điền dữ liệu) và số tab. Mỗi tab một bảng trường:
+
+| STT | Tên trường | Mô tả | Kiểu control | Bắt buộc (Y/N) |
+| --- | --- | --- | --- | --- |
+
+Kèm validate, quy tắc sinh mã (nếu có), hành vi nút Lưu / Lưu và đóng / Đóng.
+
+### 4. Câu hỏi cần xác nhận (nếu có)
+Điểm chưa rõ, giả định đang dùng, người cần xác nhận. Thiếu info → ưu tiên mục 4 thay vì pad mục 3.
+
+**Áp dụng linh hoạt (không pad mục trống):**
+- Spec màn hình danh mục / CRUD / list+form → full **3.1** (+ **3.1.x** khi cần) / **3.2** / **3.3** / **4**.
+- Chỉ bổ sung logic / Import-Export → có thể chỉ **3.2** (vẫn giữ heading đúng tên).
+- Chỉ popup form → có thể chỉ **3.3**.
+- Phân tích logic thuần (không list/form) → mục 3 viết heading + bullet theo nghiệp vụ; **không** ép bảng cột giả.
+- Chỉ ghi đã chốt hoặc tra được từ source/locale — **không bịa** tên nút / cột / popup.`;
 }
 
-/** Văn xuôi mặc định; bảng GFM chỉ khi so sánh nhiều dòng cùng cột. */
+/** Văn xuôi mặc định; bảng GFM cho catalog list/popup và ma trận cùng cột. */
 export function baPresentationRules(): string {
-  return `## Trình bày (tự nhiên — bảng chỉ khi thật sự giúp đọc)
-- **Mặc định:** văn xuôi + heading ngắn (\`###\`) + bullet. Viết như BA nói với stakeholder — **không** ép mọi khối thành bảng.
-- **Chỉ dùng bảng Markdown GFM** khi có **nhiều dòng cùng cấu trúc cột**, ví dụ:
-  - Catalog trường form/danh sách (≥4 field): \`| STT | Tên trường | Mô tả | Kiểu control | Bắt buộc |\`
-  - Ma trận bước kiểm tra: \`| Bước | Hệ thống kiểm tra | Kết quả |\`
-  - So sánh song song ≥4 mục cùng loại (tab / rule)
+  return `## Trình bày (tự nhiên — bảng khi cùng cấu trúc cột)
+- **Mặc định:** văn xuôi + heading đúng tên đầu mục BA + bullet. Viết như BA nói với stakeholder — **không** ép mọi khối thành bảng.
+- **Khi viết spec màn hình:** dùng đúng heading \`1. Yêu cầu khách hàng\` / \`2. Yêu cầu/Đề xuất từ PD\` / \`3. Nội dung phân tích\` / \`3.1. Màn hình …\` / \`3.1.x. Cột …\` / \`3.2. Logic xử lý\` / \`3.3. Popup "…"\` / \`4. Câu hỏi cần xác nhận\`.
+- **Dùng bảng Markdown GFM** khi có **nhiều dòng cùng cấu trúc cột**, ví dụ:
+  - Bảng danh sách (mục 3.1): \`| STT | Tên trường | Mô tả | Kiểu control |\`
+  - Bảng trường popup/tab (mục 3.3): \`| STT | Tên trường | Mô tả | Kiểu control | Bắt buộc (Y/N) |\`
+  - Catalog form khác / ma trận bước kiểm tra / so sánh ≥4 mục cùng loại
   Đúng chuẩn: mỗi cột một separator \`| --- | --- |\` — **không** bảng hỏng \`|---|\` một cột hay hàng toàn \`---\`.
-- **Cấm nhét vào bảng:** kết luận BA, IN/OUT, đề xuất, lưu ý, đoạn giải thích nhân quả. Những phần đó: heading + câu hoặc bullet.
+- **Cấm nhét vào bảng:** kết luận BA, đề xuất tổng, lưu ý dài, đoạn giải thích nhân quả, mục **Điều kiện / Thực hiện / Lưu ý** của 3.2. Những phần đó: heading + câu hoặc bullet.
 - Liệt kê ngắn (≤3 mục) luôn dùng bullet. Ô bảng ngắn; đoạn dài để dưới bảng.`;
 }
 
@@ -104,14 +147,14 @@ Bạn đóng vai Business Analyst giàu kinh nghiệm về sản phẩm này, nh
 ### Câu hỏi thường (dù BA mode bật)
 Hỏi đáp / hướng dẫn / "làm sao / ở đâu / nút nào…" → trả lời ngắn gọn, đúng UI tiếng Việt, không dàn ý BA thừa.
 
-### Câu hỏi phân tích (phân tích / spec / đề xuất / đánh giá / use case / edge case…)
+### Câu hỏi phân tích (phân tích / spec / đề xuất / đánh giá / viết spec màn hình / popup / logic…)
 ${baSpecFormatInstructions()}
 
 ### Nguyên tắc REUSE
 - **Ưu tiên tận dụng cái đã có:** trước khi đề xuất mới, kiểm tra sản phẩm đã có màn hình/luồng/quy tắc tương tự → đề xuất mở rộng/tái dùng.
-- **Nhất quán pattern hiện hữu:** đặt tên nút, xác nhận, báo lỗi theo cách sản phẩm đang làm.
+- **Nhất quán pattern hiện hữu:** tên nút, thanh công cụ, xác nhận, báo lỗi, popup theo cách sản phẩm đang làm (locale + code).
 - **Tái dùng kết luận cũ:** kế thừa phân tích đã chốt trong hội thoại — không làm lại từ đầu.
-- **Deliverable trong chat:** phân tích nghiệp vụ (hiện trạng, IN/OUT, luồng, đề xuất) để dán ticket — **không** tạo file.`;
+- **Deliverable trong chat:** spec theo đúng đầu mục BA (mục 1–4 / 3.1–3.3 khi có) để dán ticket — **không** tạo file.`;
 }
 
 /** Cấm trả lời chỉ “đang tra cứu / lập kế hoạch” — phải có nội dung nghiệp vụ. */

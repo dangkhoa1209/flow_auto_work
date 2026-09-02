@@ -21,10 +21,12 @@ describe("buildThreadIssuePrompt", () => {
     expect(prompt).toMatch(/phân tích BA/);
     expect(prompt).toMatch(/Tối thiểu: mục 1/);
     expect(prompt).toMatch(/KHÔNG đưa mục 4/);
+    expect(prompt).toMatch(/đúng tên đầu mục BA/i);
+    expect(prompt).toMatch(/3\.1/);
     expect(prompt).toMatch(/Cấm ghi file/);
     expect(prompt).toMatch(/CHỈ ĐỌC/);
     expect(prompt).toMatch(/không.*ép mọi khối thành bảng/i);
-    expect(prompt).toMatch(/viết lại.*heading \+ câu\/bullet/i);
+    expect(prompt).toMatch(/heading \+ câu\/bullet/i);
   });
 });
 

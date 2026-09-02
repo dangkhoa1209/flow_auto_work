@@ -269,11 +269,13 @@ YC từ PD/khách thường **đủ để chạy tiếp** dù còn vài điểm 
 - Ưu tiên tái sử dụng pattern/màn hình hiện có.
 - Không bịa tên UI — nếu chưa tìm thấy thì nói rõ.`,
     toBe: `## Nhiệm vụ bước này: PHÂN TÍCH & ĐỀ XUẤT
-- Luồng đề xuất, use case ngắn (diễn tả nghiệp vụ), edge case đáng chú ý — tôn trọng các điểm BA đã đàm phán.
-- Rủi ro & phụ thuộc (ngắn).`,
+- Viết theo **format spec BA** (đúng tên đầu mục khi có nội dung): \`1. Yêu cầu khách hàng\` → \`2. Yêu cầu/Đề xuất từ PD\` (nếu có) → \`3. Nội dung phân tích\` (\`3.1. Màn hình\` / \`3.1.x. Cột\` / \`3.2. Logic xử lý\` / \`3.3. Popup\` khi là màn list/form) → \`4. Câu hỏi cần xác nhận\` (nếu còn).
+- Tôn trọng điểm BA đã đàm phán; không pad mục trống; không bịa UI.
+- Rủi ro & phụ thuộc ngắn (trong mục 3 hoặc 4).`,
     breakdown: `## Nhiệm vụ bước này: KẾT QUẢ PHÂN TÍCH (TASK)
 - Tổng hợp **một** GitLab issue cho **toàn bộ** YC (không chia nhiều task). Đây là "Kết quả phân tích" — trọng tâm mà BA sẽ tiếp tục chỉnh qua chat.
-- Title ngắn, rõ; mô tả markdown thuần nghiệp vụ (bối cảnh, IN/OUT, luồng, đề xuất).
+- Title ngắn, rõ (tên chức năng + hành động) — **không** nhồi format spec vào title.
+- Description markdown theo đúng đầu mục BA: \`1. Yêu cầu khách hàng\` / \`2. Yêu cầu/Đề xuất từ PD\` (nếu có) / \`3. Nội dung phân tích\` (kèm 3.1–3.3 khi là spec màn hình). **Không** đưa mục 4 lên issue.
 - \`acceptanceCriteria\` luôn \`[]\` (schema giữ field).
 - \`devNotes\`: ghi chú kỹ thuật NGẮN cho Dev (gợi ý vùng chức năng liên quan, ràng buộc kỹ thuật) — đây là chỗ DUY NHẤT được phép nói kỹ thuật. Không có gì đáng ghi thì để chuỗi rỗng.
 - **Không** gán label — để BA chọn sau.
