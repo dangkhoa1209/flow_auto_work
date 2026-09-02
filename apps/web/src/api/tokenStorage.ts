@@ -20,6 +20,22 @@ export type PersistedAuth = {
 let memoryAccessToken: string | null = null;
 let memoryAccessExpiresAt: number | null = null;
 
+/**
+ * Monotonic session generation — bumped on every successful token write.
+ * Stale refresh/clear paths compare against the generation captured at start
+ * so a newer login cannot be wiped by an older failure (TOCTOU).
+ */
+let authGeneration = 0;
+
+export function getAuthGeneration(): number {
+  return authGeneration;
+}
+
+export function bumpAuthGeneration(): number {
+  authGeneration += 1;
+  return authGeneration;
+}
+
 export function getAccessToken(): string | null {
   return memoryAccessToken;
 }
@@ -87,6 +103,25 @@ export function clearPersistedAuth(): void {
   memoryAccessExpiresAt = null;
 }
 
+/**
+ * Clear session only if storage still holds `expectedRefresh` (or there is no
+ * refresh). Returns false when a newer login already replaced the token.
+ */
+export function clearPersistedAuthIfRefresh(
+  expectedRefresh: string | null,
+): boolean {
+  const cur = loadPersistedAuth();
+  if (
+    expectedRefresh != null &&
+    cur.refreshToken &&
+    cur.refreshToken !== expectedRefresh
+  ) {
+    return false;
+  }
+  clearPersistedAuth();
+  return true;
+}
+
 export function getRefreshToken(): string | null {
   return loadPersistedAuth().refreshToken;
 }
@@ -117,6 +152,7 @@ export function applyTokenPair(opts: {
   if (opts.username !== undefined) patch.username = opts.username;
   if (opts.projectId !== undefined) patch.projectId = opts.projectId;
   savePersistedAuth(patch);
+  bumpAuthGeneration();
 }
 
 export { LAST_LOGIN_KEY, PERSIST_KEY };

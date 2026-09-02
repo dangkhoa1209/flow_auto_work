@@ -16,9 +16,10 @@ import {
 } from "./http";
 import {
   applyTokenPair,
-  clearPersistedAuth,
+  clearPersistedAuthIfRefresh,
   getAccessExpiresAt,
   getAccessToken,
+  getAuthGeneration,
   getRefreshToken,
   loadPersistedAuth,
   savePersistedAuth,
@@ -98,19 +99,27 @@ export async function applyAuthTokens(tokens: {
 
 export async function refreshAccessToken(): Promise<boolean> {
   const used = getRefreshToken();
+  const generationAtStart = getAuthGeneration();
   try {
     if (!used) return false;
     await refreshAccessTokenRaw();
     return true;
   } catch (err) {
     // Network blips must not wipe the session — only hard auth failures
-    if (err instanceof ApiError && (err.status === 401 || err.code === "SESSION_EXPIRED")) {
-      // Keep a newer login session if refresh failed for an older token.
-      if (!getRefreshToken() || getRefreshToken() === used) {
-        clearAuthSession();
-        if (typeof window !== "undefined") {
-          window.dispatchEvent(new CustomEvent("flow:session-expired"));
-        }
+    if (
+      err instanceof ApiError &&
+      (err.status === 401 || err.code === "SESSION_EXPIRED")
+    ) {
+      if (getAuthGeneration() !== generationAtStart) return false;
+      if (getRefreshToken() && getRefreshToken() !== used) return false;
+      if (!clearPersistedAuthIfRefresh(used)) return false;
+      // Login may have restored tokens after our clear attempt.
+      if (getAuthGeneration() !== generationAtStart || getRefreshToken()) {
+        return false;
+      }
+      clearAuthSession();
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("flow:session-expired"));
       }
     }
     return false;

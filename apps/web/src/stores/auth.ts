@@ -5,8 +5,10 @@ import { refreshAccessTokenRaw, invalidateInFlightAuthRefresh } from "@/api/http
 import {
   applyTokenPair,
   clearPersistedAuth,
+  clearPersistedAuthIfRefresh,
   getAccessExpiresAt,
   getAccessToken,
+  getAuthGeneration,
   getRefreshToken,
   loadPersistedAuth,
   savePersistedAuth,
@@ -116,6 +118,7 @@ export const useAuthStore = defineStore("auth", () => {
 
   async function refresh(): Promise<boolean> {
     const used = getRefreshToken();
+    const generationAtStart = getAuthGeneration();
     try {
       if (!used) return false;
       await refreshAccessTokenRaw();
@@ -131,10 +134,13 @@ export const useAuthStore = defineStore("auth", () => {
           ? String((err as { code?: string }).code || "")
           : "";
       if (status === 401 || code === "SESSION_EXPIRED") {
-        // Do not clear if user already re-logged-in with a new refresh token.
-        if (!getRefreshToken() || getRefreshToken() === used) {
-          clearLocal();
+        if (getAuthGeneration() !== generationAtStart) return false;
+        if (getRefreshToken() && getRefreshToken() !== used) return false;
+        if (!clearPersistedAuthIfRefresh(used)) return false;
+        if (getAuthGeneration() !== generationAtStart || getRefreshToken()) {
+          return false;
         }
+        clearLocal();
       }
       return false;
     }
