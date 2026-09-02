@@ -77,7 +77,7 @@ export const WORKFLOW_STEPS: {
   {
     key: "toBe",
     label: "3. Phân tích",
-    hint: "User story, luồng đề xuất, rủi ro",
+    hint: "Luồng đề xuất, rủi ro",
   },
   {
     key: "breakdown",

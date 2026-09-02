@@ -840,11 +840,11 @@ export async function getWorkflowChatContext(
       formatDraftBlock(draft),
       "",
       `### Quy tắc cập nhật Kết quả phân tích
-- Nếu người dùng muốn THAY ĐỔI kết quả (thêm/bớt phạm vi, sửa mô tả, đổi AC, chỉnh ghi chú kỹ thuật…): trả lời ngắn gọn phần thay đổi bằng nghiệp vụ, rồi **cuối câu trả lời** xuất đúng 1 block JSON chứa BẢN HOÀN CHỈNH sau chỉnh sửa (đủ mọi trường, không chỉ phần thay đổi):
+- Nếu người dùng muốn THAY ĐỔI kết quả (thêm/bớt phạm vi, sửa mô tả, chỉnh ghi chú kỹ thuật…): trả lời ngắn gọn phần thay đổi bằng nghiệp vụ, rồi **cuối câu trả lời** xuất đúng 1 block JSON chứa BẢN HOÀN CHỈNH sau chỉnh sửa (đủ mọi trường, không chỉ phần thay đổi):
 \`\`\`json
-{"resultUpdate":{"title":"…","description":"…","acceptanceCriteria":["…"],"devNotes":"…"}}
+{"resultUpdate":{"title":"…","description":"…","acceptanceCriteria":[],"devNotes":"…"}}
 \`\`\`
-- \`description\` / \`acceptanceCriteria\` thuần nghiệp vụ; chi tiết kỹ thuật chỉ trong \`devNotes\`.
+- \`description\` thuần nghiệp vụ; chi tiết kỹ thuật chỉ trong \`devNotes\`. **Không** viết user story / AC — \`acceptanceCriteria\` luôn \`[]\`.
 - Nếu chỉ hỏi đáp / làm rõ, KHÔNG xuất block này.`,
     );
   } else {

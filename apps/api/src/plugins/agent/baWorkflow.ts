@@ -269,12 +269,13 @@ YC từ PD/khách thường **đủ để chạy tiếp** dù còn vài điểm 
 - Ưu tiên tái sử dụng pattern/màn hình hiện có.
 - Không bịa tên UI — nếu chưa tìm thấy thì nói rõ.`,
     toBe: `## Nhiệm vụ bước này: PHÂN TÍCH & ĐỀ XUẤT
-- User story / use case ngắn (Là… / Tôi muốn… / Để…).
-- Luồng đề xuất, edge case đáng chú ý — tôn trọng các điểm BA đã đàm phán.
-- Rủi ro & phụ thuộc (ngắn).`,
+- Luồng đề xuất, use case ngắn (diễn tả nghiệp vụ), edge case đáng chú ý — tôn trọng các điểm BA đã đàm phán.
+- Rủi ro & phụ thuộc (ngắn).
+- **Không** viết user story hay AC (Given–When–Then).`,
     breakdown: `## Nhiệm vụ bước này: KẾT QUẢ PHÂN TÍCH (TASK)
 - Tổng hợp **một** GitLab issue cho **toàn bộ** YC (không chia nhiều task). Đây là "Kết quả phân tích" — trọng tâm mà BA sẽ tiếp tục chỉnh qua chat.
-- Title ngắn, rõ; mô tả markdown thuần nghiệp vụ gồm bối cảnh + AC (Given–When–Then nếu cần).
+- Title ngắn, rõ; mô tả markdown thuần nghiệp vụ (bối cảnh, IN/OUT, luồng, đề xuất) — **không** AC / user story.
+- \`acceptanceCriteria\` luôn \`[]\` (không sinh Given–When–Then).
 - \`devNotes\`: ghi chú kỹ thuật NGẮN cho Dev (gợi ý vùng chức năng liên quan, ràng buộc kỹ thuật) — đây là chỗ DUY NHẤT được phép nói kỹ thuật. Không có gì đáng ghi thì để chuỗi rỗng.
 - **Không** gán label — để BA chọn sau.
 
