@@ -1,4 +1,6 @@
 import { createRouter, createWebHistory } from "vue-router";
+import { getRefreshToken } from "@/api/tokenStorage";
+import { useAuthStore } from "@/stores/auth";
 import { useSessionStore } from "@/stores/session";
 import { isPathAllowed, isRouteAllowed, resolveHomeRoute } from "@/utils/routeAccess";
 
@@ -205,10 +207,24 @@ router.beforeEach(async (to) => {
         err && typeof err === "object" && "status" in err
           ? Number((err as { status?: number }).status)
           : 0;
-      // Network/5xx: stay on route and let UI retry. Only 401 → login.
+      // Network/5xx: stay on route and let UI retry. Only hard auth loss → login.
       if (status === 401) {
-        await session.logout();
-        return { name: "login" };
+        // Access may be expired — try refresh before forcing logout.
+        const ok = await useAuthStore().refresh();
+        if (ok) {
+          try {
+            await session.refreshMe();
+            // continue navigation below
+          } catch {
+            if (!getRefreshToken()) {
+              await session.logout();
+              return { name: "login" };
+            }
+          }
+        } else if (!getRefreshToken()) {
+          await session.logout();
+          return { name: "login" };
+        }
       }
     }
   }
@@ -262,6 +278,8 @@ router.beforeEach(async (to) => {
 
 if (typeof window !== "undefined") {
   window.addEventListener("flow:session-expired", () => {
+    // Re-login may have restored tokens after a stale expire event was queued.
+    if (getRefreshToken()) return;
     if (router.currentRoute.value.name !== "login") {
       void router.push({ name: "login" });
     }

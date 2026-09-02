@@ -9,7 +9,9 @@ import { API, PUBLIC_AUTH_PATHS } from "./endpoints";
 import {
   applyTokenPair,
   clearPersistedAuth,
+  clearPersistedAuthIfRefresh,
   getAccessToken,
+  getAuthGeneration,
   getProjectId,
   getRefreshToken,
   getUsername,
@@ -60,7 +62,7 @@ export function invalidateInFlightAuthRefresh(): void {
   isRefreshing = false;
   if (failedQueue.length) {
     processQueue(
-      new ApiError("Auth session replaced", 401, "AUTH_RESET"),
+      new ApiError("Auth session replaced", 409, "AUTH_RESET"),
       null,
     );
   }
@@ -119,6 +121,7 @@ export async function refreshAccessTokenRaw(): Promise<string> {
   if (!refreshTokenUsed) {
     throw new ApiError("No refresh token", 401, "SESSION_EXPIRED");
   }
+  const generationAtStart = getAuthGeneration();
 
   const thisFlight = (async () => {
     try {
@@ -141,6 +144,13 @@ export async function refreshAccessTokenRaw(): Promise<string> {
         );
       }
       // Login may have replaced the session while this refresh was in flight.
+      if (getAuthGeneration() !== generationAtStart) {
+        throw new ApiError(
+          "Stale refresh discarded",
+          409,
+          "STALE_REFRESH",
+        );
+      }
       const currentRt = getRefreshToken();
       if (currentRt && currentRt !== refreshTokenUsed) {
         throw new ApiError(
@@ -233,7 +243,7 @@ http.interceptors.response.use(
 
     const refreshTokenForAttempt = getRefreshToken();
     if (!refreshTokenForAttempt) {
-      clearAuthAndNotify(null);
+      clearAuthAndNotify(null, getAuthGeneration());
       return Promise.reject(
         new ApiError(
           "Session expired — please sign in again",
@@ -255,6 +265,7 @@ http.interceptors.response.use(
 
     original._retry = true;
     isRefreshing = true;
+    const generationAtStart = getAuthGeneration();
     try {
       const token = await refreshAccessTokenRaw();
       processQueue(null, token);
@@ -273,7 +284,7 @@ http.interceptors.response.use(
       processQueue(apiErr, null);
       // Only force logout on real auth failure — not network / 5xx / stale-refresh
       if (isSessionExpiredError(apiErr)) {
-        clearAuthAndNotify(refreshTokenForAttempt);
+        clearAuthAndNotify(refreshTokenForAttempt, generationAtStart);
       }
       return Promise.reject(apiErr);
     } finally {
@@ -283,16 +294,28 @@ http.interceptors.response.use(
 );
 
 /**
- * Wipe session after auth failure. No-op if a newer refresh token is already
- * stored (user re-logged-in while a stale refresh was still failing).
+ * Wipe session after auth failure. No-op if a newer login already replaced
+ * the session (generation bump or different refresh token).
  */
-function clearAuthAndNotify(failedRefreshToken: string | null) {
+function clearAuthAndNotify(
+  failedRefreshToken: string | null,
+  generationAtStart: number,
+) {
+  if (getAuthGeneration() !== generationAtStart) {
+    return;
+  }
   const current = getRefreshToken();
   if (current && current !== failedRefreshToken) {
     return;
   }
   invalidateInFlightAuthRefresh();
-  clearPersistedAuth();
+  if (!clearPersistedAuthIfRefresh(failedRefreshToken)) {
+    return;
+  }
+  // Login may have written tokens between the checks above and clear.
+  if (getAuthGeneration() !== generationAtStart || getRefreshToken()) {
+    return;
+  }
   setAccessToken(null, null);
   try {
     message.warning("Session expired — please sign in again");

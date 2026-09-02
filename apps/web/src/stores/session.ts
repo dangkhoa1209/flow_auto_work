@@ -346,6 +346,11 @@ export const useSessionStore = defineStore("session", () => {
   }
 
   function handleSessionExpired() {
+    // Late event after re-login: keep the new session (do not wipe / bounce).
+    if (getRefreshToken()) {
+      auth.syncFromBridge();
+      return;
+    }
     clearBaChatState();
     auth.clearLocal();
     projectId.value = null;

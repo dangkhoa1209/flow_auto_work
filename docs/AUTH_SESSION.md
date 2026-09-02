@@ -40,19 +40,21 @@ Related: [NOTES.md](./NOTES.md) (API table) · [DEPLOY.md](./DEPLOY.md) (TTL on 
 
 ## Current vs reported bug
 
-**Reported (still open after prior race fix):**
+**Reported:**
 
 1. Leave the app open a long time → UI dumps to **login**.
 2. Click login again → success message but **stuck on login** (or session immediately cleared).
 
-**Prior mitigation already in tree (context):**
+**Mitigations in tree:**
 
-- Clear session only if failed refresh matches the **current** refresh token (ignore stale clear after re-login).
-- Cancel / invalidate in-flight refresh on login / clear.
-- Bootstrap: logout on hard auth failure / missing refresh — **not** on transient network alone.
-- Toast “Signed in” after navigate off `/login`.
+- Clear session only if failed refresh matches the **current** refresh token **and** auth generation (ignore stale clear after re-login / TOCTOU).
+- Cancel / invalidate in-flight refresh on login / clear (`AUTH_RESET` is 409, not 401).
+- Bootstrap / router: logout only when refresh is gone after hard auth failure — **not** on transient network alone; router retries refresh before logout on `/me` 401.
+- `flow:session-expired` handlers **no-op** if a refresh token is already present (re-login won).
+- Toast “Signed in” only after navigate off `/login`.
+- **Proactive keep-alive:** `sessionKeepAlive` refreshes access on tab wake / online / periodic while visible (access TTL 2h — must not equal logout).
 
-**Gap to close:** idle still kicks to login too early, or re-login still races — behavior must match the table above.
+**Product rule:** logout **only** when refresh cannot renew the session (expired/revoked/invalid).
 
 ---
 
@@ -81,10 +83,11 @@ API:
 | Refresh sessions Mongo | `apps/api/src/auth/sessions.ts` | Collection `auth_refresh_sessions` |
 | Auth module | `apps/api/src/modules/auth/index.ts` | `login`, `refreshAuthTokens`, `logout` |
 | Token storage (web) | `apps/web/src/api/tokenStorage.ts` | Persist refresh; access in memory |
-| HTTP refresh / clear | `apps/web/src/api/http.ts` | Single-flight refresh; `clearAuthAndNotify` token-guard |
+| HTTP refresh / clear | `apps/web/src/api/http.ts` | Single-flight refresh; generation + token-guard clear |
+| Session keep-alive | `apps/web/src/api/sessionKeepAlive.ts` | Wake / online / periodic proactive refresh |
 | Auth store | `apps/web/src/stores/auth.ts` | `refresh()`, `clearLocal()`, login apply |
-| Bootstrap / session | `apps/web/src/stores/session.ts` | `bootstrap()` — refresh then `/api/me` |
-| Login UI / navigate | Login view + router guards (web) | Must not toast success before leave `/login` |
+| Bootstrap / session | `apps/web/src/stores/session.ts` | `bootstrap()` — refresh then `/api/me`; expire handler keeps new login |
+| Login UI / navigate | Login view + router guards (web) | Must not toast success before leave `/login`; expire → `/login` only if no refresh |
 
 ---
 
@@ -98,13 +101,12 @@ API:
 
 ---
 
-## Implement plan (next code phase — do not implement in docs phase)
+## Implement plan
 
-1. **Reproduce:** idle tab past access TTL (and optionally throttle network); confirm whether kick is bootstrap, HTTP interceptor, or SSE.
-2. **Audit logout call sites:** `session.bootstrap`, `http.clearAuthAndNotify`, `auth.refresh` 401 path, router — ensure each only clears when refresh is gone or server 401 on refresh.
-3. **Re-login stuck:** verify in-flight refresh / SSE cannot clear tokens issued by the new login; ensure post-login navigation runs before any global “session expired” handler.
-4. **Tests:** unit/integration for (a) access expired + valid refresh → stay in; (b) refresh 401 → login; (c) login during failing refresh → new session wins.
-5. **Docs sync:** update NOTES/DEPLOY TTL lines to match `tokens.ts` after any change.
+1. ~~Reproduce / audit logout call sites~~ — hardened generation + refresh-token guards.
+2. ~~Re-login stuck~~ — expire handlers ignore restored refresh; proactive wake refresh.
+3. Tests: optional unit/integration for (a) access expired + valid refresh → stay in; (b) refresh 401 → login; (c) login during failing refresh → new session wins.
+4. Docs sync: TTL lines in NOTES/DEPLOY match `tokens.ts` (access **2h**, refresh **30d**).
 
 ---
 
