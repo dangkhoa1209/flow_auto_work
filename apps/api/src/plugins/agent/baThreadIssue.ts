@@ -328,7 +328,7 @@ ${baPresentationRules()}
    - **KHÔNG đưa mục 4 (Câu hỏi cần xác nhận)** vào description / task — mục đó chỉ dùng khi chat hoặc phân tích; lên issue thì **bỏ hẳn**. Nếu chat còn câu hỏi mở: **không** copy vào mô tả issue.
    - Tối thiểu: mục 1 (+ mục 2 nếu có ý PD).
 4. Chat đã có phân tích → **giữ mục 3** (ý đã chốt), **cắt bỏ** heading/đoạn "Câu hỏi cần xác nhận". Nếu chat đã nhét kết luận / IN-OUT vào bảng → **viết lại** heading + câu/bullet; chỉ giữ bảng catalog trường / ma trận bước kiểm tra.
-5. **acceptanceCriteria** (JSON): luôn \`[]\` — **không** sinh user story / AC (Given–When–Then).
+5. **acceptanceCriteria** (JSON): luôn \`[]\` (schema giữ field).
 6. **Không** gán label.
 
 ${baBusinessLanguageRules()}

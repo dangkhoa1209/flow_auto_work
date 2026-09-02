@@ -37,7 +37,7 @@ describe("baSpecFormatInstructions", () => {
     expect(text).toMatch(/deliverable chính/);
     expect(text).toMatch(/không pad mục trống/i);
     expect(text).toMatch(/Kết luận \/ đề xuất \/ lưu ý = văn xuôi/);
-    expect(text).toMatch(/Không.*viết user story hay AC/);
+    expect(text).not.toMatch(/user story|Given–When–Then/i);
   });
 });
 
@@ -47,7 +47,7 @@ describe("baPresentationRules", () => {
     expect(text).toMatch(/không.*ép mọi khối thành bảng/i);
     expect(text).toMatch(/Cấm nhét vào bảng/);
     expect(text).toMatch(/kết luận BA/);
-    expect(text).toMatch(/Cấm.*user story \/ AC/);
+    expect(text).not.toMatch(/user story|Given–When–Then/i);
     expect(text).toMatch(/Chỉ dùng bảng Markdown GFM/);
     expect(text).toMatch(/≥4 field/);
   });
@@ -61,7 +61,7 @@ describe("baAnalysisModeInstructions", () => {
     expect(text).toMatch(/Mức tối thiểu/);
     expect(text).toMatch(/Yêu cầu khách hàng/);
     expect(text).toMatch(/không.*tạo file/);
-    expect(text).toMatch(/không.*user story \/ AC/i);
+    expect(text).not.toMatch(/user story|Given–When–Then/i);
   });
 });
 

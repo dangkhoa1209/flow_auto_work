@@ -844,7 +844,7 @@ export async function getWorkflowChatContext(
 \`\`\`json
 {"resultUpdate":{"title":"…","description":"…","acceptanceCriteria":[],"devNotes":"…"}}
 \`\`\`
-- \`description\` thuần nghiệp vụ; chi tiết kỹ thuật chỉ trong \`devNotes\`. **Không** viết user story / AC — \`acceptanceCriteria\` luôn \`[]\`.
+- \`description\` thuần nghiệp vụ; chi tiết kỹ thuật chỉ trong \`devNotes\`. \`acceptanceCriteria\` luôn \`[]\` (schema giữ field).
 - Nếu chỉ hỏi đáp / làm rõ, KHÔNG xuất block này.`,
     );
   } else {
