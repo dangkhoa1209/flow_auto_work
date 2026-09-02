@@ -840,12 +840,13 @@ export async function getWorkflowChatContext(
       formatDraftBlock(draft),
       "",
       `### Quy tắc cập nhật Kết quả phân tích
-- Nếu người dùng muốn THAY ĐỔI kết quả (thêm/bớt phạm vi, sửa mô tả, chỉnh ghi chú kỹ thuật…): trả lời ngắn gọn phần thay đổi bằng nghiệp vụ, rồi **cuối câu trả lời** xuất đúng 1 block JSON chứa BẢN HOÀN CHỈNH sau chỉnh sửa (đủ mọi trường, không chỉ phần thay đổi):
+- Chat này **phải giữ Kết quả phân tích đồng bộ** với những gì đã chốt trong trao đổi — không để bản cũ khi Human đã chỉnh phạm vi / mô tả / cột / logic.
+- Khi Human **chỉnh, bổ sung, bác bỏ, chốt thêm, hoặc trả lời câu hỏi làm rõ** liên quan nội dung task: trả lời ngắn phần thay đổi, rồi **cuối câu trả lời** xuất đúng 1 block JSON chứa **BẢN HOÀN CHỈNH** sau chỉnh sửa (đủ mọi trường, không chỉ diff):
 \`\`\`json
 {"resultUpdate":{"title":"…","description":"…","acceptanceCriteria":[],"devNotes":"…"}}
 \`\`\`
-- \`description\` thuần nghiệp vụ; chi tiết kỹ thuật chỉ trong \`devNotes\`. \`acceptanceCriteria\` luôn \`[]\` (schema giữ field).
-- Nếu chỉ hỏi đáp / làm rõ, KHÔNG xuất block này.`,
+- \`description\` = mục 1–3 đã cập nhật (bỏ mục 4); chi tiết kỹ thuật chỉ trong \`devNotes\`. \`acceptanceCriteria\` luôn \`[]\`.
+- Chỉ **không** xuất block khi câu hỏi thuần hướng dẫn UI / không đụng nội dung task (vd. "nút Lưu ở đâu?").`,
     );
   } else {
     parts.push(
