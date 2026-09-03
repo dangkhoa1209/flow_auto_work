@@ -11,6 +11,7 @@ import type { IssueJob } from "../../types.js";
 import {
   resolveCursorApiKey,
   resolveCursorModel,
+  resolveRepoPath,
 } from "../../workspace/creds.js";
 import {
   appendJobProgress,
@@ -75,15 +76,32 @@ export async function answerTaskQuestion(opts: {
   history?: QaHistoryTurn[];
   jobId?: string;
   existingAgentId?: string;
+  /** Job-scoped commit SHAs — prefer over dumping the whole branch log. */
+  commitShas?: string[];
+  branch?: string;
+  baseBranch?: string;
 }): Promise<QaResult> {
   const jobId = opts.jobId;
-  const [diff, linked] = await Promise.all([
-    getReviewDiff({ issueIid: opts.issue.issueIid }),
+  const [diff, linked, jobCommitLines] = await Promise.all([
+    getReviewDiff({
+      issueIid: opts.issue.issueIid,
+      branch: opts.branch,
+      baseBranch: opts.baseBranch,
+    }),
     collectLinkedIssueContext(opts.issue).catch(() => ({
       promptBlock: "",
       linked: [],
       commentExcerpts: [],
     })),
+    opts.commitShas?.length
+      ? import("../../modules/job/taskChangeSummary.js").then((m) =>
+          m.listJobCommitChangeLines({
+            repoPath: resolveRepoPath(),
+            commitShas: opts.commitShas,
+            limit: 12,
+          }),
+        ).catch(() => [] as string[])
+      : Promise.resolve([] as string[]),
   ]);
   const diffClip = [diff.rangeDiff, diff.staged, diff.unstaged]
     .filter((s) => s.trim())
@@ -120,10 +138,15 @@ export async function answerTaskQuestion(opts: {
     opts.question,
   );
 
+  // Prefer job work commits (id → change) over a long branch git-log.
+  const commitsBlock = jobCommitLines.length
+    ? jobCommitLines.join("\n")
+    : diff.recentCommits || "(none)";
+
   const prompt = `You are in **Q&A / review mode** on the same agent window as this job (NOT a full coding Run).
 
 ## Hard rules for this turn
-1. Answer the human's question using the issue, diff, and codebase.
+1. Answer the human's question using the issue, **job chat history**, diff, and codebase — prefer work-task history on this job over unrelated branch commits.
 2. Prefer a clear Vietnamese answer with concrete file/paths/commands they can run.
 3. Do **NOT** execute long-running work: no DB mutations that take minutes, no queue workers left running, no seed scripts that hang.
 4. You may briefly grep/read files — then **stop and answer**. Prefer \`code_map_query\` before Grep when that tool is attached.
@@ -141,10 +164,9 @@ ${opts.issue.description || "(empty)"}
 
 ${linked.promptBlock || ""}
 
-## Current branch / commits
+## Current branch / job commits (id → code change)
 Branch: ${diff.branch} (base ${diff.base})
-Recent commits:
-${diff.recentCommits || "(none)"}
+${commitsBlock}
 
 ## Diff (may be truncated)
 \`\`\`diff
@@ -153,7 +175,7 @@ ${diffClip || "(no diff)"}
 
 ${
   historyBlock
-    ? `## Prior conversation on this job (use as context)\n${historyBlock}\n`
+    ? `## Prior conversation on this job (primary context — chat + prior work steps)\n${historyBlock}\n`
     : ""
 }
 ## Question from the human

@@ -9,15 +9,17 @@ import { API } from "./endpoints";
 import {
   ApiError,
   clearAuthSession,
+  invalidateInFlightAuthRefresh,
   refreshAccessTokenRaw,
   request,
   type HttpRequestConfig,
 } from "./http";
 import {
   applyTokenPair,
-  clearPersistedAuth,
+  clearPersistedAuthIfRefresh,
   getAccessExpiresAt,
   getAccessToken,
+  getAuthGeneration,
   getRefreshToken,
   loadPersistedAuth,
   savePersistedAuth,
@@ -92,16 +94,29 @@ export async function applyAuthTokens(tokens: {
     username: tokens.username,
     projectId: tokens.projectId,
   });
+  invalidateInFlightAuthRefresh();
 }
 
 export async function refreshAccessToken(): Promise<boolean> {
+  const used = getRefreshToken();
+  const generationAtStart = getAuthGeneration();
   try {
-    if (!getRefreshToken()) return false;
+    if (!used) return false;
     await refreshAccessTokenRaw();
     return true;
   } catch (err) {
     // Network blips must not wipe the session — only hard auth failures
-    if (err instanceof ApiError && (err.status === 401 || err.code === "SESSION_EXPIRED")) {
+    if (
+      err instanceof ApiError &&
+      (err.status === 401 || err.code === "SESSION_EXPIRED")
+    ) {
+      if (getAuthGeneration() !== generationAtStart) return false;
+      if (getRefreshToken() && getRefreshToken() !== used) return false;
+      if (!clearPersistedAuthIfRefresh(used)) return false;
+      // Login may have restored tokens after our clear attempt.
+      if (getAuthGeneration() !== generationAtStart || getRefreshToken()) {
+        return false;
+      }
       clearAuthSession();
       if (typeof window !== "undefined") {
         window.dispatchEvent(new CustomEvent("flow:session-expired"));

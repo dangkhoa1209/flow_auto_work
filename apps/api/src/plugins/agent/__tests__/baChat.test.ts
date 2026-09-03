@@ -28,38 +28,51 @@ describe("baReadOnlyWorkspaceRules", () => {
 });
 
 describe("baSpecFormatInstructions", () => {
-  it("separates input (1–2) from BA analysis (3)", () => {
+  it("uses exact BA section headings and screen-spec tree 3.1–3.3", () => {
     const text = baSpecFormatInstructions();
     expect(text).toMatch(/Phân vai rõ ràng/);
     expect(text).toMatch(/đầu vào/);
-    expect(text).toMatch(/kết quả phân tích của BA/);
-    expect(text).toMatch(/YC gốc/);
-    expect(text).toMatch(/deliverable chính/);
+    expect(text).toMatch(/đúng tên đầu mục/i);
+    expect(text).toMatch(/1\. Yêu cầu khách hàng/);
+    expect(text).toMatch(/2\. Yêu cầu\/Đề xuất từ PD/);
+    expect(text).toMatch(/3\. Nội dung phân tích/);
+    expect(text).toMatch(/3\.1\. Màn hình/);
+    expect(text).toMatch(/3\.1\.x\. Cột/);
+    expect(text).toMatch(/3\.2\. Logic xử lý/);
+    expect(text).toMatch(/3\.3\. Popup/);
+    expect(text).toMatch(/4\. Câu hỏi cần xác nhận/);
+    expect(text).toMatch(/Thanh công cụ/);
+    expect(text).toMatch(/Điều kiện/);
     expect(text).toMatch(/không pad mục trống/i);
-    expect(text).toMatch(/Kết luận \/ đề xuất \/ user story \/ lưu ý = văn xuôi/);
+    expect(text).toMatch(/Cấm.*screenshot|không.*screenshot/i);
+    expect(text).not.toMatch(/user story|Given–When–Then/i);
   });
 });
 
 describe("baPresentationRules", () => {
-  it("defaults to prose and forbids wrapping conclusions in tables", () => {
+  it("defaults to prose and allows list/popup tables with BA headings", () => {
     const text = baPresentationRules();
     expect(text).toMatch(/không.*ép mọi khối thành bảng/i);
     expect(text).toMatch(/Cấm nhét vào bảng/);
     expect(text).toMatch(/kết luận BA/);
-    expect(text).toMatch(/user story/);
-    expect(text).toMatch(/Chỉ dùng bảng Markdown GFM/);
-    expect(text).toMatch(/≥4 field/);
+    expect(text).toMatch(/3\.1\. Màn hình/);
+    expect(text).toMatch(/3\.2\. Logic xử lý/);
+    expect(text).not.toMatch(/user story|Given–When–Then/i);
+    expect(text).toMatch(/bảng Markdown GFM/i);
+    expect(text).toMatch(/Bắt buộc \(Y\/N\)/);
   });
 });
 
 describe("baAnalysisModeInstructions", () => {
-  it("uses spec format without screen mockups", () => {
+  it("uses BA screen-spec format and allows UI structure without image mockups", () => {
     const text = baAnalysisModeInstructions();
-    expect(text).toMatch(/format spec|Gợi ý trình bày/);
-    expect(text).toMatch(/Không.*mockup/);
+    expect(text).toMatch(/format spec/);
+    expect(text).toMatch(/Cấm.*screenshot|không.*screenshot/i);
     expect(text).toMatch(/Mức tối thiểu/);
     expect(text).toMatch(/Yêu cầu khách hàng/);
+    expect(text).toMatch(/3\.2\. Logic xử lý/);
     expect(text).toMatch(/không.*tạo file/);
+    expect(text).not.toMatch(/user story|Given–When–Then/i);
   });
 });
 

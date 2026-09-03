@@ -182,9 +182,11 @@ Light theme (Vue + Ant Design Vue + Tailwind).
 |--------|------|-------|
 | GET | `/api/status` | health, queue (one-shot; UI dùng SSE) |
 | GET | `/api/events` | **SSE realtime** — `status` · `jobs` · `job` · `progress` · `ping` |
-| POST | `/api/auth/login` | Login → `accessToken` (10p) + `refreshToken` (30 ngày) |
-| POST | `/api/auth/refresh` | Đổi refresh → access mới (rotate refresh) |
+| POST | `/api/auth/login` | Login → `accessToken` + `refreshToken` (TTL: xem `auth/tokens.ts` / [AUTH_SESSION.md](./AUTH_SESSION.md)) |
+| POST | `/api/auth/refresh` | Đổi refresh → access mới (reuse refresh session; tránh race rotate) |
 | POST | `/api/auth/logout` | Revoke refresh |
+
+Session idle / khi nào logout: [AUTH_SESSION.md](./AUTH_SESSION.md) — **chỉ** logout khi refresh hết hạn/invalid; access hết hạn phải silent refresh.
 | GET | `/api/tasks` | open issues assigned |
 | GET | `/api/tasks/:iid` | detail + notes + related |
 | POST | `/api/jobs/start` | enqueue Run |

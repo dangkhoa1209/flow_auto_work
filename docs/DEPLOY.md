@@ -74,7 +74,7 @@ Mở **http://127.0.0.1:8787** (hoặc `HOST`/`PORT` trong `.env`).
 3. DevTools → Network: 1 EventStream `/api/events`
 4. Run thử 1 task nhỏ
 
-Auth: access ~10 phút, refresh ~30 ngày (Mongo). F5 / restart server: UI tự refresh access nếu còn refresh token.
+Auth: access + refresh (TTL trong `apps/api/src/auth/tokens.ts`; refresh ~30 ngày, Mongo). F5 / idle / restart server: UI **silent refresh** access nếu còn refresh token — **không** đẩy `/login` chỉ vì access hết hạn. Chi tiết expected behavior + bug idle: [AUTH_SESSION.md](./AUTH_SESSION.md).
 
 ## Reverse proxy (nginx / Caddy)
 

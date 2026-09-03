@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import {
   ThunderboltOutlined,
@@ -13,6 +13,7 @@ import { useSessionStore } from "@/stores/session";
 const route = useRoute();
 const router = useRouter();
 const session = useSessionStore();
+const navigating = ref(false);
 
 function settingsTarget(): { to: string; match: (path: string) => boolean } {
   if (route.path.startsWith("/admin")) {
@@ -117,8 +118,15 @@ function isActive(tab: (typeof tabs.value)[0]) {
   return tab.match(route.path);
 }
 
-function go(tab: (typeof tabs.value)[0]) {
-  void router.push(tab.to);
+async function go(tab: (typeof tabs.value)[0]) {
+  if (isActive(tab)) return;
+  if (navigating.value) return;
+  navigating.value = true;
+  try {
+    await router.push(tab.to);
+  } finally {
+    navigating.value = false;
+  }
 }
 </script>
 

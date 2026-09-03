@@ -134,6 +134,34 @@ function formatThreadBlock(messages: BaMessage[]): string {
     .join("\n\n");
 }
 
+/** Assistant message gần nhất trông như bản phân tích / spec BA (ưu tiên khi soạn issue). */
+export function findLatestBaAnalysisMessage(
+  messages: BaMessage[],
+): BaMessage | null {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (m.role !== "assistant" || !m.content?.trim()) continue;
+    const c = m.content;
+    if (
+      /#{1,3}\s*3[\.\)]?\s*Nội dung phân tích/i.test(c) ||
+      /#{1,3}\s*1[\.\)]?\s*Yêu cầu khách hàng/i.test(c) ||
+      /#{1,3}\s*3\.1[\.\)]?\s*Màn hình/i.test(c)
+    ) {
+      return m;
+    }
+  }
+  return null;
+}
+
+function formatLatestAnalysisBlock(messages: BaMessage[]): string {
+  const latest = findLatestBaAnalysisMessage(messages);
+  if (!latest?.content?.trim()) return "";
+  return `## Phân tích BA mới nhất trong hội thoại (ƯU TIÊN làm xương mục 1–3)
+Đây là bản phân tích **gần nhất** trong chat. Các lượt Human/Assistant **sau** khối này (nếu có trong "Hội thoại cần review") có thể đã chỉnh phạm vi / cột / logic — **phải gộp vào** description; không bỏ qua để giữ nguyên bản cũ.
+
+${latest.content.trim()}`;
+}
+
 /** Parse single issue JSON from agent output (tolerant + markdown fallback). */
 export function parseIssueDraftFromAgent(text: string): BaThreadIssueDraft | null {
   const trimmed = text.trim();
@@ -298,11 +326,12 @@ export function buildThreadIssuePrompt(opts: {
   gitlabPath: string;
   threadBlock: string;
   gitlabTaskBlock: string;
+  latestAnalysisBlock?: string;
 }): string {
   return `Bạn là Business Analyst trên dự án **${opts.displayName}**.
 
 ## Nhiệm vụ
-User bấm **Create issue** — hãy **chỉ tổng hợp hội thoại** dưới đây thành **một** GitLab issue draft cho Dev/QA.
+User bấm **Create issue** — hãy **chỉ tổng hợp hội thoại** dưới đây thành **một** GitLab issue draft cho Dev/QA theo **trạng thái đã chốt sau cùng** (không phải bản phân tích đầu tiên).
 
 ## Format mô tả issue (gợi ý — cùng format spec với BA mode)
 ${baSpecFormatInstructions()}
@@ -310,15 +339,15 @@ ${baSpecFormatInstructions()}
 ${baPresentationRules()}
 
 ## Quy tắc soạn draft
-1. **Chỉ dùng hội thoại** (và block GitLab/Google nếu có sẵn) — **không** đọc source, **không** Grep/Glob/Read file, **không** gọi tool, **không** tra DB. Không bịa thông tin không có trong hội thoại.
-2. **Title** — ngắn, rõ; lấy từ tên chức năng chính (thường từ mục 1).
-3. **Description (markdown):**
-   - Mục **1–2** = **đầu vào** (YC gốc / PD) — trích từ chat, không nhét phân tích BA vào đây.
-   - Mục **3** = **phân tích BA** — phần chính khi đã có trao đổi phân tích; có thể bỏ qua nếu chat mới dừng ở YC thô.
-   - **KHÔNG đưa mục 4 (Câu hỏi cần xác nhận)** vào description / task — mục đó chỉ dùng khi chat hoặc phân tích; lên issue thì **bỏ hẳn**. Nếu chat còn câu hỏi mở: **không** copy vào mô tả issue.
+1. **Chỉ dùng hội thoại** (và block GitLab/Google nếu có sẵn) — **không** đọc source, **không** Grep/Glob/Read file, **không** gọi tool, **không** tra DB. **Tổng hợp theo thời gian** — lượt chat **sau** ghi đè / bổ sung lượt **trước**. Human chỉnh sửa, bác bỏ, hoặc chốt thêm → phải phản ánh vào description. Không bịa thông tin không có trong hội thoại. **Cấm** copy nguyên bản phân tích sớm rồi bỏ qua các lượt trao đổi sau.
+2. **Title** — ngắn, rõ; lấy từ tên chức năng chính **đã chốt sau cùng**. **Không** nhồi format spec vào title.
+3. **Description (markdown)** — **đúng tên đầu mục BA** khi có nội dung:
+   - \`## 1. Yêu cầu khách hàng\` / \`## 2. Yêu cầu/Đề xuất từ PD\` = **đầu vào** — trích từ chat (đã cập nhật nếu YC đổi giữa chừng), không nhét phân tích BA.
+   - \`## 3. Nội dung phân tích\` (+ \`3.1\` / \`3.1.x\` / \`3.2\` / \`3.3\` nếu có) = **phân tích BA đã chốt sau cùng** — gộp chỉnh sửa từ các lượt sau; bỏ qua nếu chat mới dừng ở YC thô.
+   - **KHÔNG đưa mục 4 (Câu hỏi cần xác nhận)** vào description / task — chỉ dùng khi chat; lên issue thì **bỏ hẳn**. Điểm đã được Human trả lời/chốt trong chat → đưa vào mục 1–3, không để lại như câu hỏi mở.
    - Tối thiểu: mục 1 (+ mục 2 nếu có ý PD).
-4. Chat đã có phân tích → **giữ mục 3** (ý đã chốt), **cắt bỏ** heading/đoạn "Câu hỏi cần xác nhận". Nếu chat đã nhét kết luận / IN-OUT / user story vào bảng → **viết lại** heading + câu/bullet; chỉ giữ bảng catalog trường / ma trận bước kiểm tra.
-5. **acceptanceCriteria** (JSON): Given–When–Then rút từ **mục 3** nếu đã rõ — có thể \`[]\`.
+4. Chat đã có phân tích → **giữ cấu trúc mục 3** (và 3.1–3.3 nếu phù hợp) nhưng **nội dung phải là bản mới nhất** sau trao đổi — không đóng băng bản đầu. Cắt bỏ "Câu hỏi cần xác nhận". Giữ bảng danh sách / trường popup theo mẫu; kết luận dài → heading + câu/bullet, không nhét vào bảng.
+5. **acceptanceCriteria** (JSON): luôn \`[]\` (schema giữ field).
 6. **Không** gán label.
 
 ${baBusinessLanguageRules()}
@@ -328,7 +357,7 @@ ${baBusinessLanguageRules()}
 GitLab (định danh dự án — không gọi API): ${opts.gitlabPath}
 ${baGitlabBoundaryInstructions()}
 
-${opts.gitlabTaskBlock ? `${opts.gitlabTaskBlock}\n\n` : ""}## Hội thoại cần review
+${opts.gitlabTaskBlock ? `${opts.gitlabTaskBlock}\n\n` : ""}${opts.latestAnalysisBlock ? `${opts.latestAnalysisBlock}\n\n` : ""}## Hội thoại cần review (đọc hết — ưu tiên lượt cuối)
 ${opts.threadBlock}
 
 ---
@@ -336,7 +365,7 @@ ${opts.threadBlock}
 **Cuối câu trả lời**, thêm **một** block JSON (bắt buộc):
 
 \`\`\`json
-{"title":"…","description":"… (markdown: 1–2 đầu vào, 3 phân tích BA nếu có — KHÔNG mục 4)","labels":[],"acceptanceCriteria":[]}
+{"title":"…","description":"… (markdown: 1–2 đầu vào, 3 phân tích BA đã chốt sau cùng nếu có — KHÔNG mục 4)","labels":[],"acceptanceCriteria":[]}
 \`\`\`
 
 JSON phải parse được; \`description\` escape newline thành \\n; không comment trong JSON.`;
@@ -370,6 +399,7 @@ export async function runBaThreadIssueDraft(opts: {
     if (!threadBlock.trim()) {
       throw new Error("No conversation to summarize into an issue");
     }
+    const latestAnalysisBlock = formatLatestAnalysisBlock(messages);
 
     session.check();
     const apiKey = await resolveSystemCursorApiKey();
@@ -398,6 +428,7 @@ export async function runBaThreadIssueDraft(opts: {
       gitlabPath: project.gitlabPath,
       threadBlock,
       gitlabTaskBlock: linked.block,
+      latestAnalysisBlock,
     });
 
     logger.info("BA thread issue draft starting", {

@@ -1054,6 +1054,9 @@ export class JobQueue {
           question: msg,
           jobId: job.id,
           existingAgentId: job.agentId,
+          commitShas: job.commitShas,
+          branch: job.branch || job.workBranch,
+          baseBranch: job.baseBranch || job.mergeTarget,
           history: priorChat.map((m) => ({
             role: m.role,
             kind: m.kind,

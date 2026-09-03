@@ -1,12 +1,14 @@
 import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 import { authApi, type AuthTokensResponse } from "@/api/authApi";
-import { refreshAccessTokenRaw } from "@/api/http";
+import { refreshAccessTokenRaw, invalidateInFlightAuthRefresh } from "@/api/http";
 import {
   applyTokenPair,
   clearPersistedAuth,
+  clearPersistedAuthIfRefresh,
   getAccessExpiresAt,
   getAccessToken,
+  getAuthGeneration,
   getRefreshToken,
   loadPersistedAuth,
   savePersistedAuth,
@@ -62,6 +64,8 @@ export const useAuthStore = defineStore("auth", () => {
       username: opts.username,
       projectId: opts.projectId,
     });
+    // Drop stale HTTP refresh so it cannot wipe this new session.
+    invalidateInFlightAuthRefresh();
     if (opts.user) user.value = opts.user;
     syncFromBridge();
   }
@@ -113,8 +117,10 @@ export const useAuthStore = defineStore("auth", () => {
   }
 
   async function refresh(): Promise<boolean> {
+    const used = getRefreshToken();
+    const generationAtStart = getAuthGeneration();
     try {
-      if (!getRefreshToken()) return false;
+      if (!used) return false;
       await refreshAccessTokenRaw();
       syncFromBridge();
       return true;
@@ -128,6 +134,12 @@ export const useAuthStore = defineStore("auth", () => {
           ? String((err as { code?: string }).code || "")
           : "";
       if (status === 401 || code === "SESSION_EXPIRED") {
+        if (getAuthGeneration() !== generationAtStart) return false;
+        if (getRefreshToken() && getRefreshToken() !== used) return false;
+        if (!clearPersistedAuthIfRefresh(used)) return false;
+        if (getAuthGeneration() !== generationAtStart || getRefreshToken()) {
+          return false;
+        }
         clearLocal();
       }
       return false;
@@ -135,6 +147,7 @@ export const useAuthStore = defineStore("auth", () => {
   }
 
   function clearLocal() {
+    invalidateInFlightAuthRefresh();
     clearPersistedAuth();
     setAccessToken(null, null);
     accessToken.value = null;

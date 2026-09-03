@@ -257,7 +257,10 @@ export const useSessionStore = defineStore("session", () => {
       ) {
         const ok = await auth.refresh();
         if (!ok) {
-          await logout();
+          // refresh() already cleared on hard 401; keep soft failures (network).
+          if (!getRefreshToken()) {
+            await logout();
+          }
           return;
         }
       }
@@ -269,11 +272,21 @@ export const useSessionStore = defineStore("session", () => {
         try {
           await refreshMe();
           return;
-        } catch {
-          /* fallthrough */
+        } catch (err) {
+          // Only force logout when the server rejects auth — not transient blips.
+          const status =
+            err && typeof err === "object" && "status" in err
+              ? Number((err as { status?: number }).status)
+              : 0;
+          if (status === 401 || !getRefreshToken()) {
+            await logout();
+          }
+          return;
         }
       }
-      await logout();
+      if (!getRefreshToken()) {
+        await logout();
+      }
     } finally {
       bootstrapped.value = true;
       loading.value = false;
@@ -333,6 +346,11 @@ export const useSessionStore = defineStore("session", () => {
   }
 
   function handleSessionExpired() {
+    // Late event after re-login: keep the new session (do not wipe / bounce).
+    if (getRefreshToken()) {
+      auth.syncFromBridge();
+      return;
+    }
     clearBaChatState();
     auth.clearLocal();
     projectId.value = null;

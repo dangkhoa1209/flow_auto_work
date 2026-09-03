@@ -1,4 +1,4 @@
-import { verifyGitlabTokenUser } from "./client.js";
+import { fetchGitlabIdentityFromToken } from "./identity.js";
 
 async function baGitlabGet(
   host: string,
@@ -159,12 +159,23 @@ export async function resolveBaMilestoneId(
   return hit?.id ?? null;
 }
 
+/**
+ * Resolve assignee for BA publish.
+ * Verifies PAT against the **BA project GitLab host** (not global GITLAB_BASE_URL).
+ */
 export async function resolveBaAssigneeUsername(
   token: string,
   assignee?: string,
+  gitlabHost?: string,
 ): Promise<string> {
   const picked = assignee?.trim().replace(/^@/, "");
   if (picked) return picked;
-  const profile = await verifyGitlabTokenUser(token);
-  return profile.username;
+  try {
+    const profile = await fetchGitlabIdentityFromToken(token, gitlabHost);
+    return profile.username;
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    const host = (gitlabHost || "").replace(/\/$/, "") || "(default)";
+    throw new Error(`GitLab token invalid on ${host}: ${detail}`);
+  }
 }

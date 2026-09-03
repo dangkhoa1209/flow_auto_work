@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildThreadIssuePrompt,
+  findLatestBaAnalysisMessage,
   normalizeIssueDraftForForm,
   parseIssueDraftFromAgent,
   stripOpenQuestionsFromIssueDescription,
@@ -23,8 +24,57 @@ describe("buildThreadIssuePrompt", () => {
     expect(prompt).toMatch(/không.*gọi tool/i);
     expect(prompt).not.toMatch(/graphify/i);
     expect(prompt).not.toMatch(/code_map/);
+    expect(prompt).toMatch(/đúng tên đầu mục BA/i);
+    expect(prompt).toMatch(/3\.1/);
     expect(prompt).toMatch(/không.*ép mọi khối thành bảng/i);
-    expect(prompt).toMatch(/viết lại.*heading \+ câu\/bullet/i);
+    expect(prompt).toMatch(/heading \+ câu\/bullet/i);
+    expect(prompt).toMatch(/lượt chat.*sau.*ghi đè/i);
+    expect(prompt).toMatch(/bản mới nhất/i);
+  });
+
+  it("includes latest analysis block when provided", () => {
+    const prompt = buildThreadIssuePrompt({
+      displayName: "Demo",
+      gitlabPath: "group/app",
+      threadBlock: "### Human\nok",
+      gitlabTaskBlock: "",
+      latestAnalysisBlock:
+        "## Phân tích BA mới nhất trong hội thoại\n## 3. Nội dung phân tích\nX",
+    });
+    expect(prompt).toMatch(/Phân tích BA mới nhất/);
+    expect(prompt).toMatch(/Nội dung phân tích/);
+  });
+});
+
+describe("findLatestBaAnalysisMessage", () => {
+  it("returns the latest assistant analysis, not an earlier one", () => {
+    const messages = [
+      {
+        id: "1",
+        threadId: "t",
+        role: "assistant" as const,
+        content: "## 1. Yêu cầu khách hàng\nCũ\n\n## 3. Nội dung phân tích\nBản cũ",
+        createdAt: "2026-01-01T00:00:00.000Z",
+      },
+      {
+        id: "2",
+        threadId: "t",
+        role: "user" as const,
+        content: "Bỏ cột X, thêm cột Y",
+        createdAt: "2026-01-01T00:01:00.000Z",
+      },
+      {
+        id: "3",
+        threadId: "t",
+        role: "assistant" as const,
+        content:
+          "## 1. Yêu cầu khách hàng\nMới\n\n## 3. Nội dung phân tích\nBản mới có cột Y",
+        createdAt: "2026-01-01T00:02:00.000Z",
+      },
+    ];
+    const latest = findLatestBaAnalysisMessage(messages);
+    expect(latest?.id).toBe("3");
+    expect(latest?.content).toContain("Bản mới");
   });
 });
 

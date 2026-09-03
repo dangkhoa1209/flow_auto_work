@@ -66,12 +66,15 @@ function toggleSide() {
 
 provide("baCloseSide", closeSide);
 
-onMounted(async () => {
-  try {
-    await ba.bootstrap();
-  } catch (e) {
-    message.error(e instanceof Error ? e.message : String(e));
-  }
+onMounted(() => {
+  // Remount after Work↔BA: keep bootstrap off the critical path when store is warm.
+  void (async () => {
+    try {
+      await ba.bootstrap();
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : String(e));
+    }
+  })();
 });
 </script>
 
@@ -137,21 +140,19 @@ onMounted(async () => {
         </RouterLink>
       </nav>
 
-      <!-- Desktop: project in topbar -->
+      <!-- Project in topbar (mobile + desktop) — one picker only -->
       <div
         v-if="showProjectSelect"
-        class="faw-crumb faw-ba-topbar-project hidden lg:flex min-w-[180px] max-w-[320px]"
+        class="faw-crumb faw-ba-topbar-project min-w-0 flex-1 lg:flex-none lg:min-w-[180px] max-w-[320px]"
         title="Project — shared for Chat / Workflow / Tasks"
       >
         <BaProjectSelect :show-label="false" embedded size="small" />
       </div>
 
-      <div class="faw-topbar__spacer" />
+      <div class="faw-topbar__spacer hidden lg:block" />
 
-      <AppTopbarRight
-        settings-to="/ba/settings/gitlab"
-        class="hidden lg:contents"
-      >
+      <!-- One instance: mobile CSS already hides desktop chrome + settings -->
+      <AppTopbarRight settings-to="/ba/settings/gitlab">
         <template #status>
           <span class="faw-idle faw-ba-idle">
             <span class="faw-idle__dot" :class="statusDot" />
@@ -164,20 +165,7 @@ onMounted(async () => {
           </RouterLink>
         </template>
       </AppTopbarRight>
-
-      <AppTopbarRight
-        settings-to="/ba/settings/gitlab"
-        class="lg:hidden !gap-1"
-      />
     </header>
-
-    <!-- Mobile: full-width project row (not squeezed in topbar) -->
-    <div
-      v-if="showProjectSelect"
-      class="faw-ba-project-bar lg:hidden"
-    >
-      <BaProjectSelect :show-label="false" size="middle" />
-    </div>
 
     <nav
       v-if="navActive !== 'settings'"
