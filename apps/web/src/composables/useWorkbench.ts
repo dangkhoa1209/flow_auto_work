@@ -8,6 +8,7 @@ import { useSessionStore } from "@/stores/session";
 import { useSettingsStore } from "@/stores/settings";
 import { useWorkStore, isAdhocJob, type TaskDetail } from "@/stores/work";
 import { statusLabel } from "@/utils/status";
+import { titleFromWorkRequest } from "@/utils/sessionTitle";
 
 export type MobilePane = "tasks" | "detail" | "chat";
 export type MidTab = "detail" | "diff";
@@ -300,10 +301,7 @@ export function useWorkbench() {
     return j.status !== "running" && j.status !== "queued";
   });
 
-  const runBlockedReason = computed(() => {
-    if (contextIsBad.value) return "Add Dev Notes (Bad Context)";
-    return null;
-  });
+  const runBlockedReason = computed(() => null);
 
   /** Last notes content successfully saved for the open job (skip no-op autosaves). */
   let lastSavedNotes = "";
@@ -506,7 +504,7 @@ export function useWorkbench() {
       Modal.confirm({
         title: "Mark Done — skip GitLab handoff?",
         content:
-          "Không gán assignee / label trên GitLab. Dùng cho hotfix hoặc task không cần handoff.",
+          "No GitLab assignee or labels. Use for a session that does not need handoff.",
         okText: "Mark Done",
         cancelText: "Cancel",
         onOk: () => applyJobStatus(jobId, status),
@@ -580,12 +578,28 @@ export function useWorkbench() {
     });
   }
 
-  /** Issue panel Run — always the current job (issue or Hotfix). */
+  /** Thin context is a warning, not a hard block — confirm then Run. */
+  async function confirmBadContextIfNeeded(): Promise<boolean> {
+    if (!contextIsBad.value) return true;
+    const reason =
+      (currentJob.value?.contextQuality?.reason || "").trim() ||
+      "Little technical context (no route, file, or repro steps).";
+    return new Promise((resolve) => {
+      Modal.confirm({
+        title: "Thin context — run anyway?",
+        content: `${reason} The agent may search broadly or edit the wrong place. Add Dev Notes, or confirm to continue.`,
+        okText: "Run anyway",
+        cancelText: "Cancel",
+        centered: true,
+        onOk: () => resolve(true),
+        onCancel: () => resolve(false),
+      });
+    });
+  }
+
+  /** Issue panel Run — always the current job (issue or session). */
   async function runCurrentJob() {
-    if (runBlockedReason.value && contextIsBad.value) {
-      message.warning(runBlockedReason.value);
-      return;
-    }
+    if (!(await confirmBadContextIfNeeded())) return;
     if (!(await ensureWorkReady())) return;
     if (!selectedJobId.value) {
       message.warning("Select a job first");
@@ -623,12 +637,9 @@ export function useWorkbench() {
     }
   }
 
-  /** Tasks column Run — checked Open tasks only (no job / Hotfix). */
+  /** Tasks column Run — checked Open tasks only (not a chat session). */
   async function runCheckedTasks() {
-    if (runBlockedReason.value && contextIsBad.value) {
-      message.warning(runBlockedReason.value);
-      return;
-    }
+    if (!(await confirmBadContextIfNeeded())) return;
     if (!(await ensureWorkReady())) return;
     const iids = selectedIids.value.filter((id) => id > 0);
     if (!iids.length) {
@@ -741,18 +752,34 @@ export function useWorkbench() {
   async function sendChat(mode: "continue" | "ask") {
     const msg = chatInput.value.trim();
     if (!msg) return;
-    if (!selectedJobId.value) {
-      message.warning("Select a job first");
-      return;
-    }
+    if (selectedJobId.value && !(await confirmBadContextIfNeeded())) return;
 
     const run = async () => {
       if (!(await ensureWorkReady())) return;
       chatInput.value = "";
       await nextTick();
       busy.value = true;
+      mobilePane.value = "chat";
       work.watchProgress();
       try {
+        if (!selectedJobId.value) {
+          if (mode === "ask") {
+            const res = await projectClone.withCloneRetry(() =>
+              work.createAdhocSession({
+                title: titleFromWorkRequest(msg),
+              }),
+            );
+            if (!res) return;
+            await projectClone.withCloneRetry(() => work.sendAsk(msg));
+          } else {
+            const res = await projectClone.withCloneRetry(() =>
+              work.createAdhocSession({ message: msg }),
+            );
+            if (!res) return;
+          }
+          return;
+        }
+
         const useContinue =
           mode === "continue" ||
           currentJob.value?.status === "awaiting_clarification";
@@ -761,11 +788,6 @@ export function useWorkbench() {
             work.sendContinue(msg),
           );
           if (!res) return;
-          if (res?.kind === "bad_context") {
-            message.warning(
-              "Bad Context — add Dev Notes / chat, then Send again",
-            );
-          }
         } else {
           await projectClone.withCloneRetry(() => work.sendAsk(msg));
         }
@@ -950,9 +972,7 @@ export function useWorkbench() {
       await projectClone.withCloneRetry(() =>
         jobApi.generateTestcases(selectedJobId.value!),
       );
-      message.success(
-        "Đã xếp hàng sinh testcase — sẽ comment lên GitLab khi xong",
-      );
+      message.success("Testcase generation queued — comments on GitLab when done");
       mobilePane.value = "chat";
       await work.loadJobs().catch(() => undefined);
     } catch (e) {
@@ -1123,7 +1143,7 @@ export function useWorkbench() {
 
   function jobDisplayIid(j: { issue?: { issueIid?: number }; kind?: string }) {
     const iid = j.issue?.issueIid;
-    if (!iid || iid <= 0 || j.kind === "adhoc") return "Hotfix";
+    if (!iid || iid <= 0 || j.kind === "adhoc") return "Session";
     return `#${iid}`;
   }
 
@@ -1148,10 +1168,23 @@ export function useWorkbench() {
     adhocOpen.value = true;
   }
 
+  function openMobileComposer() {
+    mobilePane.value = "chat";
+    void nextTick(() => {
+      const el = document.querySelector(
+        ".faw-console-input textarea",
+      ) as HTMLTextAreaElement | null;
+      el?.focus();
+    });
+  }
+
   async function startAdhoc() {
-    const title = adhocTitle.value.trim();
+    const messageText = adhocMessage.value.trim();
+    const title =
+      adhocTitle.value.trim() ||
+      (messageText ? titleFromWorkRequest(messageText) : "");
     if (!title) {
-      message.warning("Enter a session title");
+      message.warning("Enter a title or describe the request");
       return;
     }
     if (!(await ensureWorkReady())) return;
@@ -1160,7 +1193,7 @@ export function useWorkbench() {
       const res = await projectClone.withCloneRetry(() =>
         work.createAdhocSession({
           title,
-          message: adhocMessage.value.trim() || undefined,
+          message: messageText || undefined,
         }),
       );
       if (!res) return;
@@ -1168,7 +1201,7 @@ export function useWorkbench() {
       mobilePane.value = res.started ? "chat" : "detail";
       if (res.started) work.watchProgress();
       message.success(
-        res.started ? "Hotfix opened + agent started" : "Hotfix session created",
+        res.started ? "Session started" : "Session created",
       );
     } catch (e) {
       message.error(e instanceof Error ? e.message : String(e));
@@ -1344,6 +1377,7 @@ export function useWorkbench() {
     jobBranch,
     copyJobBranch,
     openAdhocModal,
+    openMobileComposer,
     startAdhoc,
     openCreateIssueModal,
     submitCreateIssue,

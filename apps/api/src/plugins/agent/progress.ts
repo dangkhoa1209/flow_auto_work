@@ -195,6 +195,115 @@ export function appendPromptSending(
   );
 }
 
+function asRecord(v: unknown): Record<string, unknown> | null {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return null;
+  return v as Record<string, unknown>;
+}
+
+function asNonEmptyString(v: unknown): string | undefined {
+  if (typeof v === "string") {
+    const t = v.trim();
+    return t || undefined;
+  }
+  if (typeof v === "number" && Number.isFinite(v)) return String(v);
+  const rec = asRecord(v);
+  if (!rec) return undefined;
+  return (
+    asNonEmptyString(rec.stringValue) ||
+    asNonEmptyString(rec.string_value) ||
+    asNonEmptyString(rec.value)
+  );
+}
+
+function pickString(
+  obj: Record<string, unknown> | null,
+  keys: string[],
+): string | undefined {
+  if (!obj) return undefined;
+  for (const k of keys) {
+    const s = asNonEmptyString(obj[k]);
+    if (s) return s;
+  }
+  return undefined;
+}
+
+function isGenericToolName(n: string): boolean {
+  const k = n.toLowerCase().replace(/[_-]/g, "");
+  return (
+    k === "mcp" ||
+    k === "unknown" ||
+    k === "callmcptool" ||
+    k === "customusertools"
+  );
+}
+
+function stripCustomUserPrefix(n: string): string {
+  return n.replace(/^custom-user-tools[_:-]*/i, "").trim() || n;
+}
+
+function innerToolArgs(
+  a: Record<string, unknown>,
+): Record<string, unknown> | null {
+  for (const k of [
+    "args",
+    "toolArgs",
+    "tool_args",
+    "arguments",
+    "input",
+    "toolInput",
+    "tool_input",
+  ]) {
+    const inner = a[k];
+    const rec = asRecord(inner);
+    if (rec) return rec;
+    if (typeof inner === "string") {
+      try {
+        const parsed = JSON.parse(inner) as unknown;
+        const fromJson = asRecord(parsed);
+        if (fromJson) return fromJson;
+      } catch {
+        /* not JSON */
+      }
+    }
+  }
+  return null;
+}
+
+function resolveToolName(
+  name: string,
+  a: Record<string, unknown> | null,
+): string {
+  if (!a) return name;
+  const nested =
+    pickString(a, ["toolName", "tool_name"]) ||
+    (isGenericToolName(name) ? pickString(a, ["name"]) : undefined);
+  if (!nested || isGenericToolName(nested)) return name;
+  return stripCustomUserPrefix(nested);
+}
+
+function hintFromArgs(a: Record<string, unknown> | null): string | undefined {
+  if (!a) return undefined;
+  const from = pickString(a, ["from"]);
+  const to = pickString(a, ["to"]);
+  if (from && to) return `${from} → ${to}`;
+  return pickString(a, [
+    "question",
+    "concept",
+    "command",
+    "sql",
+    "query",
+    "path",
+    "file_path",
+    "pattern",
+    "target_directory",
+    "uri",
+  ]);
+}
+
+function clipHint(hint: string, max: number): string {
+  return hint.length > max ? `${hint.slice(0, max)}…` : hint;
+}
+
 function taskSubagentName(args: Record<string, unknown>): string {
   const st = args.subagentType;
   if (st && typeof st === "object") {
@@ -208,10 +317,10 @@ function taskSubagentName(args: Record<string, unknown>): string {
   return "subagent";
 }
 
+/** Cursor SDK custom tools stream as name "mcp"; unwrap toolName + inner args. */
 function summarizeToolArgs(name: string, args: unknown): string {
-  if (!args || typeof args !== "object") return name;
-  const a = args as Record<string, unknown>;
-  if (name === "task" || name === "Task" || name === "agent") {
+  const a = asRecord(args);
+  if (a && (name === "task" || name === "Task" || name === "agent")) {
     const label = workSubagentLabel(taskSubagentName(a));
     const desc =
       typeof a.description === "string"
@@ -219,14 +328,12 @@ function summarizeToolArgs(name: string, args: unknown): string {
         : "";
     return desc ? `subagent · ${label}: ${desc}` : `subagent · ${label}`;
   }
-  if (typeof a.command === "string") return `${name}: ${a.command.slice(0, 160)}`;
-  if (typeof a.path === "string") return `${name}: ${a.path}`;
-  if (typeof a.file_path === "string") return `${name}: ${a.file_path}`;
-  if (typeof a.pattern === "string") return `${name}: ${a.pattern}`;
-  if (typeof a.query === "string") return `${name}: ${a.query.slice(0, 120)}`;
-  if (typeof a.target_directory === "string")
-    return `${name}: ${a.target_directory}`;
-  return name;
+  const display = resolveToolName(name, a);
+  const inner = a ? innerToolArgs(a) : null;
+  const hint = hintFromArgs(inner) || hintFromArgs(a);
+  if (!hint) return display;
+  const max = display === "Shell" || name === "Shell" ? 160 : 120;
+  return `${display}: ${clipHint(hint, max)}`;
 }
 
 function summarizeNestedToolCall(toolCall: unknown): string {

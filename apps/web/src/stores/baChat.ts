@@ -128,7 +128,7 @@ export const useBaChatStore = defineStore("baChat", () => {
   function beginIssueDraft(threadId: string) {
     issueDrafting.value = true;
     issueDraftThreadId.value = threadId;
-    issueDraftLabel.value = "Đang review hội thoại…";
+    issueDraftLabel.value = "Reviewing conversation…";
     issueDraftError.value = "";
     issueDraftResult.value = null;
   }
@@ -556,7 +556,7 @@ export const useBaChatStore = defineStore("baChat", () => {
     }
     issueDrafting.value = true;
     issueDraftThreadId.value = ev.threadId;
-    issueDraftLabel.value = ev.label || "Đang soạn issue…";
+    issueDraftLabel.value = ev.label || "Drafting issue…";
   }
 
   function applyBaIssueDraftDone(ev: {

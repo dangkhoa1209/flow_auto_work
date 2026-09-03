@@ -28,6 +28,8 @@ import {
   beginCancellableJob,
   cancelActiveAgentRun,
   errorFromCursorRunStatus,
+  loadWorkGraphifyBlock,
+  workAgentLocal,
 } from "./run.js";
 import { persistCursorUsage } from "../cursor/recordUsage.js";
 import { gitlabCommentInstructions } from "./prompt.js";
@@ -120,6 +122,8 @@ export async function answerTaskQuestion(opts: {
     })
     .join("\n\n");
 
+  const graphifyBlock = await loadWorkGraphifyBlock(jobId);
+
   // Prefer job work commits (id → change) over a long branch git-log.
   const commitsBlock = jobCommitLines.length
     ? jobCommitLines.join("\n")
@@ -131,12 +135,12 @@ export async function answerTaskQuestion(opts: {
 1. Answer the human's question using the issue, **job chat history**, diff, and codebase — prefer work-task history on this job over unrelated branch commits.
 2. Prefer a clear Vietnamese answer with concrete file/paths/commands they can run.
 3. Do **NOT** execute long-running work: no DB mutations that take minutes, no queue workers left running, no seed scripts that hang.
-4. You may briefly grep/read files — then **stop and answer**.
+4. You may briefly grep/read files — then **stop and answer**. Prefer \`code_map_query\` before Grep when that tool is attached.
 5. If they ask you to *do* the work, tell them to click **Run** or send a follow-up in chat (Gửi).
 6. Keep the final answer concise (roughly under ~25 lines).
 7. Chat UI is narrow: lead with 1–2 sentences + short bullets. No giant Markdown tables; no pasting full QC matrices. Skip machine tags like <<<DONE>>> in the human-readable body.
 
-${gitlabCommentInstructions(opts.issue)}## Issue #${opts.issue.issueIid}
+${graphifyBlock ? `${graphifyBlock}\n` : ""}${gitlabCommentInstructions(opts.issue)}## Issue #${opts.issue.issueIid}
 Title: ${opts.issue.title}
 URL: ${opts.issue.url}
 Labels: ${opts.issue.labels.join(", ") || "(none)"}
@@ -191,7 +195,7 @@ ${opts.question}`;
             apiKey: resolveCursorApiKey(),
             model,
             ...readOnlyAgentPolicy(),
-            local: { cwd: resolveRepoPath() },
+            local: workAgentLocal(),
           });
           resumed = true;
         } catch (err) {
@@ -201,7 +205,7 @@ ${opts.question}`;
             apiKey: resolveCursorApiKey(),
             model,
             ...readOnlyAgentPolicy(),
-            local: { cwd: resolveRepoPath() },
+            local: workAgentLocal(),
           });
         }
       } else {
@@ -209,7 +213,7 @@ ${opts.question}`;
           apiKey: resolveCursorApiKey(),
           model,
           ...readOnlyAgentPolicy(),
-          local: { cwd: resolveRepoPath() },
+          local: workAgentLocal(),
         });
       }
 

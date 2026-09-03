@@ -389,3 +389,111 @@ Graph file (host): \`${graphJson}\` · out: \`${outDir}\` — **không** ghi gì
 ### Map sẵn cho câu hỏi hiện tại (điểm khởi đầu)
 ${map}`;
 }
+
+/** How Work agents should use graphify — no precomputed dump (title is too thin, full task is too noisy). */
+export function formatWorkGraphifyPromptBlock(opts: {
+  sourcePath: string;
+}): string {
+  const graphJson = graphifyGraphJsonForSource(opts.sourcePath);
+  const outDir = graphifyOutDirForSource(opts.sourcePath);
+  return `## How to use Graphify (code map)
+Sibling graph (host): \`${graphJson}\` · \`${outDir}\` — do **not** write inside \`source/\`.
+Tools already attached: \`code_map_query\`, \`code_map_path\`, \`code_map_explain\`.
+
+**You choose the query.** Do not wait for a precomputed map. Do not paste the whole GitLab issue, description, or chat.
+
+1. **Before** Grep / rg / Glob / find: call \`code_map_query\` with **one short locator** you extract from the task — a screen, module, feature slug, or symbol.
+   - Good: \`cấu hình rules chấm công\`, \`staff import update by column\`, \`TimekeeperSync\`, \`QualityAppraisal.vue\`.
+   - Bad: the full ticket text; only a vague title with no screen/symbol; chat like "dữ liệu như này chạy thành công chưa".
+2. If the map is thin or noisy, refine: \`code_map_explain\` on one name, or \`code_map_path\` from A to B.
+3. Then read 1–5 **source** files (\`.vue\`, \`.php\`, \`node_app/\`, \`resources/\`). Skip webpack bundles (\`public/js/app.js\`), CKEditor, and unrelated docs.
+4. Narrow Grep only after the map tools.`;
+}
+
+const GRAPHIFY_NOISE_SRC =
+  /(^|\/)(public\/js\/|ckeditor|node_modules|vendor\/|dist\/)|changes\.md$/i;
+const GRAPHIFY_CODE_SRC = /\.(vue|ts|tsx|js|jsx|php)$/i;
+const GRAPHIFY_DOC_SRC = /\.(md|mdc)$/i;
+
+function normalizeGraphifySrc(src: string): string {
+  return src.replace(/\\/g, "/").replace(/^["']|["']$/g, "").trim();
+}
+
+function isNoiseGraphifySrc(src: string): boolean {
+  const n = src.toLowerCase();
+  if (GRAPHIFY_NOISE_SRC.test(n)) return true;
+  if (/(^|\/)public\/js\//.test(n)) return true;
+  return false;
+}
+
+/**
+ * Collapse a raw graphify query dump into a short file list.
+ * Drops webpack bundles, vendor, and heading-only docs noise.
+ */
+export function compactGraphifyQueryOutput(
+  raw: string | null,
+  opts?: { maxCode?: number; maxDocs?: number; asToolResult?: boolean },
+): string | null {
+  const text = raw?.trim() || "";
+  if (!text) return null;
+  const maxCode = opts?.maxCode ?? 8;
+  const maxDocs = opts?.maxDocs ?? 4;
+  const seen = new Set<string>();
+  const code: string[] = [];
+  const docs: string[] = [];
+  const re = /\bsrc=([^\s\]]+)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text))) {
+    const src = normalizeGraphifySrc(m[1] || "");
+    if (!src || seen.has(src) || isNoiseGraphifySrc(src)) continue;
+    seen.add(src);
+    if (GRAPHIFY_CODE_SRC.test(src)) {
+      if (code.length < maxCode) code.push(src);
+    } else if (
+      GRAPHIFY_DOC_SRC.test(src) &&
+      /(^|\/)docs\//.test(src.replace(/\\/g, "/"))
+    ) {
+      if (docs.length < maxDocs) docs.push(src);
+    }
+  }
+  if (!code.length && !docs.length) return null;
+  const lines: string[] = [];
+  if (code.length) {
+    lines.push("Source:");
+    for (const p of code) lines.push(`- \`${p}\``);
+  }
+  if (docs.length) {
+    lines.push("Feature docs:");
+    for (const p of docs) lines.push(`- \`${p}\``);
+  }
+  lines.push(
+    opts?.asToolResult
+      ? "If this is off-target, call code_map_query again with a tighter screen/symbol name."
+      : "This list is a hint only — call `code_map_query` with a precise symbol/screen name next.",
+  );
+  return lines.join("\n");
+}
+
+export type WorkGraphifyPrep = {
+  block: string;
+  queryText: string | null;
+  status: "disabled" | "ready" | "empty";
+};
+
+/** Ensure sibling graph exists; return how-to-use instructions (agent queries the tools itself). */
+export async function prepareWorkGraphifyContext(opts: {
+  sourcePath: string;
+  timeoutMs?: number;
+}): Promise<WorkGraphifyPrep> {
+  if (!graphifyEnabled()) {
+    return { block: "", queryText: null, status: "disabled" };
+  }
+  const ok = await ensureProjectGraphifyReady(opts.sourcePath, {
+    timeoutMs: opts.timeoutMs ?? 45_000,
+  });
+  return {
+    block: formatWorkGraphifyPromptBlock({ sourcePath: opts.sourcePath }),
+    queryText: null,
+    status: ok ? "ready" : "empty",
+  };
+}

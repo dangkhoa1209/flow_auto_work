@@ -61,7 +61,7 @@ function confirmMergeFromMenu() {
   if (!wb.canQuickMerge || wb.mergeBusy || wb.handoffBusy) return;
   Modal.confirm({
     title: "Merge work → base?",
-    content: "Conflict thì AI tự fix như Sync base. Có open MR thì accept; không thì merge local + push.",
+    content: "If there is a conflict, AI fixes it like Sync base. An open MR is accepted; otherwise local merge + push.",
     okText: "Merge",
     cancelText: "Cancel",
     onOk: () => wb.quickMerge(),
@@ -104,6 +104,7 @@ function confirmMergeFromMenu() {
               @update:open-iid-draft="wb.openIidDraft = $event"
               @refresh="wb.refreshTasks"
               @open-adhoc="wb.openAdhocModal"
+              @start-chat="wb.openMobileComposer"
               @run-selected="wb.runCheckedTasks"
               @run-all="wb.runAll"
               @open-by-iid="wb.openTaskByIid"
@@ -234,6 +235,7 @@ function confirmMergeFromMenu() {
         @update:open-iid-draft="wb.openIidDraft = $event"
         @refresh="wb.refreshTasks"
         @open-adhoc="wb.openAdhocModal"
+        @start-chat="wb.openMobileComposer"
         @run-selected="wb.runCheckedTasks"
         @run-all="wb.runAll"
         @open-by-iid="wb.openTaskByIid"
@@ -263,7 +265,10 @@ function confirmMergeFromMenu() {
           <div class="faw-m-detail-bar__title min-w-0">
             <div class="faw-m-detail-bar__name truncate">
               <IssueIidLink
-                v-if="!wb.isCurrentAdhoc"
+                v-if="
+                  !wb.isCurrentAdhoc &&
+                  (wb.currentJob || wb.selectedTaskIid || wb.taskDetail)
+                "
                 :iid="
                   wb.taskDetail?.issueIid ||
                   wb.currentJob?.issue?.issueIid ||
@@ -275,9 +280,9 @@ function confirmMergeFromMenu() {
               <span
                 v-else
                 class="text-status-done font-semibold shrink-0 mr-1"
-                >Hotfix</span
+                >Session</span
               >
-              <span>{{ wb.detailTitle || "—" }}</span>
+              <span>{{ wb.detailTitle || "New session" }}</span>
             </div>
             <div
               v-if="wb.detailMeta"
@@ -400,11 +405,11 @@ function confirmMergeFromMenu() {
       class="faw-m-dock"
     >
       <div class="faw-m-dock__pair">
-        <a-tooltip :title="wb.runBlockedReason || 'Run agent'">
+        <a-tooltip title="Run agent">
           <button
             type="button"
             class="faw-m-btn faw-m-btn--primary touch-manipulation"
-            :disabled="wb.busy || Boolean(wb.runBlockedReason)"
+            :disabled="wb.busy"
             @click="wb.runCurrentJob()"
           >
             {{ wb.busy ? "Running…" : "Run" }}
@@ -489,7 +494,7 @@ function confirmMergeFromMenu() {
 
     <a-modal
       v-model:open="wb.adhocOpen"
-      title="New session / Hotfix"
+      title="New session"
       ok-text="Start"
       cancel-text="Cancel"
       :confirm-loading="wb.adhocBusy"
@@ -499,18 +504,18 @@ function confirmMergeFromMenu() {
       @ok="wb.startAdhoc"
     >
       <a-form layout="vertical" class="mt-2">
-        <a-form-item label="Title" required>
+        <a-form-item label="Title (optional if you describe the request)">
           <a-input
             v-model:value="wb.adhocTitle"
-            placeholder="e.g. Hotfix crash login mobile"
+            placeholder="e.g. Fix login timeout on mobile"
             @pressEnter="wb.startAdhoc"
           />
         </a-form-item>
-        <a-form-item label="Initial request (optional)">
+        <a-form-item label="Request">
           <a-textarea
             v-model:value="wb.adhocMessage"
             :rows="4"
-            placeholder="Describe what the agent should do…"
+            placeholder="Describe what the agent should do — Send in Console also starts a session"
           />
         </a-form-item>
       </a-form>
@@ -550,7 +555,7 @@ function confirmMergeFromMenu() {
 
     <a-modal
       v-model:open="wb.syncBaseOpen"
-      title="Chọn nhánh nguồn để pull"
+      title="Choose the branch to pull"
       ok-text="Pull"
       cancel-text="Cancel"
       :ok-button-props="{ disabled: !wb.syncBaseChoice }"
@@ -559,15 +564,15 @@ function confirmMergeFromMenu() {
       @ok="wb.confirmSyncBase"
     >
       <p class="text-xs text-ink-muted mt-0 mb-2 leading-relaxed">
-        Project chưa cấu hình Main branch trong Settings — chọn nhánh muốn pull
-        vào nhánh job (không tự đoán default).
+        This project has no Main branch in Settings — pick the branch to pull
+        into the job branch (we will not guess a default).
       </p>
       <a-select
         v-model:value="wb.syncBaseChoice"
         class="w-full"
         show-search
         :loading="wb.syncBaseBranchesLoading"
-        placeholder="Chọn nhánh…"
+        placeholder="Choose a branch…"
         :options="wb.syncBaseBranches.map((b: string) => ({ value: b, label: b }))"
       />
     </a-modal>

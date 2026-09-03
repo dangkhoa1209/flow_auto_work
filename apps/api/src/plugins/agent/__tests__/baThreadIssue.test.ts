@@ -12,20 +12,20 @@ describe("buildThreadIssuePrompt", () => {
     const prompt = buildThreadIssuePrompt({
       displayName: "Demo",
       gitlabPath: "group/app",
-      mainBranch: "main",
       threadBlock: "### Human\nphân tích export excel",
       gitlabTaskBlock: "",
-      dbAccess: { allowed: false },
     });
     expect(prompt).toMatch(/gợi ý.*format spec/i);
     expect(prompt).toMatch(/đầu vào/);
     expect(prompt).toMatch(/phân tích BA/);
     expect(prompt).toMatch(/Tối thiểu: mục 1/);
     expect(prompt).toMatch(/KHÔNG đưa mục 4/);
+    expect(prompt).toMatch(/không.*đọc source/i);
+    expect(prompt).toMatch(/không.*gọi tool/i);
+    expect(prompt).not.toMatch(/graphify/i);
+    expect(prompt).not.toMatch(/code_map/);
     expect(prompt).toMatch(/đúng tên đầu mục BA/i);
     expect(prompt).toMatch(/3\.1/);
-    expect(prompt).toMatch(/Cấm ghi file/);
-    expect(prompt).toMatch(/CHỈ ĐỌC/);
     expect(prompt).toMatch(/không.*ép mọi khối thành bảng/i);
     expect(prompt).toMatch(/heading \+ câu\/bullet/i);
     expect(prompt).toMatch(/lượt chat.*sau.*ghi đè/i);
@@ -36,12 +36,10 @@ describe("buildThreadIssuePrompt", () => {
     const prompt = buildThreadIssuePrompt({
       displayName: "Demo",
       gitlabPath: "group/app",
-      mainBranch: "main",
       threadBlock: "### Human\nok",
       gitlabTaskBlock: "",
       latestAnalysisBlock:
         "## Phân tích BA mới nhất trong hội thoại\n## 3. Nội dung phân tích\nX",
-      dbAccess: { allowed: false },
     });
     expect(prompt).toMatch(/Phân tích BA mới nhất/);
     expect(prompt).toMatch(/Nội dung phân tích/);

@@ -457,7 +457,7 @@ onUnmounted(() => {
               type="info"
               show-icon
               class="mb-3"
-              message="Hotfix session — no GitLab issue yet"
+              message="Session — no GitLab issue yet. Create one to comment, generate testcases, or handoff labels."
             >
               <template #action>
                 <a-button
@@ -593,7 +593,7 @@ onUnmounted(() => {
 
             <div class="faw-issue-head">
               <template v-if="isCurrentAdhoc">
-                <span class="faw-issue-head__num">Hotfix</span>
+                <span class="faw-issue-head__num">Session</span>
                 <h1 class="faw-issue-head__title">{{ detailTitle }}</h1>
               </template>
               <template v-else>
@@ -676,13 +676,13 @@ onUnmounted(() => {
 
             <a-alert
               v-if="contextIsBad"
-              type="error"
+              type="warning"
               show-icon
               class="mb-3"
-              message="Bad Context — Run blocked"
+              message="Thin context — Run will ask you to confirm"
               :description="
-                currentJob?.lastQuestion ||
-                'Add Dev Notes or technical details, then Run again.'
+                currentJob?.contextQuality?.reason ||
+                'Add Dev Notes for a tighter run, or confirm when you Run / Send.'
               "
             />
 
@@ -926,9 +926,9 @@ onUnmounted(() => {
               </div>
             </div>
           </template>
-          <a-empty v-else description="Select a task or job">
+          <a-empty v-else description="No task selected">
             <span class="text-[11px] text-ink-faint"
-              >Select on the left column to view context and Run</span
+              >Type a request in Console to start, or pick a GitLab task</span
             >
           </a-empty>
         </div>
@@ -993,12 +993,12 @@ onUnmounted(() => {
       class="faw-bottombar"
       :class="mobileTouch ? '!gap-3' : ''"
     >
-      <a-tooltip :title="runBlockedReason || 'Run agent on selected task'">
+      <a-tooltip title="Run agent on selected task">
         <button
           type="button"
           class="faw-btn faw-btn--run"
           :class="mobileTouch ? '!min-h-[44px]' : ''"
-          :disabled="busy || Boolean(runBlockedReason)"
+          :disabled="busy"
           @click="emit('runSelected')"
         >
           ▶ Run
@@ -1087,8 +1087,8 @@ onUnmounted(() => {
       <a-tooltip
         :title="
           canGenerateTestcases
-            ? 'Sinh testcase Manual QC từ task + code và comment lên GitLab'
-            : 'Chỉ khi job Awaiting handoff / Done và có GitLab issue'
+            ? 'Generate Manual QC testcases from the task + diff and comment on GitLab'
+            : 'Needs Awaiting handoff / Done and a GitLab issue — Create GitLab issue first for a session'
         "
       >
         <button

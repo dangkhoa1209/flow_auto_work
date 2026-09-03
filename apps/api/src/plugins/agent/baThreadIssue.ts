@@ -1,3 +1,6 @@
+import { mkdir } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { Agent } from "@cursor/sdk";
 import { logger } from "../../logger.js";
 import { AppError } from "../../utils/AppError.js";
@@ -5,32 +8,17 @@ import {
   getBaProject,
   getBaProjectGitlabToken,
   getBaThread,
-  isBaDbAccessAllowed,
   listBaMessages,
-  resolveBaProjectDb,
   resolveSystemCursorApiKey,
-  resolveSystemCursorModel,
   resolveSystemCursorModelSpec,
   type BaMessage,
 } from "../../workspace/baStore.js";
-import { cursorModelLogLabel } from "../cursor/modelSpec.js";
 import { readOnlyAgentPolicy } from "../cursor/agentPolicy.js";
-import { isGitRepo } from "../../workspace/clone.js";
-import {
-  ensureProjectGraphifyReady,
-  formatBaGraphifyPromptBlock,
-  queryProjectGraphify,
-} from "../../workspace/graphify.js";
-import { pullBaProjectLatest } from "../git/ba-pull.js";
-import { buildBaDbCustomTools } from "../baDb/tools.js";
-import { mergeBaAgentCustomTools } from "../ba/graphifyTools.js";
 import { loadBaLinkedContext } from "../ba/ba-linked-context.js";
 import { resolveBaUserGoogleAccessToken } from "../../modules/google/index.js";
 import {
-  BA_GITLAB_INTERACTION_ENABLED,
   baGitlabBoundaryInstructions,
   baPresentationRules,
-  baReadOnlyWorkspaceRules,
   baSpecFormatInstructions,
 } from "./baChat.js";
 import { baBusinessLanguageRules } from "./baWorkflow.js";
@@ -42,6 +30,13 @@ import {
 import { persistCursorUsage } from "../cursor/recordUsage.js";
 
 const ISSUE_DRAFT_TIMEOUT_MS = 10 * 60 * 1000;
+
+/** Empty cwd so the draft agent cannot browse customer source. */
+async function issueDraftScratchCwd(): Promise<string> {
+  const dir = path.join(tmpdir(), "flow-ba-issue-draft");
+  await mkdir(dir, { recursive: true });
+  return dir;
+}
 
 export type BaThreadIssueDraft = {
   title: string;
@@ -331,21 +326,14 @@ function tryParseIssueJson(raw: string): BaThreadIssueDraft | null {
 export function buildThreadIssuePrompt(opts: {
   displayName: string;
   gitlabPath: string;
-  mainBranch: string;
   threadBlock: string;
   gitlabTaskBlock: string;
-  graphifyBlock?: string;
   latestAnalysisBlock?: string;
-  dbAccess: { allowed: boolean; dialect?: string; database?: string };
 }): string {
-  const dbBlock = opts.dbAccess.allowed
-    ? `Database read-only: ON (${opts.dbAccess.dialect} / ${opts.dbAccess.database}). Chỉ dùng tool query khi cần xác minh tên UI/field.`
-    : "Database: OFF.";
-
   return `Bạn là Business Analyst trên dự án **${opts.displayName}**.
 
 ## Nhiệm vụ
-User bấm **Create issue** — hãy **review toàn bộ hội thoại** dưới đây và soạn **một** GitLab issue draft cho Dev/QA theo **trạng thái đã chốt sau cùng** (không phải bản phân tích đầu tiên).
+User bấm **Create issue** — hãy **chỉ tổng hợp hội thoại** dưới đây thành **một** GitLab issue draft cho Dev/QA theo **trạng thái đã chốt sau cùng** (không phải bản phân tích đầu tiên).
 
 ## Format mô tả issue (gợi ý — cùng format spec với BA mode)
 ${baSpecFormatInstructions()}
@@ -353,7 +341,7 @@ ${baSpecFormatInstructions()}
 ${baPresentationRules()}
 
 ## Quy tắc soạn draft
-1. **Tổng hợp theo thời gian** — lượt chat **sau** ghi đè / bổ sung lượt **trước**. Human chỉnh sửa, bác bỏ, hoặc chốt thêm → phải phản ánh vào description. **Cấm** copy nguyên bản phân tích sớm rồi bỏ qua các lượt trao đổi sau.
+1. **Chỉ dùng hội thoại** (và block GitLab/Google nếu có sẵn) — **không** đọc source, **không** Grep/Glob/Read file, **không** gọi tool, **không** tra DB. **Tổng hợp theo thời gian** — lượt chat **sau** ghi đè / bổ sung lượt **trước**. Human chỉnh sửa, bác bỏ, hoặc chốt thêm → phải phản ánh vào description. Không bịa thông tin không có trong hội thoại. **Cấm** copy nguyên bản phân tích sớm rồi bỏ qua các lượt trao đổi sau.
 2. **Title** — ngắn, rõ; lấy từ tên chức năng chính **đã chốt sau cùng**. **Không** nhồi format spec vào title.
 3. **Description (markdown)** — **đúng tên đầu mục BA** khi có nội dung:
    - \`## 1. Yêu cầu khách hàng\` / \`## 2. Yêu cầu/Đề xuất từ PD\` = **đầu vào** — trích từ chat (đã cập nhật nếu YC đổi giữa chừng), không nhét phân tích BA.
@@ -362,18 +350,16 @@ ${baPresentationRules()}
    - Tối thiểu: mục 1 (+ mục 2 nếu có ý PD).
 4. Chat đã có phân tích → **giữ cấu trúc mục 3** (và 3.1–3.3 nếu phù hợp) nhưng **nội dung phải là bản mới nhất** sau trao đổi — không đóng băng bản đầu. Cắt bỏ "Câu hỏi cần xác nhận". Giữ bảng danh sách / trường popup theo mẫu; kết luận dài → heading + câu/bullet, không nhét vào bảng.
 5. **acceptanceCriteria** (JSON): luôn \`[]\` (schema giữ field).
-6. **Không** gán label. Không bịa (trừ khi cần tra source để đúng tên UI).
+6. **Không** gán label.
 
 ${baBusinessLanguageRules()}
 
-**Chỉ đọc source khi cần** xác minh tên màn hình/nút (locale vi) — không sửa file, không tạo file. Ưu tiên Code map graphify (nếu có) rồi mới mở file.
+**Cấm** mở workspace / đọc code / gọi tool. Trả lời ngay từ hội thoại.
 
-## Ranh giới workspace (CHỈ ĐỌC)
-${baReadOnlyWorkspaceRules({ mainBranch: opts.mainBranch })}
+GitLab (định danh dự án — không gọi API): ${opts.gitlabPath}
 ${baGitlabBoundaryInstructions()}
-${dbBlock}
 
-${opts.graphifyBlock ? `${opts.graphifyBlock}\n\n` : ""}${opts.gitlabTaskBlock ? `${opts.gitlabTaskBlock}\n\n` : ""}${opts.latestAnalysisBlock ? `${opts.latestAnalysisBlock}\n\n` : ""}## Hội thoại cần review (đọc hết — ưu tiên lượt cuối)
+${opts.gitlabTaskBlock ? `${opts.gitlabTaskBlock}\n\n` : ""}${opts.latestAnalysisBlock ? `${opts.latestAnalysisBlock}\n\n` : ""}## Hội thoại cần review (đọc hết — ưu tiên lượt cuối)
 ${opts.threadBlock}
 
 ---
@@ -387,6 +373,10 @@ ${opts.threadBlock}
 JSON phải parse được; \`description\` escape newline thành \\n; không comment trong JSON.`;
 }
 
+/**
+ * Draft a GitLab issue from the BA chat thread only.
+ * No git pull, graphify, DB, or customer source — the agent runs on an empty cwd.
+ */
 export async function runBaThreadIssueDraft(opts: {
   threadId: string;
   baProjectId: string;
@@ -405,35 +395,17 @@ export async function runBaThreadIssueDraft(opts: {
   try {
     const project = await getBaProject(opts.baProjectId);
     if (!project) throw new Error("BA project not found");
-    if (
-      project.cloneStatus !== "ready" ||
-      !(await isGitRepo(project.localPath))
-    ) {
-      throw new Error("Project chưa sẵn sàng — liên hệ admin");
-    }
 
     const messages = await listBaMessages(opts.threadId);
     const threadBlock = formatThreadBlock(messages);
     if (!threadBlock.trim()) {
-      throw new Error("Chưa có hội thoại để tổng hợp issue");
+      throw new Error("No conversation to summarize into an issue");
     }
     const latestAnalysisBlock = formatLatestAnalysisBlock(messages);
 
     session.check();
-    progress("Đang pull source mới nhất…", "pull");
-    await pullBaProjectLatest(project);
-    session.check();
-
     const apiKey = await resolveSystemCursorApiKey();
     const model = await resolveSystemCursorModelSpec();
-    const modelLabel = cursorModelLogLabel(await resolveSystemCursorModel());
-    const dbAllowed = isBaDbAccessAllowed(project);
-    const dbCfg = dbAllowed ? await resolveBaProjectDb(project.id) : null;
-    const dbAccess = {
-      allowed: Boolean(dbCfg),
-      dialect: dbCfg?.dialect,
-      database: dbCfg?.database,
-    };
 
     const userTexts = messages
       .filter((m) => m.role === "user" && m.content?.trim())
@@ -451,29 +423,14 @@ export async function runBaThreadIssueDraft(opts: {
       googleAccessToken,
       texts: userTexts,
     });
-
-    progress("Đang chuẩn bị code map (graphify)…", "read");
-    await ensureProjectGraphifyReady(project.localPath, { timeoutMs: 90_000 });
-    session.check();
-    const graphifyQuery = await queryProjectGraphify(
-      project.localPath,
-      userTexts.slice(-4).join(" | ") || threadBlock.slice(0, 400),
-    );
-    const graphifyBlock = formatBaGraphifyPromptBlock({
-      sourcePath: project.localPath,
-      queryText: graphifyQuery,
-    });
     session.check();
 
     const prompt = buildThreadIssuePrompt({
       displayName: project.displayName,
       gitlabPath: project.gitlabPath,
-      mainBranch: project.mainBranch || "main",
       threadBlock,
       gitlabTaskBlock: linked.block,
-      graphifyBlock,
       latestAnalysisBlock,
-      dbAccess,
     });
 
     logger.info("BA thread issue draft starting", {
@@ -482,26 +439,19 @@ export async function runBaThreadIssueDraft(opts: {
       messageCount: messages.length,
     });
 
-    progress("Agent đang soạn issue…", "agent");
+    progress("Drafting issue from chat…", "agent");
 
     const work = async (): Promise<BaThreadIssueDraft> => {
       session.check();
-      const customTools = mergeBaAgentCustomTools(
-        project.localPath,
-        dbCfg ? (buildBaDbCustomTools(dbCfg) as never) : null,
-      );
+      const scratchCwd = await issueDraftScratchCwd();
       const agent = await Agent.create({
         apiKey,
         model,
         ...readOnlyAgentPolicy(),
-        ...(BA_GITLAB_INTERACTION_ENABLED ? {} : { mcpServers: {} }),
+        mcpServers: {},
         local: {
-          cwd: project.localPath,
-          ...(BA_GITLAB_INTERACTION_ENABLED ? {} : { settingSources: [] }),
-          // Không sandbox: customTools DB/graphify cần chạy không qua cổng phê duyệt headless.
-          ...(Object.keys(customTools).length
-            ? { customTools: customTools as never }
-            : {}),
+          cwd: scratchCwd,
+          settingSources: [],
         },
       });
 
@@ -585,7 +535,7 @@ export async function runBaThreadIssueDraft(opts: {
           length: finalText.length,
         });
         throw new AppError(
-          "Agent không trả về JSON issue hợp lệ — thử chat thêm chi tiết rồi bấm lại",
+          "Agent did not return valid issue JSON — add more detail in chat and try again",
           422,
           "ba_issue_draft_parse_failed",
         );

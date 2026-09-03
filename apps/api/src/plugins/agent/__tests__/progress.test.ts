@@ -1,3 +1,4 @@
+import type { SDKMessage } from "@cursor/sdk";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { subscribeRealtime } from "../../realtime/hub.js";
 import {
@@ -175,5 +176,62 @@ describe("appendJobProgress buffer eviction", () => {
     expect(lines).toHaveLength(400);
     expect(lines[0]!.text).toBe("line-202");
     expect(lines[399]!.text).toBe("line-601");
+  });
+});
+
+function toolCall(
+  name: string,
+  args: unknown,
+  status: "running" | "completed" | "error" = "completed",
+): SDKMessage {
+  return {
+    type: "tool_call",
+    agent_id: "a",
+    run_id: "r",
+    call_id: "c",
+    name,
+    status,
+    args,
+  };
+}
+
+describe("appendSdkMessage tool labels", () => {
+  it("unwraps MCP custom tool name + question", () => {
+    appendSdkMessage(
+      JOB,
+      toolCall(
+        "mcp",
+        {
+          toolName: "code_map_query",
+          providerIdentifier: "custom-user-tools",
+          args: { question: "TimekeeperSync" },
+        },
+        "running",
+      ),
+    );
+    const { lines } = getJobProgress(JOB);
+    expect(lines[0]!.kind).toBe("tool");
+    expect(lines[0]!.text).toBe("code_map_query: TimekeeperSync…");
+  });
+
+  it("unwraps snake_case MCP fields and path tools", () => {
+    appendSdkMessage(
+      JOB,
+      toolCall("mcp", {
+        tool_name: "code_map_path",
+        args: { from: "AuthModule", to: "Database" },
+      }),
+    );
+    const { lines } = getJobProgress(JOB);
+    expect(lines[0]!.text).toBe("code_map_path: AuthModule → Database ✓");
+  });
+
+  it("keeps Shell command labels", () => {
+    appendSdkMessage(
+      JOB,
+      toolCall("Shell", { command: "git status" }, "completed"),
+    );
+    const { lines } = getJobProgress(JOB);
+    expect(lines[0]!.text).toBe("Shell: git status ✓");
   });
 });

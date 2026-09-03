@@ -37,7 +37,6 @@ import {
   formatChatContextForRun,
 } from "./plugins/agent/prompt.js";
 import {
-  formatBadContextChatMessage,
   formatContextQualityForPrompt,
   resolveContextQualityForCoding,
   toContextQualityMark,
@@ -534,26 +533,6 @@ export class JobQueue {
       level: quality.level,
       cached: Boolean(quality.cached),
     });
-    if (quality.level === "bad") {
-      const body = formatBadContextChatMessage(quality, job.issue.issueIid);
-      await addChatMessage({
-        jobId: job.id,
-        issueIid: job.issue.issueIid,
-        role: "agent",
-        kind: "clarify",
-        body,
-      });
-      job.lastQuestion = body;
-      job.error = "Bad Context — add more information before agent coding";
-      job.contextQuality = toContextQualityMark(quality);
-      await saveJob(job);
-      appendJobProgress(
-        job.id,
-        "status",
-        "Bad Context — không gọi Cursor Agent (follow-up)",
-      );
-      return { ok: false, job, kind: "bad_context", question: body };
-    }
 
     const budgetError = this.tokenBudgetError(job);
     if (budgetError) throw new Error(budgetError);
@@ -703,7 +682,7 @@ export class JobQueue {
 
     if (!job.issue?.issueIid || job.issue.issueIid <= 0) {
       throw new Error(
-        "Adhoc job chưa có GitLab issue — tạo issue trước khi sinh testcase",
+        "Session has no GitLab issue yet — create an issue before generating testcases",
       );
     }
 
@@ -2045,52 +2024,6 @@ export class JobQueue {
       good: quality.signals.good.length,
       searchable: quality.signals.searchable.length,
     });
-
-    if (quality.level === "bad") {
-      logger.warn("executeJob abort — bad context", {
-        jobId: job.id,
-        iid: job.issue.issueIid,
-        reason: quality.reason?.slice(0, 200),
-        wordCount: quality.signals.wordCount,
-      });
-      const msg = formatBadContextChatMessage(quality, job.issue.issueIid);
-      // draft (not awaiting_clarification) so job is not isJobBusy — user adds context then Run again
-      job.status = "draft";
-      job.lastQuestion = msg;
-      job.error = "Bad Context — add more information before Run";
-      job.runCount = (job.runCount ?? 0) + 1;
-      job.contextQuality = toContextQualityMark(quality);
-      await saveJob(job);
-      await addChatMessage({
-        jobId: job.id,
-        issueIid: job.issue.issueIid,
-        role: "agent",
-        kind: "clarify",
-        body: msg,
-      });
-      appendJobProgress(
-        job.id,
-        "status",
-        "Bad Context — đã dừng, không gọi Cursor Agent",
-      );
-      try {
-        const { applyIssueActions } = await import("./plugins/scm/index.js");
-        await applyIssueActions({
-          projectId: job.issue.projectId,
-          issueIid: job.issue.issueIid,
-          labels: ["needs_clarification"],
-          labelMode: "add",
-        });
-      } catch (err) {
-        logger.warn("Could not add needs_clarification label", {
-          err: String(err),
-        });
-      }
-      this.activeIssueKeys.delete(key);
-      this.clearCurrent(job.id);
-      this.publishStatus();
-      return;
-    }
 
     // Google Sheets gate — pause for OAuth when task links sheets without tokens
     let googleSheetsBlock = "";

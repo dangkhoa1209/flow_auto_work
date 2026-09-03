@@ -1,4 +1,5 @@
 import {
+  compactGraphifyQueryOutput,
   explainProjectGraphify,
   graphifyEnabled,
   pathProjectGraphify,
@@ -12,7 +13,7 @@ type CustomTool = {
 };
 
 /**
- * Cursor SDK custom tools — BA agents must use these before Grep/Shell for case-3 lookups.
+ * Cursor SDK custom tools — agents must use these before Grep/Shell when exploring source.
  * Graph lives outside source/; tools never write the checkout.
  */
 export function buildBaGraphifyCustomTools(
@@ -23,16 +24,20 @@ export function buildBaGraphifyCustomTools(
   return {
     code_map_query: {
       description:
-        "REQUIRED first step when exploring product source for BA answers. " +
-        "Runs WorkBench graphify query on the sibling knowledge graph (not inside source/). " +
-        "Pass a short Vietnamese or English product question (screen/feature/flow). " +
-        "Call this BEFORE Grep, rg, Glob, or find. Returns related files/symbols.",
+        "REQUIRED first step when exploring this project's source. " +
+        "Runs WorkBench graphify on the sibling graph (not inside source/). " +
+        "Pass ONE short locator: screen name, feature slug, or symbol — " +
+        "NOT the full GitLab issue, description, or chat. " +
+        "Good: 'cấu hình rules chấm công', 'TimekeeperSync', 'staff import by column'. " +
+        "Bad: pasting the ticket or 'dữ liệu như này chạy thành công chưa'. " +
+        "Call BEFORE Grep, rg, Glob, or find.",
       inputSchema: {
         type: "object",
         properties: {
           question: {
             type: "string",
-            description: "Product/UI question to locate in the codebase map",
+            description:
+              "Short screen/module/symbol locator (not the full task or chat)",
           },
         },
         required: ["question"],
@@ -41,10 +46,12 @@ export function buildBaGraphifyCustomTools(
         const question = String(args?.question || "").trim();
         if (!question) return "code_map_query failed: question required";
         const text = await queryProjectGraphify(sourcePath, question);
+        const compact = compactGraphifyQueryOutput(text, { asToolResult: true });
         return (
+          compact ||
           text ||
           "code_map_query: no hits (graph missing or empty). " +
-            "You may try code_map_explain, then a narrow locale Grep — not a repo-wide scan."
+            "Try a tighter screen/symbol, then code_map_explain — not a repo-wide scan."
         );
       },
     },
@@ -101,4 +108,14 @@ export function mergeBaAgentCustomTools(
     ...buildBaGraphifyCustomTools(sourcePath),
     ...(dbTools || {}),
   };
+}
+
+/** Attach graphify custom tools onto a local Agent cwd config when enabled. */
+export function withGraphifyCustomTools(cwd: string): {
+  cwd: string;
+  customTools?: Record<string, CustomTool>;
+} {
+  const customTools = buildBaGraphifyCustomTools(cwd);
+  if (!Object.keys(customTools).length) return { cwd };
+  return { cwd, customTools };
 }

@@ -61,13 +61,13 @@ const createIssueDisabled = computed(() => {
 
 const createIssueDisabledReason = computed(() => {
   if (draftingIssue.value) {
-    return ba.issueDraftLabel || "Agent đang tổng hợp issue…";
+    return ba.issueDraftLabel || "Summarizing the conversation…";
   }
-  if (!ba.activeThreadId) return "Chọn hoặc tạo cuộc chat";
-  if (!ba.selectedProjectId) return "Chọn project ở sidebar";
-  if (!ba.projectReady) return "Project chưa sẵn sàng";
-  if (ba.streaming) return "Đợi agent trả lời xong";
-  if (!ba.messages.some((m) => m.content?.trim())) return "Chưa có hội thoại";
+  if (!ba.activeThreadId) return "Select or start a chat";
+  if (!ba.selectedProjectId) return "Select a project in the sidebar";
+  if (!ba.projectReady) return "Project is not ready";
+  if (ba.streaming) return "Wait for the agent to finish answering";
+  if (!ba.messages.some((m) => m.content?.trim())) return "No conversation yet";
   return "";
 });
 
@@ -83,8 +83,8 @@ watch(
     taskModalOpen.value = true;
     message.success(
       res.cached
-        ? "Dùng bản soạn trước — chat chưa thay đổi"
-        : "Đã soạn draft — chỉnh sửa rồi lưu hoặc publish",
+        ? "Using the previous draft — chat has not changed"
+        : "Draft ready — edit, then save or publish",
     );
   },
 );
@@ -295,7 +295,7 @@ function onTaskPublish(payload: {
               :disabled="createIssueDisabled"
               @click="onCreateIssueFromThread"
             >
-              {{ draftingIssue ? "Đang soạn…" : createIssueLabel }}
+              {{ draftingIssue ? "Drafting…" : createIssueLabel }}
             </button>
           </a-tooltip>
           <span

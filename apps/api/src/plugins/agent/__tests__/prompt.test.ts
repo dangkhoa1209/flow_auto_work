@@ -1,8 +1,21 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildWorkPrompt,
   extractChatBodyFromAgentText,
   parseAgentOutcome,
 } from "../prompt.js";
+
+const issue = {
+  projectId: 1,
+  projectPath: "group/app",
+  issueIid: 102,
+  issueId: 102,
+  title: "Big table",
+  description: "Show all rows",
+  labels: ["frontend"],
+  url: "https://example/issues/102",
+  action: "manual",
+};
 
 describe("parseAgentOutcome", () => {
   it("parses DONE block", () => {
@@ -93,5 +106,22 @@ describe("extractChatBodyFromAgentText", () => {
 
   it("returns (no reply) for empty input", () => {
     expect(extractChatBodyFromAgentText("")).toBe("(no reply)");
+  });
+});
+
+describe("buildWorkPrompt graphify", () => {
+  it("injects how-to-use graphify instructions", () => {
+    const prompt = buildWorkPrompt(issue, undefined, undefined, undefined, {
+      graphifyBlock:
+        "## How to use Graphify (code map)\ncall code_map_query with a short locator",
+    });
+    expect(prompt).toMatch(/code_map_query/);
+    expect(prompt).toContain("How to use Graphify");
+    expect(prompt).toMatch(/Investigate via \*\*code_map_query\*\* first/);
+  });
+
+  it("omits the map when no graphify block is passed", () => {
+    const prompt = buildWorkPrompt(issue);
+    expect(prompt).not.toContain("How to use Graphify");
   });
 });

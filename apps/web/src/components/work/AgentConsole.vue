@@ -344,7 +344,7 @@ watch(chatBox, (el, prev) => {
                   (!mobileTabs && progressOpen && bottomTab === 'logs') ||
                   (mobileTabs && mobileConsoleTab === 'logs'),
               }"
-              title="Xem Process / agent progress"
+              title="View Process / agent progress"
               @click="openProcessPanel"
             >
               Process
@@ -506,13 +506,17 @@ watch(chatBox, (el, prev) => {
               <span class="chat-typing" aria-label="Đang suy nghĩ">
                 <span /><span /><span />
               </span>
-              <span class="text-[11px] text-ink-faint ml-1.5">đang suy nghĩ…</span>
+              <span class="text-[11px] text-ink-faint ml-1.5">thinking…</span>
             </div>
           </div>
 
           <a-empty
             v-if="!chat.length && !agentTyping"
-            description="Chat trống — Run hoặc Gửi"
+            :description="
+              currentJob
+                ? 'No messages yet — Run or Send'
+                : 'Type a request below to start a session'
+            "
           />
         </div>
       </div>
@@ -704,7 +708,9 @@ watch(chatBox, (el, prev) => {
               ? 'Type a follow-up — Send will ask to stop the current run…'
               : currentJob?.status === 'awaiting_clarification'
                 ? 'Reply to the agent / confirm…'
-                : 'Send a command (fix / implement / analyze) → queue…'
+                : currentJob
+                  ? 'Send a command (fix / implement / analyze) → queue…'
+                  : 'Describe the work — Send starts a session (no GitLab issue needed)'
           "
           @update:value="(v: string) => emit('update:chatInput', v)"
           @keydown="onChatKeydown"
