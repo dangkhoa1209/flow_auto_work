@@ -238,7 +238,7 @@ function close() {
       :spinning="metaLoading || !!agentDrafting"
       :tip="
         agentDrafting
-          ? agentDraftLabel || "Drafting issue…"
+          ? agentDraftLabel || 'Drafting issue…'
           : undefined
       "
     >
