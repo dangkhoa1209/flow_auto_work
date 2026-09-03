@@ -4676,6 +4676,9 @@ a.faw-mseg__btn {
 .faw-admin-users-table .faw-admin-users-table__row--off td {
   opacity: 0.55;
 }
+.faw-admin-cursor-table .faw-admin-cursor-table__row--active td {
+  background: color-mix(in srgb, var(--accent, #5b8def) 6%, transparent);
+}
 @media (max-width: 768px) {
   .faw-admin-page { padding: 16px 12px 32px; }
   .faw-admin-page__head { flex-direction: column; }
