@@ -7,8 +7,10 @@ import type { IssueJob } from "../../types.js";
 import {
   resolveCursorApiKey,
   resolveCursorModel,
+  resolveCursorModelSpec,
   resolveRepoPath,
 } from "../../workspace/creds.js";
+import { cursorModelLogLabel } from "../cursor/modelSpec.js";
 import {
   graphifyEnabled,
   prepareWorkGraphifyContext,
@@ -608,7 +610,8 @@ export async function runNewAgent(
   extraContext?: string,
   opts?: RunOpts,
 ): Promise<AgentRunResult> {
-  const modelId = resolveCursorModel();
+  const model = resolveCursorModelSpec();
+  const modelLabel = cursorModelLogLabel(resolveCursorModel());
   const existing = opts?.existingAgentId?.trim();
   let resumed = false;
   let agent: Awaited<ReturnType<typeof Agent.create>>;
@@ -622,13 +625,13 @@ export async function runNewAgent(
       try {
         agent = await Agent.resume(existing, {
           apiKey: resolveCursorApiKey(),
-          model: { id: modelId },
+          model,
           local: workAgentLocal(),
         });
         resumed = true;
         logger.info("Resumed agent window for job", {
           agentId: agent.agentId,
-          model: modelId,
+          model: modelLabel,
           phase: opts?.phase ?? "code",
         });
       } catch (err) {
@@ -639,19 +642,19 @@ export async function runNewAgent(
         session.check();
         agent = await Agent.create({
           apiKey: resolveCursorApiKey(),
-          model: { id: modelId },
+          model,
           local: workAgentLocal(),
         });
       }
     } else {
       agent = await Agent.create({
         apiKey: resolveCursorApiKey(),
-        model: { id: modelId },
+        model,
         local: workAgentLocal(),
       });
       logger.info("Created local agent window", {
         agentId: agent.agentId,
-        model: modelId,
+        model: modelLabel,
         phase: opts?.phase ?? "code",
         hasChatContext: Boolean(opts?.chatContext?.trim()),
       });
@@ -708,16 +711,17 @@ export async function resumeAgent(
   issue: IssueJob,
   opts?: { jobId?: string; clarifyRoundsLeft?: number },
 ): Promise<AgentRunResult> {
-  const modelId = resolveCursorModel();
+  const model = resolveCursorModelSpec();
+  const modelLabel = cursorModelLogLabel(resolveCursorModel());
   await using agent = await Agent.resume(agentId, {
     apiKey: resolveCursorApiKey(),
-    model: { id: modelId },
+    model,
     local: workAgentLocal(),
   });
 
   logger.info("Resumed agent (clarify)", {
     agentId: agent.agentId,
-    model: modelId,
+    model: modelLabel,
   });
   const graphifyBlock = await loadWorkGraphifyBlock(opts?.jobId);
   const prompt = `${graphifyBlock ? `${graphifyBlock}\n\n` : ""}${buildResumePrompt(answer, issue, {
@@ -765,7 +769,8 @@ export async function continueAgentWindow(
     figmaBlock?: string;
   },
 ): Promise<AgentRunResult> {
-  const modelId = resolveCursorModel();
+  const model = resolveCursorModelSpec();
+  const modelLabel = cursorModelLogLabel(resolveCursorModel());
   const isAdhoc = issue.issueIid <= 0 || issue.action === "adhoc";
 
   if (opts?.jobId) {
@@ -795,7 +800,7 @@ export async function continueAgentWindow(
     session.check();
     const agent = await Agent.create({
       apiKey: resolveCursorApiKey(),
-      model: { id: modelId },
+      model,
       local: workAgentLocal(),
     }).catch((err) => {
       throw new Error(
@@ -808,7 +813,7 @@ export async function continueAgentWindow(
     session.check();
     logger.info("Follow-up new agent window", {
       agentId: agent.agentId,
-      model: modelId,
+      model: modelLabel,
     });
 
     await using disposed = agent;

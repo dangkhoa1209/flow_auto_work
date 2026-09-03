@@ -4,7 +4,7 @@ import { message, Modal } from "ant-design-vue";
 import { MoreOutlined } from "@ant-design/icons-vue";
 import { api } from "@/api/client";
 import { API } from "@/api/endpoints";
-import { useCursorModelSelect } from "@/composables/useCursorModelSelect";
+import CursorModelFields from "@/components/settings/CursorModelFields.vue";
 
 type CursorPatPublic = {
   id: string;
@@ -38,14 +38,7 @@ const editingPatId = ref<string | null>(null);
 const patLabel = ref("");
 const patKey = ref("");
 const patSaving = ref(false);
-
-const {
-  model,
-  models,
-  modelsLoading,
-  modelsWarning,
-  loadModels,
-} = useCursorModelSelect(API.admin.cursorModels);
+const modelFieldsRef = ref<InstanceType<typeof CursorModelFields> | null>(null);
 
 const statusLabel = computed(() => {
   if (!pats.value.length) return "No API key yet";
@@ -82,10 +75,7 @@ async function loadModelsForPat(
   patId?: string | null,
   selectedFallback?: string | null,
 ) {
-  const url = patId
-    ? `${API.admin.cursorModels}?patId=${encodeURIComponent(patId)}`
-    : API.admin.cursorModels;
-  await loadModels(selectedFallback ?? model.value, url);
+  await modelFieldsRef.value?.loadModelsForPat(patId, selectedFallback);
 }
 
 function openCreateModal() {
@@ -104,12 +94,12 @@ function openEditModal(pat: CursorPatPublic) {
   patModalOpen.value = true;
 }
 
-async function saveModel() {
+async function saveModel(storedValue: string) {
   loading.value = true;
   try {
     const data = await api<CursorSettings>(API.admin.cursorSettings, {
       method: "PUT",
-      body: JSON.stringify({ cursorModel: model.value }),
+      body: JSON.stringify({ cursorModel: storedValue }),
     });
     applySettings(data);
     message.success("Model saved");
@@ -255,30 +245,20 @@ onMounted(() => {
         <h1 class="faw-admin-page__title">AI Engine</h1>
         <p class="faw-admin-page__desc">
           Shared Cursor API keys for BA Chat. Add multiple keys; only one can be
-          <strong>active</strong> for the system.
+          <strong>active</strong> for the system. Pick
+          <strong>Auto (legacy)</strong> or <strong>Auto (Router)</strong> with
+          a cost / balanced / intelligence mode.
         </p>
       </div>
     </header>
 
     <div class="p-4 rounded-lg border border-line bg-surface-raised space-y-4 mb-4">
-      <label class="flex flex-col gap-1 text-sm">
-        <span class="text-ink-muted">Agent model</span>
-        <a-select
-          v-model:value="model"
-          :options="models"
-          :loading="modelsLoading"
-          class="w-full max-w-md"
-        />
-      </label>
-      <a-alert
-        v-if="modelsWarning"
-        type="warning"
-        show-icon
-        :message="modelsWarning"
+      <CursorModelFields
+        ref="modelFieldsRef"
+        :models-url="API.admin.cursorModels"
+        :loading="loading"
+        @save="saveModel"
       />
-      <a-button size="small" type="primary" :loading="loading" @click="saveModel">
-        Save model
-      </a-button>
     </div>
 
     <a-alert

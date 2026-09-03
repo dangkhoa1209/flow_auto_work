@@ -10,7 +10,7 @@ import {
   getBaThread,
   listBaMessages,
   resolveSystemCursorApiKey,
-  resolveSystemCursorModel,
+  resolveSystemCursorModelSpec,
   type BaMessage,
 } from "../../workspace/baStore.js";
 import { loadBaLinkedContext } from "../ba/ba-linked-context.js";
@@ -403,7 +403,7 @@ export async function runBaThreadIssueDraft(opts: {
 
     session.check();
     const apiKey = await resolveSystemCursorApiKey();
-    const modelId = await resolveSystemCursorModel();
+    const model = await resolveSystemCursorModelSpec();
 
     const userTexts = messages
       .filter((m) => m.role === "user" && m.content?.trim())
@@ -444,7 +444,7 @@ export async function runBaThreadIssueDraft(opts: {
       const scratchCwd = await issueDraftScratchCwd();
       const agent = await Agent.create({
         apiKey,
-        model: { id: modelId },
+        model,
         mcpServers: {},
         local: {
           cwd: scratchCwd,

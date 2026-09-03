@@ -12,8 +12,10 @@ import type { IssueJob } from "../../types.js";
 import {
   resolveCursorApiKey,
   resolveCursorModel,
+  resolveCursorModelSpec,
   resolveRepoPath,
 } from "../../workspace/creds.js";
+import { cursorModelLogLabel } from "../cursor/modelSpec.js";
 import {
   appendJobProgress,
   appendPromptSending,
@@ -170,10 +172,11 @@ ${diffClip}
 
 Hãy sinh bộ test case theo đúng cấu trúc mục 3.`;
 
-  const modelId = resolveCursorModel();
+  const model = resolveCursorModelSpec();
+  const modelLabel = cursorModelLogLabel(resolveCursorModel());
   logger.info("Testcase generation starting", {
     issueIid: opts.issue.issueIid,
-    model: modelId,
+    model: modelLabel,
     jobId,
   });
 
@@ -181,12 +184,12 @@ Hãy sinh bộ test case theo đúng cấu trúc mục 3.`;
     const session = beginCancellableJob(jobId);
     try {
       clearJobProgress(jobId);
-      appendJobProgress(jobId, "status", `Sinh testcase QC · model ${modelId}`);
+      appendJobProgress(jobId, "status", `Sinh testcase QC · model ${modelLabel}`);
       session.check();
 
       const agent = await Agent.create({
         apiKey: resolveCursorApiKey(),
-        model: { id: modelId },
+        model,
         local: { cwd: resolveRepoPath() },
       });
 

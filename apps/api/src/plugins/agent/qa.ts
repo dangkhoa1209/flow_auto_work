@@ -11,8 +11,10 @@ import type { IssueJob } from "../../types.js";
 import {
   resolveCursorApiKey,
   resolveCursorModel,
+  resolveCursorModelSpec,
   resolveRepoPath,
 } from "../../workspace/creds.js";
+import { cursorModelLogLabel } from "../cursor/modelSpec.js";
 import {
   appendJobProgress,
   appendPromptSending,
@@ -118,20 +120,6 @@ export async function answerTaskQuestion(opts: {
     })
     .join("\n\n");
 
-  const modelId = resolveCursorModel();
-  logger.info("Q&A agent starting", {
-    issueIid: opts.issue.issueIid,
-    historyTurns: opts.history?.length ?? 0,
-    model: modelId,
-    jobId,
-    existingAgentId: opts.existingAgentId || null,
-  });
-
-  if (jobId) {
-    clearJobProgress(jobId);
-    appendJobProgress(jobId, "status", `Q&A started · model ${modelId}`);
-  }
-
   const graphifyBlock = await loadWorkGraphifyBlock(jobId);
 
   // Prefer job work commits (id → change) over a long branch git-log.
@@ -177,6 +165,21 @@ ${
 ## Question from the human
 ${opts.question}`;
 
+  const model = resolveCursorModelSpec();
+  const modelLabel = cursorModelLogLabel(resolveCursorModel());
+  logger.info("Q&A agent starting", {
+    issueIid: opts.issue.issueIid,
+    historyTurns: opts.history?.length ?? 0,
+    model: modelLabel,
+    jobId,
+    existingAgentId: opts.existingAgentId || null,
+  });
+
+  if (jobId) {
+    clearJobProgress(jobId);
+    appendJobProgress(jobId, "status", `Q&A started · model ${modelLabel}`);
+  }
+
   const work = async (): Promise<QaResult> => {
     let resumed = false;
     let agent: Awaited<ReturnType<typeof Agent.create>>;
@@ -188,7 +191,7 @@ ${opts.question}`;
         try {
           agent = await Agent.resume(existing, {
             apiKey: resolveCursorApiKey(),
-            model: { id: modelId },
+            model,
             local: workAgentLocal(),
           });
           resumed = true;
@@ -197,14 +200,14 @@ ${opts.question}`;
           session.check();
           agent = await Agent.create({
             apiKey: resolveCursorApiKey(),
-            model: { id: modelId },
+            model,
             local: workAgentLocal(),
           });
         }
       } else {
         agent = await Agent.create({
           apiKey: resolveCursorApiKey(),
-          model: { id: modelId },
+          model,
           local: workAgentLocal(),
         });
       }
