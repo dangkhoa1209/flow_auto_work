@@ -1,8 +1,10 @@
 /**
  * Task-level change summary for Create MR / Merge comments.
- * Prefer full work-branch vs base (not only the tip commit / last agent run).
+ * Prefer job work history (chat DONE + job commit SHAs → code change)
+ * over dumping the full branch git-log.
  */
 import { git } from "../../plugins/git/exec.js";
+import { listChatMessages } from "../../models/chat.js";
 
 /** Pull the SUMMARY: line from a DONE block; else first useful line. */
 export function extractDoneSummaryLine(raw?: string | null): string {
@@ -86,6 +88,64 @@ export async function listSubjectsForShas(
   return out;
 }
 
+/**
+ * Job-scoped commit lines: `shortSha — subject (files…)`.
+ * Uses stored job SHAs only — not the whole branch log.
+ */
+export async function listJobCommitChangeLines(opts: {
+  repoPath: string;
+  commitShas?: string[];
+  limit?: number;
+}): Promise<string[]> {
+  const limit = Math.min(Math.max(opts.limit ?? 20, 1), 30);
+  const shas = (opts.commitShas || [])
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .slice(-limit);
+  const out: string[] = [];
+  for (const sha of shas) {
+    try {
+      const { stdout: meta } = await git(opts.repoPath, [
+        "log",
+        "-1",
+        "--format=%h\t%s",
+        sha,
+      ]);
+      const [short, subject] = meta.trim().split("\t");
+      if (!short) continue;
+      let files = "";
+      try {
+        const { stdout: names } = await git(opts.repoPath, [
+          "diff-tree",
+          "--no-commit-id",
+          "--name-only",
+          "-r",
+          sha,
+        ]);
+        const paths = names
+          .split("\n")
+          .map((s) => s.trim())
+          .filter(Boolean);
+        if (paths.length) {
+          const shown = paths.slice(0, 4).join(", ");
+          files =
+            paths.length > 4
+              ? ` (${shown}, +${paths.length - 4} files)`
+              : ` (${shown})`;
+        }
+      } catch {
+        /* optional */
+      }
+      out.push(
+        `${short} — ${(subject || "").trim() || "(no subject)"}${files}`,
+      );
+    } catch {
+      /* skip missing sha */
+    }
+  }
+  return out;
+}
+
 /** Commit subjects on work branch since merge-base with base (oldest → newest). */
 export async function listTaskCommitSubjects(opts: {
   repoPath: string;
@@ -123,12 +183,70 @@ export async function listTaskCommitSubjects(opts: {
 }
 
 /**
+ * Work-task history from job chat: agent DONE/summary lines (+ short human asks).
+ * Prefer this over raw git-log when building MR / merge comments.
+ */
+export function extractWorkHistoryFromChat(
+  messages: Array<{ role?: string; body?: string | null }>,
+  opts?: { limit?: number },
+): string[] {
+  const limit = Math.min(Math.max(opts?.limit ?? 12, 1), 24);
+  const out: string[] = [];
+  const seen = new Set<string>();
+
+  const push = (raw: string) => {
+    const s = raw.trim().replace(/\s+/g, " ");
+    if (!s || s.length < 3) return;
+    const key = s.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push(s.length > 200 ? `${s.slice(0, 197)}…` : s);
+  };
+
+  for (const m of messages) {
+    const body = (m.body || "").trim();
+    if (!body) continue;
+    if (m.role === "agent" || m.role === "assistant") {
+      const summary = extractDoneSummaryLine(body);
+      if (summary) push(summary);
+    } else if (m.role === "user") {
+      // Keep short human work requests as timeline anchors
+      const first = body.split("\n").map((l) => l.trim()).find(Boolean) || "";
+      if (first && first.length <= 160 && !/^<<<|^```/.test(first)) {
+        push(`YC: ${first}`);
+      }
+    }
+  }
+
+  return out.slice(-limit);
+}
+
+/** Load chat for a job and extract work-history lines. */
+export async function listJobWorkHistory(
+  jobId: string,
+  opts?: { limit?: number },
+): Promise<string[]> {
+  try {
+    const rows = await listChatMessages({ jobId, limit: 200 });
+    return extractWorkHistoryFromChat(rows, opts);
+  } catch {
+    return [];
+  }
+}
+
+/**
  * Human-readable "Thay đổi" body for MR / issue comments.
- * Lead with agent DONE summary when present; if multiple commits, list them all.
+ * Prefer work-task chat history + job commit SHAs → code change;
+ * fall back to commit subjects only when history is empty.
  */
 export function buildTaskChangeText(opts: {
   issueTitle?: string;
   jobSummary?: string | null;
+  /** Agent/human work steps from job chat (preferred). */
+  workHistory?: string[];
+  /** `shortSha — subject (files)` from job.commitShas (preferred over subjects). */
+  commitLines?: string[];
+  /** Legacy fallback: plain commit subjects from branch log. */
   commitSubjects?: string[];
   fallback?: string;
 }): string {
@@ -139,21 +257,56 @@ export function buildTaskChangeText(opts: {
       : "") ||
     (opts.fallback || "").trim();
 
-  const commits = (opts.commitSubjects || [])
+  const history = (opts.workHistory || [])
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .filter((s) => {
+      if (!lead) return true;
+      return s !== lead && !lead.includes(s) && !s.includes(lead);
+    });
+
+  const commitLines = (opts.commitLines || [])
     .map((s) => s.trim())
     .filter(Boolean);
 
-  // Single commit that duplicates the lead → keep lead only
-  if (commits.length <= 1) {
-    return lead || commits[0] || "Đã hoàn thành thay đổi trên nhánh work.";
+  const parts: string[] = [];
+  if (lead) parts.push(lead);
+
+  if (history.length) {
+    parts.push(
+      `Lịch sử work task:\n${history.map((s) => `- ${s}`).join("\n")}`,
+    );
   }
 
-  const bullets = commits.map((s) => `- ${s}`).join("\n");
-  if (!lead) return bullets;
-  // Avoid duplicating the same one-liner when lead ≈ last commit
-  const last = commits[commits.length - 1]!;
-  if (lead === last || last.includes(lead) || lead.includes(last)) {
-    return bullets;
+  if (commitLines.length) {
+    parts.push(
+      `Commit (id → thay đổi):\n${commitLines.map((s) => `- ${s}`).join("\n")}`,
+    );
+  } else if (!history.length) {
+    // Fallback only when no chat history: list subjects (legacy)
+    const commits = (opts.commitSubjects || [])
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (commits.length > 1) {
+      const bullets = commits.map((s) => `- ${s}`).join("\n");
+      if (lead) {
+        const last = commits[commits.length - 1]!;
+        if (lead === last || last.includes(lead) || lead.includes(last)) {
+          parts.length = 0;
+          parts.push(bullets);
+        } else {
+          parts.push(`Các commit trong task:\n${bullets}`);
+        }
+      } else {
+        parts.push(bullets);
+      }
+    } else if (!lead && commits[0]) {
+      parts.push(commits[0]);
+    }
   }
-  return `${lead}\n\nCác commit trong task:\n${bullets}`;
+
+  if (!parts.length) {
+    return "Đã hoàn thành thay đổi trên nhánh work.";
+  }
+  return parts.join("\n\n");
 }

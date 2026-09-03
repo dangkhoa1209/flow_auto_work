@@ -9,6 +9,8 @@ import { AppError } from "../../utils/AppError.js";
 import { requireJobDoc } from "./lifecycle.js";
 import {
   buildTaskChangeText,
+  listJobCommitChangeLines,
+  listJobWorkHistory,
   listTaskCommitSubjects,
 } from "./taskChangeSummary.js";
 
@@ -139,17 +141,33 @@ async function postMergeSummaryComment(
     );
 
     let commitSubjects = opts.commitSubjects ?? [];
-    if (!commitSubjects.length && opts.repoPath) {
+    const workHistory = await listJobWorkHistory(job.id);
+    let commitLines: string[] = [];
+    if (opts.repoPath) {
+      commitLines = await listJobCommitChangeLines({
+        repoPath: opts.repoPath,
+        commitShas: job.commitShas,
+      });
+    }
+    if (
+      !commitSubjects.length &&
+      !workHistory.length &&
+      !commitLines.length &&
+      opts.repoPath
+    ) {
       commitSubjects = await listTaskCommitSubjects({
         repoPath: opts.repoPath,
         sourceBranch: opts.source,
         targetBranch: opts.target,
+        commitShas: job.commitShas,
       });
     }
 
     const changeText = buildTaskChangeText({
       issueTitle: job.issue.title || "",
       jobSummary: job.summary,
+      workHistory,
+      commitLines,
       commitSubjects,
       fallback: "Đã merge thay đổi từ nhánh work vào base.",
     });
@@ -417,14 +435,16 @@ export async function mergeJobBranch(
       );
 
       // Snapshot task commits BEFORE accept — after merge base..work is empty.
-      const commitSubjects = repoPath
-        ? await listTaskCommitSubjects({
-            repoPath,
-            sourceBranch: source,
-            targetBranch: target,
-            commitShas: job.commitShas,
-          })
-        : [];
+      // Prefer job.commitShas; full branch log only as last-resort fallback in postMerge.
+      const commitSubjects =
+        repoPath && !(job.commitShas?.length)
+          ? await listTaskCommitSubjects({
+              repoPath,
+              sourceBranch: source,
+              targetBranch: target,
+              commitShas: job.commitShas,
+            })
+          : [];
 
       /** Sync base → work + AI clear conflicts, then GitLab can accept the MR. */
       const aiFixMrConflicts = async (reason: string) => {
@@ -602,13 +622,16 @@ export async function mergeJobBranch(
       "../../plugins/agent/merge-resolve.js"
     );
 
-    // Snapshot before local merge mutates base.
-    const commitSubjects = await listTaskCommitSubjects({
-      repoPath,
-      sourceBranch: source,
-      targetBranch: target,
-      commitShas: job.commitShas,
-    });
+    // Snapshot before local merge mutates base (fallback only if no job SHAs).
+    const commitSubjects =
+      !(job.commitShas?.length)
+        ? await listTaskCommitSubjects({
+            repoPath,
+            sourceBranch: source,
+            targetBranch: target,
+            commitShas: job.commitShas,
+          })
+        : [];
 
     const attempt = await attemptMergeIntoBase({
       repoPath,

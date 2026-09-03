@@ -19,6 +19,8 @@ import { requireJobDoc } from "./lifecycle.js";
 import {
   buildTaskChangeText,
   extractDoneSummaryLine,
+  listJobCommitChangeLines,
+  listJobWorkHistory,
   listTaskChangedFiles,
   listTaskCommitSubjects,
 } from "./taskChangeSummary.js";
@@ -192,25 +194,36 @@ export async function createJobMergeRequest(
   const iid = job.issue?.issueIid ?? 0;
 
   // Full task range (base...work), not only the tip / last agent run.
+  // Prefer job chat + job.commitShas over dumping the whole branch log.
   let files: string[] = [];
   let commitSubjects: string[] = [];
+  let commitLines: string[] = [];
+  const workHistory = await listJobWorkHistory(job.id);
   if (repoPath) {
     files = await listTaskChangedFiles({
       repoPath,
       sourceBranch: source,
       targetBranch: target,
     });
-    commitSubjects = await listTaskCommitSubjects({
+    commitLines = await listJobCommitChangeLines({
       repoPath,
-      sourceBranch: source,
-      targetBranch: target,
       commitShas: job.commitShas,
     });
+    if (!workHistory.length && !commitLines.length) {
+      commitSubjects = await listTaskCommitSubjects({
+        repoPath,
+        sourceBranch: source,
+        targetBranch: target,
+        commitShas: job.commitShas,
+      });
+    }
   }
 
   const changeText = buildTaskChangeText({
     issueTitle: job.issue?.title || "",
     jobSummary: job.summary,
+    workHistory,
+    commitLines,
     commitSubjects,
     fallback: "Hoàn thành thay đổi trên nhánh work.",
   });
@@ -220,6 +233,7 @@ export async function createJobMergeRequest(
     issueTitle: job.issue?.title || source,
     commitSubject:
       extractDoneSummaryLine(job.summary) ||
+      workHistory[workHistory.length - 1] ||
       commitSubjects[commitSubjects.length - 1] ||
       job.issue?.title ||
       source,
