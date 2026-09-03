@@ -7,12 +7,6 @@ import { logger } from "../../logger.js";
 import type { IssueJob } from "../../types.js";
 import { AppError } from "../../utils/AppError.js";
 import { requireJobDoc } from "./lifecycle.js";
-import {
-  buildTaskChangeText,
-  listJobCommitChangeLines,
-  listJobWorkHistory,
-  listTaskCommitSubjects,
-} from "./taskChangeSummary.js";
 
 export type CompletionActionsInput = {
   assignees?: string[];
@@ -79,121 +73,6 @@ export async function applyCompletionActions(
 }
 
 const MR_CONFLICT_RE = /cannot_be_merged|conflict|Branch cannot be merged/i;
-
-function buildMergeIssueComment(opts: {
-  issueTitle: string;
-  changeText?: string;
-  source: string;
-  target: string;
-  commitSha?: string | null;
-  mrUrl?: string | null;
-}): string {
-  const change =
-    opts.changeText?.trim() ||
-    (opts.issueTitle
-      ? `Đã merge: ${opts.issueTitle}`
-      : "Đã merge thay đổi từ nhánh work vào base.");
-  const lines = [
-    `## Thay đổi`,
-    ``,
-    change,
-    ``,
-    `## Merge`,
-    ``,
-    `- \`${opts.source}\` → \`${opts.target}\``,
-  ];
-  if (opts.commitSha) {
-    lines.push(`- Commit: \`${opts.commitSha.slice(0, 12)}\``);
-  }
-  if (opts.mrUrl) {
-    lines.push(`- MR: ${opts.mrUrl}`);
-  }
-  lines.push(
-    ``,
-    `## Testcase`,
-    ``,
-    `1. Pull nhánh \`${opts.target}\` và kiểm tra diff / hành vi đúng scope`,
-    `2. Verify chức năng liên quan issue vẫn hoạt động`,
-    `3. Regression nhanh các flow chính bị ảnh hưởng`,
-  );
-  return lines.join("\n");
-}
-
-/** Best-effort summary comment on the GitLab issue after a successful Merge. */
-async function postMergeSummaryComment(
-  job: Awaited<ReturnType<typeof requireJobDoc>>,
-  opts: {
-    source: string;
-    target: string;
-    commitSha?: string | null;
-    mrUrl?: string | null;
-    /** Collected before merge — after merge base..work is often empty. */
-    commitSubjects?: string[];
-    repoPath?: string;
-  },
-): Promise<void> {
-  const iid = job.issue?.issueIid ?? 0;
-  if (iid <= 0) return;
-  try {
-    const { commentOnIssue } = await import("../../plugins/scm/index.js");
-    const { withAiGeneratedMarker } = await import(
-      "../../plugins/gitlab/agent-comment.js"
-    );
-
-    let commitSubjects = opts.commitSubjects ?? [];
-    const workHistory = await listJobWorkHistory(job.id);
-    let commitLines: string[] = [];
-    if (opts.repoPath) {
-      commitLines = await listJobCommitChangeLines({
-        repoPath: opts.repoPath,
-        commitShas: job.commitShas,
-      });
-    }
-    if (
-      !commitSubjects.length &&
-      !workHistory.length &&
-      !commitLines.length &&
-      opts.repoPath
-    ) {
-      commitSubjects = await listTaskCommitSubjects({
-        repoPath: opts.repoPath,
-        sourceBranch: opts.source,
-        targetBranch: opts.target,
-        commitShas: job.commitShas,
-      });
-    }
-
-    const changeText = buildTaskChangeText({
-      issueTitle: job.issue.title || "",
-      jobSummary: job.summary,
-      workHistory,
-      commitLines,
-      commitSubjects,
-      fallback: "Đã merge thay đổi từ nhánh work vào base.",
-    });
-
-    await commentOnIssue(
-      job.issue.projectId,
-      iid,
-      withAiGeneratedMarker(
-        buildMergeIssueComment({
-          issueTitle: job.issue.title || "",
-          changeText,
-          source: opts.source,
-          target: opts.target,
-          commitSha: opts.commitSha,
-          mrUrl: opts.mrUrl,
-        }),
-      ),
-    );
-  } catch (err) {
-    logger.warn("Merge ok but issue summary comment failed", {
-      jobId: job.id,
-      iid,
-      err: String(err),
-    });
-  }
-}
 
 export type PullBaseResult = {
   summary: string;
@@ -434,18 +313,6 @@ export async function mergeJobBranch(
         "../../plugins/agent/progress.js"
       );
 
-      // Snapshot task commits BEFORE accept — after merge base..work is empty.
-      // Prefer job.commitShas; full branch log only as last-resort fallback in postMerge.
-      const commitSubjects =
-        repoPath && !(job.commitShas?.length)
-          ? await listTaskCommitSubjects({
-              repoPath,
-              sourceBranch: source,
-              targetBranch: target,
-              commitShas: job.commitShas,
-            })
-          : [];
-
       /** Sync base → work + AI clear conflicts, then GitLab can accept the MR. */
       const aiFixMrConflicts = async (reason: string) => {
         if (!repoPath) {
@@ -563,15 +430,6 @@ export async function mergeJobBranch(
       }
       await saveJob(job);
 
-      await postMergeSummaryComment(job, {
-        source,
-        target,
-        commitSha: mergeSha,
-        mrUrl: merged.webUrl || existingMr.webUrl,
-        commitSubjects,
-        repoPath,
-      });
-
       logger.info("Job branch merged via existing MR", {
         jobId: job.id,
         source,
@@ -621,17 +479,6 @@ export async function mergeJobBranch(
     const { resolveMergeConflictsWithAi } = await import(
       "../../plugins/agent/merge-resolve.js"
     );
-
-    // Snapshot before local merge mutates base (fallback only if no job SHAs).
-    const commitSubjects =
-      !(job.commitShas?.length)
-        ? await listTaskCommitSubjects({
-            repoPath,
-            sourceBranch: source,
-            targetBranch: target,
-            commitShas: job.commitShas,
-          })
-        : [];
 
     const attempt = await attemptMergeIntoBase({
       repoPath,
@@ -702,15 +549,6 @@ export async function mergeJobBranch(
         job.commitShas = [...(job.commitShas ?? []), commitSha].slice(-20);
       }
       await saveJob(job);
-
-      await postMergeSummaryComment(job, {
-        source,
-        target,
-        commitSha,
-        mrUrl: null,
-        commitSubjects,
-        repoPath,
-      });
 
       logger.info("Job branch merged locally (no MR)", {
         jobId: job.id,

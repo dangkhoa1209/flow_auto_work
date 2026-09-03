@@ -17,7 +17,7 @@ export function docsCommitMessageForIssue(issue: IssueJob): string {
 /**
  * Instruct agent how to comment on GitLab when the human asks in chat.
  * Flow does **not** auto-comment after a code Run finishes (avoids spam);
- * Create MR still posts one summary. Empty for adhoc (no issue yet).
+ * Create MR / Merge also do not post issue comments. Empty for adhoc (no issue yet).
  */
 export function gitlabCommentInstructions(issue: IssueJob): string {
   if (issue.issueIid <= 0 || issue.action === "adhoc") return "";
@@ -36,7 +36,7 @@ Nội dung comment (tiếng Việt trừ khi human yêu cầu khác)…
 
 Rules:
 - Only use GITLAB_COMMENT when the human **asked** to comment on the issue (or clearly wants the team notified on GitLab).
-- Do **not** use GITLAB_COMMENT for routine “done coding” status — Flow does not auto-comment after Run; a summary is posted on **Create MR**.
+- Do **not** use GITLAB_COMMENT for routine “done coding” status — Flow does not auto-comment after Run, Create MR, or Merge.
 - You may use **multiple** GITLAB_COMMENT blocks in one reply.
 - You may combine with <<<DONE>>> / <<<NEED_CLARIFICATION>>> (comment blocks can appear before DONE).
 - If you already asked the team on GitLab via GITLAB_COMMENT, prefer ending with <<<DONE>>> (short note). Only use NEED_CLARIFICATION when you need an answer **in the Flow UI** to continue coding this turn.

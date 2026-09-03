@@ -1,5 +1,5 @@
 /**
- * Task-level change summary for Create MR / Merge comments.
+ * Task-level change summary for Create MR description (and related summaries).
  * Prefer job work history (chat DONE + job commit SHAs → code change)
  * over dumping the full branch git-log.
  */
