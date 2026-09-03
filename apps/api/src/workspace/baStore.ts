@@ -8,6 +8,7 @@ import {
   SystemSettingsModel,
 } from "../models/ba.js";
 import { decryptSecret, encryptSecret } from "../plugins/crypto/secrets.js";
+import { verifyCursorApiKey } from "../plugins/cursor/verifyKey.js";
 import {
   baProjectLocalPath,
   normalizeGitlabHost,
@@ -684,6 +685,7 @@ export async function updateSystemCursorSettings(opts: {
       $unset.activeCursorPatId = "";
       $unset.cursorApiKeyEnc = "";
     } else if (opts.cursorApiKey.trim()) {
+      await verifyCursorApiKey(opts.cursorApiKey);
       const keyEnc = encryptSecret(opts.cursorApiKey.trim());
       const activeId = effectiveSystemActiveCursorPatId(existing);
       if (activeId) {
@@ -728,6 +730,7 @@ export async function addSystemCursorPat(opts: {
 }): Promise<SystemSettings> {
   const key = opts.apiKey.trim();
   if (!key) throw new Error("apiKey required");
+  await verifyCursorApiKey(key);
   let s = await normalizeSystemCursorState(await getSystemSettings());
   const now = new Date().toISOString();
   const id = crypto.randomUUID();
@@ -741,7 +744,8 @@ export async function addSystemCursorPat(opts: {
     updatedAt: now,
   };
   const pats = [...(s.cursorPats ?? []), pat];
-  const activeId = effectiveSystemActiveCursorPatId(s) ?? id;
+  // New shared key becomes active so BA Chat uses it immediately.
+  const activeId = id;
   await SystemSettingsModel.updateOne(
     { id: "default" },
     {
@@ -768,6 +772,9 @@ export async function updateSystemCursorPat(
   const now = new Date().toISOString();
   const pats = [...(s.cursorPats ?? [])];
   const cur = pats[idx]!;
+  if (opts.apiKey?.trim()) {
+    await verifyCursorApiKey(opts.apiKey);
+  }
   pats[idx] = {
     ...cur,
     label: opts.label?.trim() || cur.label,
@@ -830,13 +837,30 @@ export async function deleteSystemCursorPat(
   return getSystemSettings();
 }
 
-export async function resolveSystemCursorApiKey(): Promise<string> {
+export async function resolveSystemCursorApiKeyForPat(
+  patId?: string,
+): Promise<string> {
   const s = await normalizeSystemCursorState(await getSystemSettings());
+  const pid = patId?.trim();
+  if (pid) {
+    const pat = s.cursorPats?.find((p) => p.id === pid && p.keyEnc);
+    if (pat) return decryptSecret(pat.keyEnc);
+    throw new Error("Cursor PAT not found");
+  }
+  return resolveSystemCursorApiKeyFromSettings(s);
+}
+
+function resolveSystemCursorApiKeyFromSettings(s: SystemSettings): string {
   const activeId = effectiveSystemActiveCursorPatId(s);
   const pat = s.cursorPats?.find((p) => p.id === activeId && p.keyEnc);
   if (pat) return decryptSecret(pat.keyEnc);
   if (s.cursorApiKeyEnc) return decryptSecret(s.cursorApiKeyEnc);
   throw new Error("Shared Cursor API key not configured — ask admin");
+}
+
+export async function resolveSystemCursorApiKey(): Promise<string> {
+  const s = await normalizeSystemCursorState(await getSystemSettings());
+  return resolveSystemCursorApiKeyFromSettings(s);
 }
 
 export async function resolveSystemCursorModel(): Promise<string> {

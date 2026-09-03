@@ -13,7 +13,7 @@ import {
   updateSystemBaFeatures,
   updateSystemCursorSettings,
   updateSystemTaskTypeLabels,
-  resolveSystemCursorApiKey,
+  resolveSystemCursorApiKeyForPat,
   getSystemCursorSettingsPublic,
   addSystemCursorPat,
   updateSystemCursorPat,
@@ -250,11 +250,11 @@ export async function adminGetCursorSettings() {
 }
 
 /** Cursor model list for shared BA key (same shape as /api/me/cursor-models). */
-export async function adminListCursorModels() {
+export async function adminListCursorModels(patId?: string) {
   const s = await getSystemSettings();
   let apiKey = "";
   try {
-    apiKey = await resolveSystemCursorApiKey();
+    apiKey = await resolveSystemCursorApiKeyForPat(patId);
   } catch {
     /* no key — fallback list */
   }
