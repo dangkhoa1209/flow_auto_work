@@ -1,7 +1,7 @@
 /**
  * Task-level change summary for Create MR / Merge comments.
- * Prefer job work history (chat DONE + job commit SHAs → code change)
- * over dumping the full branch git-log.
+ * Outcome from the work chat (done / not-done / explain) — not a transcript
+ * and not a git-log dump.
  */
 import { git } from "../../plugins/git/exec.js";
 import { listChatMessages } from "../../models/chat.js";
@@ -11,14 +11,58 @@ export function extractDoneSummaryLine(raw?: string | null): string {
   const t = (raw || "").trim();
   if (!t) return "";
   const labeled = t.match(/^SUMMARY:\s*(.+)$/im);
-  if (labeled?.[1]?.trim()) return labeled[1].trim();
+  if (labeled?.[1]?.trim()) {
+    const s = labeled[1].trim();
+    if (!isWorkChatter(s)) return s;
+  }
   for (const line of t.split("\n")) {
-    const s = line.trim();
+    const s = line.trim().replace(/^SUMMARY:\s*/i, "").trim();
     if (!s) continue;
     if (/^(ASSUMPTIONS|RISKS|TESTED)\s*:/i.test(s)) continue;
-    return s.replace(/^SUMMARY:\s*/i, "").trim();
+    if (isWorkChatter(s)) continue;
+    return s;
   }
-  return t.slice(0, 240);
+  return "";
+}
+
+/** Chat closers / confirmations — not merge-comment material. */
+export function isWorkChatter(raw: string): boolean {
+  const s = raw.trim().replace(/\s+/g, " ");
+  if (!s) return true;
+  if (/^yc:/i.test(s)) return true;
+  if (/^merge branch\b/i.test(s)) return true;
+  const t = s.toLowerCase();
+  if (/\bworking tree\b/.test(t)) return true;
+  if (/^đúng[ —–\-,.]/.test(t)) return true;
+  if (/\bdone task\b/.test(t)) return true;
+  if (/\bđúng ko\b|\bđúng không\b/.test(t)) return true;
+  if (/đã xong trên branch/.test(t)) return true;
+  if (/^(ok|oke|okay|vâng|ừ|uh|yes|done)[.!?]*$/i.test(s)) return true;
+  return false;
+}
+
+export type WorkOutcomeBucket = "done" | "not_done" | "note";
+
+/** Classify an agent outcome line for merge / MR comments. */
+export function classifyWorkOutcome(text: string): WorkOutcomeBucket {
+  const t = text.toLowerCase();
+  if (
+    /không làm|không trigger|không đụng|out of scope|not implemented/.test(
+      t,
+    ) ||
+    /không tính lại/.test(t) ||
+    /chỉ gán cờ/.test(t)
+  ) {
+    return "not_done";
+  }
+  if (
+    /^đã(\s|$)/.test(t) ||
+    /đã (bỏ|siết|sửa|thêm|gỡ|làm|cập nhật)(\s|$)/.test(t) ||
+    /^(bỏ|sửa|thêm|gỡ|siết|gộp|sinh|cập nhật|fix|feat)(\s|$)/i.test(t)
+  ) {
+    return "done";
+  }
+  return "note";
 }
 
 async function resolveRef(
@@ -183,8 +227,8 @@ export async function listTaskCommitSubjects(opts: {
 }
 
 /**
- * Work-task history from job chat: agent DONE/summary lines (+ short human asks).
- * Prefer this over raw git-log when building MR / merge comments.
+ * Agent outcome lines from job chat (done / not-done / explain).
+ * Skips human YC transcripts and chat closers.
  */
 export function extractWorkHistoryFromChat(
   messages: Array<{ role?: string; body?: string | null }>,
@@ -196,7 +240,7 @@ export function extractWorkHistoryFromChat(
 
   const push = (raw: string) => {
     const s = raw.trim().replace(/\s+/g, " ");
-    if (!s || s.length < 3) return;
+    if (!s || s.length < 3 || isWorkChatter(s)) return;
     const key = s.toLowerCase();
     if (seen.has(key)) return;
     seen.add(key);
@@ -204,18 +248,10 @@ export function extractWorkHistoryFromChat(
   };
 
   for (const m of messages) {
+    if (m.role !== "agent" && m.role !== "assistant") continue;
     const body = (m.body || "").trim();
     if (!body) continue;
-    if (m.role === "agent" || m.role === "assistant") {
-      const summary = extractDoneSummaryLine(body);
-      if (summary) push(summary);
-    } else if (m.role === "user") {
-      // Keep short human work requests as timeline anchors
-      const first = body.split("\n").map((l) => l.trim()).find(Boolean) || "";
-      if (first && first.length <= 160 && !/^<<<|^```/.test(first)) {
-        push(`YC: ${first}`);
-      }
-    }
+    push(extractDoneSummaryLine(body));
   }
 
   return out.slice(-limit);
@@ -235,78 +271,50 @@ export async function listJobWorkHistory(
 }
 
 /**
- * Human-readable "Thay đổi" body for MR / issue comments.
- * Prefer work-task chat history + job commit SHAs → code change;
- * fall back to commit subjects only when history is empty.
+ * Merge / MR "Thay đổi" body: what was done, skipped, or explained.
+ * Not a chat transcript and not a commit dump.
  */
 export function buildTaskChangeText(opts: {
   issueTitle?: string;
   jobSummary?: string | null;
-  /** Agent/human work steps from job chat (preferred). */
+  /** Agent outcome lines from job chat (preferred). */
   workHistory?: string[];
-  /** `shortSha — subject (files)` from job.commitShas (preferred over subjects). */
+  /** Ignored — kept so callers need not change. */
   commitLines?: string[];
-  /** Legacy fallback: plain commit subjects from branch log. */
+  /** Ignored — kept so callers need not change. */
   commitSubjects?: string[];
   fallback?: string;
 }): string {
-  const lead =
-    extractDoneSummaryLine(opts.jobSummary) ||
-    (opts.issueTitle?.trim()
-      ? `Hoàn thành: ${opts.issueTitle.trim()}`
-      : "") ||
-    (opts.fallback || "").trim();
+  const lead = extractDoneSummaryLine(opts.jobSummary);
 
   const history = (opts.workHistory || [])
-    .map((s) => s.trim())
-    .filter(Boolean)
+    .map((s) => s.trim().replace(/\s+/g, " "))
+    .filter((s) => s && !isWorkChatter(s))
     .filter((s) => {
       if (!lead) return true;
       return s !== lead && !lead.includes(s) && !s.includes(lead);
     });
 
-  const commitLines = (opts.commitLines || [])
-    .map((s) => s.trim())
-    .filter(Boolean);
+  const done: string[] = [];
+  const notDone: string[] = [];
+  const notes: string[] = [];
+  for (const s of history) {
+    const bucket = classifyWorkOutcome(s);
+    if (bucket === "done") done.push(s);
+    else if (bucket === "not_done") notDone.push(s);
+    else notes.push(s);
+  }
 
+  const bullets = (items: string[]) => items.map((s) => `- ${s}`).join("\n");
   const parts: string[] = [];
   if (lead) parts.push(lead);
+  if (done.length) parts.push(`**Đã làm**\n${bullets(done)}`);
+  if (notDone.length) parts.push(`**Không làm**\n${bullets(notDone)}`);
+  if (notes.length) parts.push(`**Giải thích**\n${bullets(notes)}`);
 
-  if (history.length) {
-    parts.push(
-      `Lịch sử work task:\n${history.map((s) => `- ${s}`).join("\n")}`,
-    );
-  }
+  if (parts.length) return parts.join("\n\n");
 
-  if (commitLines.length) {
-    parts.push(
-      `Commit (id → thay đổi):\n${commitLines.map((s) => `- ${s}`).join("\n")}`,
-    );
-  } else if (!history.length) {
-    // Fallback only when no chat history: list subjects (legacy)
-    const commits = (opts.commitSubjects || [])
-      .map((s) => s.trim())
-      .filter(Boolean);
-    if (commits.length > 1) {
-      const bullets = commits.map((s) => `- ${s}`).join("\n");
-      if (lead) {
-        const last = commits[commits.length - 1]!;
-        if (lead === last || last.includes(lead) || lead.includes(last)) {
-          parts.length = 0;
-          parts.push(bullets);
-        } else {
-          parts.push(`Các commit trong task:\n${bullets}`);
-        }
-      } else {
-        parts.push(bullets);
-      }
-    } else if (!lead && commits[0]) {
-      parts.push(commits[0]);
-    }
-  }
-
-  if (!parts.length) {
-    return "Đã hoàn thành thay đổi trên nhánh work.";
-  }
-  return parts.join("\n\n");
+  const title = opts.issueTitle?.trim();
+  if (title) return `Hoàn thành: ${title}`;
+  return (opts.fallback || "").trim() || "Đã hoàn thành thay đổi trên nhánh work.";
 }
