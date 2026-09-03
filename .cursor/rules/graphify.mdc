@@ -24,7 +24,7 @@ BA shared: `project/_ba/<slug>/source/`.
 
 API auto-runs that update after Work/BA clone (and BA pull). Disable with `GRAPHIFY_ENABLED=0`.
 
-**BA Chat / workflow / Create issue:** API runs `graphify query` against the sibling graph and injects a "Code map" block into the Cursor prompt (still never writes inside `source/`).
+**BA Chat / workflow:** API runs `graphify query` against the sibling graph and injects a "Code map" block into the Cursor prompt (still never writes inside `source/`). **Create issue** synthesizes the chat thread only — no graphify, no source read.
 
 Cursor does **not** auto-load nested rules from gitignored `project/`. When the task, open files, Run, or chat target that tree:
 

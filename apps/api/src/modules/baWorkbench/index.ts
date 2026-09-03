@@ -694,19 +694,19 @@ export async function baDraftIssueFromThread(userId: string, threadId: string) {
   }
   if (hasActiveAgentRun(baCancelKey(threadId))) {
     throw new AppError(
-      "Agent đang trả lời — đợi xong rồi bấm Create issue",
+      "Agent is still answering — wait, then click Create issue",
       409,
     );
   }
   if (hasActiveAgentRun(baIssueDraftCancelKey(threadId))) {
-    throw new AppError("Đang soạn issue — đợi xong hoặc mở lại modal", 409);
+    throw new AppError("Still drafting the issue — wait or reopen the modal", 409);
   }
   await assertProjectReady(thread.baProjectId);
   await requireBaUserGitlabPat(uid);
   const messages = await listBaMessages(threadId);
   const hasContent = messages.some((m) => m.content?.trim());
   if (!hasContent) {
-    throw new AppError("Chưa có hội thoại để tổng hợp issue", 400);
+    throw new AppError("No conversation to summarize into an issue", 400);
   }
 
   const requestVersion = thread.issueDraftVersion ?? 0;
@@ -727,7 +727,7 @@ export async function baDraftIssueFromThread(userId: string, threadId: string) {
 
   void (async () => {
     try {
-      publishIssueDraftProgress(uid, threadId, "Đang review hội thoại…", "start");
+      publishIssueDraftProgress(uid, threadId, "Reviewing conversation…", "start");
       const draft = await runBaThreadIssueDraft({
         threadId,
         baProjectId: thread.baProjectId,
