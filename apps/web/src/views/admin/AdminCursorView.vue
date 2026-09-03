@@ -84,7 +84,13 @@ async function load() {
       cursorModel?: string;
     }>(API.admin.cursorSettings);
     applySettings(data);
-    await loadModels(data.cursorModel || "auto");
+    await loadModelsForPat(
+      data.activeCursorPatId ||
+        data.cursorPats?.find((p) => p.isActive)?.id ||
+        data.cursorPats?.[0]?.id ||
+        null,
+      data.cursorModel || "auto",
+    );
   } catch (e) {
     message.error(e instanceof Error ? e.message : String(e));
   } finally {
@@ -97,6 +103,17 @@ function selectPat(pat: CursorPatPublic) {
   selectedPatId.value = pat.id;
   patLabel.value = pat.label;
   patKey.value = "";
+  void loadModelsForPat(pat.id);
+}
+
+async function loadModelsForPat(
+  patId?: string | null,
+  selectedFallback?: string | null,
+) {
+  const url = patId
+    ? `${API.admin.cursorModels}?patId=${encodeURIComponent(patId)}`
+    : API.admin.cursorModels;
+  await loadModels(selectedFallback ?? model.value, url);
 }
 
 function startNewPat() {
@@ -153,7 +170,7 @@ async function savePat() {
       if (created) selectedPatId.value = created.id;
       patKey.value = "";
       message.success("API key added");
-      await loadModels(data.cursorModel || model.value);
+      await loadModelsForPat(created?.id ?? data.activeCursorPatId);
       return;
     }
 
@@ -177,7 +194,7 @@ async function savePat() {
     applySettings(data);
     patKey.value = "";
     message.success("API key updated");
-    await loadModels(data.cursorModel || model.value);
+    await loadModelsForPat(selectedPatId.value ?? data.activeCursorPatId);
   } catch (e) {
     message.error(e instanceof Error ? e.message : String(e));
   } finally {
@@ -200,7 +217,7 @@ async function setActive() {
     });
     applySettings(data);
     message.success("Active key updated — BA Chat will use this key");
-    await loadModels(data.cursorModel || model.value);
+    await loadModelsForPat(selectedPatId.value ?? data.activeCursorPatId);
   } catch (e) {
     message.error(e instanceof Error ? e.message : String(e));
   } finally {
@@ -235,7 +252,13 @@ async function deletePat() {
     creatingNew.value = false;
     applySettings(data);
     message.success("API key deleted");
-    await loadModels(data.cursorModel || model.value);
+    await loadModelsForPat(
+      data.activeCursorPatId ||
+        data.cursorPats?.find((p) => p.isActive)?.id ||
+        data.cursorPats?.[0]?.id ||
+        null,
+      data.cursorModel || "auto",
+    );
   } catch (e) {
     message.error(e instanceof Error ? e.message : String(e));
   } finally {

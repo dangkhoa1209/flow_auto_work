@@ -45,8 +45,10 @@ export const adminController = {
     res.formatter.ok(await admin.adminGetCursorSettings());
   }),
 
-  cursorModels: asyncHandler(async (_req: Request, res: Response) => {
-    res.formatter.ok(await admin.adminListCursorModels());
+  cursorModels: asyncHandler(async (req: Request, res: Response) => {
+    const patId =
+      typeof req.query.patId === "string" ? req.query.patId : undefined;
+    res.formatter.ok(await admin.adminListCursorModels(patId));
   }),
 
   putCursor: asyncHandler(async (req: Request, res: Response) => {
