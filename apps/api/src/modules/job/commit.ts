@@ -479,15 +479,33 @@ export async function groupJobCommits(
 
   let message = buildCommitMessage(input);
   if (!message) {
-    message =
-      (await git(repoPath, [
-        "log",
-        "-1",
-        "--format=%s",
-        shas[shas.length - 1]!,
-      ])
-        .then((r) => r.stdout.trim())
-        .catch(() => "")) || commitMessageForIssue(job.issue);
+    // Prefer a message covering the whole task, not only the tip commit.
+    const subjects: string[] = [];
+    for (const sha of shas) {
+      try {
+        const { stdout } = await git(repoPath, [
+          "log",
+          "-1",
+          "--format=%s",
+          sha,
+        ]);
+        const s = stdout.trim();
+        if (s) subjects.push(s);
+      } catch {
+        /* skip */
+      }
+    }
+    if (subjects.length === 1) {
+      message = subjects[0]!;
+    } else if (subjects.length > 1) {
+      const head =
+        commitMessageForIssue(job.issue) ||
+        subjects[subjects.length - 1] ||
+        "Group commits";
+      message = `${head}\n\n${subjects.map((s) => `- ${s}`).join("\n")}`;
+    } else {
+      message = commitMessageForIssue(job.issue);
+    }
   }
 
   logger.info("Group-commit: soft-reset + local commit + force-push", {
