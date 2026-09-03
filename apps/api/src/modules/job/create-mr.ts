@@ -16,6 +16,12 @@ import { AppError } from "../../utils/AppError.js";
 import { resolveGitlabProjectPath } from "../../workspace/creds.js";
 import { getRuntimeContext } from "../../workspace/runtime.js";
 import { requireJobDoc } from "./lifecycle.js";
+import {
+  buildTaskChangeText,
+  extractDoneSummaryLine,
+  listTaskChangedFiles,
+  listTaskCommitSubjects,
+} from "./taskChangeSummary.js";
 
 const READY_LABEL = "Ready to Release";
 
@@ -46,19 +52,19 @@ function buildMrTitle(opts: {
 function buildMrBody(opts: {
   issueIid: number;
   issueTitle: string;
-  summary?: string;
+  changeText?: string;
   files?: string[];
 }): string {
   const iid = opts.issueIid;
   const purpose =
-    opts.summary?.trim() ||
+    opts.changeText?.trim() ||
     (opts.issueTitle
       ? `Hoàn thành thay đổi cho issue: ${opts.issueTitle}.`
       : "Hoàn thành thay đổi trên nhánh work.");
   const fileBullets =
     opts.files && opts.files.length
       ? opts.files
-          .slice(0, 20)
+          .slice(0, 40)
           .map((p) => `* \`${p}\``)
           .join("\n")
       : "* Cập nhật code theo scope issue";
@@ -86,11 +92,11 @@ function buildMrBody(opts: {
 
 function buildIssueComment(opts: {
   issueTitle: string;
-  summary?: string;
+  changeText?: string;
   mrUrl?: string;
 }): string {
   const change =
-    opts.summary?.trim() ||
+    opts.changeText?.trim() ||
     (opts.issueTitle
       ? `Đã hoàn thành: ${opts.issueTitle}`
       : "Đã hoàn thành thay đổi trên nhánh work.");
@@ -184,36 +190,45 @@ export async function createJobMergeRequest(
   }
 
   const iid = job.issue?.issueIid ?? 0;
+
+  // Full task range (base...work), not only the tip / last agent run.
+  let files: string[] = [];
+  let commitSubjects: string[] = [];
+  if (repoPath) {
+    files = await listTaskChangedFiles({
+      repoPath,
+      sourceBranch: source,
+      targetBranch: target,
+    });
+    commitSubjects = await listTaskCommitSubjects({
+      repoPath,
+      sourceBranch: source,
+      targetBranch: target,
+      commitShas: job.commitShas,
+    });
+  }
+
+  const changeText = buildTaskChangeText({
+    issueTitle: job.issue?.title || "",
+    jobSummary: job.summary,
+    commitSubjects,
+    fallback: "Hoàn thành thay đổi trên nhánh work.",
+  });
+
   const title = buildMrTitle({
     issueIid: iid,
     issueTitle: job.issue?.title || source,
-    commitSubject: job.summary,
+    commitSubject:
+      extractDoneSummaryLine(job.summary) ||
+      commitSubjects[commitSubjects.length - 1] ||
+      job.issue?.title ||
+      source,
   });
-
-  let files: string[] = [];
-  if (repoPath && job.commitSha) {
-    try {
-      const { git } = await import("../../plugins/git/exec.js");
-      const { stdout } = await git(repoPath, [
-        "diff-tree",
-        "--no-commit-id",
-        "--name-only",
-        "-r",
-        job.commitSha,
-      ]);
-      files = stdout
-        .split("\n")
-        .map((s) => s.trim())
-        .filter(Boolean);
-    } catch {
-      files = [];
-    }
-  }
 
   const description = buildMrBody({
     issueIid: iid,
     issueTitle: job.issue?.title || "",
-    summary: job.summary,
+    changeText,
     files,
   });
 
@@ -252,7 +267,7 @@ export async function createJobMergeRequest(
         comment: withAiGeneratedMarker(
           buildIssueComment({
             issueTitle: job.issue.title || "",
-            summary: job.summary,
+            changeText,
             mrUrl: mr.webUrl,
           }),
         ),
