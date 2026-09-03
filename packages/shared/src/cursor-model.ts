@@ -1,7 +1,7 @@
-/** Canonical Auto/Router id from `Cursor.models.list()` (SDK 1.x). */
-export const CURSOR_ROUTER_MODEL_ID = "default";
-/** Docs/UI name that is not in the current SDK catalog. */
-export const LEGACY_ROUTER_MODEL_ID = "auto-smart";
+/** UI + DB id for Cursor Router (not a valid local SDK catalog id). */
+export const CURSOR_ROUTER_MODEL_ID = "auto-smart";
+/** Catalog id from `Cursor.models.list()` for Auto / Router. */
+export const SDK_ROUTER_MODEL_ID = "default";
 export const LEGACY_AUTO_MODEL_ID = "auto";
 
 export type CursorRouterMode = "cost" | "balanced" | "intelligence";
@@ -35,10 +35,15 @@ export function isRouterMode(value: string): value is CursorRouterMode {
 
 /** Stored or listed ids that mean Cursor Auto / Router (not a pinned model). */
 export function isRouterModelId(id: string): boolean {
-  return id === CURSOR_ROUTER_MODEL_ID || id === LEGACY_ROUTER_MODEL_ID;
+  return id === CURSOR_ROUTER_MODEL_ID || id === SDK_ROUTER_MODEL_ID;
 }
 
-/** Stored value → settings object (`default:cost` / `auto-smart:cost` encode mode). */
+/** Dropdown / settings always use `auto-smart`, never catalog `default`. */
+export function toUiRouterModelId(id: string): string {
+  return isRouterModelId(id) ? CURSOR_ROUTER_MODEL_ID : id;
+}
+
+/** Stored value → settings object (`auto-smart:cost` / `default:cost` encode mode). */
 export function parseCursorModel(raw?: string | null): CursorModelSpec {
   const trimmed = raw?.trim() || LEGACY_AUTO_MODEL_ID;
   const colon = trimmed.indexOf(":");
@@ -47,17 +52,20 @@ export function parseCursorModel(raw?: string | null): CursorModelSpec {
     const suffix = trimmed.slice(colon + 1).trim();
     if (isRouterModelId(id) && isRouterMode(suffix)) {
       return {
-        id,
+        id: toUiRouterModelId(id),
         params: [{ id: "optimize_for", value: suffix }],
       };
     }
+  }
+  if (isRouterModelId(trimmed)) {
+    return { id: toUiRouterModelId(trimmed) };
   }
   return { id: trimmed };
 }
 
 /** SDK model object → stored value for DB / settings. */
 export function serializeCursorModel(spec: CursorModelSpec): string {
-  const id = spec.id.trim() || LEGACY_AUTO_MODEL_ID;
+  const id = toUiRouterModelId(spec.id.trim() || LEGACY_AUTO_MODEL_ID);
   const mode = spec.params?.find((p) => p.id === "optimize_for")?.value;
   if (isRouterModelId(id) && mode && isRouterMode(mode)) {
     return `${id}:${mode}`;
@@ -73,14 +81,14 @@ export function toSdkCursorModel(raw?: string | null): CursorModelSpec {
   const spec = parseCursorModel(raw);
   if (spec.id === LEGACY_AUTO_MODEL_ID || isRouterModelId(spec.id)) {
     return {
-      id: CURSOR_ROUTER_MODEL_ID,
+      id: SDK_ROUTER_MODEL_ID,
       params: spec.params,
     };
   }
   return spec;
 }
 
-/** If the catalog has no `auto-smart`, bind stored Router values to `default`. */
+/** Bind stored Router ids onto the UI option (`auto-smart`). */
 export function resolveListedRouterModelId(
   storedModelId: string,
   listedIds: Iterable<string>,
@@ -88,10 +96,9 @@ export function resolveListedRouterModelId(
   const listed = new Set(
     [...listedIds].map((id) => id.trim()).filter(Boolean),
   );
+  const uiId = toUiRouterModelId(storedModelId);
+  if (listed.has(uiId)) return uiId;
   if (listed.has(storedModelId)) return storedModelId;
-  if (isRouterModelId(storedModelId) && listed.has(CURSOR_ROUTER_MODEL_ID)) {
-    return CURSOR_ROUTER_MODEL_ID;
-  }
   return storedModelId;
 }
 

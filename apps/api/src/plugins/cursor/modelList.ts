@@ -5,6 +5,7 @@ import {
   isRouterModelId,
   LEGACY_AUTO_MODEL_ID,
   ROUTER_MODE_LABELS,
+  toUiRouterModelId,
   type CursorRouterMode,
 } from "@flow/shared";
 import { Cursor } from "@cursor/sdk";
@@ -116,7 +117,8 @@ export async function listCursorModelsForApiKey(
     const seen = new Set<string>([LEGACY_AUTO_MODEL_ID]);
     for (const item of raw) {
       const m = item as { id?: string; displayName?: string; name?: string };
-      const id = (m.id || "").trim();
+      const rawId = (m.id || "").trim();
+      const id = rawId ? toUiRouterModelId(rawId) : "";
       if (!id || seen.has(id)) continue;
       seen.add(id);
       models.push({

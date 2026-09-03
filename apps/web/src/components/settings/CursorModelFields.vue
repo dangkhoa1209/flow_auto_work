@@ -50,18 +50,38 @@ defineExpose({
       <span class="text-ink-muted">Agent model</span>
       <a-select
         v-model:value="modelId"
-        :options="models"
         :loading="modelsLoading"
+        show-search
+        option-filter-prop="label"
+        option-label-prop="label"
         class="w-full max-w-md"
-      />
+      >
+        <a-select-option
+          v-for="m in models"
+          :key="m.value"
+          :value="m.value"
+          :label="m.label"
+        >
+          {{ m.label }}
+        </a-select-option>
+      </a-select>
     </label>
     <label v-if="isRouterSelected" class="flex flex-col gap-1 text-sm">
       <span class="text-ink-muted">Router mode</span>
       <a-select
         v-model:value="routerMode"
-        :options="routerModes"
+        option-label-prop="label"
         class="w-full max-w-md"
-      />
+      >
+        <a-select-option
+          v-for="mode in routerModes"
+          :key="mode.value"
+          :value="mode.value"
+          :label="mode.label"
+        >
+          {{ mode.label }}
+        </a-select-option>
+      </a-select>
       <span class="text-xs text-ink-faint">
         Cost saves tokens; Balanced is default for most jobs; Intelligence for
         complex refactors only.
