@@ -31,6 +31,7 @@ import {
   clearJobProgress,
   getJobTokenUsage,
   recordTokenUsage,
+  workRunOnDelta,
   type JobTokenSnapshot,
 } from "./progress.js";
 import { persistCursorUsage } from "../cursor/recordUsage.js";
@@ -659,8 +660,10 @@ export async function runNewAgent(
       );
       appendPromptSending(opts.jobId, prompt);
     }
+    const onDelta = workRunOnDelta(opts?.jobId);
     const run = await disposed.send(prompt, {
       mode: sdkPolicy.mode,
+      ...(onDelta ? { onDelta } : {}),
     });
     logger.info("Agent run started", {
       runId: run.id,
@@ -715,7 +718,8 @@ export async function resumeAgent(
   if (opts?.jobId) {
     appendPromptSending(opts.jobId, prompt);
   }
-  const run = await agent.send(prompt);
+  const onDelta = workRunOnDelta(opts?.jobId);
+  const run = await agent.send(prompt, onDelta ? { onDelta } : undefined);
   logger.info("Resume run started", { runId: run.id, agentId: agent.agentId });
   trackRun(opts?.jobId, run);
   try {
@@ -813,8 +817,13 @@ export async function continueAgentWindow(
 
     session.check();
     let run: SdkRun;
+    const onDelta = workRunOnDelta(opts?.jobId);
     try {
-      run = await withTimeout(disposed.send(prompt), 60_000, "agent.send");
+      run = await withTimeout(
+        disposed.send(prompt, onDelta ? { onDelta } : undefined),
+        60_000,
+        "agent.send",
+      );
     } catch (err) {
       session.check();
       const msg = formatCursorAgentFailure(

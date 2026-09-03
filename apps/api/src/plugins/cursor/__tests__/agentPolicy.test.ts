@@ -22,6 +22,16 @@ describe("agentPolicy", () => {
     const plan = planAgentPolicy();
     expect(plan.mode).toBe("plan");
     expect(plan.disallowedTools).toEqual(READ_ONLY_DISALLOWED_TOOLS);
-    expect(codingAgentPolicy().mode).toBe("agent");
+  });
+
+  it("coding policy enables agent mode and named /work subagents", () => {
+    const coding = codingAgentPolicy();
+    expect(coding.mode).toBe("agent");
+    expect(coding.agents).toMatchObject({
+      explore: expect.objectContaining({ model: "inherit" }),
+      "code-reviewer": expect.objectContaining({ description: expect.any(String) }),
+      "test-writer": expect.objectContaining({ prompt: expect.any(String) }),
+    });
+    expect(coding).not.toHaveProperty("disallowedTools");
   });
 });

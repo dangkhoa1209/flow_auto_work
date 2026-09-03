@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { subscribeRealtime } from "../../realtime/hub.js";
 import {
   appendJobProgress,
+  appendSdkMessage,
+  appendSubagentDelta,
   clearJobProgress,
   getJobProgress,
   PROGRESS_PUBLISH_MS,
@@ -73,6 +75,54 @@ describe("appendJobProgress assistant coalescing", () => {
     appendJobProgress(JOB, "assistant", "\n\nworld");
     const { lines } = getJobProgress(JOB);
     expect(lines[0]!.text).toBe("hello\n\nworld");
+  });
+});
+
+describe("subagent progress", () => {
+  it("formats Task tool_call with subagent name + description", () => {
+    appendSdkMessage(JOB, {
+      type: "tool_call",
+      agent_id: "a",
+      run_id: "r",
+      call_id: "c1",
+      name: "task",
+      status: "running",
+      args: {
+        description: "Find TimekeeperSync",
+        prompt: "…",
+        subagentType: { kind: "custom", name: "explore" },
+      },
+    } as Parameters<typeof appendSdkMessage>[1]);
+
+    const { lines } = getJobProgress(JOB);
+    expect(lines[0]!.kind).toBe("tool");
+    expect(lines[0]!.text).toBe(
+      "subagent · explore: Find TimekeeperSync…",
+    );
+  });
+
+  it("coalesces nested subagent text deltas under kind task", () => {
+    appendSubagentDelta(JOB, "call-abc", {
+      type: "text-delta",
+      text: "Found ",
+    });
+    appendSubagentDelta(JOB, "call-abc", {
+      type: "text-delta",
+      text: "run.ts",
+    });
+    appendSubagentDelta(JOB, "call-abc", {
+      type: "tool-call-started",
+      callId: "inner",
+      toolCall: { type: "grep", args: { pattern: "foo" } },
+      modelCallId: "m",
+    } as Parameters<typeof appendSubagentDelta>[2]);
+
+    const { lines } = getJobProgress(JOB);
+    expect(lines[0]!.kind).toBe("task");
+    expect(lines[0]!.text).toBe("Found run.ts");
+    expect(lines[1]!.kind).toBe("tool");
+    expect(lines[1]!.text).toContain("[sub call-abc]");
+    expect(lines[1]!.text).toContain("grep: foo");
   });
 });
 

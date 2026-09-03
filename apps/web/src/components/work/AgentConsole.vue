@@ -638,8 +638,19 @@ watch(chatBox, (el, prev) => {
             class="mb-1.5 last:mb-0"
           >
             <div class="flex items-center gap-1.5 mb-0.5 opacity-70">
-              <span class="text-[9px] font-semibold uppercase tracking-wide"
-                >{{ l.kind }}</span
+              <span
+                class="text-[9px] font-semibold uppercase tracking-wide"
+                :class="{
+                  'text-amber-700': l.kind === 'task',
+                  'text-sky-700': l.kind === 'tool',
+                }"
+                >{{
+                  l.kind === "task"
+                    ? "SUBAGENT"
+                    : l.kind === "tool"
+                      ? "TOOL"
+                      : l.kind
+                }}</span
               >
               <span class="text-[9px]">{{
                 new Date(l.at).toLocaleTimeString()

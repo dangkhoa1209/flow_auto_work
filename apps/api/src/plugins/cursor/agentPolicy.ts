@@ -1,4 +1,5 @@
-import type { AgentModeOption, ToolName } from "@cursor/sdk";
+import type { AgentDefinition, AgentModeOption, ToolName } from "@cursor/sdk";
+import { WORK_CODING_SUBAGENTS } from "./workSubagents.js";
 
 /**
  * Workspace-mutating tools + subagents (subagents keep their own toolsets,
@@ -22,7 +23,7 @@ export function readOnlyAgentPolicy(): {
   return { disallowedTools: READ_ONLY_DISALLOWED_TOOLS };
 }
 
-/** /work Plan-first: Cursor `mode: "plan"` plus the same write lock. */
+/** /work Plan-first: Cursor `mode: "plan"` plus the same write lock (no Task/subagents). */
 export function planAgentPolicy(): {
   mode: AgentModeOption;
   disallowedTools: ToolName[];
@@ -30,6 +31,13 @@ export function planAgentPolicy(): {
   return { mode: "plan", disallowedTools: READ_ONLY_DISALLOWED_TOOLS };
 }
 
-export function codingAgentPolicy(): { mode: AgentModeOption } {
-  return { mode: "agent" };
+/**
+ * /work code + follow-up Send: full tools + named subagents (explore / review / tests).
+ * Re-pass `agents` on Agent.resume — SDK does not persist them on the agent row.
+ */
+export function codingAgentPolicy(): {
+  mode: AgentModeOption;
+  agents: Record<string, AgentDefinition>;
+} {
+  return { mode: "agent", agents: WORK_CODING_SUBAGENTS };
 }

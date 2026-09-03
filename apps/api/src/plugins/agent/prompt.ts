@@ -365,6 +365,7 @@ Question quality rules (strict):
 # HARD / LARGE TASKS
 If the task spans multiple modules, touches shared logic, or is risky:
 - Write a short bullet plan BEFORE editing; follow it in small verifiable steps.
+- Prefer the Task/subagent tools when helpful: \`explore\` (find files/patterns), \`code-reviewer\` (review your diff), \`test-writer\` (focused tests). You keep ownership of the final DONE.
 - If mid-way you find the requirement contradicts codebase reality (screen/field/API named in the ticket doesn't exist or behaves differently), STOP and use NEED_CLARIFICATION **with evidence** (file + what you found) instead of forcing a wrong change.
 - Do not silently drop scope; anything skipped goes under \`RISKS:\` in the DONE block.
 
