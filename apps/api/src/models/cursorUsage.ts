@@ -35,10 +35,15 @@ export const CursorUsageModel = createModel<CursorUsageDoc>({
   idField: "id",
   parseId: (id) => id,
   indexes: [
-    { keys: { userId: 1, createdAt: -1 } },
+    {
+      keys: { id: 1 },
+      options: { softUnique: true, name: "cue_id_soft_unique" },
+    },
     { keys: { createdAt: -1 } },
-    { keys: { jobId: 1, createdAt: -1 } },
+    { keys: { userId: 1, createdAt: -1 } },
+    { keys: { userId: 1, kind: 1, createdAt: -1 } },
     { keys: { kind: 1, createdAt: -1 } },
+    { keys: { jobId: 1, createdAt: -1 } },
     { keys: { agentId: 1, createdAt: -1 } },
   ],
 });
