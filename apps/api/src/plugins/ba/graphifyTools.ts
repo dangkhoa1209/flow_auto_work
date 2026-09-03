@@ -12,7 +12,7 @@ type CustomTool = {
 };
 
 /**
- * Cursor SDK custom tools — BA agents must use these before Grep/Shell for case-3 lookups.
+ * Cursor SDK custom tools — agents must use these before Grep/Shell when exploring source.
  * Graph lives outside source/; tools never write the checkout.
  */
 export function buildBaGraphifyCustomTools(
@@ -23,9 +23,9 @@ export function buildBaGraphifyCustomTools(
   return {
     code_map_query: {
       description:
-        "REQUIRED first step when exploring product source for BA answers. " +
+        "REQUIRED first step when exploring this project's source. " +
         "Runs WorkBench graphify query on the sibling knowledge graph (not inside source/). " +
-        "Pass a short Vietnamese or English product question (screen/feature/flow). " +
+        "Pass a short Vietnamese or English question (screen, feature, symbol, or flow). " +
         "Call this BEFORE Grep, rg, Glob, or find. Returns related files/symbols.",
       inputSchema: {
         type: "object",
@@ -101,4 +101,14 @@ export function mergeBaAgentCustomTools(
     ...buildBaGraphifyCustomTools(sourcePath),
     ...(dbTools || {}),
   };
+}
+
+/** Attach graphify custom tools onto a local Agent cwd config when enabled. */
+export function withGraphifyCustomTools(cwd: string): {
+  cwd: string;
+  customTools?: Record<string, CustomTool>;
+} {
+  const customTools = buildBaGraphifyCustomTools(cwd);
+  if (!Object.keys(customTools).length) return { cwd };
+  return { cwd, customTools };
 }

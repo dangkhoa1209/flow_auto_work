@@ -389,3 +389,55 @@ Graph file (host): \`${graphJson}\` · out: \`${outDir}\` — **không** ghi gì
 ### Map sẵn cho câu hỏi hiện tại (điểm khởi đầu)
 ${map}`;
 }
+
+/** Prompt block for Work / coding agents — same sibling graph, English instructions. */
+export function formatWorkGraphifyPromptBlock(opts: {
+  sourcePath: string;
+  queryText: string | null;
+}): string {
+  const graphJson = graphifyGraphJsonForSource(opts.sourcePath);
+  const outDir = graphifyOutDirForSource(opts.sourcePath);
+  const map =
+    opts.queryText?.trim() ||
+    "(no precomputed map — you MUST call tool code_map_query before Grep/Shell.)";
+  return `## Code map (graphify — WorkBench)
+Graph file (host): \`${graphJson}\` · out: \`${outDir}\` — do **not** write inside \`source/\`.
+
+**When locating code for this task:**
+1. Call tool **\`code_map_query\`** with a short product/code question — **before** Grep / rg / find / Glob.
+2. After the map: read the 1–5 suggested files.
+3. Do **not** start with a repo-wide Grep. Grep only if the map is thin after \`code_map_query\` / \`code_map_explain\`.
+4. Tools: \`code_map_query\`, \`code_map_path\`, \`code_map_explain\` (already attached).
+
+### Map for this task (starting point)
+${map}`;
+}
+
+export type WorkGraphifyPrep = {
+  block: string;
+  queryText: string | null;
+  status: "disabled" | "ready" | "empty";
+};
+
+/** Ensure sibling graph exists, query it, return a Work prompt block. */
+export async function prepareWorkGraphifyContext(opts: {
+  sourcePath: string;
+  question: string;
+  timeoutMs?: number;
+}): Promise<WorkGraphifyPrep> {
+  if (!graphifyEnabled()) {
+    return { block: "", queryText: null, status: "disabled" };
+  }
+  await ensureProjectGraphifyReady(opts.sourcePath, {
+    timeoutMs: opts.timeoutMs ?? 45_000,
+  });
+  const queryText = await queryProjectGraphify(opts.sourcePath, opts.question);
+  return {
+    block: formatWorkGraphifyPromptBlock({
+      sourcePath: opts.sourcePath,
+      queryText,
+    }),
+    queryText,
+    status: queryText?.trim() ? "ready" : "empty",
+  };
+}

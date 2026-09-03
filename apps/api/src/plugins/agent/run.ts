@@ -10,6 +10,12 @@ import {
   resolveRepoPath,
 } from "../../workspace/creds.js";
 import {
+  graphifyEnabled,
+  prepareWorkGraphifyContext,
+  type WorkGraphifyPrep,
+} from "../../workspace/graphify.js";
+import { withGraphifyCustomTools } from "../ba/graphifyTools.js";
+import {
   buildAdhocFollowUpPrompt,
   buildDocsPhasePrompt,
   buildFollowUpPrompt,
@@ -504,7 +510,67 @@ type RunOpts = {
   figmaBlock?: string;
   /** Remaining NEED_CLARIFICATION rounds before the job hard-fails. */
   clarifyRoundsLeft?: number;
+  /** WorkBench graphify map injected into the prompt. */
+  graphifyBlock?: string;
 };
+
+export function workAgentLocal() {
+  const local = withGraphifyCustomTools(resolveRepoPath());
+  return {
+    cwd: local.cwd,
+    ...(local.customTools
+      ? { customTools: local.customTools as never }
+      : {}),
+  };
+}
+
+function graphifyQuestionForIssue(issue: IssueJob, extra?: string): string {
+  return [
+    issue.title,
+    (issue.description || "").replace(/\s+/g, " ").slice(0, 400),
+    extra?.trim().slice(0, 200),
+  ]
+    .filter(Boolean)
+    .join(" | ");
+}
+
+function appendGraphifyPrepStatus(
+  jobId: string | undefined,
+  status: WorkGraphifyPrep["status"],
+) {
+  if (!jobId) return;
+  if (status === "disabled") {
+    appendJobProgress(jobId, "status", "Code map skipped (graphify disabled)");
+  } else if (status === "ready") {
+    appendJobProgress(jobId, "status", "Code map ready (graphify)");
+  } else {
+    appendJobProgress(
+      jobId,
+      "status",
+      "Code map unavailable (graphify missing or empty graph)",
+    );
+  }
+}
+
+export async function loadWorkGraphifyBlock(
+  issue: IssueJob,
+  jobId: string | undefined,
+  extra?: string,
+): Promise<string> {
+  if (!graphifyEnabled()) {
+    appendGraphifyPrepStatus(jobId, "disabled");
+    return "";
+  }
+  if (jobId) {
+    appendJobProgress(jobId, "status", "Preparing code map (graphify)…");
+  }
+  const prep = await prepareWorkGraphifyContext({
+    sourcePath: resolveRepoPath(),
+    question: graphifyQuestionForIssue(issue, extra),
+  });
+  appendGraphifyPrepStatus(jobId, prep.status);
+  return prep.block;
+}
 
 async function buildMissionPrompt(
   issue: IssueJob,
@@ -520,6 +586,7 @@ async function buildMissionPrompt(
     logger.warn("Linked context load failed", { err: String(err) });
   }
   const notes = opts.devNotes?.trim() || undefined;
+  const graphifyBlock = opts.graphifyBlock;
   const body =
     opts.phase === "docs"
       ? buildDocsPhasePrompt(issue, linkedBlock, notes, {
@@ -527,6 +594,7 @@ async function buildMissionPrompt(
           contextQualityBlock: opts.contextQualityBlock,
           googleSheetsBlock: opts.googleSheetsBlock,
           figmaBlock: opts.figmaBlock,
+          graphifyBlock,
         })
       : buildWorkPrompt(issue, extraContext, linkedBlock, notes, {
           approvedDocsPaths: opts.approvedDocsPaths,
@@ -535,6 +603,7 @@ async function buildMissionPrompt(
           googleSheetsBlock: opts.googleSheetsBlock,
           figmaBlock: opts.figmaBlock,
           clarifyRoundsLeft: opts.clarifyRoundsLeft,
+          graphifyBlock,
         });
   if (!resumed) return body;
   return `You are CONTINUING the **same agent window** for GitLab issue #${issue.issueIid}.
@@ -560,12 +629,18 @@ export async function runNewAgent(
 
   try {
     session.check();
+    const graphifyBlock = await loadWorkGraphifyBlock(
+      issue,
+      opts?.jobId,
+      extraContext,
+    );
+    session.check();
     if (existing) {
       try {
         agent = await Agent.resume(existing, {
           apiKey: resolveCursorApiKey(),
           model: { id: modelId },
-          local: { cwd: resolveRepoPath() },
+          local: workAgentLocal(),
         });
         resumed = true;
         logger.info("Resumed agent window for job", {
@@ -582,14 +657,14 @@ export async function runNewAgent(
         agent = await Agent.create({
           apiKey: resolveCursorApiKey(),
           model: { id: modelId },
-          local: { cwd: resolveRepoPath() },
+          local: workAgentLocal(),
         });
       }
     } else {
       agent = await Agent.create({
         apiKey: resolveCursorApiKey(),
         model: { id: modelId },
-        local: { cwd: resolveRepoPath() },
+        local: workAgentLocal(),
       });
       logger.info("Created local agent window", {
         agentId: agent.agentId,
@@ -604,7 +679,7 @@ export async function runNewAgent(
     const prompt = await buildMissionPrompt(
       issue,
       extraContext,
-      opts ?? {},
+      { ...(opts ?? {}), graphifyBlock },
       resumed,
     );
     session.check();
@@ -654,16 +729,17 @@ export async function resumeAgent(
   await using agent = await Agent.resume(agentId, {
     apiKey: resolveCursorApiKey(),
     model: { id: modelId },
-    local: { cwd: resolveRepoPath() },
+    local: workAgentLocal(),
   });
 
   logger.info("Resumed agent (clarify)", {
     agentId: agent.agentId,
     model: modelId,
   });
-  const prompt = buildResumePrompt(answer, issue, {
+  const graphifyBlock = await loadWorkGraphifyBlock(issue, opts?.jobId, answer);
+  const prompt = `${graphifyBlock ? `${graphifyBlock}\n\n` : ""}${buildResumePrompt(answer, issue, {
     clarifyRoundsLeft: opts?.clarifyRoundsLeft,
-  });
+  })}`;
   if (opts?.jobId) {
     appendPromptSending(opts.jobId, prompt);
   }
@@ -708,24 +784,32 @@ export async function continueAgentWindow(
 ): Promise<AgentRunResult> {
   const modelId = resolveCursorModel();
   const isAdhoc = issue.issueIid <= 0 || issue.action === "adhoc";
+
+  if (opts?.jobId) {
+    clearJobProgress(opts.jobId);
+    appendJobProgress(opts.jobId, "status", "Opening a new agent window…");
+  }
+
+  const graphifyBlock = await loadWorkGraphifyBlock(
+    issue,
+    opts?.jobId,
+    message,
+  );
   const prompt = isAdhoc
     ? buildAdhocFollowUpPrompt(message, issue.title, {
         chatHistory: opts?.chatHistory,
         contextQualityBlock: opts?.contextQualityBlock,
         googleSheetsBlock: opts?.googleSheetsBlock,
         figmaBlock: opts?.figmaBlock,
+        graphifyBlock,
       })
     : buildFollowUpPrompt(message, issue, {
         chatHistory: opts?.chatHistory,
         contextQualityBlock: opts?.contextQualityBlock,
         googleSheetsBlock: opts?.googleSheetsBlock,
         figmaBlock: opts?.figmaBlock,
+        graphifyBlock,
       });
-
-  if (opts?.jobId) {
-    clearJobProgress(opts.jobId);
-    appendJobProgress(opts.jobId, "status", "Mở cửa sổ agent mới…");
-  }
 
   const session = beginCancellableJob(opts?.jobId);
   try {
@@ -733,7 +817,7 @@ export async function continueAgentWindow(
     const agent = await Agent.create({
       apiKey: resolveCursorApiKey(),
       model: { id: modelId },
-      local: { cwd: resolveRepoPath() },
+      local: workAgentLocal(),
     }).catch((err) => {
       throw new Error(
         formatCursorAgentFailure(

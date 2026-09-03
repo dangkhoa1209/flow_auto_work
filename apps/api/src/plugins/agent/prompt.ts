@@ -133,6 +133,8 @@ export function buildDocsPhasePrompt(
     contextQualityBlock?: string;
     googleSheetsBlock?: string;
     figmaBlock?: string;
+    /** WorkBench graphify map (sibling graphify-out). */
+    graphifyBlock?: string;
   },
 ): string {
   const { notesBlock, description } = sharedPreamble(issue, devNotes);
@@ -156,7 +158,7 @@ export function buildDocsPhasePrompt(
 You are preparing documentation for GitLab issue #${issue.issueIid} on the **current project checkout** BEFORE any implementation.
 
 ${projectConventionsBlock({ forDocsPhase: true })}
-Ignore image/file attachments — text only.
+${opts?.graphifyBlock ? `${opts.graphifyBlock}\n\n` : ""}Ignore image/file attachments — text only.
 
 ${qualityBlock}${chatBlock}${notesBlock}# BUSINESS REQUIREMENTS (GITLAB ISSUE #${issue.issueIid})
 Title: ${issue.title}
@@ -221,6 +223,8 @@ export function buildWorkPrompt(
     figmaBlock?: string;
     /** How many NEED_CLARIFICATION rounds remain before the job hard-fails. */
     clarifyRoundsLeft?: number;
+    /** WorkBench graphify map (sibling graphify-out). */
+    graphifyBlock?: string;
   },
 ): string {
   const { notesBlock, description } = sharedPreamble(issue, devNotes);
@@ -263,7 +267,7 @@ Do not contradict these docs unless DEV NOTES or UI CHAT REQUESTS override a spe
 You are an expert developer implementing a feature based on a GitLab issue for the **current project checkout** (any product — follow this repo’s own conventions).
 
 ${projectConventionsBlock()}
-Load the relevant module/feature docs and applicable rules before changing code.
+${opts?.graphifyBlock ? `${opts.graphifyBlock}\n\n` : ""}Load the relevant module/feature docs and applicable rules before changing code.
 Do not touch .env, credentials, or secrets.
 Do NOT \`git commit\`, \`git push\`, force-push, amend remote commits, or create/merge MRs.
 Do NOT switch git branches. Stay on the branch that is already checked out.
@@ -283,7 +287,7 @@ Ignore image/file attachments — only use text. Do not try to download or open 
 
 # HANDLING AMBIGUITY & MISSING INFO (resolve gaps in THIS order)
 Real tickets are often incomplete. When something is unclear or missing:
-1. **SELF-RESOLVE first.** Search the repo, feature docs, and the linked issues/comments above. Most "missing" info (file paths, existing patterns, field names, similar screens) is discoverable in the codebase — never ask the human for something the code can answer.
+1. **SELF-RESOLVE first.** Call \`code_map_query\` when that tool is attached, then search the repo, feature docs, and the linked issues/comments above. Most "missing" info (file paths, existing patterns, field names, similar screens) is discoverable in the codebase — never ask the human for something the code can answer.
 2. **SAFE ASSUMPTION.** If the gap is minor and one interpretation is clearly standard for this codebase (naming, placement, UI copy, default sort/validation style), proceed — but record it and report it under \`ASSUMPTIONS:\` in the DONE block.
    NEVER assume on: deleting/migrating data, permissions/security, money or regulated formulas, external API contracts, or anything irreversible → those go to tier 3.
 3. **ASK (last resort).** Only when the gap genuinely blocks a correct implementation. The human answers in the **Flow Auto Work UI**. End your reply with EXACTLY this block (nothing after it):
@@ -307,7 +311,7 @@ If the task spans multiple modules, touches shared logic, or is risky:
 
 # EXECUTION PLAN
 1. Analyze the requirements but execute them EXACTLY as demanded in UI CHAT REQUESTS and DEV NOTES when present (those override conflicting business wording). Latest Human chat messages win for this run.
-2. Investigate via docs (and the approved feature docs if listed above), then write a short plan.
+2. Investigate via **code_map_query** first (when the tool is attached), then docs (and the approved feature docs if listed above), then write a short plan.
 3. Implement on the CURRENT git branch only (do not checkout/create other branches). Keep the change scoped to this issue.
 4. Leave changes as modified files in the working tree — do NOT \`git commit\` or \`git push\`. The orchestrator commits to GitLab when you are done.
 5. VERIFY before finishing: re-read your diff against the requirements; run the cheapest relevant check (lint/typecheck/build of touched files, or targeted test) when the repo supports it. Report what you verified under \`TESTED:\`.
@@ -355,6 +359,7 @@ export function buildFollowUpPrompt(
     contextQualityBlock?: string;
     googleSheetsBlock?: string;
     figmaBlock?: string;
+    graphifyBlock?: string;
   },
 ): string {
   const history = opts?.chatHistory?.trim();
@@ -378,11 +383,11 @@ ${history}
   return `You are working on GitLab issue #${issue.issueIid} ("${issue.title}") in a Cursor agent window.
 This may be a **new** window — use prior chat + the repo (inspect if needed). Do not assume old tool state is still loaded.
 Prefer \`AGENTS.md\` (then \`.cursor/rules\` / project docs) when you need conventions for **this** checkout.
-${qualityBlock}${sheetsBlock}${figmaBlock}${historyBlock}## Human follow-up (this turn)
+${opts?.graphifyBlock ? `${opts.graphifyBlock}\n` : ""}${qualityBlock}${sheetsBlock}${figmaBlock}${historyBlock}## Human follow-up (this turn)
 ${message.trim()}
 
 ## How to behave (IDE-like)
-1. If they ask a question → answer clearly (Vietnamese if they wrote Vietnamese). You may briefly inspect the repo.
+1. If they ask a question → answer clearly (Vietnamese if they wrote Vietnamese). Start repo lookup with \`code_map_query\` when that tool is attached.
 2. If they ask to fix / add / change / re-test / seed data / run something → **do it** on the CURRENT branch (do not switch branches).
 3. Prefer small, correct changes. Stay scoped to this issue unless they explicitly expand scope.
 4. If the request is vague: search the repo/docs first; minor gaps → proceed with the standard interpretation and say so in your reply; only end with NEED_CLARIFICATION when truly blocked (batch ALL questions, numbered, with options + your recommended default).
@@ -408,6 +413,7 @@ export function buildAdhocFollowUpPrompt(
     contextQualityBlock?: string;
     googleSheetsBlock?: string;
     figmaBlock?: string;
+    graphifyBlock?: string;
   },
 ): string {
   const title = sessionTitle.replace(/\s+/g, " ").trim() || "Ad-hoc session";
@@ -433,11 +439,11 @@ ${history}
 There is **no GitLab issue yet** — a human may create one later from your summary.
 This may be a **new** window — use prior chat + the repo (inspect if needed).
 Prefer \`AGENTS.md\` (then \`.cursor/rules\` / project docs) when you need conventions for **this** checkout.
-${qualityBlock}${sheetsBlock}${figmaBlock}${historyBlock}## Human request (this turn)
+${opts?.graphifyBlock ? `${opts.graphifyBlock}\n` : ""}${qualityBlock}${sheetsBlock}${figmaBlock}${historyBlock}## Human request (this turn)
 ${message.trim()}
 
 ## How to behave (IDE-like)
-1. If they ask a question → answer clearly (Vietnamese if they wrote Vietnamese). You may briefly inspect the repo.
+1. If they ask a question → answer clearly (Vietnamese if they wrote Vietnamese). Start repo lookup with \`code_map_query\` when that tool is attached.
 2. If they ask to fix / add / change / re-test / seed data / run something → **do it** on the CURRENT branch (do not switch branches).
 3. Prefer small, correct changes. Stay scoped to the request.
 4. If the request is vague: search the repo first; minor gaps → proceed with the standard interpretation and say so in your reply; only end with NEED_CLARIFICATION when truly blocked (batch ALL questions, numbered, with options + your recommended default).

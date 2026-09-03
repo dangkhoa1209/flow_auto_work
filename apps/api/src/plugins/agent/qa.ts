@@ -11,7 +11,6 @@ import type { IssueJob } from "../../types.js";
 import {
   resolveCursorApiKey,
   resolveCursorModel,
-  resolveRepoPath,
 } from "../../workspace/creds.js";
 import {
   appendJobProgress,
@@ -25,6 +24,8 @@ import {
   beginCancellableJob,
   cancelActiveAgentRun,
   errorFromCursorRunStatus,
+  loadWorkGraphifyBlock,
+  workAgentLocal,
 } from "./run.js";
 import { gitlabCommentInstructions } from "./prompt.js";
 import { addChatMessage } from "../../models/chat.js";
@@ -99,18 +100,38 @@ export async function answerTaskQuestion(opts: {
     })
     .join("\n\n");
 
+  const modelId = resolveCursorModel();
+  logger.info("Q&A agent starting", {
+    issueIid: opts.issue.issueIid,
+    historyTurns: opts.history?.length ?? 0,
+    model: modelId,
+    jobId,
+    existingAgentId: opts.existingAgentId || null,
+  });
+
+  if (jobId) {
+    clearJobProgress(jobId);
+    appendJobProgress(jobId, "status", `Q&A started · model ${modelId}`);
+  }
+
+  const graphifyBlock = await loadWorkGraphifyBlock(
+    opts.issue,
+    jobId,
+    opts.question,
+  );
+
   const prompt = `You are in **Q&A / review mode** on the same agent window as this job (NOT a full coding Run).
 
 ## Hard rules for this turn
 1. Answer the human's question using the issue, diff, and codebase.
 2. Prefer a clear Vietnamese answer with concrete file/paths/commands they can run.
 3. Do **NOT** execute long-running work: no DB mutations that take minutes, no queue workers left running, no seed scripts that hang.
-4. You may briefly grep/read files — then **stop and answer**.
+4. You may briefly grep/read files — then **stop and answer**. Prefer \`code_map_query\` before Grep when that tool is attached.
 5. If they ask you to *do* the work, tell them to click **Run** or send a follow-up in chat (Gửi).
 6. Keep the final answer concise (roughly under ~25 lines).
 7. Chat UI is narrow: lead with 1–2 sentences + short bullets. No giant Markdown tables; no pasting full QC matrices. Skip machine tags like <<<DONE>>> in the human-readable body.
 
-${gitlabCommentInstructions(opts.issue)}## Issue #${opts.issue.issueIid}
+${graphifyBlock ? `${graphifyBlock}\n` : ""}${gitlabCommentInstructions(opts.issue)}## Issue #${opts.issue.issueIid}
 Title: ${opts.issue.title}
 URL: ${opts.issue.url}
 Labels: ${opts.issue.labels.join(", ") || "(none)"}
@@ -138,20 +159,6 @@ ${
 ## Question from the human
 ${opts.question}`;
 
-  const modelId = resolveCursorModel();
-  logger.info("Q&A agent starting", {
-    issueIid: opts.issue.issueIid,
-    historyTurns: opts.history?.length ?? 0,
-    model: modelId,
-    jobId,
-    existingAgentId: opts.existingAgentId || null,
-  });
-
-  if (jobId) {
-    clearJobProgress(jobId);
-    appendJobProgress(jobId, "status", `Q&A started · model ${modelId}`);
-  }
-
   const work = async (): Promise<QaResult> => {
     let resumed = false;
     let agent: Awaited<ReturnType<typeof Agent.create>>;
@@ -164,7 +171,7 @@ ${opts.question}`;
           agent = await Agent.resume(existing, {
             apiKey: resolveCursorApiKey(),
             model: { id: modelId },
-            local: { cwd: resolveRepoPath() },
+            local: workAgentLocal(),
           });
           resumed = true;
         } catch (err) {
@@ -173,14 +180,14 @@ ${opts.question}`;
           agent = await Agent.create({
             apiKey: resolveCursorApiKey(),
             model: { id: modelId },
-            local: { cwd: resolveRepoPath() },
+            local: workAgentLocal(),
           });
         }
       } else {
         agent = await Agent.create({
           apiKey: resolveCursorApiKey(),
           model: { id: modelId },
-          local: { cwd: resolveRepoPath() },
+          local: workAgentLocal(),
         });
       }
 
