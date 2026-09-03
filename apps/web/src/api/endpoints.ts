@@ -59,6 +59,7 @@ export const API = {
       `/api/admin/users/${encodeURIComponent(id)}/enable`,
     userPassword: (id: string) =>
       `/api/admin/users/${encodeURIComponent(id)}/password`,
+    cursorUsage: "/api/admin/cursor-usage",
   },
   ba: {
     projects: "/api/ba/projects",

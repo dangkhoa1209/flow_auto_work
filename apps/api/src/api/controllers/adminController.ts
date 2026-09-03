@@ -137,4 +137,17 @@ export const adminController = {
       ),
     );
   }),
+
+  cursorUsage: asyncHandler(async (req: Request, res: Response) => {
+    res.formatter.ok(
+      await admin.adminGetCursorUsage({
+        days: Number(req.query.days ?? "30"),
+        from: typeof req.query.from === "string" ? req.query.from : undefined,
+        to: typeof req.query.to === "string" ? req.query.to : undefined,
+        userId:
+          typeof req.query.userId === "string" ? req.query.userId : undefined,
+        kind: typeof req.query.kind === "string" ? req.query.kind : undefined,
+      }),
+    );
+  }),
 };

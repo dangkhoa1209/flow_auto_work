@@ -98,6 +98,11 @@ const router = createRouter({
           component: () => import("@/views/admin/AdminUsersView.vue"),
         },
         {
+          path: "usage",
+          name: "admin-usage",
+          component: () => import("@/views/admin/AdminCursorUsageView.vue"),
+        },
+        {
           path: "chatbox",
           name: "admin",
           component: () => import("@/views/admin/AdminProjectsView.vue"),

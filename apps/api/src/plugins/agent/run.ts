@@ -34,6 +34,8 @@ import {
   recordTokenUsage,
   type JobTokenSnapshot,
 } from "./progress.js";
+import { persistCursorUsage } from "../cursor/recordUsage.js";
+import type { CursorUsageKind } from "../cursor/usageNormalize.js";
 
 // Cursor SDK attaches many AbortSignal listeners during a run.
 setMaxListeners(100);
@@ -289,7 +291,13 @@ export function beginCancellableJob(jobId: string | undefined): {
 async function collectAssistantText(
   run: SdkRun,
   jobId?: string,
-  opts?: { promptChars?: number; firstEventTimeoutMs?: number },
+  opts?: {
+    promptChars?: number;
+    firstEventTimeoutMs?: number;
+    persistKind?: CursorUsageKind;
+    agent?: unknown;
+    model?: string;
+  },
 ): Promise<{ text: string; usage: JobTokenSnapshot | null }> {
   if (jobId) {
     clearJobProgress(jobId);
@@ -434,6 +442,19 @@ async function collectAssistantText(
       lastInputTokens: usage.lastInputTokens,
       contextWindow: usage.contextWindow,
       fromSdk: hasSdk,
+    });
+  }
+
+  if (opts?.persistKind) {
+    await persistCursorUsage({
+      kind: opts.persistKind,
+      jobId,
+      agent: opts.agent,
+      run,
+      result,
+      promptChars: opts.promptChars,
+      outputChars: (streamed || text).length,
+      model: opts.model,
     });
   }
 
@@ -688,6 +709,9 @@ export async function runNewAgent(
     session.attach(run);
     const { text, usage } = await collectAssistantText(run, opts?.jobId, {
       promptChars: prompt.length,
+      persistKind: "job_run",
+      agent: disposed,
+      model: resolveCursorModel(),
     });
     session.check();
     const parsed = parseAgentOutcome(text);
@@ -736,6 +760,9 @@ export async function resumeAgent(
   try {
     const { text, usage } = await collectAssistantText(run, opts?.jobId, {
       promptChars: prompt.length,
+      persistKind: "job_run",
+      agent,
+      model: resolveCursorModel(),
     });
     const parsed = parseAgentOutcome(text);
     return {
@@ -846,6 +873,9 @@ export async function continueAgentWindow(
     session.attach(run);
     const { text, usage } = await collectAssistantText(run, opts?.jobId, {
       promptChars: prompt.length,
+      persistKind: "job_run",
+      agent: disposed,
+      model: resolveCursorModel(),
       // Fail faster on Cursor network hangs so UI can Force Stop / retry
       firstEventTimeoutMs: 45_000,
     });

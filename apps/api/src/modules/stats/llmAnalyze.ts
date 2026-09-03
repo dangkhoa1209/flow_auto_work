@@ -7,6 +7,7 @@ import {
   formatCursorAgentFailure,
 } from "../../plugins/agent/run.js";
 import { toAgentModel, cursorModelLogLabel } from "../../plugins/cursor/modelSpec.js";
+import { persistCursorUsage } from "../../plugins/cursor/recordUsage.js";
 import type { DevRecommendation, TaskTypeStats } from "./analyze.js";
 import type { AnalysisJob, SkillDimensions } from "./scoring.js";
 
@@ -328,7 +329,7 @@ ${JSON.stringify(snapshot)}`;
 
 async function collectText(
   run: Awaited<ReturnType<Awaited<ReturnType<typeof Agent.create>>["send"]>>,
-): Promise<string> {
+): Promise<{ text: string; result: unknown }> {
   let streamed = "";
   try {
     if (typeof run.stream === "function" && run.supports?.("stream") !== false) {
@@ -357,7 +358,7 @@ async function collectText(
       { label: "Dev evaluation" },
     );
   }
-  return (result.result ?? streamed).trim();
+  return { text: (result.result ?? streamed).trim(), result };
 }
 
 export async function analyzeWithCursorSdk(input: {
@@ -412,7 +413,17 @@ export async function analyzeWithCursorSdk(input: {
       runId: run.id,
       agentId: disposed.agentId,
     });
-    const text = await collectText(run);
+    const { text, result } = await collectText(run);
+    await persistCursorUsage({
+      kind: "stats_analyze",
+      userId: rt?.gitlabUsername,
+      agent: disposed,
+      run,
+      result,
+      promptChars: prompt.length,
+      outputChars: text.length,
+      model: rt?.cursorModel,
+    });
     const parsed = parseLlmAnalysisJson(text, input.jobs);
     if (!parsed) {
       throw new AppError(

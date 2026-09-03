@@ -33,6 +33,8 @@ export function createAdminRoutes(): Router {
   router.get("/settings/ba-features", adminController.getBaFeatures);
   router.put("/settings/ba-features", adminController.putBaFeatures);
 
+  router.get("/cursor-usage", adminController.cursorUsage);
+
   router.get("/users", adminController.listUsers);
   router.post("/users", adminController.createUser);
   router.get("/users/:id", adminController.getUser);

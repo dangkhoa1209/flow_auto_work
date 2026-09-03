@@ -30,6 +30,7 @@ import {
   loadWorkGraphifyBlock,
   workAgentLocal,
 } from "./run.js";
+import { persistCursorUsage } from "../cursor/recordUsage.js";
 import { gitlabCommentInstructions } from "./prompt.js";
 import { addChatMessage } from "../../models/chat.js";
 setMaxListeners(50);
@@ -304,6 +305,16 @@ ${opts.question}`;
             )
           : null;
         appendJobProgress(jobId, "status", "Q&A finished");
+        await persistCursorUsage({
+          kind: "job_qa",
+          jobId,
+          agent: disposed,
+          run,
+          result,
+          promptChars: prompt.length,
+          outputChars: text.length,
+          model: resolveCursorModel(),
+        });
 
         // User asked to comment → post <<<GITLAB_COMMENT>>> blocks
         try {
