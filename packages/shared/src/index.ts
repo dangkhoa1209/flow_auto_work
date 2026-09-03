@@ -16,11 +16,12 @@ export {
   isRouterMode,
   isRouterModelId,
   LEGACY_AUTO_MODEL_ID,
-  LEGACY_ROUTER_MODEL_ID,
   parseCursorModel,
   resolveListedRouterModelId,
   ROUTER_MODE_LABELS,
+  SDK_ROUTER_MODEL_ID,
   serializeCursorModel,
   splitStoredCursorModel,
   toSdkCursorModel,
+  toUiRouterModelId,
 } from "./cursor-model.js";
