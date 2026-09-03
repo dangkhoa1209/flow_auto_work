@@ -30,6 +30,7 @@ import {
   errorFromCursorRunStatus,
 } from "./run.js";
 import { persistCursorUsage } from "../cursor/recordUsage.js";
+import { readOnlyAgentPolicy } from "../cursor/agentPolicy.js";
 
 setMaxListeners(50);
 
@@ -191,6 +192,7 @@ Hãy sinh bộ test case theo đúng cấu trúc mục 3.`;
       const agent = await Agent.create({
         apiKey: resolveCursorApiKey(),
         model,
+        ...readOnlyAgentPolicy(),
         local: { cwd: resolveRepoPath() },
       });
 

@@ -14,6 +14,7 @@ import {
   type BaMessage,
 } from "../../workspace/baStore.js";
 import { cursorModelLogLabel } from "../cursor/modelSpec.js";
+import { readOnlyAgentPolicy } from "../cursor/agentPolicy.js";
 import { isGitRepo } from "../../workspace/clone.js";
 import {
   ensureProjectGraphifyReady,
@@ -492,6 +493,7 @@ export async function runBaThreadIssueDraft(opts: {
       const agent = await Agent.create({
         apiKey,
         model,
+        ...readOnlyAgentPolicy(),
         ...(BA_GITLAB_INTERACTION_ENABLED ? {} : { mcpServers: {} }),
         local: {
           cwd: project.localPath,

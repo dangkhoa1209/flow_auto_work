@@ -15,6 +15,7 @@ import {
   resolveRepoPath,
 } from "../../workspace/creds.js";
 import { cursorModelLogLabel } from "../cursor/modelSpec.js";
+import { readOnlyAgentPolicy } from "../cursor/agentPolicy.js";
 import {
   appendJobProgress,
   appendPromptSending,
@@ -189,6 +190,7 @@ ${opts.question}`;
           agent = await Agent.resume(existing, {
             apiKey: resolveCursorApiKey(),
             model,
+            ...readOnlyAgentPolicy(),
             local: { cwd: resolveRepoPath() },
           });
           resumed = true;
@@ -198,6 +200,7 @@ ${opts.question}`;
           agent = await Agent.create({
             apiKey: resolveCursorApiKey(),
             model,
+            ...readOnlyAgentPolicy(),
             local: { cwd: resolveRepoPath() },
           });
         }
@@ -205,6 +208,7 @@ ${opts.question}`;
         agent = await Agent.create({
           apiKey: resolveCursorApiKey(),
           model,
+          ...readOnlyAgentPolicy(),
           local: { cwd: resolveRepoPath() },
         });
       }

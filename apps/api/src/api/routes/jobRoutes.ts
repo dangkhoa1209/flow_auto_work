@@ -31,6 +31,8 @@ export function createJobRoutes(): Router {
   router.get("/:id/docs", jobController.docs);
   router.post("/:id/approve-docs", jobController.approveDocs);
   router.post("/:id/rerun-docs", jobController.rerunDocs);
+  router.post("/:id/approve-plan", jobController.approvePlan);
+  router.post("/:id/rerun-plan", jobController.rerunPlan);
 
   router.post("/:id/completion-actions", jobController.completionActions);
   router.post("/:id/merge", jobController.merge);

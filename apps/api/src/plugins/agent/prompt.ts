@@ -196,6 +196,69 @@ Both ANALYZED and SUMMARY are required — Flow shows them in chat for the PM.
 ${gitlabCommentInstructions(issue)}`;
 }
 
+/**
+ * Plan-first: Cursor plan mode — explore and write a plan, no app code.
+ */
+export function buildPlanPhasePrompt(
+  issue: IssueJob,
+  linkedContext?: string,
+  devNotes?: string,
+  opts?: {
+    chatContext?: string;
+    contextQualityBlock?: string;
+    googleSheetsBlock?: string;
+    figmaBlock?: string;
+  },
+): string {
+  const { notesBlock, description } = sharedPreamble(issue, devNotes);
+  const chatBlock = opts?.chatContext?.trim()
+    ? `${opts.chatContext.trim()}\n\n`
+    : "";
+  const qualityBlock = opts?.contextQualityBlock?.trim()
+    ? `${opts.contextQualityBlock.trim()}\n\n`
+    : "";
+  const linkedBlock = linkedContext?.trim()
+    ? `\n## Linked / related context\n${linkedContext.trim()}\n`
+    : "";
+  const sheetsBlock = opts?.googleSheetsBlock?.trim()
+    ? `\n${opts.googleSheetsBlock.trim()}\n`
+    : "";
+  const figmaBlock = opts?.figmaBlock?.trim()
+    ? `\n${opts.figmaBlock.trim()}\n`
+    : "";
+
+  return `# MISSION — PLAN PHASE ONLY (NO CODE CHANGES)
+You are planning work for GitLab issue #${issue.issueIid} on the **current project checkout**.
+This run is Cursor **plan mode**: read/search the repo, then produce an implementation plan.
+Do NOT edit, write, delete, or run shell that mutates files. Do NOT commit or push.
+
+${projectConventionsBlock()}
+Ignore image/file attachments — text only.
+
+${qualityBlock}${chatBlock}${notesBlock}# BUSINESS REQUIREMENTS (GITLAB ISSUE #${issue.issueIid})
+Title: ${issue.title}
+URL: ${issue.url}
+Labels: ${issue.labels.join(", ") || "(none)"}
+
+## Description
+${description}
+${linkedBlock}${sheetsBlock}${figmaBlock}
+
+# HARD RULES (PLAN PHASE)
+1. Only read/search tools (\`read\`, \`grep\`, \`glob\`, \`ls\`, code map). No app code, no docs file writes.
+2. Search the repo before guessing file paths.
+3. Write the plan in Vietnamese (unless DEV NOTES say otherwise): mục tiêu, phạm vi, file/neo code, rủi ro, bước implement.
+4. Batch questions; only use NEED_CLARIFICATION when truly blocked.
+5. When the plan is ready, end with EXACTLY this block:
+
+<<<PLAN_READY>>>
+PLAN: Vietnamese — structured plan (goals, files, steps, risks).
+<<<END_PLAN_READY>>>
+
+Flow Auto Work will pause for the human to approve, then a later Run will implement in agent mode.
+${gitlabCommentInstructions(issue)}`;
+}
+
 /** Clarify-budget hint so the agent batches questions instead of ping-ponging. */
 function clarifyBudgetLine(roundsLeft?: number): string {
   if (roundsLeft == null) return "";
@@ -455,7 +518,7 @@ ${message.trim()}
 }
 
 export function parseAgentOutcome(text: string): {
-  kind: "done" | "docs_ready" | "need_clarification" | "unknown";
+  kind: "done" | "docs_ready" | "plan_ready" | "need_clarification" | "unknown";
   question?: string;
   summary?: string;
 } {
@@ -471,6 +534,13 @@ export function parseAgentOutcome(text: string): {
   );
   if (docsReady) {
     return { kind: "docs_ready", summary: docsReady[1].trim() };
+  }
+
+  const planReady = text.match(
+    /<<<PLAN_READY>>>\s*([\s\S]*?)\s*<<<END_PLAN_READY>>>/,
+  );
+  if (planReady) {
+    return { kind: "plan_ready", summary: planReady[1].trim() };
   }
 
   const done = text.match(/<<<DONE>>>\s*([\s\S]*?)\s*<<<END_DONE>>>/);
@@ -507,6 +577,7 @@ export function extractChatBodyFromAgentText(
       "",
     )
     .replace(/<<<DOCS_READY>>>\s*[\s\S]*?\s*<<<END_DOCS_READY>>>/gi, "")
+    .replace(/<<<PLAN_READY>>>\s*[\s\S]*?\s*<<<END_PLAN_READY>>>/gi, "")
     .replace(/<<<DONE>>>\s*[\s\S]*?\s*<<<END_DONE>>>/gi, "")
     .replace(/\n{3,}/g, "\n\n")
     .trim();

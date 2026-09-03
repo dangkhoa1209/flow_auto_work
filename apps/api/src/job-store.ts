@@ -160,6 +160,7 @@ export async function ensureJob(
     completion?: CompletionActions;
     devNotes?: string;
     requireDocsFirst?: boolean;
+    planFirst?: boolean;
   },
 ): Promise<JobRecord> {
   const rt = getRuntimeContext();
@@ -191,6 +192,9 @@ export async function ensureJob(
     if (opts?.requireDocsFirst !== undefined) {
       existing.requireDocsFirst = opts.requireDocsFirst;
     }
+    if (opts?.planFirst !== undefined) {
+      existing.planFirst = opts.planFirst;
+    }
     applyJobOwnership(existing);
     await saveJob(existing, { source: opts?.source });
     return existing;
@@ -215,6 +219,7 @@ export async function ensureJob(
     completion: opts?.completion,
     devNotes: opts?.devNotes?.trim() || undefined,
     requireDocsFirst: opts?.requireDocsFirst,
+    planFirst: opts?.planFirst,
     createdAt: now,
     updatedAt: now,
   };

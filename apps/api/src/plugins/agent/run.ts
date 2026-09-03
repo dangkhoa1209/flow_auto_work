@@ -12,9 +12,14 @@ import {
 } from "../../workspace/creds.js";
 import { cursorModelLogLabel } from "../cursor/modelSpec.js";
 import {
+  codingAgentPolicy,
+  planAgentPolicy,
+} from "../cursor/agentPolicy.js";
+import {
   buildAdhocFollowUpPrompt,
   buildDocsPhasePrompt,
   buildFollowUpPrompt,
+  buildPlanPhasePrompt,
   buildResumePrompt,
   buildWorkPrompt,
   parseAgentOutcome,
@@ -503,7 +508,7 @@ export function hasActiveAgentRun(jobId: string): boolean {
 
 export type AgentRunResult = {
   agentId: string;
-  kind: "done" | "docs_ready" | "need_clarification" | "unknown";
+  kind: "done" | "docs_ready" | "plan_ready" | "need_clarification" | "unknown";
   text: string;
   question?: string;
   summary?: string;
@@ -514,7 +519,7 @@ export type AgentRunResult = {
 type RunOpts = {
   jobId?: string;
   devNotes?: string;
-  phase?: "docs" | "code";
+  phase?: "docs" | "plan" | "code";
   approvedDocsPaths?: string[];
   chatContext?: string;
   /** Resume this agent window (1 task = 1 agent). */
@@ -551,6 +556,13 @@ async function buildMissionPrompt(
           googleSheetsBlock: opts.googleSheetsBlock,
           figmaBlock: opts.figmaBlock,
         })
+      : opts.phase === "plan"
+        ? buildPlanPhasePrompt(issue, linkedBlock, notes, {
+            chatContext: opts.chatContext,
+            contextQualityBlock: opts.contextQualityBlock,
+            googleSheetsBlock: opts.googleSheetsBlock,
+            figmaBlock: opts.figmaBlock,
+          })
       : buildWorkPrompt(issue, extraContext, linkedBlock, notes, {
           approvedDocsPaths: opts.approvedDocsPaths,
           chatContext: opts.chatContext,
@@ -578,6 +590,8 @@ export async function runNewAgent(
   const model = resolveCursorModelSpec();
   const modelLabel = cursorModelLogLabel(resolveCursorModel());
   const existing = opts?.existingAgentId?.trim();
+  const sdkPolicy =
+    opts?.phase === "plan" ? planAgentPolicy() : codingAgentPolicy();
   let resumed = false;
   let agent: Awaited<ReturnType<typeof Agent.create>>;
   const session = beginCancellableJob(opts?.jobId);
@@ -589,6 +603,7 @@ export async function runNewAgent(
         agent = await Agent.resume(existing, {
           apiKey: resolveCursorApiKey(),
           model,
+          ...sdkPolicy,
           local: { cwd: resolveRepoPath() },
         });
         resumed = true;
@@ -606,6 +621,7 @@ export async function runNewAgent(
         agent = await Agent.create({
           apiKey: resolveCursorApiKey(),
           model,
+          ...sdkPolicy,
           local: { cwd: resolveRepoPath() },
         });
       }
@@ -613,6 +629,7 @@ export async function runNewAgent(
       agent = await Agent.create({
         apiKey: resolveCursorApiKey(),
         model,
+        ...sdkPolicy,
         local: { cwd: resolveRepoPath() },
       });
       logger.info("Created local agent window", {
@@ -642,7 +659,9 @@ export async function runNewAgent(
       );
       appendPromptSending(opts.jobId, prompt);
     }
-    const run = await disposed.send(prompt);
+    const run = await disposed.send(prompt, {
+      mode: sdkPolicy.mode,
+    });
     logger.info("Agent run started", {
       runId: run.id,
       agentId: disposed.agentId,
@@ -682,6 +701,7 @@ export async function resumeAgent(
   await using agent = await Agent.resume(agentId, {
     apiKey: resolveCursorApiKey(),
     model,
+    ...codingAgentPolicy(),
     local: { cwd: resolveRepoPath() },
   });
 
@@ -765,6 +785,7 @@ export async function continueAgentWindow(
     const agent = await Agent.create({
       apiKey: resolveCursorApiKey(),
       model,
+      ...codingAgentPolicy(),
       local: { cwd: resolveRepoPath() },
     }).catch((err) => {
       throw new Error(

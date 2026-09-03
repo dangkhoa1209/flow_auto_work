@@ -62,6 +62,7 @@ export type EnsureJobInput = {
   issueIid?: number;
   devNotes?: string;
   requireDocsFirst?: boolean;
+  planFirst?: boolean;
 };
 
 /** Open/create the unique job for an issue (status draft if new). */
@@ -95,6 +96,9 @@ export async function ensureJobForIssue(
     if (input.requireDocsFirst !== undefined) {
       existing.requireDocsFirst = Boolean(input.requireDocsFirst);
     }
+    if (input.planFirst !== undefined) {
+      existing.planFirst = Boolean(input.planFirst);
+    }
     await saveJob(existing);
     return { job: existing };
   }
@@ -102,6 +106,7 @@ export async function ensureJobForIssue(
     source: "ui_ensure",
     devNotes: input.devNotes,
     requireDocsFirst: input.requireDocsFirst,
+    planFirst: input.planFirst,
   });
   return { job };
 }
@@ -274,6 +279,7 @@ export async function createIssueFromAdhoc(
 export type DevNotesInput = {
   devNotes?: string;
   requireDocsFirst?: boolean;
+  planFirst?: boolean;
 };
 
 export async function updateDevNotes(jobId: string, input: DevNotesInput) {
@@ -285,6 +291,9 @@ export async function updateDevNotes(jobId: string, input: DevNotesInput) {
   }
   if (input.requireDocsFirst !== undefined) {
     job.requireDocsFirst = Boolean(input.requireDocsFirst);
+  }
+  if (input.planFirst !== undefined) {
+    job.planFirst = Boolean(input.planFirst);
   }
   await saveJob(job);
   return { job };

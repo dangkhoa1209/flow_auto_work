@@ -29,6 +29,14 @@ describe("parseAgentOutcome", () => {
     expect(out.summary).toContain("docs/feature.md");
   });
 
+  it("parses PLAN_READY block", () => {
+    const out = parseAgentOutcome(
+      "<<<PLAN_READY>>>\nPLAN: sửa LoginForm.vue\n<<<END_PLAN_READY>>>",
+    );
+    expect(out.kind).toBe("plan_ready");
+    expect(out.summary).toContain("LoginForm");
+  });
+
   it("falls back to loose NEED_CLARIFICATION:", () => {
     const out = parseAgentOutcome("NEED_CLARIFICATION: cái nào đúng?");
     expect(out.kind).toBe("need_clarification");

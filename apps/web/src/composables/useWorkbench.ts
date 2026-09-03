@@ -44,10 +44,12 @@ export function useWorkbench() {
   const notesSaving = ref(false);
   const notesDraft = ref("");
   const requireDocsFirst = ref(false);
+  const planFirst = ref(false);
   const openIidDraft = ref("");
   const mobilePane = ref<MobilePane>("tasks");
   const standardsOpen = ref(false);
   const approveDocsBusy = ref(false);
+  const approvePlanBusy = ref(false);
   const mergeBusy = ref(false);
   const createMrBusy = ref(false);
   const testcasesBusy = ref(false);
@@ -238,6 +240,7 @@ export function useWorkbench() {
       "running",
       "awaiting_clarification",
       "awaiting_docs_approval",
+      "awaiting_plan_approval",
       "awaiting_diff_approval",
     ].includes(currentJob.value.status);
   });
@@ -252,6 +255,10 @@ export function useWorkbench() {
 
   const awaitingDocsApproval = computed(
     () => currentJob.value?.status === "awaiting_docs_approval",
+  );
+
+  const awaitingPlanApproval = computed(
+    () => currentJob.value?.status === "awaiting_plan_approval",
   );
 
   const canQuickMerge = computed(() => {
@@ -311,6 +318,7 @@ export function useWorkbench() {
     notesDraft.value = j?.devNotes ?? "";
     lastSavedNotes = notesDraft.value;
     requireDocsFirst.value = Boolean(j?.requireDocsFirst);
+    planFirst.value = Boolean(j?.planFirst);
   }
 
   // Only reset the textarea when switching jobs — not on every job SSE/API refresh
@@ -378,6 +386,7 @@ export function useWorkbench() {
       await work.saveDevNotes({
         devNotes: nextNotes,
         requireDocsFirst: requireDocsFirst.value,
+        planFirst: planFirst.value,
       });
       // Ignore stale responses if user switched job or typed more saves
       if (token !== notesSaveToken) return;
@@ -594,6 +603,7 @@ export function useWorkbench() {
           jobIds: [selectedJobId.value!],
           devNotes: notesDraft.value.trim() || undefined,
           requireDocsFirst: requireDocsFirst.value,
+          planFirst: planFirst.value,
         }),
       );
       if (!res) return;
@@ -635,6 +645,7 @@ export function useWorkbench() {
           issueIids: iids,
           devNotes: notesDraft.value.trim() || undefined,
           requireDocsFirst: requireDocsFirst.value,
+          planFirst: planFirst.value,
         }),
       );
       if (!res) return;
@@ -847,6 +858,20 @@ export function useWorkbench() {
       message.error(e instanceof Error ? e.message : String(e));
     } finally {
       approveDocsBusy.value = false;
+    }
+  }
+
+  async function approvePlan() {
+    if (!selectedJobId.value) return;
+    approvePlanBusy.value = true;
+    try {
+      await work.approvePlan(selectedJobId.value);
+      message.success("Plan approved — code phase enqueued");
+      mobilePane.value = "chat";
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : String(e));
+    } finally {
+      approvePlanBusy.value = false;
     }
   }
 
@@ -1230,6 +1255,7 @@ export function useWorkbench() {
     notesSaving,
     notesDraft,
     requireDocsFirst,
+    planFirst,
     milestoneFilter,
     labelFilter,
     setMilestoneFilter: work.setMilestoneFilter,
@@ -1239,6 +1265,7 @@ export function useWorkbench() {
     backToMobileList,
     standardsOpen,
     approveDocsBusy,
+    approvePlanBusy,
     mergeBusy,
     createMrBusy,
     testcasesBusy,
@@ -1275,6 +1302,7 @@ export function useWorkbench() {
     agentWindowShort,
     canResetWindow,
     awaitingDocsApproval,
+    awaitingPlanApproval,
     canQuickMerge,
     canCreateMr,
     canGenerateTestcases,
@@ -1299,6 +1327,7 @@ export function useWorkbench() {
     killAllJobs,
     resetAgentWindow,
     approveDocs,
+    approvePlan,
     quickMerge,
     createMr,
     generateTestcases,

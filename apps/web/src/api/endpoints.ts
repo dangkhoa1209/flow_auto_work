@@ -126,6 +126,8 @@ export const API = {
     status: (id: string) => `/api/jobs/${encodeURIComponent(id)}/status`,
     approveDocs: (id: string) =>
       `/api/jobs/${encodeURIComponent(id)}/approve-docs`,
+    approvePlan: (id: string) =>
+      `/api/jobs/${encodeURIComponent(id)}/approve-plan`,
     approveDiff: (id: string) =>
       `/api/jobs/${encodeURIComponent(id)}/approve-diff`,
     merge: (id: string) => `/api/jobs/${encodeURIComponent(id)}/merge`,

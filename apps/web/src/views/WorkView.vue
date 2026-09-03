@@ -137,8 +137,11 @@ function confirmMergeFromMenu() {
               :notes-draft="wb.notesDraft"
               :notes-saving="wb.notesSaving"
               :require-docs-first="wb.requireDocsFirst"
+              :plan-first="wb.planFirst"
               :awaiting-docs-approval="wb.awaitingDocsApproval"
+              :awaiting-plan-approval="wb.awaitingPlanApproval"
               :approve-docs-busy="wb.approveDocsBusy"
+              :approve-plan-busy="wb.approvePlanBusy"
               :related-issues="wb.relatedIssues"
               :human-comments="wb.humanComments"
               :issue-create-busy="wb.issueCreateBusy"
@@ -156,6 +159,7 @@ function confirmMergeFromMenu() {
               @update:mid-tab="wb.midTab = $event"
               @update:notes-draft="wb.notesDraft = $event"
               @update:require-docs-first="wb.requireDocsFirst = $event"
+              @update:plan-first="wb.planFirst = $event"
               @open-standards="wb.standardsOpen = true"
               @open-create-issue="wb.openCreateIssueModal"
               @open-related="wb.openRelatedPreview"
@@ -163,6 +167,7 @@ function confirmMergeFromMenu() {
               @save-notes="() => wb.saveNotes()"
               @notes-input="wb.scheduleNotesAutosave"
               @approve-docs="wb.approveDocs"
+              @approve-plan="wb.approvePlan"
               @run-selected="wb.runCurrentJob"
               @quick-merge="wb.quickMerge"
               @create-mr="wb.createMr"
@@ -325,8 +330,11 @@ function confirmMergeFromMenu() {
           :notes-draft="wb.notesDraft"
           :notes-saving="wb.notesSaving"
           :require-docs-first="wb.requireDocsFirst"
+          :plan-first="wb.planFirst"
           :awaiting-docs-approval="wb.awaitingDocsApproval"
+          :awaiting-plan-approval="wb.awaitingPlanApproval"
           :approve-docs-busy="wb.approveDocsBusy"
+          :approve-plan-busy="wb.approvePlanBusy"
           :related-issues="wb.relatedIssues"
           :human-comments="wb.humanComments"
           :issue-create-busy="wb.issueCreateBusy"
@@ -344,6 +352,7 @@ function confirmMergeFromMenu() {
           @update:mid-tab="wb.midTab = $event"
           @update:notes-draft="wb.notesDraft = $event"
           @update:require-docs-first="wb.requireDocsFirst = $event"
+          @update:plan-first="wb.planFirst = $event"
           @open-standards="wb.standardsOpen = true"
           @open-create-issue="wb.openCreateIssueModal"
           @open-related="wb.openRelatedPreview"
@@ -351,6 +360,7 @@ function confirmMergeFromMenu() {
           @save-notes="() => wb.saveNotes()"
           @notes-input="wb.scheduleNotesAutosave"
           @approve-docs="wb.approveDocs"
+          @approve-plan="wb.approvePlan"
           @run-selected="wb.runCurrentJob"
           @quick-merge="wb.quickMerge"
           @create-mr="wb.createMr"
@@ -424,6 +434,15 @@ function confirmMergeFromMenu() {
         @click="wb.approveDocs()"
       >
         {{ wb.approveDocsBusy ? "…" : "Docs" }}
+      </button>
+      <button
+        v-if="wb.awaitingPlanApproval"
+        type="button"
+        class="faw-m-btn faw-m-btn--docs touch-manipulation"
+        :disabled="wb.approvePlanBusy"
+        @click="wb.approvePlan()"
+      >
+        {{ wb.approvePlanBusy ? "…" : "Plan" }}
       </button>
       <a-dropdown placement="topRight" :trigger="['click']">
         <button
