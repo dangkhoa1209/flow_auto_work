@@ -385,3 +385,5 @@ export {
   adminDeleteUser,
   adminResetPasswordHandler,
 } from "./users.js";
+
+export { adminGetCursorUsage } from "./cursorUsage.js";

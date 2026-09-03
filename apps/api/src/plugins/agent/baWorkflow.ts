@@ -37,6 +37,7 @@ import {
   errorFromCursorRunStatus,
   isTransientCursorTransportError,
 } from "./run.js";
+import { persistCursorUsage } from "../cursor/recordUsage.js";
 
 const WORKFLOW_TIMEOUT_MS = 12 * 60 * 1000;
 
@@ -646,6 +647,18 @@ export async function runBaWorkflowStep(opts: {
         ? fromResult || streamed
         : streamed || fromResult;
       if (!finalText) throw new Error("Agent returned empty content");
+      await persistCursorUsage({
+        kind: "ba_workflow",
+        userId: opts.requirement.userId,
+        threadId: opts.requirement.linkedThreadId || undefined,
+        requirementId: opts.requirement.id,
+        agent: disposed,
+        run,
+        result,
+        promptChars: prompt.length,
+        outputChars: finalText.length,
+        model: await resolveSystemCursorModel(),
+      });
       return finalText;
     };
 

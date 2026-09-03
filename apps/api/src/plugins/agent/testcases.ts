@@ -29,6 +29,7 @@ import {
   cancelActiveAgentRun,
   errorFromCursorRunStatus,
 } from "./run.js";
+import { persistCursorUsage } from "../cursor/recordUsage.js";
 
 setMaxListeners(50);
 
@@ -278,6 +279,16 @@ Hãy sinh bộ test case theo đúng cấu trúc mục 3.`;
             },
         { lastTurnInput: lastTurnInput || (hasSdk ? undefined : inEst) },
       );
+      await persistCursorUsage({
+        kind: "job_testcase",
+        jobId,
+        agent: disposed,
+        run,
+        result,
+        promptChars: prompt.length,
+        outputChars: text.length,
+        model: resolveCursorModel(),
+      });
 
       let commented = false;
       try {

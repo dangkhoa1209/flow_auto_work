@@ -13,6 +13,7 @@ import {
   QcSampleFileModel,
   QcTestCaseModel,
 } from "./qc.js";
+import { CursorUsageModel } from "./cursorUsage.js";
 import { StatsAnalysisCacheModel } from "./stats.js";
 import {
   WorkspaceMembershipModel,
@@ -42,6 +43,7 @@ const ALL_MODELS = [
   BuildJobModel,
   BuildScriptModel,
   StatsAnalysisCacheModel,
+  CursorUsageModel,
 ] as const;
 
 /** Drop legacy unique indexes that conflict with soft-delete partial uniques. */
@@ -102,4 +104,5 @@ export {
   BuildJobModel,
   BuildScriptModel,
   StatsAnalysisCacheModel,
+  CursorUsageModel,
 };

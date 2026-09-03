@@ -8,6 +8,7 @@ import {
   resolveRepoPath,
 } from "../../workspace/creds.js";
 import { cursorModelLogLabel } from "../cursor/modelSpec.js";
+import { persistCursorUsage } from "../cursor/recordUsage.js";
 import { listConflictedFiles } from "../git/merge.js";
 
 /**
@@ -71,6 +72,13 @@ When done, reply with a short summary of how you resolved each file.`;
   }
 
   const remaining = await listConflictedFiles(repoPath);
+  await persistCursorUsage({
+    kind: "job_merge",
+    result,
+    promptChars: prompt.length,
+    outputChars: (result.result ?? "").length,
+    model: resolveCursorModel(),
+  });
   return {
     text: (result.result ?? "").trim() || "(done)",
     remaining,

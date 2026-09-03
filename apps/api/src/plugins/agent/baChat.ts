@@ -11,6 +11,7 @@ import {
   isJobKillRequested,
   isTransientCursorTransportError,
 } from "./run.js";
+import { persistCursorUsage } from "../cursor/recordUsage.js";
 import {
   appendBaMessage,
   getBaProject,
@@ -706,6 +707,19 @@ export async function runBaChatAgent(opts: {
       if (!finalText) {
         throw new Error("Agent returned an empty answer");
       }
+
+      await persistCursorUsage({
+        kind: "ba_chat",
+        userId: opts.userId,
+        threadId: opts.threadId,
+        messageId: opts.assistantMessageId,
+        agent: disposed,
+        run,
+        result,
+        promptChars: prompt.length,
+        outputChars: finalText.length,
+        model: await resolveSystemCursorModel(),
+      });
 
       if (finalText.length > lastPublished.length) {
         let delta = "";

@@ -38,6 +38,7 @@ import {
   errorFromCursorRunStatus,
   isTransientCursorTransportError,
 } from "./run.js";
+import { persistCursorUsage } from "../cursor/recordUsage.js";
 
 const ISSUE_DRAFT_TIMEOUT_MS = 10 * 60 * 1000;
 
@@ -561,6 +562,18 @@ export async function runBaThreadIssueDraft(opts: {
           ? fromResult || streamed
           : streamed || fromResult;
       if (!finalText) throw new Error("Agent returned empty content");
+
+      await persistCursorUsage({
+        kind: "ba_create_issue",
+        userId: thread?.userId,
+        threadId: opts.threadId,
+        agent: disposed,
+        run,
+        result,
+        promptChars: prompt.length,
+        outputChars: finalText.length,
+        model: await resolveSystemCursorModel(),
+      });
 
       const parsed = parseIssueDraftFromAgent(finalText);
       if (!parsed) {

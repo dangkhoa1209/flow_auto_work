@@ -10,6 +10,7 @@ const session = useSessionStore();
 
 const tabs = [
   { to: "/admin/users", label: "Users", short: "Users" },
+  { to: "/admin/usage", label: "Usage", short: "Usage" },
   { to: "/admin/chatbox", label: "Project Chatbox", short: "Chatbox" },
   { to: "/admin/ai-engine", label: "AI Engine", short: "AI" },
   { to: "/admin/task-types", label: "Task labels", short: "Labels" },
