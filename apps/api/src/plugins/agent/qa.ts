@@ -11,8 +11,10 @@ import type { IssueJob } from "../../types.js";
 import {
   resolveCursorApiKey,
   resolveCursorModel,
+  resolveCursorModelSpec,
   resolveRepoPath,
 } from "../../workspace/creds.js";
+import { cursorModelLogLabel } from "../cursor/modelSpec.js";
 import {
   appendJobProgress,
   appendPromptSending,
@@ -159,18 +161,19 @@ ${
 ## Question from the human
 ${opts.question}`;
 
-  const modelId = resolveCursorModel();
+  const model = resolveCursorModelSpec();
+  const modelLabel = cursorModelLogLabel(resolveCursorModel());
   logger.info("Q&A agent starting", {
     issueIid: opts.issue.issueIid,
     historyTurns: opts.history?.length ?? 0,
-    model: modelId,
+    model: modelLabel,
     jobId,
     existingAgentId: opts.existingAgentId || null,
   });
 
   if (jobId) {
     clearJobProgress(jobId);
-    appendJobProgress(jobId, "status", `Q&A started · model ${modelId}`);
+    appendJobProgress(jobId, "status", `Q&A started · model ${modelLabel}`);
   }
 
   const work = async (): Promise<QaResult> => {
@@ -184,7 +187,7 @@ ${opts.question}`;
         try {
           agent = await Agent.resume(existing, {
             apiKey: resolveCursorApiKey(),
-            model: { id: modelId },
+            model,
             local: { cwd: resolveRepoPath() },
           });
           resumed = true;
@@ -193,14 +196,14 @@ ${opts.question}`;
           session.check();
           agent = await Agent.create({
             apiKey: resolveCursorApiKey(),
-            model: { id: modelId },
+            model,
             local: { cwd: resolveRepoPath() },
           });
         }
       } else {
         agent = await Agent.create({
           apiKey: resolveCursorApiKey(),
-          model: { id: modelId },
+          model,
           local: { cwd: resolveRepoPath() },
         });
       }

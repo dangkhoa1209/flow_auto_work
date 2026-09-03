@@ -20,9 +20,11 @@ import {
   resolveBaProjectDb,
   resolveSystemCursorApiKey,
   resolveSystemCursorModel,
+  resolveSystemCursorModelSpec,
   updateBaMessageContent,
   updateBaThreadTitle,
 } from "../../workspace/baStore.js";
+import { cursorModelLogLabel } from "../cursor/modelSpec.js";
 import { isGitRepo } from "../../workspace/clone.js";
 import {
   ensureProjectGraphifyReady,
@@ -438,7 +440,8 @@ export async function runBaChatAgent(opts: {
     session.check();
 
     const apiKey = await resolveSystemCursorApiKey();
-    const modelId = await resolveSystemCursorModel();
+    const model = await resolveSystemCursorModelSpec();
+    const modelLabel = cursorModelLogLabel(await resolveSystemCursorModel());
 
     const history = await listBaMessages(opts.threadId);
     const historyBlock = history
@@ -520,7 +523,7 @@ export async function runBaChatAgent(opts: {
     logger.info("BA chat agent starting", {
       threadId: opts.threadId,
       projectId: opts.baProjectId,
-      model: modelId,
+      model: modelLabel,
       analysisMode: Boolean(opts.analysisMode),
       dbAccess: dbAccess.allowed,
       graphifyChars: graphifyQuery?.length ?? 0,
@@ -538,7 +541,7 @@ export async function runBaChatAgent(opts: {
       label: opts.analysisMode
         ? "BA mode — đang xử lý…"
         : "Khởi động trợ lý…",
-      detail: dbAccess.allowed ? `${modelId} · DB ON` : modelId,
+      detail: dbAccess.allowed ? `${modelLabel} · DB ON` : modelLabel,
     });
 
     const work = async (): Promise<string> => {
@@ -549,7 +552,7 @@ export async function runBaChatAgent(opts: {
       );
       const agent = await Agent.create({
         apiKey,
-        model: { id: modelId },
+        model,
         ...(BA_GITLAB_INTERACTION_ENABLED
           ? {}
           : {

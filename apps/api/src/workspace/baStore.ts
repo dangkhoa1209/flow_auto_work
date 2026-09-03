@@ -9,6 +9,8 @@ import {
 } from "../models/ba.js";
 import { decryptSecret, encryptSecret } from "../plugins/crypto/secrets.js";
 import { verifyCursorApiKey } from "../plugins/cursor/verifyKey.js";
+import { toAgentModel } from "../plugins/cursor/modelSpec.js";
+import type { CursorModelSpec } from "@flow/shared";
 import {
   baProjectLocalPath,
   normalizeGitlabHost,
@@ -866,6 +868,10 @@ export async function resolveSystemCursorApiKey(): Promise<string> {
 export async function resolveSystemCursorModel(): Promise<string> {
   const s = await getSystemSettings();
   return s.cursorModel?.trim() || "auto";
+}
+
+export async function resolveSystemCursorModelSpec(): Promise<CursorModelSpec> {
+  return toAgentModel(await resolveSystemCursorModel());
 }
 
 export async function getSystemCursorSettingsPublic(): Promise<SystemSettingsPublic> {

@@ -1,4 +1,6 @@
 import { requireRuntimeContext } from "./runtime.js";
+import { toAgentModel } from "../plugins/cursor/modelSpec.js";
+import type { CursorModelSpec } from "@flow/shared";
 
 /** Cursor API key: per-user runtime only (no .env fallback). */
 export function resolveCursorApiKey(): string {
@@ -12,6 +14,11 @@ export function resolveCursorApiKey(): string {
 /** Per-user model from UI, else auto. */
 export function resolveCursorModel(): string {
   return requireRuntimeContext().cursorModel?.trim() || "auto";
+}
+
+/** Per-user model as SDK spec (supports auto-smart Router modes). */
+export function resolveCursorModelSpec(): CursorModelSpec {
+  return toAgentModel(resolveCursorModel());
 }
 
 /** Local clone path from the selected project (user workspace). */

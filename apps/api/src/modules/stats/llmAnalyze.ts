@@ -6,6 +6,7 @@ import {
   errorFromCursorRunStatus,
   formatCursorAgentFailure,
 } from "../../plugins/agent/run.js";
+import { toAgentModel, cursorModelLogLabel } from "../../plugins/cursor/modelSpec.js";
 import type { DevRecommendation, TaskTypeStats } from "./analyze.js";
 import type { AnalysisJob, SkillDimensions } from "./scoring.js";
 
@@ -377,7 +378,8 @@ export async function analyzeWithCursorSdk(input: {
       400,
     );
   }
-  const modelId = rt?.cursorModel?.trim() || "auto";
+  const model = toAgentModel(rt?.cursorModel);
+  const modelLabel = cursorModelLogLabel(rt?.cursorModel);
   const cwd = rt?.repoPath?.trim() || process.cwd();
   const prompt = buildPrompt({
     ownerUsername: input.ownerUsername,
@@ -390,7 +392,7 @@ export async function analyzeWithCursorSdk(input: {
   });
 
   logger.info("Dev analysis Cursor SDK starting", {
-    model: modelId,
+    model: modelLabel,
     jobs: input.jobs.length,
     owner: input.ownerUsername,
   });
@@ -398,7 +400,7 @@ export async function analyzeWithCursorSdk(input: {
   try {
     const agent = await Agent.create({
       apiKey,
-      model: { id: modelId },
+      model,
       name: "stats-dev-eval",
       mcpServers: {},
       local: { cwd, settingSources: [] },

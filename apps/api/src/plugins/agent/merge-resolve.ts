@@ -4,8 +4,10 @@ import type { IssueJob } from "../../types.js";
 import {
   resolveCursorApiKey,
   resolveCursorModel,
+  resolveCursorModelSpec,
   resolveRepoPath,
 } from "../../workspace/creds.js";
+import { cursorModelLogLabel } from "../cursor/modelSpec.js";
 import { listConflictedFiles } from "../git/merge.js";
 
 /**
@@ -49,17 +51,18 @@ ${files.map((f) => `- ${f}`).join("\n")}
 
 When done, reply with a short summary of how you resolved each file.`;
 
-  const modelId = resolveCursorModel();
+  const model = resolveCursorModelSpec();
+  const modelLabel = cursorModelLogLabel(resolveCursorModel());
   logger.info("AI merge conflict resolution starting", {
     source: opts.sourceBranch,
     target: opts.targetBranch,
     files,
-    model: modelId,
+    model: modelLabel,
   });
 
   const result = await Agent.prompt(prompt, {
     apiKey: resolveCursorApiKey(),
-    model: { id: modelId },
+    model,
     local: { cwd: repoPath },
   });
 

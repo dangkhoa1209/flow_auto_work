@@ -3,7 +3,7 @@ import { computed, onMounted, ref, watch } from "vue";
 import { message } from "ant-design-vue";
 import { api } from "@/api/client";
 import { API } from "@/api/endpoints";
-import { useCursorModelSelect } from "@/composables/useCursorModelSelect";
+import CursorModelFields from "@/components/settings/CursorModelFields.vue";
 import type { CursorPatPublic } from "@/stores/session";
 import { useSessionStore } from "@/stores/session";
 
@@ -13,14 +13,7 @@ const patLabel = ref("");
 const patKey = ref("");
 const selectedPatId = ref<string | null>(null);
 const creatingNew = ref(false);
-
-const {
-  model,
-  models,
-  modelsLoading,
-  modelsWarning,
-  loadModels,
-} = useCursorModelSelect(API.me.cursorModels);
+const modelFieldsRef = ref<InstanceType<typeof CursorModelFields> | null>(null);
 
 const pats = computed(() => session.me?.cursorPats ?? []);
 
@@ -77,10 +70,10 @@ function startNewPat() {
 }
 
 async function loadModelsForPat(patId?: string | null) {
-  const url = patId
-    ? `${API.me.cursorModels}?patId=${encodeURIComponent(patId)}`
-    : API.me.cursorModels;
-  await loadModels(session.me?.cursorModel || "auto", url);
+  await modelFieldsRef.value?.loadModelsForPat(
+    patId,
+    session.me?.cursorModel || "auto",
+  );
 }
 
 onMounted(async () => {
@@ -108,12 +101,12 @@ async function refreshMe(user?: Record<string, unknown>) {
   }
 }
 
-async function saveModel() {
+async function saveModel(storedValue: string) {
   loading.value = true;
   try {
     await api(API.me.preferences, {
       method: "PUT",
-      body: JSON.stringify({ cursorModel: model.value }),
+      body: JSON.stringify({ cursorModel: storedValue }),
     });
     await session.refreshMe();
     message.success("Đã lưu model");
@@ -266,24 +259,13 @@ async function deletePat() {
   <div class="faw-settings-detail faw-ai-engine-provider">
     <h2>Cursor</h2>
 
-    <a-form layout="vertical" class="faw-ai-engine-provider__model">
-      <a-form-item label="Agent model (mặc định)">
-        <a-select
-          v-model:value="model"
-          :options="models"
-          :loading="modelsLoading"
-          class="w-full"
-        />
-      </a-form-item>
-      <a-alert
-        v-if="modelsWarning"
-        type="warning"
-        show-icon
-        class="mb-3"
-        :message="modelsWarning"
-      />
-      <a-button :loading="loading" @click="saveModel">Lưu model</a-button>
-    </a-form>
+    <CursorModelFields
+      ref="modelFieldsRef"
+      :models-url="API.me.cursorModels"
+      :loading="loading"
+      save-label="Lưu model"
+      @save="saveModel"
+    />
 
     <div class="faw-integrations__shell faw-ai-engine-provider__pats">
       <aside class="faw-integrations__list" aria-label="Danh sách PAT">

@@ -10,8 +10,10 @@ import {
   resolveBaProjectDb,
   resolveSystemCursorApiKey,
   resolveSystemCursorModel,
+  resolveSystemCursorModelSpec,
   type BaMessage,
 } from "../../workspace/baStore.js";
+import { cursorModelLogLabel } from "../cursor/modelSpec.js";
 import { isGitRepo } from "../../workspace/clone.js";
 import {
   ensureProjectGraphifyReady,
@@ -421,7 +423,8 @@ export async function runBaThreadIssueDraft(opts: {
     session.check();
 
     const apiKey = await resolveSystemCursorApiKey();
-    const modelId = await resolveSystemCursorModel();
+    const model = await resolveSystemCursorModelSpec();
+    const modelLabel = cursorModelLogLabel(await resolveSystemCursorModel());
     const dbAllowed = isBaDbAccessAllowed(project);
     const dbCfg = dbAllowed ? await resolveBaProjectDb(project.id) : null;
     const dbAccess = {
@@ -487,7 +490,7 @@ export async function runBaThreadIssueDraft(opts: {
       );
       const agent = await Agent.create({
         apiKey,
-        model: { id: modelId },
+        model,
         ...(BA_GITLAB_INTERACTION_ENABLED ? {} : { mcpServers: {} }),
         local: {
           cwd: project.localPath,
