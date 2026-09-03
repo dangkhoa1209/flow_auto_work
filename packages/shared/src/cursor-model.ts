@@ -1,4 +1,7 @@
-export const CURSOR_ROUTER_MODEL_ID = "auto-smart";
+/** Canonical Auto/Router id from `Cursor.models.list()` (SDK 1.x). */
+export const CURSOR_ROUTER_MODEL_ID = "default";
+/** Docs/UI name that is not in the current SDK catalog. */
+export const LEGACY_ROUTER_MODEL_ID = "auto-smart";
 export const LEGACY_AUTO_MODEL_ID = "auto";
 
 export type CursorRouterMode = "cost" | "balanced" | "intelligence";
@@ -30,14 +33,19 @@ export function isRouterMode(value: string): value is CursorRouterMode {
   );
 }
 
-/** Stored value → SDK model object (`auto-smart:cost` encodes Router mode). */
+/** Stored or listed ids that mean Cursor Auto / Router (not a pinned model). */
+export function isRouterModelId(id: string): boolean {
+  return id === CURSOR_ROUTER_MODEL_ID || id === LEGACY_ROUTER_MODEL_ID;
+}
+
+/** Stored value → settings object (`default:cost` / `auto-smart:cost` encode mode). */
 export function parseCursorModel(raw?: string | null): CursorModelSpec {
   const trimmed = raw?.trim() || LEGACY_AUTO_MODEL_ID;
   const colon = trimmed.indexOf(":");
   if (colon > 0) {
     const id = trimmed.slice(0, colon).trim();
     const suffix = trimmed.slice(colon + 1).trim();
-    if (id === CURSOR_ROUTER_MODEL_ID && isRouterMode(suffix)) {
+    if (isRouterModelId(id) && isRouterMode(suffix)) {
       return {
         id,
         params: [{ id: "optimize_for", value: suffix }],
@@ -51,17 +59,47 @@ export function parseCursorModel(raw?: string | null): CursorModelSpec {
 export function serializeCursorModel(spec: CursorModelSpec): string {
   const id = spec.id.trim() || LEGACY_AUTO_MODEL_ID;
   const mode = spec.params?.find((p) => p.id === "optimize_for")?.value;
-  if (id === CURSOR_ROUTER_MODEL_ID && mode && isRouterMode(mode)) {
+  if (isRouterModelId(id) && mode && isRouterMode(mode)) {
     return `${id}:${mode}`;
   }
   return id;
+}
+
+/**
+ * Stored settings → Cursor SDK `model` field.
+ * Maps `auto` / `auto-smart` onto catalog id `default`.
+ */
+export function toSdkCursorModel(raw?: string | null): CursorModelSpec {
+  const spec = parseCursorModel(raw);
+  if (spec.id === LEGACY_AUTO_MODEL_ID || isRouterModelId(spec.id)) {
+    return {
+      id: CURSOR_ROUTER_MODEL_ID,
+      params: spec.params,
+    };
+  }
+  return spec;
+}
+
+/** If the catalog has no `auto-smart`, bind stored Router values to `default`. */
+export function resolveListedRouterModelId(
+  storedModelId: string,
+  listedIds: Iterable<string>,
+): string {
+  const listed = new Set(
+    [...listedIds].map((id) => id.trim()).filter(Boolean),
+  );
+  if (listed.has(storedModelId)) return storedModelId;
+  if (isRouterModelId(storedModelId) && listed.has(CURSOR_ROUTER_MODEL_ID)) {
+    return CURSOR_ROUTER_MODEL_ID;
+  }
+  return storedModelId;
 }
 
 /** Human-readable label for logs and UI hints. */
 export function formatCursorModelLabel(raw?: string | null): string {
   const spec = parseCursorModel(raw);
   if (spec.id === LEGACY_AUTO_MODEL_ID) return "Auto";
-  if (spec.id === CURSOR_ROUTER_MODEL_ID) {
+  if (isRouterModelId(spec.id)) {
     const mode = spec.params?.find((p) => p.id === "optimize_for")?.value;
     if (mode && isRouterMode(mode)) {
       return `Auto (Router · ${ROUTER_MODE_LABELS[mode]})`;
@@ -76,7 +114,7 @@ export function splitStoredCursorModel(raw?: string | null): {
   routerMode: CursorRouterMode | null;
 } {
   const spec = parseCursorModel(raw);
-  if (spec.id !== CURSOR_ROUTER_MODEL_ID) {
+  if (!isRouterModelId(spec.id)) {
     return { modelId: spec.id, routerMode: null };
   }
   const mode = spec.params?.find((p) => p.id === "optimize_for")?.value;
@@ -90,10 +128,11 @@ export function combineStoredCursorModel(
   modelId: string,
   routerMode?: CursorRouterMode | null,
 ): string {
+  const id = modelId.trim() || LEGACY_AUTO_MODEL_ID;
   return serializeCursorModel({
-    id: modelId.trim() || LEGACY_AUTO_MODEL_ID,
+    id,
     params:
-      modelId === CURSOR_ROUTER_MODEL_ID && routerMode
+      isRouterModelId(id) && routerMode
         ? [{ id: "optimize_for", value: routerMode }]
         : undefined,
   });

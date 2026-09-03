@@ -16,7 +16,7 @@ export function resolveCursorModel(): string {
   return requireRuntimeContext().cursorModel?.trim() || "auto";
 }
 
-/** Per-user model as SDK spec (supports auto-smart Router modes). */
+/** Per-user model as SDK spec (Router uses catalog id `default`). */
 export function resolveCursorModelSpec(): CursorModelSpec {
   return toAgentModel(resolveCursorModel());
 }

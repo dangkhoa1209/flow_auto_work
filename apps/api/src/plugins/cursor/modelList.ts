@@ -2,6 +2,7 @@ import {
   CURSOR_ROUTER_MODEL_ID,
   DEFAULT_ROUTER_MODES,
   isRouterMode,
+  isRouterModelId,
   LEGACY_AUTO_MODEL_ID,
   ROUTER_MODE_LABELS,
   type CursorRouterMode,
@@ -41,28 +42,52 @@ function defaultRouterModes(): CursorRouterModeOption[] {
   }));
 }
 
+function paramValueIds(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  const out: string[] = [];
+  for (const item of raw) {
+    if (typeof item === "string" && item.trim()) {
+      out.push(item.trim());
+      continue;
+    }
+    if (item && typeof item === "object" && "value" in item) {
+      const value = String((item as { value?: unknown }).value ?? "").trim();
+      if (value) out.push(value);
+    }
+  }
+  return out;
+}
+
 function extractRouterModes(raw: unknown[]): CursorRouterModeOption[] {
   const router = raw.find((item) => {
-    const m = item as { id?: string };
-    return m.id?.trim() === CURSOR_ROUTER_MODEL_ID;
+    const m = item as { id?: string; aliases?: string[] };
+    const id = m.id?.trim() ?? "";
+    if (isRouterModelId(id)) return true;
+    return (m.aliases ?? []).some((alias) => isRouterModelId(alias.trim()));
   }) as
     | {
         parameters?: Array<{
           id?: string;
-          values?: string[];
-          allowedValues?: string[];
+          values?: unknown;
+          allowedValues?: unknown;
         }>;
       }
     | undefined;
 
   const param = router?.parameters?.find((p) => p.id === "optimize_for");
-  const values = param?.values ?? param?.allowedValues ?? [];
+  const values = paramValueIds(param?.values ?? param?.allowedValues);
   const modes = values.filter(isRouterMode);
   if (!modes.length) return defaultRouterModes();
   return modes.map((value) => ({
     value,
     label: ROUTER_MODE_LABELS[value],
   }));
+}
+
+function displayNameFor(id: string, listedName?: string): string {
+  if (id === LEGACY_AUTO_MODEL_ID) return AUTO_CURSOR_MODEL.displayName;
+  if (isRouterModelId(id)) return ROUTER_CURSOR_MODEL.displayName;
+  return listedName?.trim() || id;
 }
 
 /** List Cursor models for an API key. Always includes `auto` first. */
@@ -94,16 +119,10 @@ export async function listCursorModelsForApiKey(
       const id = (m.id || "").trim();
       if (!id || seen.has(id)) continue;
       seen.add(id);
-      const displayName =
-        id === CURSOR_ROUTER_MODEL_ID
-          ? ROUTER_CURSOR_MODEL.displayName
-          : id === LEGACY_AUTO_MODEL_ID
-            ? AUTO_CURSOR_MODEL.displayName
-            : m.displayName || m.name || id;
-      models.push({ id, displayName });
-    }
-    if (!seen.has(CURSOR_ROUTER_MODEL_ID)) {
-      models.splice(1, 0, ROUTER_CURSOR_MODEL);
+      models.push({
+        id,
+        displayName: displayNameFor(id, m.displayName || m.name),
+      });
     }
     return {
       models,

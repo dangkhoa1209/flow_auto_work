@@ -14,9 +14,13 @@ export {
   DEFAULT_ROUTER_MODES,
   formatCursorModelLabel,
   isRouterMode,
+  isRouterModelId,
   LEGACY_AUTO_MODEL_ID,
+  LEGACY_ROUTER_MODEL_ID,
   parseCursorModel,
+  resolveListedRouterModelId,
   ROUTER_MODE_LABELS,
   serializeCursorModel,
   splitStoredCursorModel,
+  toSdkCursorModel,
 } from "./cursor-model.js";

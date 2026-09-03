@@ -3,7 +3,9 @@ import {
   combineStoredCursorModel,
   CURSOR_ROUTER_MODEL_ID,
   DEFAULT_ROUTER_MODE,
+  isRouterModelId,
   LEGACY_AUTO_MODEL_ID,
+  resolveListedRouterModelId,
   splitStoredCursorModel,
   type CursorRouterMode,
 } from "@flow/shared";
@@ -14,6 +16,7 @@ export type CursorRouterModeOption = { value: CursorRouterMode; label: string };
 
 const DEFAULT_OPTIONS: CursorModelOption[] = [
   { value: LEGACY_AUTO_MODEL_ID, label: "Auto (legacy)" },
+  { value: CURSOR_ROUTER_MODEL_ID, label: "Auto (Router)" },
 ];
 
 const DEFAULT_ROUTER_MODES: CursorRouterModeOption[] = [
@@ -36,7 +39,9 @@ function toSelectOptions(
       label:
         id === LEGACY_AUTO_MODEL_ID
           ? "Auto (legacy)"
-          : m.displayName?.trim() || id,
+          : isRouterModelId(id)
+            ? "Auto (Router)"
+            : m.displayName?.trim() || id,
     });
   }
   if (!seen.has(LEGACY_AUTO_MODEL_ID)) {
@@ -55,9 +60,10 @@ function applyStoredSelection(
   stored: string | null | undefined,
   model: { value: string },
   routerMode: { value: CursorRouterMode },
+  listedIds: Iterable<string>,
 ) {
   const split = splitStoredCursorModel(stored);
-  model.value = split.modelId;
+  model.value = resolveListedRouterModelId(split.modelId, listedIds);
   routerMode.value = split.routerMode ?? DEFAULT_ROUTER_MODE;
 }
 
@@ -70,9 +76,7 @@ export function useCursorModelSelect(modelsUrl: string) {
   const modelsSource = ref<"cursor" | "fallback" | null>(null);
   const modelsWarning = ref<string | null>(null);
 
-  const isRouterSelected = computed(
-    () => modelId.value === CURSOR_ROUTER_MODEL_ID,
-  );
+  const isRouterSelected = computed(() => isRouterModelId(modelId.value));
 
   const storedValue = computed(() =>
     combineStoredCursorModel(modelId.value, routerMode.value),
@@ -104,6 +108,7 @@ export function useCursorModelSelect(modelsUrl: string) {
         data.selected?.trim() || selectedFallback?.trim() || LEGACY_AUTO_MODEL_ID,
         modelId,
         routerMode,
+        models.value.map((m) => m.value),
       );
     } catch {
       models.value = [...DEFAULT_OPTIONS];
@@ -111,6 +116,7 @@ export function useCursorModelSelect(modelsUrl: string) {
         selectedFallback?.trim() || LEGACY_AUTO_MODEL_ID,
         modelId,
         routerMode,
+        models.value.map((m) => m.value),
       );
     } finally {
       modelsLoading.value = false;
