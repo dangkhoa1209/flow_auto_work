@@ -524,16 +524,6 @@ export function workAgentLocal() {
   };
 }
 
-function graphifyQuestionForIssue(issue: IssueJob, extra?: string): string {
-  return [
-    issue.title,
-    (issue.description || "").replace(/\s+/g, " ").slice(0, 400),
-    extra?.trim().slice(0, 200),
-  ]
-    .filter(Boolean)
-    .join(" | ");
-}
-
 function appendGraphifyPrepStatus(
   jobId: string | undefined,
   status: WorkGraphifyPrep["status"],
@@ -553,9 +543,7 @@ function appendGraphifyPrepStatus(
 }
 
 export async function loadWorkGraphifyBlock(
-  issue: IssueJob,
-  jobId: string | undefined,
-  extra?: string,
+  jobId?: string,
 ): Promise<string> {
   if (!graphifyEnabled()) {
     appendGraphifyPrepStatus(jobId, "disabled");
@@ -566,7 +554,6 @@ export async function loadWorkGraphifyBlock(
   }
   const prep = await prepareWorkGraphifyContext({
     sourcePath: resolveRepoPath(),
-    question: graphifyQuestionForIssue(issue, extra),
   });
   appendGraphifyPrepStatus(jobId, prep.status);
   return prep.block;
@@ -629,11 +616,7 @@ export async function runNewAgent(
 
   try {
     session.check();
-    const graphifyBlock = await loadWorkGraphifyBlock(
-      issue,
-      opts?.jobId,
-      extraContext,
-    );
+    const graphifyBlock = await loadWorkGraphifyBlock(opts?.jobId);
     session.check();
     if (existing) {
       try {
@@ -736,7 +719,7 @@ export async function resumeAgent(
     agentId: agent.agentId,
     model: modelId,
   });
-  const graphifyBlock = await loadWorkGraphifyBlock(issue, opts?.jobId, answer);
+  const graphifyBlock = await loadWorkGraphifyBlock(opts?.jobId);
   const prompt = `${graphifyBlock ? `${graphifyBlock}\n\n` : ""}${buildResumePrompt(answer, issue, {
     clarifyRoundsLeft: opts?.clarifyRoundsLeft,
   })}`;
@@ -790,11 +773,7 @@ export async function continueAgentWindow(
     appendJobProgress(opts.jobId, "status", "Opening a new agent window…");
   }
 
-  const graphifyBlock = await loadWorkGraphifyBlock(
-    issue,
-    opts?.jobId,
-    message,
-  );
+  const graphifyBlock = await loadWorkGraphifyBlock(opts?.jobId);
   const prompt = isAdhoc
     ? buildAdhocFollowUpPrompt(message, issue.title, {
         chatHistory: opts?.chatHistory,

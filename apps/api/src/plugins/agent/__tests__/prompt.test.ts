@@ -102,17 +102,18 @@ describe("extractChatBodyFromAgentText", () => {
 });
 
 describe("buildWorkPrompt graphify", () => {
-  it("injects the code map block and tells the agent to query first", () => {
+  it("injects how-to-use graphify instructions", () => {
     const prompt = buildWorkPrompt(issue, undefined, undefined, undefined, {
-      graphifyBlock: "## Code map (graphify — WorkBench)\ncall code_map_query",
+      graphifyBlock:
+        "## How to use Graphify (code map)\ncall code_map_query with a short locator",
     });
     expect(prompt).toMatch(/code_map_query/);
-    expect(prompt).toContain("Code map (graphify — WorkBench)");
+    expect(prompt).toContain("How to use Graphify");
     expect(prompt).toMatch(/Investigate via \*\*code_map_query\*\* first/);
   });
 
   it("omits the map when no graphify block is passed", () => {
     const prompt = buildWorkPrompt(issue);
-    expect(prompt).not.toContain("Code map (graphify — WorkBench)");
+    expect(prompt).not.toContain("How to use Graphify");
   });
 });

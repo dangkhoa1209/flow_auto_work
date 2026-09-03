@@ -132,11 +132,7 @@ export async function answerTaskQuestion(opts: {
     appendJobProgress(jobId, "status", `Q&A started · model ${modelId}`);
   }
 
-  const graphifyBlock = await loadWorkGraphifyBlock(
-    opts.issue,
-    jobId,
-    opts.question,
-  );
+  const graphifyBlock = await loadWorkGraphifyBlock(jobId);
 
   // Prefer job work commits (id → change) over a long branch git-log.
   const commitsBlock = jobCommitLines.length
