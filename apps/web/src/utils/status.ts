@@ -139,7 +139,7 @@ export const CONTEXT_QUALITY_STANDARDS: Record<
     title: "Bad",
     items: [
       "Vague title / generic description only — missing route, file, or repro steps",
-      "Add Dev Notes or chat, then Run again",
+      "Add Dev Notes for a tighter run, or confirm when you Run",
     ],
   },
 };

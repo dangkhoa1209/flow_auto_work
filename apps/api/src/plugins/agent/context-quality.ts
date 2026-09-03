@@ -372,7 +372,12 @@ export function assessContextQuality(
 export function formatContextQualityForPrompt(
   result: ContextQualityResult,
 ): string {
-  if (result.level === "bad") return "";
+  if (result.level === "bad") {
+    return `# CONTEXT QUALITY: THIN (human confirmed Run anyway)
+This task has little technical context (${result.reason}).
+Search carefully before editing. Prefer NEED_CLARIFICATION if you cannot find a unique place to change.
+`;
+  }
 
   if (result.level === "good") {
     const files =
@@ -407,32 +412,6 @@ If after ~2 rounds the anchors do NOT lead to the code the ticket describes (no 
 `;
 }
 
-/** Chat / lastQuestion body when blocking Bad Context (Vietnamese). */
-export function formatBadContextChatMessage(
-  result: ContextQualityResult,
-  issueIid: number,
-): string {
-  const missing =
-    result.missing.length > 0
-      ? result.missing.map((m, i) => `${i + 1}. ${m}`).join("\n")
-      : "1. URL / route\n2. Steps to reproduce hoặc Input/Output\n3. File/Component hoặc error log";
-
-  return `⛔ **Bad Context — đã dừng Run** (không gọi Cursor Agent)
-
-Issue #${issueIid} chưa đủ ngữ cảnh kỹ thuật. Chạy agent lúc này sẽ tốn token và dễ sửa sai chỗ.
-
-**Lý do:** ${result.reason}
-${result.signals.wordCount ? `**Độ dài corpus:** ~${result.signals.wordCount} từ` : ""}
-
-**Vui lòng bổ sung (Dev Notes hoặc chat rồi Run lại):**
-${missing}
-
-**Gợi ý Good Context:**
-- Feature: route/URL + Input/Output + Model/Component (vd. \`EmployeeList.vue\`)
-- Bug: Steps to reproduce + Current vs Expected + error log/stack trace
-- **Hoặc** Dev Notes rõ ràng (≥ ~25 từ + tín hiệu kỹ thuật: file/route/field/I/O/repro…)`;
-}
-
 /** Standards text for UI modal (kept in sync with classifier). */
 export const CONTEXT_QUALITY_STANDARDS = {
   good: [
@@ -446,6 +425,6 @@ export const CONTEXT_QUALITY_STANDARDS = {
   ],
   bad: [
     "Vague title / generic description only — missing route, file, or repro steps",
-    "Do not run Cursor Agent — add Dev Notes or chat, then Run again",
+    "Thin context — confirm before Run, or add Dev Notes / chat first",
   ],
 } as const;

@@ -848,9 +848,7 @@ export const useWorkStore = defineStore("work", () => {
         method: "POST",
         body: JSON.stringify({ message }),
       });
-      if (res?.kind === "bad_context") {
-        agentTyping.value = false;
-      } else if (currentJob.value?.id === selectedJobId.value) {
+      if (currentJob.value?.id === selectedJobId.value) {
         // Optimistic: composer locked + thinking until SSE idle
         currentJob.value = { ...currentJob.value, status: "queued" };
       }
@@ -993,7 +991,7 @@ export const useWorkStore = defineStore("work", () => {
   }
 
   async function createAdhocSession(opts: {
-    title: string;
+    title?: string;
     message?: string;
     labels?: string[];
   }) {

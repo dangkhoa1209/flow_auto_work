@@ -121,7 +121,7 @@ export async function generateTestcasesForIssue(opts: {
   const jobId = opts.jobId;
   if (!opts.issue.issueIid || opts.issue.issueIid <= 0) {
     throw new Error(
-      "Adhoc job chưa có GitLab issue — tạo issue trước khi sinh testcase",
+      "Session has no GitLab issue yet — create an issue before generating testcases",
     );
   }
 

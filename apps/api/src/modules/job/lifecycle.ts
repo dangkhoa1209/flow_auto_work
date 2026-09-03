@@ -28,6 +28,7 @@ import {
 } from "../../job-store.js";
 import { logger } from "../../logger.js";
 import { jobQueue } from "../../queue.js";
+import { titleFromWorkRequest } from "./sessionTitle.js";
 import { getRuntimeContext } from "../../workspace/runtime.js";
 import { isAwaitingDiffApproval } from "../../plugins/review/diff-wait.js";
 import {
@@ -112,17 +113,18 @@ export type AdhocJobInput = {
   labels?: string[];
 };
 
-/** Free Hotfix / ad-hoc agent session (no GitLab issue yet). */
+/** Free session / ad-hoc agent (no GitLab issue yet). Title optional when message is set. */
 export async function createAdhocSession(input: AdhocJobInput) {
-  const title = input.title?.trim();
-  if (!title) throw new AppError("title required", 400);
+  const message = input.message?.trim();
+  const title =
+    input.title?.trim() || (message ? titleFromWorkRequest(message) : "");
+  if (!title) throw new AppError("title or message required", 400);
   try {
     const job = await createAdhocJob({
       title,
       labels: input.labels,
       source: "ui_adhoc",
     });
-    const message = input.message?.trim();
     if (message) {
       // Fire follow-up async so UI can select job + stream progress
       void jobQueue.followUpChat(job.id, message).catch((err) => {

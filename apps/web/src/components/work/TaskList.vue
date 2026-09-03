@@ -51,7 +51,7 @@ const emit = defineEmits<{
   "update:openIidDraft": [string];
   "update:selectedIids": [number[]];
   refresh: [];
-  openAdhoc: [];
+  startChat: [];
   runSelected: [];
   runAll: [];
   openByIid: [];
@@ -196,7 +196,7 @@ function statusDotClass(status: string) {
 
 function jobDisplayIid(j: Job) {
   const iid = j.issue?.issueIid;
-  if (!iid || iid <= 0 || j.kind === "adhoc") return "Hotfix";
+  if (!iid || iid <= 0 || j.kind === "adhoc") return "Session";
   return `#${iid}`;
 }
 
@@ -356,16 +356,20 @@ watch(
             allow-clear
           />
         </div>
-        <button type="button" class="faw-btn" title="New hotfix" @click="emit('openAdhoc')">
-          <PlusOutlined /> Hotfix
+        <button type="button" class="faw-btn" title="New session with a title" @click="emit('openAdhoc')">
+          <PlusOutlined /> Session
         </button>
       </div>
       <div class="faw-filters__row">
-        <a-tooltip v-if="runBlockedReason" :title="runBlockedReason">
-          <button type="button" class="faw-btn faw-btn--run" disabled>▶ Run</button>
-        </a-tooltip>
         <button
-          v-else
+          type="button"
+          class="faw-btn faw-btn--run"
+          title="Type a request — no GitLab issue needed"
+          @click="emit('startChat')"
+        >
+          Chat
+        </button>
+        <button
           type="button"
           class="faw-btn faw-btn--run"
           :disabled="busy"
@@ -460,11 +464,14 @@ watch(
         <a-empty
           v-if="!visibleTasks.length"
           class="py-6"
-          description="No tasks"
+          description="No assigned GitLab tasks"
         >
-          <a-button size="small" type="primary" @click="emit('refresh')"
-            >Refresh</a-button
-          >
+          <div class="flex flex-wrap gap-2 justify-center">
+            <a-button size="small" type="primary" @click="emit('startChat')"
+              >Start from chat</a-button
+            >
+            <a-button size="small" @click="emit('refresh')">Refresh</a-button>
+          </div>
         </a-empty>
       </template>
     </div>
@@ -565,9 +572,9 @@ watch(
             </div>
 
             <span
-              v-if="jobDisplayIid(j) === 'Hotfix'"
+              v-if="jobDisplayIid(j) === 'Session'"
               class="faw-job-id"
-              >Hotfix</span
+              >Session</span
             >
             <IssueIidLink
               v-else
@@ -619,7 +626,7 @@ watch(
           description="No jobs yet"
         >
           <span class="text-[11px] text-ink-faint"
-            >Select a task and click Run</span
+            >Type in Console to start a session, or Run a GitLab task</span
           >
         </a-empty>
       </div>
