@@ -30,6 +30,7 @@ const RUNNING_LIKE = new Set([
   "awaiting_clarification",
   "draft",
   "awaiting_docs_approval",
+  "awaiting_plan_approval",
   "awaiting_google_auth",
   "awaiting_figma_auth",
   "awaiting_diff_approval",

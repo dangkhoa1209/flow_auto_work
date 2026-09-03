@@ -1,7 +1,8 @@
 /**
  * Task-level change summary for Create MR / Merge comments.
  * Outcome from the work chat (done / not-done / explain) — not a transcript
- * and not a git-log dump.
+ * and not a git-log dump. Prefer job work history over dumping the full
+ * branch git-log.
  */
 import { git } from "../../plugins/git/exec.js";
 import { listChatMessages } from "../../models/chat.js";

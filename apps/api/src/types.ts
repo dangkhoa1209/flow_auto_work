@@ -215,6 +215,12 @@ export type JobRecord = {
   followUpRestoreStatus?: JobStatus;
   /** Hard gate: read/update project feature docs before any app code */
   requireDocsFirst?: boolean;
+  /** Plan-first: Cursor `mode: "plan"` then PM approves before coding */
+  planFirst?: boolean;
+  /** Plan-phase summary (Vietnamese) while awaiting approval */
+  planSummary?: string;
+  /** Set when PM approves plan → next run is code phase */
+  planApprovedAt?: string;
   /** Feature doc paths from docs phase (.md / .mdc under docs/), for PM review */
   docsPaths?: string[];
   /** @deprecated prefer docsPaths */

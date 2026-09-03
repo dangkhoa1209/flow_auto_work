@@ -18,9 +18,14 @@ import {
 } from "../../workspace/graphify.js";
 import { withGraphifyCustomTools } from "../ba/graphifyTools.js";
 import {
+  codingAgentPolicy,
+  planAgentPolicy,
+} from "../cursor/agentPolicy.js";
+import {
   buildAdhocFollowUpPrompt,
   buildDocsPhasePrompt,
   buildFollowUpPrompt,
+  buildPlanPhasePrompt,
   buildResumePrompt,
   buildWorkPrompt,
   parseAgentOutcome,
@@ -32,6 +37,7 @@ import {
   clearJobProgress,
   getJobTokenUsage,
   recordTokenUsage,
+  workRunOnDelta,
   type JobTokenSnapshot,
 } from "./progress.js";
 import { persistCursorUsage } from "../cursor/recordUsage.js";
@@ -509,7 +515,7 @@ export function hasActiveAgentRun(jobId: string): boolean {
 
 export type AgentRunResult = {
   agentId: string;
-  kind: "done" | "docs_ready" | "need_clarification" | "unknown";
+  kind: "done" | "docs_ready" | "plan_ready" | "need_clarification" | "unknown";
   text: string;
   question?: string;
   summary?: string;
@@ -520,7 +526,7 @@ export type AgentRunResult = {
 type RunOpts = {
   jobId?: string;
   devNotes?: string;
-  phase?: "docs" | "code";
+  phase?: "docs" | "plan" | "code";
   approvedDocsPaths?: string[];
   chatContext?: string;
   /** Resume this agent window (1 task = 1 agent). */
@@ -606,6 +612,13 @@ async function buildMissionPrompt(
           figmaBlock: opts.figmaBlock,
           graphifyBlock,
         })
+      : opts.phase === "plan"
+        ? buildPlanPhasePrompt(issue, linkedBlock, notes, {
+            chatContext: opts.chatContext,
+            contextQualityBlock: opts.contextQualityBlock,
+            googleSheetsBlock: opts.googleSheetsBlock,
+            figmaBlock: opts.figmaBlock,
+          })
       : buildWorkPrompt(issue, extraContext, linkedBlock, notes, {
           approvedDocsPaths: opts.approvedDocsPaths,
           chatContext: opts.chatContext,
@@ -634,6 +647,8 @@ export async function runNewAgent(
   const model = resolveCursorModelSpec();
   const modelLabel = cursorModelLogLabel(resolveCursorModel());
   const existing = opts?.existingAgentId?.trim();
+  const sdkPolicy =
+    opts?.phase === "plan" ? planAgentPolicy() : codingAgentPolicy();
   let resumed = false;
   let agent: Awaited<ReturnType<typeof Agent.create>>;
   const session = beginCancellableJob(opts?.jobId);
@@ -647,6 +662,7 @@ export async function runNewAgent(
         agent = await Agent.resume(existing, {
           apiKey: resolveCursorApiKey(),
           model,
+          ...sdkPolicy,
           local: workAgentLocal(),
         });
         resumed = true;
@@ -664,6 +680,7 @@ export async function runNewAgent(
         agent = await Agent.create({
           apiKey: resolveCursorApiKey(),
           model,
+          ...sdkPolicy,
           local: workAgentLocal(),
         });
       }
@@ -671,6 +688,7 @@ export async function runNewAgent(
       agent = await Agent.create({
         apiKey: resolveCursorApiKey(),
         model,
+        ...sdkPolicy,
         local: workAgentLocal(),
       });
       logger.info("Created local agent window", {
@@ -700,7 +718,11 @@ export async function runNewAgent(
       );
       appendPromptSending(opts.jobId, prompt);
     }
-    const run = await disposed.send(prompt);
+    const onDelta = workRunOnDelta(opts?.jobId);
+    const run = await disposed.send(prompt, {
+      mode: sdkPolicy.mode,
+      ...(onDelta ? { onDelta } : {}),
+    });
     logger.info("Agent run started", {
       runId: run.id,
       agentId: disposed.agentId,
@@ -740,6 +762,7 @@ export async function resumeAgent(
   await using agent = await Agent.resume(agentId, {
     apiKey: resolveCursorApiKey(),
     model,
+    ...codingAgentPolicy(),
     local: workAgentLocal(),
   });
 
@@ -754,7 +777,8 @@ export async function resumeAgent(
   if (opts?.jobId) {
     appendPromptSending(opts.jobId, prompt);
   }
-  const run = await agent.send(prompt);
+  const onDelta = workRunOnDelta(opts?.jobId);
+  const run = await agent.send(prompt, onDelta ? { onDelta } : undefined);
   logger.info("Resume run started", { runId: run.id, agentId: agent.agentId });
   trackRun(opts?.jobId, run);
   try {
@@ -828,6 +852,7 @@ export async function continueAgentWindow(
     const agent = await Agent.create({
       apiKey: resolveCursorApiKey(),
       model,
+      ...codingAgentPolicy(),
       local: workAgentLocal(),
     }).catch((err) => {
       throw new Error(
@@ -855,8 +880,13 @@ export async function continueAgentWindow(
 
     session.check();
     let run: SdkRun;
+    const onDelta = workRunOnDelta(opts?.jobId);
     try {
-      run = await withTimeout(disposed.send(prompt), 60_000, "agent.send");
+      run = await withTimeout(
+        disposed.send(prompt, onDelta ? { onDelta } : undefined),
+        60_000,
+        "agent.send",
+      );
     } catch (err) {
       session.check();
       const msg = formatCursorAgentFailure(

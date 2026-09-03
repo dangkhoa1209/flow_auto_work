@@ -1,5 +1,10 @@
-import type { SDKMessage } from "@cursor/sdk";
+import type {
+  InteractionUpdate,
+  NestedTaskUpdate,
+  SDKMessage,
+} from "@cursor/sdk";
 import { publishRealtime } from "../realtime/hub.js";
+import { workSubagentLabel } from "../cursor/workSubagents.js";
 
 /** Fixed estimate for context % UI (SDK has no remaining-% API). */
 const CONTEXT_WINDOW_TOKENS = 200_000;
@@ -111,7 +116,10 @@ export function appendJobProgress(
 ): void {
   if (!jobId) return;
   const preserveBreaks =
-    kind === "prompt" || kind === "thinking" || kind === "assistant";
+    kind === "prompt" ||
+    kind === "thinking" ||
+    kind === "assistant" ||
+    kind === "task";
   const maxLen = preserveBreaks ? PRESERVE_MAX : COMPACT_MAX;
   // Stream deltas already include their own spaces / punctuation. Do not trim
   // assistant/thinking chunks — trim() + a guessed inter-token space turns
@@ -129,10 +137,10 @@ export function appendJobProgress(
     buffers.set(jobId, list);
   }
   const last = list[list.length - 1];
-  // Coalesce consecutive assistant/thinking chunks into one growing line
+  // Coalesce consecutive assistant/thinking/task (subagent text) chunks
   if (
     last &&
-    (kind === "assistant" || kind === "thinking") &&
+    (kind === "assistant" || kind === "thinking" || kind === "task") &&
     last.kind === kind
   ) {
     last.at = new Date().toISOString();
@@ -296,15 +304,102 @@ function clipHint(hint: string, max: number): string {
   return hint.length > max ? `${hint.slice(0, max)}…` : hint;
 }
 
+function taskSubagentName(args: Record<string, unknown>): string {
+  const st = args.subagentType;
+  if (st && typeof st === "object") {
+    const o = st as { name?: unknown; kind?: unknown };
+    if (typeof o.name === "string" && o.name.trim()) return o.name.trim();
+    if (typeof o.kind === "string" && o.kind.trim()) return o.kind.trim();
+  }
+  if (typeof args.subagent_type === "string" && args.subagent_type.trim()) {
+    return args.subagent_type.trim();
+  }
+  return "subagent";
+}
+
 /** Cursor SDK custom tools stream as name "mcp"; unwrap toolName + inner args. */
 function summarizeToolArgs(name: string, args: unknown): string {
   const a = asRecord(args);
+  if (a && (name === "task" || name === "Task" || name === "agent")) {
+    const label = workSubagentLabel(taskSubagentName(a));
+    const desc =
+      typeof a.description === "string"
+        ? a.description.trim().slice(0, 140)
+        : "";
+    return desc ? `subagent · ${label}: ${desc}` : `subagent · ${label}`;
+  }
   const display = resolveToolName(name, a);
   const inner = a ? innerToolArgs(a) : null;
   const hint = hintFromArgs(inner) || hintFromArgs(a);
   if (!hint) return display;
   const max = display === "Shell" || name === "Shell" ? 160 : 120;
   return `${display}: ${clipHint(hint, max)}`;
+}
+
+function summarizeNestedToolCall(toolCall: unknown): string {
+  if (!toolCall || typeof toolCall !== "object") return "tool";
+  const tc = toolCall as { type?: string; args?: unknown };
+  const type = typeof tc.type === "string" ? tc.type : "tool";
+  return summarizeToolArgs(type, tc.args);
+}
+
+/**
+ * Nested subagent process from SDK `onDelta` (`tool-call-delta` → taskUpdate).
+ * Main-agent text/tools still come from `run.stream()` — only nest here.
+ * Text deltas use kind `task` (no per-chunk prefix) so Process can coalesce.
+ */
+export function appendSubagentDelta(
+  jobId: string | undefined,
+  callId: string,
+  update: NestedTaskUpdate,
+): void {
+  if (!jobId) return;
+  const tag = callId ? callId.slice(0, 8) : "sub";
+  switch (update.type) {
+    case "text-delta":
+      if (update.text) appendJobProgress(jobId, "task", update.text);
+      break;
+    case "thinking-delta":
+      if (update.text) appendJobProgress(jobId, "thinking", update.text);
+      break;
+    case "tool-call-started":
+      appendJobProgress(
+        jobId,
+        "tool",
+        `[sub ${tag}] ${summarizeNestedToolCall(update.toolCall)}…`,
+      );
+      break;
+    case "tool-call-completed":
+      appendJobProgress(
+        jobId,
+        "tool",
+        `[sub ${tag}] ${summarizeNestedToolCall(update.toolCall)} ✓`,
+      );
+      break;
+    case "partial-tool-call":
+    case "thinking-completed":
+    case "step-started":
+    case "step-completed":
+      break;
+    default:
+      break;
+  }
+}
+
+/** Wire into Agent.send for /work so Process tab shows nested subagent steps. */
+export function workRunOnDelta(
+  jobId: string | undefined,
+):
+  | undefined
+  | ((args: { update: InteractionUpdate }) => void) {
+  if (!jobId) return undefined;
+  return ({ update }) => {
+    // Parent task start/end already arrive via run.stream() tool_call.
+    // Only nest here — otherwise Process would duplicate the Task line.
+    if (update.type === "tool-call-delta" && update.taskUpdate) {
+      appendSubagentDelta(jobId, update.callId, update.taskUpdate);
+    }
+  };
 }
 
 type UsageLike = {
@@ -415,11 +510,8 @@ export function appendSdkMessage(
     }
     case "task":
       if (message.text || message.status) {
-        appendJobProgress(
-          jobId,
-          "task",
-          [message.status, message.text].filter(Boolean).join(" — "),
-        );
+        const body = [message.status, message.text].filter(Boolean).join(" — ");
+        appendJobProgress(jobId, "task", body);
       }
       break;
     case "system":

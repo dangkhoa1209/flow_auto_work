@@ -13,6 +13,7 @@ import {
   resolveSystemCursorModelSpec,
   type BaMessage,
 } from "../../workspace/baStore.js";
+import { readOnlyAgentPolicy } from "../cursor/agentPolicy.js";
 import { loadBaLinkedContext } from "../ba/ba-linked-context.js";
 import { resolveBaUserGoogleAccessToken } from "../../modules/google/index.js";
 import {
@@ -446,6 +447,7 @@ export async function runBaThreadIssueDraft(opts: {
       const agent = await Agent.create({
         apiKey,
         model,
+        ...readOnlyAgentPolicy(),
         mcpServers: {},
         local: {
           cwd: scratchCwd,

@@ -17,7 +17,7 @@ export function docsCommitMessageForIssue(issue: IssueJob): string {
 /**
  * Instruct agent how to comment on GitLab when the human asks in chat.
  * Flow does **not** auto-comment after a code Run finishes (avoids spam);
- * Create MR still posts one summary. Empty for adhoc (no issue yet).
+ * Create MR / Merge also do not post issue comments. Empty for adhoc (no issue yet).
  */
 export function gitlabCommentInstructions(issue: IssueJob): string {
   if (issue.issueIid <= 0 || issue.action === "adhoc") return "";
@@ -36,7 +36,7 @@ Nội dung comment (tiếng Việt trừ khi human yêu cầu khác)…
 
 Rules:
 - Only use GITLAB_COMMENT when the human **asked** to comment on the issue (or clearly wants the team notified on GitLab).
-- Do **not** use GITLAB_COMMENT for routine “done coding” status — Flow does not auto-comment after Run; a summary is posted on **Create MR**.
+- Do **not** use GITLAB_COMMENT for routine “done coding” status — Flow does not auto-comment after Run, Create MR, or Merge.
 - You may use **multiple** GITLAB_COMMENT blocks in one reply.
 - You may combine with <<<DONE>>> / <<<NEED_CLARIFICATION>>> (comment blocks can appear before DONE).
 - If you already asked the team on GitLab via GITLAB_COMMENT, prefer ending with <<<DONE>>> (short note). Only use NEED_CLARIFICATION when you need an answer **in the Flow UI** to continue coding this turn.
@@ -198,6 +198,69 @@ Both ANALYZED and SUMMARY are required — Flow shows them in chat for the PM.
 ${gitlabCommentInstructions(issue)}`;
 }
 
+/**
+ * Plan-first: Cursor plan mode — explore and write a plan, no app code.
+ */
+export function buildPlanPhasePrompt(
+  issue: IssueJob,
+  linkedContext?: string,
+  devNotes?: string,
+  opts?: {
+    chatContext?: string;
+    contextQualityBlock?: string;
+    googleSheetsBlock?: string;
+    figmaBlock?: string;
+  },
+): string {
+  const { notesBlock, description } = sharedPreamble(issue, devNotes);
+  const chatBlock = opts?.chatContext?.trim()
+    ? `${opts.chatContext.trim()}\n\n`
+    : "";
+  const qualityBlock = opts?.contextQualityBlock?.trim()
+    ? `${opts.contextQualityBlock.trim()}\n\n`
+    : "";
+  const linkedBlock = linkedContext?.trim()
+    ? `\n## Linked / related context\n${linkedContext.trim()}\n`
+    : "";
+  const sheetsBlock = opts?.googleSheetsBlock?.trim()
+    ? `\n${opts.googleSheetsBlock.trim()}\n`
+    : "";
+  const figmaBlock = opts?.figmaBlock?.trim()
+    ? `\n${opts.figmaBlock.trim()}\n`
+    : "";
+
+  return `# MISSION — PLAN PHASE ONLY (NO CODE CHANGES)
+You are planning work for GitLab issue #${issue.issueIid} on the **current project checkout**.
+This run is Cursor **plan mode**: read/search the repo, then produce an implementation plan.
+Do NOT edit, write, delete, or run shell that mutates files. Do NOT commit or push.
+
+${projectConventionsBlock()}
+Ignore image/file attachments — text only.
+
+${qualityBlock}${chatBlock}${notesBlock}# BUSINESS REQUIREMENTS (GITLAB ISSUE #${issue.issueIid})
+Title: ${issue.title}
+URL: ${issue.url}
+Labels: ${issue.labels.join(", ") || "(none)"}
+
+## Description
+${description}
+${linkedBlock}${sheetsBlock}${figmaBlock}
+
+# HARD RULES (PLAN PHASE)
+1. Only read/search tools (\`read\`, \`grep\`, \`glob\`, \`ls\`, code map). No app code, no docs file writes.
+2. Search the repo before guessing file paths.
+3. Write the plan in Vietnamese (unless DEV NOTES say otherwise): mục tiêu, phạm vi, file/neo code, rủi ro, bước implement.
+4. Batch questions; only use NEED_CLARIFICATION when truly blocked.
+5. When the plan is ready, end with EXACTLY this block:
+
+<<<PLAN_READY>>>
+PLAN: Vietnamese — structured plan (goals, files, steps, risks).
+<<<END_PLAN_READY>>>
+
+Flow Auto Work will pause for the human to approve, then a later Run will implement in agent mode.
+${gitlabCommentInstructions(issue)}`;
+}
+
 /** Clarify-budget hint so the agent batches questions instead of ping-ponging. */
 function clarifyBudgetLine(roundsLeft?: number): string {
   if (roundsLeft == null) return "";
@@ -306,6 +369,7 @@ Question quality rules (strict):
 # HARD / LARGE TASKS
 If the task spans multiple modules, touches shared logic, or is risky:
 - Write a short bullet plan BEFORE editing; follow it in small verifiable steps.
+- Prefer the Task/subagent tools when helpful: \`explore\` (find files/patterns), \`code-reviewer\` (review your diff), \`test-writer\` (focused tests). You keep ownership of the final DONE.
 - If mid-way you find the requirement contradicts codebase reality (screen/field/API named in the ticket doesn't exist or behaves differently), STOP and use NEED_CLARIFICATION **with evidence** (file + what you found) instead of forcing a wrong change.
 - Do not silently drop scope; anything skipped goes under \`RISKS:\` in the DONE block.
 
@@ -461,7 +525,7 @@ ${message.trim()}
 }
 
 export function parseAgentOutcome(text: string): {
-  kind: "done" | "docs_ready" | "need_clarification" | "unknown";
+  kind: "done" | "docs_ready" | "plan_ready" | "need_clarification" | "unknown";
   question?: string;
   summary?: string;
 } {
@@ -477,6 +541,13 @@ export function parseAgentOutcome(text: string): {
   );
   if (docsReady) {
     return { kind: "docs_ready", summary: docsReady[1].trim() };
+  }
+
+  const planReady = text.match(
+    /<<<PLAN_READY>>>\s*([\s\S]*?)\s*<<<END_PLAN_READY>>>/,
+  );
+  if (planReady) {
+    return { kind: "plan_ready", summary: planReady[1].trim() };
   }
 
   const done = text.match(/<<<DONE>>>\s*([\s\S]*?)\s*<<<END_DONE>>>/);
@@ -513,6 +584,7 @@ export function extractChatBodyFromAgentText(
       "",
     )
     .replace(/<<<DOCS_READY>>>\s*[\s\S]*?\s*<<<END_DOCS_READY>>>/gi, "")
+    .replace(/<<<PLAN_READY>>>\s*[\s\S]*?\s*<<<END_PLAN_READY>>>/gi, "")
     .replace(/<<<DONE>>>\s*[\s\S]*?\s*<<<END_DONE>>>/gi, "")
     .replace(/\n{3,}/g, "\n\n")
     .trim();

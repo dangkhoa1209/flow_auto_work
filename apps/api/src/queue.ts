@@ -54,8 +54,10 @@ import { withWorkspaceContext } from "./workspace/context.js";
 type QueueItem = {
   job: JobRecord;
   source?: string;
-  /** After PM approves docs — force code phase even if requireDocsFirst */
+  /** After PM approves docs — force skip docs phase */
   forceCodePhase?: boolean;
+  /** After PM approves plan — skip plan, run code */
+  forceAgentPhase?: boolean;
   /** Chat Send command — run IDE follow-up (may edit code) */
   followUpMessage?: string;
   /** Chat Ask only — Q&A / review, no coding Run */
@@ -249,7 +251,9 @@ export class JobQueue {
       completion?: CompletionActions;
       devNotes?: string;
       requireDocsFirst?: boolean;
+      planFirst?: boolean;
       forceCodePhase?: boolean;
+      forceAgentPhase?: boolean;
     },
   ): Promise<{ enqueued: boolean; reason?: string; jobId?: string }> {
     const rt = getRuntimeContext();
@@ -274,6 +278,7 @@ export class JobQueue {
       completion: opts?.completion,
       devNotes: notes,
       requireDocsFirst: opts?.requireDocsFirst,
+      planFirst: opts?.planFirst,
     });
 
     if (
@@ -293,6 +298,9 @@ export class JobQueue {
     if (opts?.completion) job.completion = opts.completion;
     if (opts?.requireDocsFirst !== undefined) {
       job.requireDocsFirst = opts.requireDocsFirst;
+    }
+    if (opts?.planFirst !== undefined) {
+      job.planFirst = opts.planFirst;
     }
 
     if (isJobBusy(job.status) && !this.isCurrent(job.id)) {
@@ -337,6 +345,7 @@ export class JobQueue {
       job,
       source: opts?.source,
       forceCodePhase: opts?.forceCodePhase,
+      forceAgentPhase: opts?.forceAgentPhase,
     });
     await saveJob(job, { source: opts?.source });
     this.publishStatus("enqueue");
@@ -348,6 +357,7 @@ export class JobQueue {
       source: opts?.source,
       runCount: job.runCount,
       requireDocsFirst: job.requireDocsFirst,
+      planFirst: job.planFirst,
       forceCodePhase: opts?.forceCodePhase,
       ownerUsername: job.ownerUsername,
       workspaceProjectId: job.workspaceProjectId,
@@ -362,15 +372,22 @@ export class JobQueue {
   /** Enqueue existing draft/terminal jobs (Run all drafts). */
   async enqueueExisting(
     jobId: string,
-    opts?: { source?: string; completion?: CompletionActions },
+    opts?: {
+      source?: string;
+      completion?: CompletionActions;
+      devNotes?: string;
+      requireDocsFirst?: boolean;
+      planFirst?: boolean;
+    },
   ): Promise<{ enqueued: boolean; reason?: string; jobId?: string }> {
     const job = await loadJob(jobId);
     if (!job) return { enqueued: false, reason: "Job not found" };
     return this.enqueue(job.issue, {
       source: opts?.source ?? "rerun",
       completion: opts?.completion ?? job.completion,
-      devNotes: resolveDevNotes(job) || undefined,
-      requireDocsFirst: job.requireDocsFirst,
+      devNotes: opts?.devNotes ?? (resolveDevNotes(job) || undefined),
+      requireDocsFirst: opts?.requireDocsFirst ?? job.requireDocsFirst,
+      planFirst: opts?.planFirst ?? job.planFirst,
     });
   }
 
@@ -393,7 +410,33 @@ export class JobQueue {
       completion: job.completion,
       devNotes: resolveDevNotes(job) || undefined,
       requireDocsFirst: job.requireDocsFirst,
+      planFirst: job.planFirst,
       forceCodePhase: true,
+    });
+  }
+
+  /** After PM approves plan → enqueue code (skip plan + docs). */
+  async enqueueCodeAfterPlanApproval(
+    jobId: string,
+  ): Promise<{ enqueued: boolean; reason?: string; jobId?: string }> {
+    const job = await loadJob(jobId);
+    if (!job) return { enqueued: false, reason: "Job not found" };
+    if (job.status !== "awaiting_plan_approval") {
+      return {
+        enqueued: false,
+        reason: "Job is not awaiting_plan_approval",
+      };
+    }
+    job.planApprovedAt = new Date().toISOString();
+    await saveJob(job);
+    return this.enqueue(job.issue, {
+      source: "plan_approved",
+      completion: job.completion,
+      devNotes: resolveDevNotes(job) || undefined,
+      requireDocsFirst: job.requireDocsFirst,
+      planFirst: job.planFirst,
+      forceCodePhase: true,
+      forceAgentPhase: true,
     });
   }
 
@@ -1296,7 +1339,8 @@ export class JobQueue {
         isJobBusy(job.status) ||
         job.status === "awaiting_clarification" ||
         job.status === "awaiting_diff_approval" ||
-        job.status === "awaiting_docs_approval"
+        job.status === "awaiting_docs_approval" ||
+        job.status === "awaiting_plan_approval"
       ) {
         // Follow-up kill on already-done work → restore handoff/done, don't force failed
         if (job.handedOffAt) {
@@ -1426,6 +1470,7 @@ export class JobQueue {
       isJobBusy(loaded.status) ||
       loaded.status === "awaiting_diff_approval" ||
       loaded.status === "awaiting_docs_approval" ||
+      loaded.status === "awaiting_plan_approval" ||
       this.queue.some((q) => q.job.id === jobId)
     ) {
       const kill = await this.killJob(
@@ -1710,7 +1755,10 @@ export class JobQueue {
             restoreStatus: item.followUpRestoreStatus,
           });
         } else {
-          await this.runJob(item.job, { forceCodePhase: item.forceCodePhase });
+          await this.runJob(item.job, {
+            forceCodePhase: item.forceCodePhase,
+            forceAgentPhase: item.forceAgentPhase,
+          });
         }
         logger.info("pump job finished", {
           lane,
@@ -1851,7 +1899,7 @@ export class JobQueue {
 
   private async runJob(
     job: JobRecord,
-    opts?: { forceCodePhase?: boolean },
+    opts?: { forceCodePhase?: boolean; forceAgentPhase?: boolean },
   ) {
     const execute = () => this.executeJob(job, opts);
     if (job.ownerUsername && job.workspaceProjectId) {
@@ -1885,7 +1933,7 @@ export class JobQueue {
 
   private async executeJob(
     job: JobRecord,
-    opts?: { forceCodePhase?: boolean },
+    opts?: { forceCodePhase?: boolean; forceAgentPhase?: boolean },
   ) {
     const config = getConfig();
     const key = busyIssueKeyForJob(job);
@@ -1943,6 +1991,8 @@ export class JobQueue {
     const notes = resolveDevNotes(job);
     const runDocsPhase =
       Boolean(job.requireDocsFirst) && !opts?.forceCodePhase;
+    const runPlanPhase =
+      !runDocsPhase && Boolean(job.planFirst) && !opts?.forceAgentPhase;
 
     // Context-quality gate BEFORE Cursor / git / processing label
     let chatRows: Awaited<ReturnType<typeof listChatMessages>> = [];
@@ -2113,7 +2163,7 @@ export class JobQueue {
 
       logger.info("executeJob calling Cursor agent", {
         jobId: job.id,
-        phase: runDocsPhase ? "docs" : "code",
+        phase: runDocsPhase ? "docs" : runPlanPhase ? "plan" : "code",
         existingAgentId: job.agentId ? `${job.agentId.slice(0, 8)}…` : null,
         branch: job.branch,
       });
@@ -2131,7 +2181,7 @@ export class JobQueue {
             0,
             config.MAX_CLARIFY_ROUNDS - (job.clarifyRound ?? 0),
           ),
-          phase: runDocsPhase ? "docs" : "code",
+          phase: runDocsPhase ? "docs" : runPlanPhase ? "plan" : "code",
           approvedDocsPaths:
             !runDocsPhase && job.docsApprovedAt
               ? job.docsPaths?.length
@@ -2200,6 +2250,34 @@ export class JobQueue {
         logger.info("Job awaiting docs approval", {
           jobId: job.id,
           docsPaths: job.docsPaths,
+          runCount: job.runCount,
+        });
+        return;
+      }
+
+      if (runPlanPhase) {
+        const body = result.summary ?? result.text ?? "";
+        job.planSummary = body.slice(0, 8000) || undefined;
+        job.planApprovedAt = undefined;
+
+        if (result.summary || result.text) {
+          await addChatMessage({
+            jobId: job.id,
+            issueIid: job.issue.issueIid,
+            role: "agent",
+            kind: "qa",
+            body: extractChatBodyFromAgentText(result.text, {
+              summary: result.summary,
+            }),
+          });
+        }
+
+        job.status = "awaiting_plan_approval";
+        job.error = undefined;
+        await saveJob(job);
+
+        logger.info("Job awaiting plan approval", {
+          jobId: job.id,
           runCount: job.runCount,
         });
         return;

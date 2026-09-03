@@ -7,6 +7,8 @@ export type JobStatus =
   | "awaiting_clarification"
   /** Docs phase done — awaiting PM analysis approval in UI */
   | "awaiting_docs_approval"
+  /** Plan-first phase done — awaiting PM approval before coding */
+  | "awaiting_plan_approval"
   /** @deprecated legacy — migrated to succeeded on boot (push/MR gate removed) */
   | "awaiting_diff_approval"
   /** Need Google OAuth to read Sheets links in the task */

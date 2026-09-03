@@ -1,5 +1,5 @@
 /**
- * Create open MR only (no accept) + Issue Ready to Release + comment.
+ * Create open MR only (no accept) + Issue Ready to Release label (no issue comment).
  */
 import { getConfig } from "../../config.js";
 import { saveJob } from "../../job-store.js";
@@ -11,7 +11,6 @@ import {
   findOpenMergeRequest,
   getProjectDefaultBranch,
 } from "../../plugins/scm/index.js";
-import { withAiGeneratedMarker } from "../../plugins/gitlab/agent-comment.js";
 import { AppError } from "../../utils/AppError.js";
 import { resolveGitlabProjectPath } from "../../workspace/creds.js";
 import { getRuntimeContext } from "../../workspace/runtime.js";
@@ -89,33 +88,6 @@ function buildMrBody(opts: {
   ]
     .filter((l) => l !== null)
     .join("\n");
-}
-
-function buildIssueComment(opts: {
-  issueTitle: string;
-  changeText?: string;
-  mrUrl?: string;
-}): string {
-  const change =
-    opts.changeText?.trim() ||
-    (opts.issueTitle
-      ? `Đã hoàn thành: ${opts.issueTitle}`
-      : "Đã hoàn thành thay đổi trên nhánh work.");
-  const lines = [
-    `## Thay đổi`,
-    ``,
-    change,
-    ``,
-    `## Testcase`,
-    ``,
-    `1. Checkout / mở MR và kiểm tra diff đúng scope`,
-    `2. Verify chức năng liên quan issue vẫn hoạt động`,
-    `3. Regression nhanh các flow chính bị ảnh hưởng`,
-  ];
-  if (opts.mrUrl) {
-    lines.push(``, `MR: ${opts.mrUrl}`);
-  }
-  return lines.join("\n");
 }
 
 export async function createJobMergeRequest(
@@ -269,16 +241,9 @@ export async function createJobMergeRequest(
         issueIid: iid,
         labels: [READY_LABEL],
         labelMode: "add",
-        comment: withAiGeneratedMarker(
-          buildIssueComment({
-            issueTitle: job.issue.title || "",
-            changeText,
-            mrUrl: mr.webUrl,
-          }),
-        ),
       });
     } catch (err) {
-      logger.warn("Create MR ok but Issue label/comment failed", {
+      logger.warn("Create MR ok but Issue label failed", {
         jobId: job.id,
         iid,
         err: String(err),

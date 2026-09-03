@@ -12,6 +12,7 @@ import {
   isTransientCursorTransportError,
 } from "./run.js";
 import { persistCursorUsage } from "../cursor/recordUsage.js";
+import { readOnlyAgentPolicy } from "../cursor/agentPolicy.js";
 import {
   appendBaMessage,
   getBaProject,
@@ -554,6 +555,7 @@ export async function runBaChatAgent(opts: {
       const agent = await Agent.create({
         apiKey,
         model,
+        ...readOnlyAgentPolicy(),
         ...(BA_GITLAB_INTERACTION_ENABLED
           ? {}
           : {

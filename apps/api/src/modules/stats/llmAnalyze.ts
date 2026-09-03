@@ -7,6 +7,7 @@ import {
   formatCursorAgentFailure,
 } from "../../plugins/agent/run.js";
 import { toAgentModel, cursorModelLogLabel } from "../../plugins/cursor/modelSpec.js";
+import { readOnlyAgentPolicy } from "../../plugins/cursor/agentPolicy.js";
 import { persistCursorUsage } from "../../plugins/cursor/recordUsage.js";
 import type { DevRecommendation, TaskTypeStats } from "./analyze.js";
 import type { AnalysisJob, SkillDimensions } from "./scoring.js";
@@ -403,6 +404,7 @@ export async function analyzeWithCursorSdk(input: {
       apiKey,
       model,
       name: "stats-dev-eval",
+      ...readOnlyAgentPolicy(),
       mcpServers: {},
       local: { cwd, settingSources: [] },
     });

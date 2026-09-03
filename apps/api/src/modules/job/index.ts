@@ -26,6 +26,7 @@ import { logger } from "../../logger.js";
 
 export * from "./lifecycle.js";
 export * from "./docs.js";
+export * from "./plan.js";
 export * from "./diff.js";
 export * from "./merge.js";
 export * from "./chat.js";
@@ -63,6 +64,7 @@ export type StartJobsInput = {
   runAll?: boolean;
   devNotes?: string;
   requireDocsFirst?: boolean;
+  planFirst?: boolean;
   completion?: CompletionActions;
 };
 
@@ -113,6 +115,8 @@ export async function startJobs(body: StartJobsInput) {
     body.requireDocsFirst !== undefined
       ? Boolean(body.requireDocsFirst)
       : undefined;
+  const planFirst =
+    body.planFirst !== undefined ? Boolean(body.planFirst) : undefined;
   const completion = normalizeCompletion(body);
 
   const explicitJobIds = Array.isArray(body.jobIds)
@@ -130,6 +134,14 @@ export async function startJobs(body: StartJobsInput) {
       const result = await jobQueue.enqueueExisting(id, {
         source: "ui_job_ids",
         completion: completion ?? existing?.completion,
+        devNotes:
+          explicitJobIds.length === 1 ? devNotes : undefined,
+        requireDocsFirst:
+          explicitJobIds.length === 1
+            ? requireDocsFirst
+            : existing?.requireDocsFirst,
+        planFirst:
+          explicitJobIds.length === 1 ? planFirst : existing?.planFirst,
       });
       if (result.enqueued && result.jobId) {
         enqueued += 1;
@@ -196,6 +208,7 @@ export async function startJobs(body: StartJobsInput) {
         devNotes:
           resolveDevNotes(existing ?? { devNotes: undefined }) || undefined,
         requireDocsFirst: existing?.requireDocsFirst,
+        planFirst: existing?.planFirst,
       });
       if (result.enqueued && result.jobId) {
         enqueued += 1;
@@ -340,6 +353,8 @@ export async function startJobs(body: StartJobsInput) {
         iids.length === 1
           ? requireDocsFirst
           : existing?.requireDocsFirst,
+      planFirst:
+        iids.length === 1 ? planFirst : existing?.planFirst,
     });
     if (result.enqueued && result.jobId) {
       enqueued += 1;

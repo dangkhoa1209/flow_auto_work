@@ -6,6 +6,7 @@ import {
   applyCompletionActions,
   approveJobDiff,
   approveJobDocs,
+  approveJobPlan,
   askJobQuestion,
   enqueueJobTestcases,
   buildIssueDraft,
@@ -32,6 +33,7 @@ import {
   mergeJobBranch,
   readJobFile,
   rerunJobDocs,
+  rerunJobPlan,
   resetJobWindow,
   revertJobCommit,
   setJobCommitMode,
@@ -132,6 +134,16 @@ export const jobController = {
   /** POST /api/jobs/:id/rerun-docs */
   rerunDocs: asyncHandler(async (req: Request, res: Response) => {
     res.formatter.ok(await rerunJobDocs(jobId(req)));
+  }),
+
+  /** POST /api/jobs/:id/approve-plan */
+  approvePlan: asyncHandler(async (req: Request, res: Response) => {
+    res.formatter.ok(await approveJobPlan(jobId(req)));
+  }),
+
+  /** POST /api/jobs/:id/rerun-plan */
+  rerunPlan: asyncHandler(async (req: Request, res: Response) => {
+    res.formatter.ok(await rerunJobPlan(jobId(req)));
   }),
 
   /** POST /api/jobs/:id/completion-actions */

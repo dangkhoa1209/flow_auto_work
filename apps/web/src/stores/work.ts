@@ -77,6 +77,8 @@ export type Job = {
   workBranch?: string;
   baseBranch?: string;
   requireDocsFirst?: boolean;
+  planFirst?: boolean;
+  planSummary?: string;
   lastQuestion?: string;
   devNotes?: string;
   contextQuality?: {
@@ -629,6 +631,7 @@ export const useWorkStore = defineStore("work", () => {
   async function saveDevNotes(opts: {
     devNotes: string;
     requireDocsFirst?: boolean;
+    planFirst?: boolean;
   }) {
     // Do not trim here — preserve draft whitespace; server clears all-blank only
     const notes = opts.devNotes;
@@ -641,6 +644,7 @@ export const useWorkStore = defineStore("work", () => {
           body: JSON.stringify({
             devNotes: notes,
             requireDocsFirst: opts.requireDocsFirst,
+            planFirst: opts.planFirst,
           }),
         },
       );
@@ -666,6 +670,7 @@ export const useWorkStore = defineStore("work", () => {
         issueIid: iid,
         devNotes: notes,
         requireDocsFirst: opts.requireDocsFirst,
+        planFirst: opts.planFirst,
       }),
     });
     if (selectedTaskIid.value === iid) {
@@ -781,6 +786,7 @@ export const useWorkStore = defineStore("work", () => {
     jobIds?: string[];
     devNotes?: string;
     requireDocsFirst?: boolean;
+    planFirst?: boolean;
   }) {
     const settings = useSettingsStore();
     watchProgress();
@@ -922,6 +928,34 @@ export const useWorkStore = defineStore("work", () => {
     watchProgress();
     try {
       const res = await jobApi.approveDocs(jobId);
+      if (selectedJobId.value === jobId && res.job) {
+        currentJob.value = { ...currentJob.value, ...(res.job as Job) };
+        if (isJobStatusBusy(res.job.status)) {
+          agentTyping.value = true;
+          watchProgress();
+        }
+      }
+      await loadJobs();
+      if (selectedJobId.value === jobId) {
+        await pollProgress(true).catch(() => undefined);
+      }
+      return res;
+    } catch (e) {
+      agentTyping.value = false;
+      progressLive.value = false;
+      stopProgressPolling();
+      throw e;
+    }
+  }
+
+  /** PM approves plan-first phase → enqueue code. */
+  async function approvePlan(jobId: string) {
+    agentTyping.value = true;
+    progressAfterId.value = 0;
+    progressLines.value = [];
+    watchProgress();
+    try {
+      const res = await jobApi.approvePlan(jobId);
       if (selectedJobId.value === jobId && res.job) {
         currentJob.value = { ...currentJob.value, ...(res.job as Job) };
         if (isJobStatusBusy(res.job.status)) {
@@ -1140,6 +1174,7 @@ export const useWorkStore = defineStore("work", () => {
     killJob,
     killAllJobs,
     approveDocs,
+    approvePlan,
     resetAgentWindow,
     setJobStatus,
     deleteJob,

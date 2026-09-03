@@ -33,8 +33,11 @@ const props = defineProps<{
   notesDraft: string;
   notesSaving: boolean;
   requireDocsFirst: boolean;
+  planFirst: boolean;
   awaitingDocsApproval: boolean;
+  awaitingPlanApproval: boolean;
   approveDocsBusy: boolean;
+  approvePlanBusy: boolean;
   relatedIssues: NonNullable<TaskDetail["related"]>;
   humanComments: NonNullable<TaskDetail["notes"]>;
   issueCreateBusy: boolean;
@@ -59,6 +62,7 @@ const emit = defineEmits<{
   "update:midTab": [MidTab];
   "update:notesDraft": [string];
   "update:requireDocsFirst": [boolean];
+  "update:planFirst": [boolean];
   openStandards: [];
   openCreateIssue: [];
   openRelated: [opts: { iid: number; title?: string; url?: string }];
@@ -66,6 +70,7 @@ const emit = defineEmits<{
   saveNotes: [];
   notesInput: [];
   approveDocs: [];
+  approvePlan: [];
   runSelected: [];
   quickMerge: [];
   createMr: [];
@@ -484,6 +489,24 @@ onUnmounted(() => {
             </a-alert>
 
             <a-alert
+              v-if="awaitingPlanApproval"
+              type="success"
+              show-icon
+              class="mb-3"
+              message="Plan ready — approve to run code"
+            >
+              <template #action>
+                <a-button
+                  size="small"
+                  type="primary"
+                  :loading="approvePlanBusy"
+                  @click="emit('approvePlan')"
+                  >Approve Plan</a-button
+                >
+              </template>
+            </a-alert>
+
+            <a-alert
               v-if="awaitingGoogleAuth"
               type="warning"
               show-icon
@@ -798,6 +821,16 @@ onUnmounted(() => {
                   >Docs-first (read docs before coding)</span
                 >
               </div>
+              <div class="mt-2 flex items-center gap-1.5">
+                <a-switch
+                  :checked="planFirst"
+                  size="small"
+                  @update:checked="(v: boolean) => emit('update:planFirst', v)"
+                />
+                <span class="text-[11px] text-ink-muted"
+                  >Plan-first (Cursor plan mode, then approve)</span
+                >
+              </div>
 
               <div
                 v-if="detectedSheets.length"
@@ -980,6 +1013,16 @@ onUnmounted(() => {
         @click="emit('approveDocs')"
       >
         Approve Docs
+      </button>
+      <button
+        v-if="awaitingPlanApproval"
+        type="button"
+        class="faw-btn faw-btn--run"
+        :class="mobileTouch ? '!min-h-[44px]' : ''"
+        :disabled="approvePlanBusy"
+        @click="emit('approvePlan')"
+      >
+        Approve Plan
       </button>
       <a-tooltip
         :title="

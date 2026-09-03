@@ -128,6 +128,14 @@ export const jobApi = {
     });
   },
 
+  approvePlan(id: string) {
+    return request<{ ok: boolean; job?: unknown }>({
+      url: API.jobs.approvePlan(id),
+      method: "POST",
+      data: {},
+    });
+  },
+
   merge(id: string, body?: { targetBranch?: string }) {
     return request({
       url: API.jobs.merge(id),

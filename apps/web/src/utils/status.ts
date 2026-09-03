@@ -11,6 +11,7 @@ const STATUS_LABELS: Record<string, string> = {
   running: "Running",
   awaiting_clarification: "Awaiting chat reply",
   awaiting_docs_approval: "Awaiting docs approval",
+  awaiting_plan_approval: "Awaiting plan approval",
   awaiting_diff_approval: "Awaiting diff approval",
   awaiting_google_auth: "Awaiting Google auth",
   awaiting_figma_auth: "Awaiting Figma PAT",
@@ -59,7 +60,7 @@ export function statusColor(status: string | null | undefined): string {
   if (st === "awaiting_clarification") return "orange";
   if (st === "awaiting_google_auth" || st === "awaiting_figma_auth") return "orange";
   if (st === "awaiting_handoff") return "cyan";
-  if (st === "awaiting_docs_approval" || st === "awaiting_diff_approval") {
+  if (st === "awaiting_docs_approval" || st === "awaiting_diff_approval" || st === "awaiting_plan_approval") {
     return "purple";
   }
   if (st === "draft") return "default";
@@ -81,7 +82,7 @@ export function statusToneClass(status: string | null | undefined): string {
   if (st === "awaiting_handoff") {
     return "bg-teal-50 text-teal-700 border-teal-200";
   }
-  if (st === "awaiting_docs_approval" || st === "awaiting_diff_approval") {
+  if (st === "awaiting_docs_approval" || st === "awaiting_diff_approval" || st === "awaiting_plan_approval") {
     return "bg-violet-50 text-violet-700 border-violet-200";
   }
   return "bg-gray-50 text-gray-600 border-gray-200";
