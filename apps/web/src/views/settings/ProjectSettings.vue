@@ -29,6 +29,7 @@ type ProjectPublic = {
   mainBranch?: string | null;
   workingBranch?: string | null;
   defaultCommitMode?: "manual" | "auto" | null;
+  allowedMilestones?: string[];
   isActive?: boolean;
   cloneStatus?: string;
   cloneError?: string | null;
@@ -47,12 +48,15 @@ const form = reactive({
   localPath: "",
   /** Project default for new jobs — per-job toggle can still override */
   defaultCommitMode: "auto" as "manual" | "auto",
+  /** Empty = no Workbench milestone restriction */
+  allowedMilestones: [] as string[],
 });
 
 const gitlabProjects = ref<
   Array<{ pathWithNamespace: string; name?: string; id?: number }>
 >([]);
 const branches = ref<string[]>([]);
+const milestoneOptions = ref<string[]>([]);
 const previewDefaultPath = ref("");
 
 const isGithub = computed(() => form.gitProvider === "github");
@@ -154,8 +158,10 @@ function resetWizard() {
   form.workingBranch = "";
   form.localPath = "";
   form.defaultCommitMode = "auto";
+  form.allowedMilestones = [];
   gitlabProjects.value = [];
   branches.value = [];
+  milestoneOptions.value = [];
 }
 
 function openCreate() {
@@ -194,9 +200,31 @@ function openEdit(row: (typeof tableRows.value)[0]) {
   form.localPath = (p?.localPath || p?.repoPath || "") as string;
   form.defaultCommitMode =
     p?.defaultCommitMode === "manual" ? "manual" : "auto";
+  form.allowedMilestones = Array.isArray(p?.allowedMilestones)
+    ? [...p.allowedMilestones]
+    : [];
   form.gitlabToken = "";
   wizardStep.value = 0;
   wizardOpen.value = true;
+  void loadMilestoneOptionsForEdit();
+}
+
+async function loadMilestoneOptionsForEdit() {
+  if (!editId.value) return;
+  try {
+    const res = await api<{ milestones: string[] }>(
+      API.me.projectMilestones(editId.value),
+    );
+    milestoneOptions.value = res.milestones || [];
+    // Keep selected titles that the forge no longer returns
+    for (const t of form.allowedMilestones) {
+      if (t && !milestoneOptions.value.includes(t)) {
+        milestoneOptions.value.push(t);
+      }
+    }
+  } catch {
+    milestoneOptions.value = [...form.allowedMilestones];
+  }
 }
 
 async function loadPreviewProjects() {
@@ -248,6 +276,7 @@ async function loadBranchesForPath() {
       const res = await api<{
         branches: Array<{ name: string; default?: boolean }>;
         defaultBranch?: string | null;
+        milestones?: string[];
       }>("/api/gitlab/preview", {
         method: "POST",
         body: JSON.stringify({
@@ -258,6 +287,7 @@ async function loadBranchesForPath() {
         }),
       });
       branches.value = (res.branches || []).map((b) => b.name).filter(Boolean);
+      milestoneOptions.value = res.milestones || [];
       if (!form.mainBranch || form.mainBranch === "main") {
         form.mainBranch =
           res.defaultBranch ||
@@ -265,6 +295,8 @@ async function loadBranchesForPath() {
           branches.value[0] ||
           "main";
       }
+    } else if (editId.value) {
+      await loadMilestoneOptionsForEdit();
     }
     wizardStep.value = 2;
   } catch (e) {
@@ -403,6 +435,7 @@ async function saveWizard() {
           baseBranch: form.mainBranch || "",
           workBranch: form.workingBranch || "",
           defaultCommitMode: form.defaultCommitMode,
+          allowedMilestones: form.allowedMilestones,
           localPath: renaming ? undefined : resolvedPath || undefined,
           gitlabToken: form.gitlabToken || undefined,
           gitProvider: form.gitProvider,
@@ -474,6 +507,7 @@ async function saveWizard() {
         mainBranch: form.mainBranch || undefined,
         workingBranch: form.workingBranch || undefined,
         defaultCommitMode: form.defaultCommitMode,
+        allowedMilestones: form.allowedMilestones,
         displayName: flowName,
         activate: true,
       }),
@@ -927,6 +961,24 @@ onMounted(async () => {
                 (form.defaultCommitMode = v ? 'auto' : 'manual')
             "
           />
+        </div>
+        <div>
+          <label class="text-sm text-slate-600">Allowed milestones</label>
+          <a-select
+            v-model:value="form.allowedMilestones"
+            mode="multiple"
+            allow-clear
+            show-search
+            class="w-full mt-1"
+            placeholder="Leave empty → all milestones"
+            :options="
+              milestoneOptions.map((m) => ({ value: m, label: m }))
+            "
+          />
+          <p class="text-xs text-ink-muted mt-1 mb-0">
+            If set, Workbench only shows open tasks whose milestone is in this
+            list.
+          </p>
         </div>
         <div class="flex justify-between gap-2 pt-2">
           <a-button @click="wizardStep = 2">Back</a-button>
