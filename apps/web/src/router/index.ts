@@ -3,6 +3,7 @@ import { getRefreshToken } from "@/api/tokenStorage";
 import { useAuthStore } from "@/stores/auth";
 import { useSessionStore } from "@/stores/session";
 import { isPathAllowed, isRouteAllowed, resolveHomeRoute } from "@/utils/routeAccess";
+import { reloadOnChunkError } from "@/utils/reloadOnChunkError";
 
 const router = createRouter({
   history: createWebHistory(),
@@ -279,6 +280,10 @@ router.beforeEach(async (to) => {
     return home;
   }
   return true;
+});
+
+router.onError((err) => {
+  reloadOnChunkError(err);
 });
 
 if (typeof window !== "undefined") {
