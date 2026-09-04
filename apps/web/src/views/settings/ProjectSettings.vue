@@ -261,6 +261,43 @@ async function loadPreviewProjects() {
   }
 }
 
+/** Merge remote/local branch names; keep current form values selectable. */
+function applyBranchNames(names: Iterable<string>) {
+  const set = new Set<string>([...names].filter(Boolean));
+  if (form.mainBranch.trim()) set.add(form.mainBranch.trim());
+  if (form.workingBranch.trim()) set.add(form.workingBranch.trim());
+  branches.value = [...set].sort((a, b) => a.localeCompare(b));
+}
+
+/** Load branches via stored project PAT (edit wizard without re-entering token). */
+async function loadBranchesForEdit() {
+  if (!editId.value || !form.gitlabPath.trim()) return;
+  const params = new URLSearchParams({
+    gitlabPath: form.gitlabPath.trim(),
+    projectId: editId.value,
+  });
+  if (form.localPath.trim()) {
+    params.set("repoPath", form.localPath.trim());
+  }
+  const res = await api<{
+    remote?: Array<{ name: string }>;
+    local?: string[];
+    defaultBranch?: string | null;
+  }>(`${API.gitlab.branches}?${params.toString()}`);
+  applyBranchNames([
+    ...(res.remote || []).map((b) => b.name),
+    ...(res.local || []),
+  ]);
+  if (!form.mainBranch.trim() || form.mainBranch === "main") {
+    form.mainBranch =
+      res.defaultBranch ||
+      branches.value.find((b) => b === "main" || b === "master") ||
+      branches.value[0] ||
+      form.mainBranch ||
+      "main";
+  }
+}
+
 async function loadBranchesForPath() {
   if (!form.gitlabPath.trim()) {
     message.warning(`Select a ${forgeLabel.value} repository`);
@@ -286,7 +323,7 @@ async function loadBranchesForPath() {
           gitProvider: form.gitProvider,
         }),
       });
-      branches.value = (res.branches || []).map((b) => b.name).filter(Boolean);
+      applyBranchNames((res.branches || []).map((b) => b.name));
       milestoneOptions.value = res.milestones || [];
       if (!form.mainBranch || form.mainBranch === "main") {
         form.mainBranch =
@@ -296,7 +333,8 @@ async function loadBranchesForPath() {
           "main";
       }
     } else if (editId.value) {
-      await loadMilestoneOptionsForEdit();
+      // Keep existing PAT: preview needs a raw token; use /gitlab/branches with stored secrets
+      await Promise.all([loadMilestoneOptionsForEdit(), loadBranchesForEdit()]);
     }
     wizardStep.value = 2;
   } catch (e) {
@@ -931,8 +969,15 @@ onMounted(async () => {
             class="w-full mt-1"
             show-search
             allow-clear
-            placeholder="Leave blank → auto feat/…"
-            :options="branches.map((b) => ({ value: b, label: b }))"
+            placeholder="Select existing branch (or leave blank)"
+            :options="
+              (branches.length
+                ? branches
+                : form.workingBranch
+                  ? [form.workingBranch]
+                  : []
+              ).map((b) => ({ value: b, label: b }))
+            "
           />
           <a-input
             v-model:value="form.workingBranch"
