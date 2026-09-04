@@ -63,12 +63,12 @@ const isGithub = computed(() => form.gitProvider === "github");
 const forgeLabel = computed(() => (isGithub.value ? "GitHub" : "GitLab"));
 const patCreateUrl = computed(() =>
   isGithub.value
-    ? "https://github.com/settings/tokens"
+    ? "https://github.com/settings/tokens/new"
     : "https://gitlab.com/-/user_settings/personal_access_tokens",
 );
 const patHint = computed(() =>
   isGithub.value
-    ? "ghp_… classic PAT with repo scope"
+    ? "ghp_… classic PAT (not fine-grained) with repo scope"
     : "glpat-… (api + read_repository)",
 );
 const pathPlaceholder = computed(() =>
@@ -854,7 +854,13 @@ onMounted(async () => {
             <a :href="patCreateUrl" target="_blank" rel="noopener noreferrer">
               Create {{ forgeLabel }} personal access token
             </a>
-            <template v-if="isGithub"> — classic token with <code>repo</code> scope</template>
+            <template v-if="isGithub">
+              — dùng
+              <strong>classic</strong> (<code>ghp_</code>) scope
+              <code>repo</code>. Fine-grained
+              <strong>không</strong> lấy được repo invite (outside collaborator). Org
+              có SAML SSO → Authorize SSO trên token đó.
+            </template>
           </p>
         </div>
         <div class="flex justify-end gap-2 pt-2">
@@ -880,31 +886,28 @@ onMounted(async () => {
           <label class="text-sm text-slate-600"
             >Select {{ forgeLabel }} repository</label
           >
-          <a-select
-            v-if="gitlabProjects.length"
+          <!-- AutoComplete: pick from PAT list OR type owner/repo when invite missing from list -->
+          <a-auto-complete
             v-model:value="form.gitlabPath"
             class="w-full mt-1"
-            show-search
             :placeholder="pathPlaceholder"
             :options="
               gitlabProjects.map((p) => ({
                 value: p.pathWithNamespace,
-                label: p.pathWithNamespace,
               }))
             "
-            @change="
+            @select="
               (v: string) => {
                 form.projectName = v.split('/').pop() || v;
                 form.displayName = form.projectName;
               }
             "
           />
-          <a-input
-            v-else
-            v-model:value="form.gitlabPath"
-            class="mt-1"
-            :placeholder="pathPlaceholder"
-          />
+          <p v-if="isGithub" class="text-xs text-ink-muted m-0 mt-1">
+            Không thấy repo invite trong dropdown? Gõ tay
+            <code>owner/repo</code> (đã Accept invite trên GitHub). Token phải
+            truy cập được repo đó.
+          </p>
         </div>
         <div>
           <label class="text-sm text-slate-600">Flow project name</label>
