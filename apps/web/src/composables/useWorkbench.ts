@@ -1,4 +1,4 @@
-import { computed, h, nextTick, ref, watch } from "vue";
+import { computed, nextTick, ref, watch } from "vue";
 import { message, Modal } from "ant-design-vue";
 import { storeToRefs } from "pinia";
 import { useRouter } from "vue-router";
@@ -203,6 +203,24 @@ export function useWorkbench() {
   );
 
   const contextIsBad = computed(() => contextQuality.value?.level === "bad");
+
+  /** Jobs where the user already confirmed thin context — warn once per job. */
+  const badContextAckedIds = ref(new Set<string>());
+
+  const showBadContextBanner = computed(() => {
+    if (!contextIsBad.value) return false;
+    const id = selectedJobId.value;
+    return !(id && badContextAckedIds.value.has(id));
+  });
+
+  watch(contextIsBad, (bad) => {
+    const id = selectedJobId.value;
+    if (!bad && id) {
+      const next = new Set(badContextAckedIds.value);
+      next.delete(id);
+      badContextAckedIds.value = next;
+    }
+  });
 
   const detailTitle = computed(
     () => taskDetail.value?.title || currentJob.value?.issue?.title || "",
@@ -578,9 +596,11 @@ export function useWorkbench() {
     });
   }
 
-  /** Thin context is a warning, not a hard block — confirm then Run. */
+  /** Thin context is a warning, not a hard block — confirm once, then Run. */
   async function confirmBadContextIfNeeded(): Promise<boolean> {
     if (!contextIsBad.value) return true;
+    const jobId = selectedJobId.value;
+    if (jobId && badContextAckedIds.value.has(jobId)) return true;
     const reason =
       (currentJob.value?.contextQuality?.reason || "").trim() ||
       "Little technical context (no route, file, or repro steps).";
@@ -591,7 +611,14 @@ export function useWorkbench() {
         okText: "Run anyway",
         cancelText: "Cancel",
         centered: true,
-        onOk: () => resolve(true),
+        onOk: () => {
+          if (jobId) {
+            const next = new Set(badContextAckedIds.value);
+            next.add(jobId);
+            badContextAckedIds.value = next;
+          }
+          resolve(true);
+        },
         onCancel: () => resolve(false),
       });
     });
@@ -677,71 +704,6 @@ export function useWorkbench() {
           : "";
         message.warning(`Nothing queued${miss || why}`);
       }
-    } catch (e) {
-      message.error(e instanceof Error ? e.message : String(e));
-    } finally {
-      busy.value = false;
-    }
-  }
-
-  /** Confirm Run all — list every assigned open task. */
-  function confirmRunAllTasks(): Promise<boolean> {
-    const list = tasks.value;
-    if (!list.length) {
-      message.warning("No open tasks");
-      return Promise.resolve(false);
-    }
-    return new Promise((resolve) => {
-      Modal.confirm({
-        title: `Run all open tasks (${list.length})?`,
-        width: 520,
-        centered: true,
-        okText: `Run all (${list.length})`,
-        cancelText: "Cancel",
-        content: h("div", { class: "faw-run-all-confirm" }, [
-          h(
-            "p",
-            { class: "faw-run-all-confirm__hint" },
-            "These assigned open tasks will be queued for the agent:",
-          ),
-          h(
-            "ul",
-            { class: "faw-run-all-confirm__list" },
-            list.map((t) =>
-              h("li", { key: t.issueIid }, [
-                h(
-                  "code",
-                  { class: "faw-run-all-confirm__iid" },
-                  `#${t.issueIid}`,
-                ),
-                h(
-                  "span",
-                  { class: "faw-run-all-confirm__title", title: t.title },
-                  t.title,
-                ),
-              ]),
-            ),
-          ),
-        ]),
-        onOk: () => resolve(true),
-        onCancel: () => resolve(false),
-      });
-    });
-  }
-
-  /** Tasks column Run all — assigned open tasks only. */
-  async function runAll() {
-    if (!(await ensureWorkReady())) return;
-    if (!(await confirmRunAllTasks())) return;
-    busy.value = true;
-    try {
-      const res = await projectClone.withCloneRetry(() =>
-        work.startJobs({ mode: "all" }),
-      );
-      if (!res) return;
-      const n = res.enqueued ?? 0;
-      if (n > 0) message.success(`${n} task(s) queued`);
-      else message.warning("Nothing queued — all skipped or already busy");
     } catch (e) {
       message.error(e instanceof Error ? e.message : String(e));
     } finally {
@@ -1327,6 +1289,7 @@ export function useWorkbench() {
     relatedIssues,
     contextQuality,
     contextIsBad,
+    showBadContextBanner,
     detailTitle,
     detailMeta,
     canForceStop,
@@ -1354,7 +1317,6 @@ export function useWorkbench() {
     runSelected: runCheckedTasks,
     runCheckedTasks,
     runCurrentJob,
-    runAll,
     sendChat,
     forceStop,
     killAllJobs,

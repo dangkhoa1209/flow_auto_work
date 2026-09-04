@@ -679,7 +679,7 @@ onUnmounted(() => {
               type="warning"
               show-icon
               class="mb-3"
-              message="Thin context — Run will ask you to confirm"
+              message="Thin context — confirm once when you Run / Send"
               :description="
                 currentJob?.contextQuality?.reason ||
                 'Add Dev Notes for a tighter run, or confirm when you Run / Send.'

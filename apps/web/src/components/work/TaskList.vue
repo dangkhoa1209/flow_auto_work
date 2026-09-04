@@ -53,7 +53,6 @@ const emit = defineEmits<{
   refresh: [];
   startChat: [];
   runSelected: [];
-  runAll: [];
   openByIid: [];
   selectTask: [number];
   selectJob: [string];
@@ -372,21 +371,12 @@ watch(
         <button
           type="button"
           class="faw-btn faw-btn--run"
+          style="flex: 1"
           :disabled="busy"
           title="Checked Open tasks · ⌘/Ctrl+Enter"
           @click="emit('runSelected')"
         >
           ▶ Run
-        </button>
-        <button
-          type="button"
-          class="faw-btn"
-          style="flex: 1"
-          :disabled="busy"
-          title="All assigned open tasks"
-          @click="emit('runAll')"
-        >
-          Run all
         </button>
         <a-popconfirm
           v-if="canKillAll"
