@@ -10,6 +10,7 @@ import {
   getBaThread,
   listBaMessages,
   resolveSystemCursorApiKey,
+  resolveSystemCursorModel,
   resolveSystemCursorModelSpec,
   type BaMessage,
 } from "../../workspace/baStore.js";
