@@ -558,14 +558,6 @@ function onProjectAction(key: string, record: BaProject) {
   else if (key === "delete") confirmDelete(record);
 }
 
-function onMenuClick(key: string | number, record: BaProject) {
-  onProjectAction(String(key), record);
-}
-
-function menuClickHandler(record: BaProject) {
-  return (info: { key: string | number }) => onMenuClick(info.key, record);
-}
-
 function onTableChange(pagination: { current?: number; pageSize?: number }) {
   if (pagination.current != null) page.value = pagination.current;
   if (pagination.pageSize != null) pageSize.value = pagination.pageSize;
@@ -940,7 +932,9 @@ onUnmounted(() => {
               <MoreOutlined />
             </a-button>
             <template #overlay>
-              <a-menu @click="menuClickHandler(record as BaProject)">
+              <a-menu
+                @click="(info: { key: string | number }) => onProjectAction(String(info.key), record as BaProject)"
+              >
                 <a-menu-item key="edit">Edit</a-menu-item>
                 <a-menu-item key="db">Database</a-menu-item>
                 <a-menu-item

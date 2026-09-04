@@ -330,14 +330,6 @@ function onUserAction(key: string, record: AdminUser) {
   else if (key === "delete") confirmDelete(record);
 }
 
-function onMenuClick(key: string | number, record: AdminUser) {
-  onUserAction(String(key), record);
-}
-
-function menuClickHandler(record: AdminUser) {
-  return (info: { key: string | number }) => onMenuClick(info.key, record);
-}
-
 function onTableChange(pagination: { current?: number; pageSize?: number }) {
   if (pagination.current != null) page.value = pagination.current;
   if (pagination.pageSize != null) pageSize.value = pagination.pageSize;
@@ -522,7 +514,9 @@ onMounted(() => {
               <MoreOutlined />
             </a-button>
             <template #overlay>
-              <a-menu @click="menuClickHandler(record as AdminUser)">
+              <a-menu
+                @click="(info: { key: string | number }) => onUserAction(String(info.key), record as AdminUser)"
+              >
                 <a-menu-item key="edit" :disabled="(record as AdminUser).disabled">
                   Edit
                 </a-menu-item>
