@@ -688,6 +688,8 @@ function publishIssueDraftProgress(
  * - Cache hit → `{ status: "ready", draft }` (sync)
  * - Else kick agent in background → `{ status: "started" }` (HTTP 202);
  *   result arrives via SSE `ba_issue_draft_done` / `ba_issue_draft_error`.
+ * - If a draft is already running for this thread → same `{ status: "started" }`
+ *   (idempotent; does not 409).
  */
 export async function baDraftIssueFromThread(userId: string, threadId: string) {
   await assertBaFeatureOn("createIssue");
@@ -702,8 +704,22 @@ export async function baDraftIssueFromThread(userId: string, threadId: string) {
       409,
     );
   }
+  // Idempotent: draft already in flight — do not 409; client keeps waiting on SSE.
   if (hasActiveAgentRun(baIssueDraftCancelKey(threadId))) {
-    throw new AppError("Still drafting the issue — wait or reopen the modal", 409);
+    logger.info("BA thread issue draft already running", { threadId });
+    publishIssueDraftProgress(
+      uid,
+      threadId,
+      "Still drafting the issue…",
+      "agent",
+    );
+    return {
+      status: "started" as const,
+      threadId,
+      baProjectId: thread.baProjectId,
+      cached: false,
+      alreadyRunning: true,
+    };
   }
   await assertProjectReady(thread.baProjectId);
   await requireBaUserGitlabPat(uid);

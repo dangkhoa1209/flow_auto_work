@@ -283,6 +283,7 @@ export const baApi = {
       threadId: string;
       baProjectId: string;
       cached?: boolean;
+      alreadyRunning?: boolean;
     }>(API.ba.draftIssue(threadId), {
       method: "POST",
     });
