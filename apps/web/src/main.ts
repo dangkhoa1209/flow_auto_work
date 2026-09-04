@@ -6,7 +6,10 @@ import App from "./App.vue";
 import router from "./router";
 import { bindSessionKeepAlive } from "@/api/sessionKeepAlive";
 import { bindAppRealtimeToSession } from "@/realtime/appBridge";
+import { bindVitePreloadErrorReload } from "@/utils/reloadOnChunkError";
 import "./style.css";
+
+bindVitePreloadErrorReload();
 
 const app = createApp(App);
 app.use(createPinia());
