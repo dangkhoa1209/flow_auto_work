@@ -2,9 +2,10 @@
  * Handoff + merge: apply GitLab issue actions, merge work branch via MR API.
  * On MR conflicts, the Cursor agent resolves them locally and the MR is retried.
  */
+import { addChatMessage } from "../../models/chat.js";
 import { saveJob } from "../../job-store.js";
 import { logger } from "../../logger.js";
-import type { IssueJob } from "../../types.js";
+import type { IssueJob, JobRecord } from "../../types.js";
 import { AppError } from "../../utils/AppError.js";
 import { requireJobDoc } from "./lifecycle.js";
 
@@ -80,7 +81,74 @@ export type PullBaseResult = {
   alreadyUpToDate: boolean;
   commitSha: string | null;
   wipWarning?: string;
+  /** AI failed — merge left open for Chat Send to resolve */
+  needsChatResolve?: boolean;
+  conflictedFiles?: string[];
+  /** Kept until chat finalize or abort (only when needsChatResolve) */
+  wipStashMarker?: string | null;
 };
+
+/**
+ * Abort an open merge left for chat resolve and restore any WIP stash.
+ */
+export async function abortPendingConflictOnRepo(
+  repoPath: string,
+  pending?: JobRecord["pendingConflictResolve"],
+): Promise<{ wipWarning?: string }> {
+  const {
+    abortMerge,
+    isMergeInProgress,
+    restoreWipAfterMerge,
+  } = await import("../../plugins/git/merge.js");
+  if (await isMergeInProgress(repoPath)) {
+    await abortMerge(repoPath).catch(() => undefined);
+  }
+  let wipWarning: string | undefined;
+  if (pending?.wipStashMarker) {
+    const wip = await restoreWipAfterMerge(repoPath, pending.wipStashMarker);
+    if (wip.warning) wipWarning = wip.warning;
+  }
+  return { wipWarning };
+}
+
+async function tryAiClearConflicts(opts: {
+  repoPath: string;
+  sourceBranch: string;
+  targetBranch: string;
+  conflictedFiles: string[];
+  issue?: IssueJob;
+}): Promise<{ cleared: true; summary: string } | { cleared: false; files: string[]; summary: string }> {
+  const { resolveMergeConflictsWithAi } = await import(
+    "../../plugins/agent/merge-resolve.js"
+  );
+  const { listConflictedFiles } = await import("../../plugins/git/merge.js");
+  let files = opts.conflictedFiles;
+  let text = "";
+  try {
+    for (let round = 0; round < 2 && files.length; round++) {
+      const resolved = await resolveMergeConflictsWithAi({
+        sourceBranch: opts.sourceBranch,
+        targetBranch: opts.targetBranch,
+        conflictedFiles: files,
+        issue: opts.issue,
+      });
+      text = text ? `${text}\n---\n${resolved.text}` : resolved.text;
+      files = resolved.remaining;
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    const remaining = await listConflictedFiles(opts.repoPath).catch(() => files);
+    return {
+      cleared: false,
+      files: remaining.length ? remaining : files,
+      summary: text ? `${text}\n---\nAI error: ${msg}` : `AI error: ${msg}`,
+    };
+  }
+  if (files.length) {
+    return { cleared: false, files, summary: text || "(unresolved)" };
+  }
+  return { cleared: true, summary: text || "(resolved)" };
+}
 
 /**
  * Pull latest base (target) INTO the job work branch:
@@ -88,6 +156,9 @@ export type PullBaseResult = {
  * clears conflict markers if any → commit + push work branch → restore WIP.
  * Base branch is never pushed directly (it is often protected).
  * Used by the Sync-base button and as MR-conflict auto-fix during merge.
+ *
+ * If AI cannot clear conflicts, the merge is **left open** (not aborted) so
+ * the user can Chat Send to resolve — avoids a stuck dirty MERGE_HEAD with no recovery.
  */
 async function pullBaseIntoWorkBranch(opts: {
   repoPath: string;
@@ -101,11 +172,9 @@ async function pullBaseIntoWorkBranch(opts: {
     finalizeMergeCommit,
     tryCheckoutBranch,
     restoreWipAfterMerge,
+    listConflictedFiles,
   } = await import("../../plugins/git/merge.js");
   const { pushBranch } = await import("../../plugins/git/prep.js");
-  const { resolveMergeConflictsWithAi } = await import(
-    "../../plugins/agent/merge-resolve.js"
-  );
 
   // Reversed args on purpose: checkout `source` (work branch), merge `target` into it.
   // attemptMergeIntoBase also refreshes both branches from origin first.
@@ -117,33 +186,38 @@ async function pullBaseIntoWorkBranch(opts: {
   const previousBranch = attempt.previousBranch;
   const wipStashMarker = attempt.wipStashMarker;
   let wipWarning: string | undefined;
+  /** Leave MERGE_HEAD for chat — skip abort / branch restore / stash pop in finally */
+  let leaveOpenForChat = false;
 
   try {
     let aiResolved = false;
     let summary = "(merged clean — no AI needed)";
     if (attempt.status === "conflict") {
-      let files = attempt.conflictedFiles;
-      let text = "";
-      // Up to 2 rounds of AI resolution before giving up
-      for (let round = 0; round < 2 && files.length; round++) {
-        const resolved = await resolveMergeConflictsWithAi({
-          sourceBranch: opts.target,
-          targetBranch: opts.source,
+      const ai = await tryAiClearConflicts({
+        repoPath: opts.repoPath,
+        sourceBranch: opts.target,
+        targetBranch: opts.source,
+        conflictedFiles: attempt.conflictedFiles,
+        issue: opts.issue,
+      });
+      if (!ai.cleared) {
+        leaveOpenForChat = true;
+        const files =
+          ai.files.length > 0
+            ? ai.files
+            : await listConflictedFiles(opts.repoPath);
+        return {
+          summary: ai.summary,
+          aiResolved: false,
+          alreadyUpToDate: false,
+          commitSha: null,
+          needsChatResolve: true,
           conflictedFiles: files,
-          issue: opts.issue,
-        });
-        text = text ? `${text}\n---\n${resolved.text}` : resolved.text;
-        files = resolved.remaining;
-      }
-      if (files.length) {
-        await abortMerge(opts.repoPath).catch(() => undefined);
-        throw new AppError(
-          `AI could not clear conflicts: ${files.join(", ")}`,
-          409,
-        );
+          wipStashMarker,
+        };
       }
       aiResolved = true;
-      summary = text || "(resolved)";
+      summary = ai.summary;
     }
 
     const alreadyUpToDate =
@@ -164,16 +238,158 @@ async function pullBaseIntoWorkBranch(opts: {
       sha: commitSha,
     });
     return { summary, aiResolved, alreadyUpToDate, commitSha, wipWarning };
+  } catch (err) {
+    await abortMerge(opts.repoPath).catch(() => undefined);
+    throw err;
   } finally {
-    if (previousBranch) await tryCheckoutBranch(opts.repoPath, previousBranch);
-    const wip = await restoreWipAfterMerge(opts.repoPath, wipStashMarker);
+    if (!leaveOpenForChat) {
+      if (previousBranch) await tryCheckoutBranch(opts.repoPath, previousBranch);
+      const wip = await restoreWipAfterMerge(opts.repoPath, wipStashMarker);
+      if (wip.warning) wipWarning = wip.warning;
+    }
+  }
+}
+
+async function markJobNeedsChatConflictResolve(
+  job: JobRecord,
+  pending: NonNullable<JobRecord["pendingConflictResolve"]>,
+  summary: string,
+) {
+  job.pendingConflictResolve = pending;
+  job.mergeError = `Conflict — use Chat Send to resolve: ${pending.files.join(", ")}`;
+  await saveJob(job);
+  const fileList = pending.files.map((f) => `- ${f}`).join("\n");
+  await addChatMessage({
+    jobId: job.id,
+    issueIid: job.issue.issueIid,
+    role: "system",
+    kind: "note",
+    body:
+      `⚠️ Merge conflict — automatic AI resolve did not finish.\n\n` +
+      `Conflicted files:\n${fileList || "- (unknown)"}\n\n` +
+      `**Chat is still available.** Send a message (e.g. "resolve the merge conflicts") ` +
+      `and the agent will clear conflict markers. When markers are gone, Flow finalizes the merge commit and push.\n\n` +
+      `Or press **Sync base** again to abort this merge and retry.\n\n` +
+      (summary.trim() ? `AI notes:\n${summary.trim().slice(0, 2000)}` : ""),
+  });
+}
+
+/**
+ * After Chat clears conflict markers: finalize merge commit, push, restore WIP.
+ */
+export async function tryFinalizePendingConflict(
+  job: JobRecord,
+  repoPath: string,
+): Promise<
+  | { status: "none" }
+  | { status: "still_conflicted"; files: string[] }
+  | { status: "finalized"; commitSha: string | null; wipWarning?: string }
+> {
+  const pending = job.pendingConflictResolve;
+  const {
+    listConflictedFiles,
+    isMergeInProgress,
+    finalizeMergeCommit,
+    restoreWipAfterMerge,
+  } = await import("../../plugins/git/merge.js");
+  const { pushBranch } = await import("../../plugins/git/prep.js");
+
+  const mergeOpen = await isMergeInProgress(repoPath);
+  if (!pending && !mergeOpen) return { status: "none" };
+
+  const files = await listConflictedFiles(repoPath);
+  if (files.length) {
+    if (pending) {
+      job.pendingConflictResolve = { ...pending, files };
+      await saveJob(job);
+    }
+    return { status: "still_conflicted", files };
+  }
+
+  if (!mergeOpen) {
+    if (pending) {
+      job.pendingConflictResolve = undefined;
+      job.mergeError = undefined;
+      await saveJob(job);
+    }
+    return { status: "none" };
+  }
+
+  const source = pending?.source || "";
+  const target =
+    pending?.target?.trim() ||
+    (await import("../../plugins/git/merge.js").then((m) =>
+      m.getCurrentBranch(repoPath),
+    )) ||
+    "";
+  const kind = pending?.kind || "sync-base";
+  const commitSha = await finalizeMergeCommit(
+    repoPath,
+    `Merge branch '${source || "incoming"}' into ${target || "HEAD"} (chat conflict resolve)`,
+  );
+  // Checked-out branch that received the merge is pending.target (or current HEAD)
+  const branchToPush = target.trim();
+  if (branchToPush) {
+    await pushBranch(repoPath, branchToPush);
+  }
+
+  let wipWarning: string | undefined;
+  if (pending?.wipStashMarker) {
+    const wip = await restoreWipAfterMerge(repoPath, pending.wipStashMarker);
     if (wip.warning) wipWarning = wip.warning;
   }
+
+  job.pendingConflictResolve = undefined;
+  job.mergeError = undefined;
+  if (commitSha) {
+    job.commitSha = commitSha;
+    job.commitShas = [...(job.commitShas ?? []), commitSha].slice(-20);
+  }
+  if (kind === "merge") {
+    job.mergedAt = new Date().toISOString();
+    job.mergeTarget = target;
+    job.mergeSource = source;
+    job.mergeSha = commitSha ?? undefined;
+    job.mergeAiResolved = true;
+    job.mergePushedAt = new Date().toISOString();
+  }
+  await saveJob(job);
+
+  logger.info("Finalized pending conflict via chat", {
+    jobId: job.id,
+    kind,
+    sha: commitSha,
+    branchToPush,
+  });
+
+  return { status: "finalized", commitSha, wipWarning };
+}
+
+/** Prompt block when a merge is waiting on chat conflict resolve. */
+export function conflictResolvePromptBlock(
+  pending: NonNullable<JobRecord["pendingConflictResolve"]>,
+): string {
+  const files = pending.files.map((f) => `- ${f}`).join("\n") || "- (see git status)";
+  return `# MERGE CONFLICT RESOLVE (HIGHEST PRIORITY THIS TURN)
+There is an **open git merge** on branch \`${pending.target}\` (merging \`${pending.source}\` in).
+Conflicted files:
+${files}
+
+## Your job
+1. Open each conflicted file and resolve EVERY conflict marker (\`<<<<<<<\`, \`=======\`, \`>>>>>>>\`).
+2. Keep feature work from the appropriate side; do not leave markers.
+3. \`git add\` the resolved files when done.
+4. Do NOT \`git commit\`, \`git merge --abort\`, push, or force-push — Flow will finalize the merge commit after you finish.
+5. Prefer small, correct resolutions.
+
+Then briefly summarize what you resolved.
+`;
 }
 
 /**
  * Sync-base button: pull latest base branch into the job work branch.
  * Stash WIP → pull → AI-fix conflicts if any → push work branch → unstash.
+ * If AI cannot clear conflicts, leave merge open and let the user Chat to finish.
  */
 export async function syncJobBranchWithBase(
   jobId: string,
@@ -196,12 +412,36 @@ export async function syncJobBranchWithBase(
     throw new AppError("No local repo path — join a project first", 400);
   }
 
+  // Clear a previous half-open conflict so Sync base can retry cleanly
+  if (job.pendingConflictResolve) {
+    const cleared = await abortPendingConflictOnRepo(
+      repoPath,
+      job.pendingConflictResolve,
+    );
+    job.pendingConflictResolve = undefined;
+    job.mergeError = undefined;
+    await saveJob(job);
+    if (cleared.wipWarning) {
+      logger.warn("WIP warning while aborting prior conflict", {
+        jobId: job.id,
+        warning: cleared.wipWarning,
+      });
+    }
+  } else {
+    const { isMergeInProgress, abortMerge } = await import(
+      "../../plugins/git/merge.js"
+    );
+    if (await isMergeInProgress(repoPath)) {
+      await abortMerge(repoPath).catch(() => undefined);
+    }
+  }
+
   // Settings project branch wins — job.baseBranch is a stale snapshot and the
   // GitLab default branch is a guess. No setting → user must pick explicitly.
   const target = input.targetBranch?.trim() || rt?.baseBranch?.trim() || "";
   if (!target) {
     throw new AppError(
-      "BASE_BRANCH_NOT_SET: Project chưa cấu hình Main branch — chọn nhánh nguồn để pull",
+      "BASE_BRANCH_NOT_SET: Project main branch is not set — pick a source branch to pull",
       400,
     );
   }
@@ -216,9 +456,42 @@ export async function syncJobBranchWithBase(
     issue: job.issue,
   });
 
+  if (result.needsChatResolve) {
+    // pending: source=base (incoming), target=work (checked out)
+    await markJobNeedsChatConflictResolve(
+      job,
+      {
+        kind: "sync-base",
+        source: target,
+        target: source,
+        files: result.conflictedFiles ?? [],
+        wipStashMarker: result.wipStashMarker,
+        startedAt: new Date().toISOString(),
+      },
+      result.summary,
+    );
+    logger.warn("Sync base needs chat conflict resolve", {
+      jobId: job.id,
+      source,
+      target,
+      files: result.conflictedFiles,
+    });
+    return {
+      ok: true,
+      job,
+      sync: {
+        source,
+        target,
+        ...result,
+      },
+    };
+  }
+
   if (result.commitSha && !result.alreadyUpToDate) {
     job.commitSha = result.commitSha;
     job.commitShas = [...(job.commitShas ?? []), result.commitSha].slice(-20);
+    job.pendingConflictResolve = undefined;
+    job.mergeError = undefined;
     await saveJob(job);
   }
 
@@ -296,7 +569,14 @@ export async function mergeJobBranch(
 
   job.mergeError = undefined;
   job.mergePushError = undefined;
-  await saveJob(job);
+  // Fresh merge attempt — drop a prior chat-resolve leftover if any
+  if (job.pendingConflictResolve && repoPath) {
+    await abortPendingConflictOnRepo(repoPath, job.pendingConflictResolve);
+    job.pendingConflictResolve = undefined;
+    await saveJob(job);
+  } else {
+    await saveJob(job);
+  }
 
   try {
     const existingMr = await findOpenMergeRequest({
@@ -317,7 +597,7 @@ export async function mergeJobBranch(
       const aiFixMrConflicts = async (reason: string) => {
         if (!repoPath) {
           throw new AppError(
-            "MR đang conflict nhưng không có local repo để AI auto-fix — gắn project clone hoặc Sync base thủ công",
+            "MR has conflicts but no local repo for AI auto-fix — attach a project clone or Sync base manually",
             409,
           );
         }
@@ -331,7 +611,7 @@ export async function mergeJobBranch(
         appendJobProgress(
           job.id,
           "status",
-          "MR conflict — AI đang resolve (như Sync base)…",
+          "MR conflict — AI resolving (same as Sync base)…",
         );
         const fix = await pullBaseIntoWorkBranch({
           repoPath,
@@ -339,14 +619,32 @@ export async function mergeJobBranch(
           target,
           issue: job.issue,
         });
+        if (fix.needsChatResolve) {
+          await markJobNeedsChatConflictResolve(
+            job,
+            {
+              kind: "sync-base",
+              source: target,
+              target: source,
+              files: fix.conflictedFiles ?? [],
+              wipStashMarker: fix.wipStashMarker,
+              startedAt: new Date().toISOString(),
+            },
+            fix.summary,
+          );
+          throw new AppError(
+            `MR conflict — AI could not clear; use Chat Send to resolve: ${(fix.conflictedFiles ?? []).join(", ")}`,
+            409,
+          );
+        }
         aiResolved = aiResolved || fix.aiResolved || !fix.alreadyUpToDate;
         aiSummary = fix.summary;
         appendJobProgress(
           job.id,
           "status",
           fix.aiResolved
-            ? "AI đã resolve conflict — thử accept MR lại"
-            : "Đã sync base vào work — thử accept MR lại",
+            ? "AI resolved conflict — retrying MR accept"
+            : "Synced base into work — retrying MR accept",
         );
       };
 
@@ -463,7 +761,7 @@ export async function mergeJobBranch(
     // No open MR — local merge work → base + push (does not create MR)
     if (!repoPath) {
       throw new AppError(
-        "Chưa có open MR và không có local repo để merge trực tiếp. Bấm Create MR trước, hoặc gắn project clone.",
+        "No open MR and no local repo for a direct merge. Create MR first, or attach a project clone.",
         409,
       );
     }
@@ -474,11 +772,9 @@ export async function mergeJobBranch(
       finalizeMergeCommit,
       tryCheckoutBranch,
       restoreWipAfterMerge,
+      listConflictedFiles,
     } = await import("../../plugins/git/merge.js");
     const { pushBranch } = await import("../../plugins/git/prep.js");
-    const { resolveMergeConflictsWithAi } = await import(
-      "../../plugins/agent/merge-resolve.js"
-    );
 
     const attempt = await attemptMergeIntoBase({
       repoPath,
@@ -490,6 +786,7 @@ export async function mergeJobBranch(
     let aiResolved = false;
     let aiSummary: string | undefined;
     let wipWarning: string | undefined;
+    let leaveOpenForChat = false;
 
     try {
       if (attempt.status === "conflict") {
@@ -499,30 +796,62 @@ export async function mergeJobBranch(
         appendJobProgress(
           job.id,
           "status",
-          "Merge conflict — AI đang resolve (như Sync base)…",
+          "Merge conflict — AI resolving (same as Sync base)…",
         );
-        let files = attempt.conflictedFiles;
-        let text = "";
-        for (let round = 0; round < 2 && files.length; round++) {
-          const resolved = await resolveMergeConflictsWithAi({
-            sourceBranch: source,
-            targetBranch: target,
-            conflictedFiles: files,
-            issue: job.issue,
-          });
-          text = text ? `${text}\n---\n${resolved.text}` : resolved.text;
-          files = resolved.remaining;
-        }
-        if (files.length) {
-          await abortMerge(repoPath).catch(() => undefined);
-          throw new AppError(
-            `AI could not clear conflicts: ${files.join(", ")}`,
-            409,
+        const ai = await tryAiClearConflicts({
+          repoPath,
+          sourceBranch: source,
+          targetBranch: target,
+          conflictedFiles: attempt.conflictedFiles,
+          issue: job.issue,
+        });
+        if (!ai.cleared) {
+          leaveOpenForChat = true;
+          const files =
+            ai.files.length > 0
+              ? ai.files
+              : await listConflictedFiles(repoPath);
+          await markJobNeedsChatConflictResolve(
+            job,
+            {
+              kind: "merge",
+              source,
+              target,
+              files,
+              wipStashMarker,
+              startedAt: new Date().toISOString(),
+            },
+            ai.summary,
           );
+          return {
+            ok: true,
+            job,
+            merge: {
+              source,
+              target,
+              commitSha: null,
+              alreadyUpToDate: false,
+              via: "local_git",
+              mergeRequestIid: null,
+              mergeRequestUrl: null,
+              createdMr: false,
+              localSynced: false,
+              syncError: null,
+              aiResolved: false,
+              aiSummary: ai.summary,
+              needsChatResolve: true,
+              conflictedFiles: files,
+              wipWarning: null,
+            },
+          };
         }
         aiResolved = true;
-        aiSummary = text || "(resolved)";
-        appendJobProgress(job.id, "status", "AI đã resolve conflict — finalize merge");
+        aiSummary = ai.summary;
+        appendJobProgress(
+          job.id,
+          "status",
+          "AI resolved conflict — finalizing merge",
+        );
       }
 
       const alreadyUpToDate =
@@ -542,6 +871,7 @@ export async function mergeJobBranch(
       job.mergeSha = commitSha ?? undefined;
       job.mergeAiResolved = aiResolved;
       job.mergeError = undefined;
+      job.pendingConflictResolve = undefined;
       job.mergePushedAt = new Date().toISOString();
       job.mergePushError = undefined;
       if (commitSha) {
@@ -578,10 +908,17 @@ export async function mergeJobBranch(
           wipWarning: wipWarning ?? null,
         },
       };
+    } catch (err) {
+      if (!leaveOpenForChat) {
+        await abortMerge(repoPath).catch(() => undefined);
+      }
+      throw err;
     } finally {
-      if (previousBranch) await tryCheckoutBranch(repoPath, previousBranch);
-      const wip = await restoreWipAfterMerge(repoPath, wipStashMarker);
-      if (wip.warning) wipWarning = wip.warning;
+      if (!leaveOpenForChat) {
+        if (previousBranch) await tryCheckoutBranch(repoPath, previousBranch);
+        const wip = await restoreWipAfterMerge(repoPath, wipStashMarker);
+        if (wip.warning) wipWarning = wip.warning;
+      }
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

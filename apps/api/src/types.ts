@@ -242,6 +242,21 @@ export type JobRecord = {
   mergePushedAt?: string;
   mergePushError?: string;
   mergeError?: string;
+  /**
+   * Sync-base / merge left an open git merge with conflict markers.
+   * User can Chat Send to resolve; orchestrator finalizes when markers are gone.
+   */
+  pendingConflictResolve?: {
+    kind: "sync-base" | "merge";
+    /** Branch being merged in (incoming) */
+    source: string;
+    /** Branch checked out that receives the merge */
+    target: string;
+    files: string[];
+    /** WIP stash kept until finalize or abort */
+    wipStashMarker?: string | null;
+    startedAt: string;
+  };
   createdAt: string;
   updatedAt: string;
 };

@@ -868,7 +868,13 @@ export function useWorkbench() {
     try {
       const res = await projectClone.withCloneRetry(() =>
         api<{
-          merge?: { aiResolved?: boolean; target?: string; wipWarning?: string };
+          merge?: {
+            aiResolved?: boolean;
+            target?: string;
+            wipWarning?: string;
+            needsChatResolve?: boolean;
+            conflictedFiles?: string[];
+          };
         }>(`/api/jobs/${selectedJobId.value}/merge`, {
           method: "POST",
           body: JSON.stringify({}),
@@ -876,9 +882,18 @@ export function useWorkbench() {
       );
       if (!res) return;
       const m = res?.merge;
-      if (m?.aiResolved) {
+      if (m?.needsChatResolve) {
+        message.warning(
+          `Merge conflict left open — use Chat Send to resolve` +
+            (m.conflictedFiles?.length
+              ? `: ${m.conflictedFiles.slice(0, 5).join(", ")}`
+              : ""),
+          10,
+        );
+        mobilePane.value = "chat";
+      } else if (m?.aiResolved) {
         message.success(
-          `Merge OK → ${m.target || "base"} — AI đã tự resolve conflict`,
+          `Merge OK → ${m.target || "base"} — AI resolved conflicts`,
         );
       } else {
         message.success("Merge OK");
@@ -1013,6 +1028,8 @@ export function useWorkbench() {
             aiResolved?: boolean;
             alreadyUpToDate?: boolean;
             wipWarning?: string;
+            needsChatResolve?: boolean;
+            conflictedFiles?: string[];
           };
         }>(`/api/jobs/${selectedJobId.value}/sync-base`, {
           method: "POST",
@@ -1021,12 +1038,25 @@ export function useWorkbench() {
       );
       if (!res) return;
       const s = res?.sync;
-      if (s?.alreadyUpToDate) {
-        message.info(`Đã mới nhất so với ${s?.target || "base"} — không có gì để pull`);
+      if (s?.needsChatResolve) {
+        message.warning(
+          `Conflict left open — use Chat Send to resolve` +
+            (s.conflictedFiles?.length
+              ? `: ${s.conflictedFiles.slice(0, 5).join(", ")}`
+              : ""),
+          10,
+        );
+        mobilePane.value = "chat";
+      } else if (s?.alreadyUpToDate) {
+        message.info(
+          `Already up to date with ${s?.target || "base"} — nothing to pull`,
+        );
       } else if (s?.aiResolved) {
-        message.success(`Đã pull ${s?.target || "base"} — AI đã tự resolve conflict`);
+        message.success(
+          `Pulled ${s?.target || "base"} — AI resolved conflicts`,
+        );
       } else {
-        message.success(`Đã pull ${s?.target || "base"} vào nhánh job`);
+        message.success(`Pulled ${s?.target || "base"} into job branch`);
       }
       if (s?.wipWarning) message.warning(s.wipWarning, 8);
       await work.loadJobs();

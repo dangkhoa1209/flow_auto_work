@@ -818,6 +818,7 @@ export async function continueAgentWindow(
     contextQualityBlock?: string;
     googleSheetsBlock?: string;
     figmaBlock?: string;
+    conflictResolveBlock?: string;
   },
 ): Promise<AgentRunResult> {
   const model = resolveCursorModelSpec();
@@ -837,6 +838,7 @@ export async function continueAgentWindow(
         googleSheetsBlock: opts?.googleSheetsBlock,
         figmaBlock: opts?.figmaBlock,
         graphifyBlock,
+        conflictResolveBlock: opts?.conflictResolveBlock,
       })
     : buildFollowUpPrompt(message, issue, {
         chatHistory: opts?.chatHistory,
@@ -844,6 +846,7 @@ export async function continueAgentWindow(
         googleSheetsBlock: opts?.googleSheetsBlock,
         figmaBlock: opts?.figmaBlock,
         graphifyBlock,
+        conflictResolveBlock: opts?.conflictResolveBlock,
       });
 
   const session = beginCancellableJob(opts?.jobId);

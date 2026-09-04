@@ -901,6 +901,31 @@ export class JobQueue {
         .slice(0, 24_000);
 
       const headBefore = await getHeadSha(repoPath);
+      let conflictBlock: string | undefined;
+      if (job.pendingConflictResolve) {
+        conflictBlock = (
+          await import("./modules/job/merge.js")
+        ).conflictResolvePromptBlock(job.pendingConflictResolve);
+      } else {
+        // Recover stuck MERGE_HEAD from older failed Sync base (no pending saved)
+        const { isMergeInProgress, listConflictedFiles, getCurrentBranch } =
+          await import("./plugins/git/merge.js");
+        if (await isMergeInProgress(repoPath)) {
+          const files = await listConflictedFiles(repoPath);
+          const cur = (await getCurrentBranch(repoPath)) || "HEAD";
+          job.pendingConflictResolve = {
+            kind: "sync-base",
+            source: "(incoming)",
+            target: cur,
+            files,
+            startedAt: new Date().toISOString(),
+          };
+          await saveJob(job);
+          conflictBlock = (
+            await import("./modules/job/merge.js")
+          ).conflictResolvePromptBlock(job.pendingConflictResolve);
+        }
+      }
       const result = await this.runAgentWithRetry(job, () =>
         continueAgentWindow(job.issue, msg, {
           jobId: job.id,
@@ -908,6 +933,7 @@ export class JobQueue {
           contextQualityBlock,
           googleSheetsBlock: googleSheetsBlock || undefined,
           figmaBlock: figmaBlock || undefined,
+          conflictResolveBlock: conflictBlock,
         }),
       );
       job.agentId = result.agentId;
@@ -935,6 +961,36 @@ export class JobQueue {
         job.clarifyRound = (job.clarifyRound ?? 0) + 1;
         await saveJob(job);
         return;
+      }
+
+      // Open merge from Sync base / Merge — finalize when markers are gone
+      if (job.pendingConflictResolve) {
+        const { tryFinalizePendingConflict } = await import(
+          "./modules/job/merge.js"
+        );
+        const fin = await tryFinalizePendingConflict(job, repoPath);
+        if (fin.status === "still_conflicted") {
+          job.status = wasDone ? prevStatus : "draft";
+          job.error = undefined;
+          await saveJob(job);
+          await this.notifyJobChat(
+            job,
+            `⚠️ Still conflicted after chat:\n${fin.files.map((f) => `- ${f}`).join("\n")}\n\nSend another Chat message to keep resolving.`,
+          );
+          return;
+        }
+        if (fin.status === "finalized") {
+          job.status = wasDone ? prevStatus : "awaiting_handoff";
+          if (!wasDone) job.completedAt = new Date().toISOString();
+          job.error = undefined;
+          await saveJob(job);
+          await this.notifyJobChat(
+            job,
+            `✅ Merge conflict cleared — commit ${fin.commitSha?.slice(0, 8) || "(local)"} finalized` +
+              (fin.wipWarning ? `\n⚠️ ${fin.wipWarning}` : ""),
+          );
+          return;
+        }
       }
 
       // Follow-up may have edited code — same verify + self-heal gate as Run
