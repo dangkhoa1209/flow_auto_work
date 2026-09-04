@@ -3,6 +3,7 @@ import { computed, ref, watch } from "vue";
 import { message, Modal } from "ant-design-vue";
 import { useBaChatStore } from "@/stores/baChat";
 import { baApi } from "@/api/baApi";
+import { ApiError } from "@/api/http";
 import { useBaGitPat } from "@/composables/useBaGitPat";
 import BaChatSidebar from "@/components/ba/BaChatSidebar.vue";
 import BaMessageList from "@/components/ba/BaMessageList.vue";
@@ -150,6 +151,12 @@ function applyReadyDraft(res: {
   );
 }
 
+function isIssueDraftInFlightError(e: unknown): boolean {
+  if (!(e instanceof ApiError) || e.status !== 409) return false;
+  const msg = e.message || "";
+  return /still drafting the issue/i.test(msg);
+}
+
 async function runCreateIssueFromThread() {
   if (!ba.activeThreadId || createIssueDisabled.value) return;
   const threadId = ba.activeThreadId;
@@ -162,8 +169,15 @@ async function runCreateIssueFromThread() {
       applyReadyDraft(res);
       return;
     }
-    // status === "started" → chờ SSE ba_issue_draft_done
+    // status === "started" (incl. alreadyRunning) → chờ SSE ba_issue_draft_done
   } catch (e) {
+    // Legacy 409 while draft agent still runs — keep modal, wait for SSE.
+    if (isIssueDraftInFlightError(e)) {
+      ba.beginIssueDraft(threadId);
+      taskModalOpen.value = true;
+      message.info("Issue đang được soạn — đợi trong modal");
+      return;
+    }
     ba.clearIssueDraft();
     taskModalOpen.value = false;
     if (!handleBaPatApiError(e, () => void runCreateIssueFromThread())) {
