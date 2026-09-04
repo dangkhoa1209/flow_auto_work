@@ -101,6 +101,14 @@ export type Job = {
   googleSheetsIncludeIds?: string[];
   figmaIncludeKeys?: string[];
   pendingFigmaUrls?: string[];
+  mergeError?: string;
+  pendingConflictResolve?: {
+    kind?: "sync-base" | "merge" | string;
+    source?: string;
+    target?: string;
+    files?: string[];
+    startedAt?: string;
+  };
 };
 
 export function isAdhocJob(job: Job | null | undefined): boolean {

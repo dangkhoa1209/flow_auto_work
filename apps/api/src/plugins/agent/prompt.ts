@@ -424,6 +424,7 @@ export function buildFollowUpPrompt(
     googleSheetsBlock?: string;
     figmaBlock?: string;
     graphifyBlock?: string;
+    conflictResolveBlock?: string;
   },
 ): string {
   const history = opts?.chatHistory?.trim();
@@ -443,11 +444,14 @@ ${history}
   const figmaBlock = opts?.figmaBlock?.trim()
     ? `\n${opts.figmaBlock.trim()}\n\n`
     : "";
+  const conflictBlock = opts?.conflictResolveBlock?.trim()
+    ? `${opts.conflictResolveBlock.trim()}\n\n`
+    : "";
 
   return `You are working on GitLab issue #${issue.issueIid} ("${issue.title}") in a Cursor agent window.
 This may be a **new** window — use prior chat + the repo (inspect if needed). Do not assume old tool state is still loaded.
 Prefer \`AGENTS.md\` (then \`.cursor/rules\` / project docs) when you need conventions for **this** checkout.
-${opts?.graphifyBlock ? `${opts.graphifyBlock}\n` : ""}${qualityBlock}${sheetsBlock}${figmaBlock}${historyBlock}## Human follow-up (this turn)
+${opts?.graphifyBlock ? `${opts.graphifyBlock}\n` : ""}${conflictBlock}${qualityBlock}${sheetsBlock}${figmaBlock}${historyBlock}## Human follow-up (this turn)
 ${message.trim()}
 
 ## How to behave (IDE-like)
@@ -478,6 +482,7 @@ export function buildAdhocFollowUpPrompt(
     googleSheetsBlock?: string;
     figmaBlock?: string;
     graphifyBlock?: string;
+    conflictResolveBlock?: string;
   },
 ): string {
   const title = sessionTitle.replace(/\s+/g, " ").trim() || "Ad-hoc session";
@@ -498,12 +503,15 @@ ${history}
   const figmaBlock = opts?.figmaBlock?.trim()
     ? `\n${opts.figmaBlock.trim()}\n\n`
     : "";
+  const conflictBlock = opts?.conflictResolveBlock?.trim()
+    ? `${opts.conflictResolveBlock.trim()}\n\n`
+    : "";
 
   return `You are in a **free Cursor agent session** (hotfix / ad-hoc) titled "${title}".
 There is **no GitLab issue yet** — a human may create one later from your summary.
 This may be a **new** window — use prior chat + the repo (inspect if needed).
 Prefer \`AGENTS.md\` (then \`.cursor/rules\` / project docs) when you need conventions for **this** checkout.
-${opts?.graphifyBlock ? `${opts.graphifyBlock}\n` : ""}${qualityBlock}${sheetsBlock}${figmaBlock}${historyBlock}## Human request (this turn)
+${opts?.graphifyBlock ? `${opts.graphifyBlock}\n` : ""}${conflictBlock}${qualityBlock}${sheetsBlock}${figmaBlock}${historyBlock}## Human request (this turn)
 ${message.trim()}
 
 ## How to behave (IDE-like)

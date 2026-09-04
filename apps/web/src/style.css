@@ -2664,49 +2664,6 @@ a.faw-mseg__btn {
   }
 }
 
-.faw-run-all-confirm__hint {
-  margin: 0 0 10px;
-  font-size: 12.5px;
-  color: var(--app-muted);
-  line-height: 1.45;
-}
-.faw-run-all-confirm__list {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  max-height: min(50vh, 360px);
-  overflow-y: auto;
-  border: 1px solid var(--app-border);
-  border-radius: 6px;
-  background: var(--app-bg);
-}
-.faw-run-all-confirm__list li {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  padding: 7px 10px;
-  border-bottom: 1px solid var(--line-soft);
-  font-size: 12.5px;
-  line-height: 1.35;
-}
-.faw-run-all-confirm__list li:last-child {
-  border-bottom: 0;
-}
-.faw-run-all-confirm__iid {
-  flex-shrink: 0;
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 11px;
-  color: var(--ant-color-primary, var(--app-accent));
-  background: transparent;
-}
-.faw-run-all-confirm__title {
-  color: var(--app-ink);
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 /* Mobile bottom-sheet style modals */
 @media (max-width: 1023px) {
   .work-modal-sheet {

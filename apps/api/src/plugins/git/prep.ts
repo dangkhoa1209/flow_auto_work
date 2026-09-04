@@ -155,6 +155,28 @@ export async function prepareRepoForIssue(opts: {
     });
   }
 
+  // Open merge (e.g. Sync base left conflicts for chat) — do not checkout away.
+  const { isMergeInProgress, getCurrentBranch } = await import("./merge.js");
+  if (await isMergeInProgress(repoPath)) {
+    const current = (await getCurrentBranch(repoPath))?.trim() || "";
+    const desired =
+      workBranch?.trim() ||
+      (current ? "" : autoWorkBranchName(opts.issueIid, opts.title));
+    if (desired && current && desired !== current) {
+      throw new Error(
+        `Merge conflict in progress on "${current}" but job expects "${desired}". ` +
+          `Use Chat to resolve conflict markers, or Sync base again to abort and retry.`,
+      );
+    }
+    const branch = current || desired || projectBranch;
+    logger.info("Keeping open merge for chat conflict resolve", {
+      branch,
+      issueIid: opts.issueIid,
+    });
+    scheduleProjectGraphify(repoPath, "work-prep");
+    return { repoPath, branch, defaultBranch, autoCreated: false };
+  }
+
   let branch: string;
   let autoCreated = false;
 

@@ -471,6 +471,20 @@ onUnmounted(() => {
             </a-alert>
 
             <a-alert
+              v-if="currentJob?.pendingConflictResolve"
+              type="warning"
+              show-icon
+              class="mb-3"
+              message="Merge conflict — Chat Send to resolve"
+              :description="
+                (currentJob.pendingConflictResolve.files?.length
+                  ? `Files: ${currentJob.pendingConflictResolve.files.slice(0, 8).join(', ')}${currentJob.pendingConflictResolve.files.length > 8 ? '…' : ''}. `
+                  : '') +
+                'Send a chat message to clear conflict markers. Sync base again aborts and retries.'
+              "
+            />
+
+            <a-alert
               v-if="awaitingDocsApproval"
               type="success"
               show-icon
@@ -679,7 +693,7 @@ onUnmounted(() => {
               type="warning"
               show-icon
               class="mb-3"
-              message="Thin context — Run will ask you to confirm"
+              message="Thin context — confirm once when you Run / Send"
               :description="
                 currentJob?.contextQuality?.reason ||
                 'Add Dev Notes for a tighter run, or confirm when you Run / Send.'
@@ -1027,8 +1041,8 @@ onUnmounted(() => {
       <a-tooltip
         :title="
           canSyncBase
-            ? 'Pull base mới nhất vào nhánh job (AI tự fix conflict)'
-            : 'Chỉ khi job có branch và không đang chạy'
+            ? 'Pull latest base into the job branch (AI fixes conflicts; Chat if AI fails)'
+            : 'Only when the job has a branch and is not running'
         "
       >
         <button
@@ -1061,7 +1075,7 @@ onUnmounted(() => {
         </button>
       </a-tooltip>
       <a-popconfirm
-        title="Merge work → base (không tạo MR) + comment tổng hợp. Conflict thì AI tự fix như Sync base."
+        title="Merge work → base (no new MR) + summary comment. On conflict, AI tries to fix (same as Sync base); if it fails, Chat Send can finish."
         ok-text="Merge"
         cancel-text="Cancel"
         :disabled="!canQuickMerge || mergeBusy"
@@ -1070,7 +1084,7 @@ onUnmounted(() => {
         <a-tooltip
           :title="
             canQuickMerge
-              ? 'Merge work → base + cmt tổng hợp (AI tự fix conflict nếu có)'
+              ? 'Merge work → base + summary comment (AI fixes conflicts when possible)'
               : 'Only when job is Awaiting handoff / Done'
           "
         >
