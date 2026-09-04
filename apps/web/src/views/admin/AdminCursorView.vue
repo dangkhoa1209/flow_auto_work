@@ -219,7 +219,8 @@ async function deletePat(patId: string) {
 }
 
 function onPatAction(key: string, pat: CursorPatPublic) {
-  if (key === "edit") openEditModal(pat);
+  if (key === "active") void setActiveById(pat.id);
+  else if (key === "edit") openEditModal(pat);
   else if (key === "delete") confirmDelete(pat);
 }
 
@@ -343,6 +344,12 @@ onMounted(() => {
               <a-menu
                 @click="(info: { key: string | number }) => onPatAction(String(info.key), record as CursorPatPublic)"
               >
+                <a-menu-item
+                  key="active"
+                  :disabled="(record as CursorPatPublic).isActive"
+                >
+                  Set active
+                </a-menu-item>
                 <a-menu-item key="edit">Edit</a-menu-item>
                 <a-menu-divider />
                 <a-menu-item key="delete" danger>Delete</a-menu-item>
