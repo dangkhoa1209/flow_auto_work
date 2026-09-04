@@ -201,6 +201,7 @@ export const API = {
   },
   gitlab: {
     preview: "/api/gitlab/preview",
+    branches: "/api/gitlab/branches",
     file: "/api/gitlab/file",
   },
   fs: {
