@@ -120,7 +120,11 @@ export const useAuthStore = defineStore("auth", () => {
     const used = getRefreshToken();
     const generationAtStart = getAuthGeneration();
     try {
-      if (!used) return false;
+      if (!used) {
+        // Storage blip — do not treat as logout.
+        if (loadPersistedAuth().refreshToken) return false;
+        return false;
+      }
       await refreshAccessTokenRaw();
       syncFromBridge();
       return true;
@@ -133,6 +137,9 @@ export const useAuthStore = defineStore("auth", () => {
         err && typeof err === "object" && "code" in err
           ? String((err as { code?: string }).code || "")
           : "";
+      if (code === "STORAGE_BLIP" || code === "STALE_REFRESH" || code === "AUTH_RESET") {
+        return false;
+      }
       if (status === 401 || code === "SESSION_EXPIRED") {
         if (getAuthGeneration() !== generationAtStart) return false;
         if (getRefreshToken() && getRefreshToken() !== used) return false;

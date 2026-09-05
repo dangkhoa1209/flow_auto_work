@@ -1,5 +1,6 @@
 import { API } from "@/api/endpoints";
 import { refreshAccessToken } from "@/api/client";
+import { recoverAuthRefreshLocks } from "@/api/http";
 import { getAccessExpiresAt, getAccessToken, loadPersistedAuth } from "@/api/tokenStorage";
 
 export type RealtimeStatus = {
@@ -183,6 +184,7 @@ function eventsUrl(): string {
 }
 
 async function ensureFreshAccessToken(): Promise<void> {
+  recoverAuthRefreshLocks();
   const exp = getAccessExpiresAt();
   if (!getAccessToken() || (exp && exp < Date.now() + 20_000)) {
     await refreshAccessToken().catch(() => false);

@@ -44,12 +44,15 @@ Related: [NOTES.md](./NOTES.md) (API table) · [DEPLOY.md](./DEPLOY.md) (TTL on 
 
 1. Leave the app open a long time → UI dumps to **login**.
 2. Click login again → success message but **stuck on login** (or session immediately cleared).
+3. **Mobile:** press Home → other app briefly → return → kicked to login; Sign in appears broken until force-kill the web app.
 
 **Mitigations in tree:**
 
 - Clear session only if failed refresh matches the **current** refresh token **and** auth generation (ignore stale clear after re-login / TOCTOU).
+- **`clearPersistedAuthIfRefresh(null)` must not wipe** a refresh token still present in storage (mobile localStorage blip on wake).
 - Cancel / invalidate in-flight refresh on login / clear (`AUTH_RESET` is 409, not 401).
-- Bootstrap / router: logout only when refresh is gone after hard auth failure — **not** on transient network alone; router retries refresh before logout on `/me` 401.
+- **Wake recovery:** `recoverAuthRefreshLocks()` + debounce on `visibilitychange` / `pageshow` (bfcache) so frozen mid-refresh cannot stick `isRefreshing` forever.
+- Bootstrap / router: logout only when refresh is gone after hard auth failure — **not** on transient network alone; router retries refresh before logout on `/me` 401; logged-in visit to `/login` with no home must **not** call `logout()`.
 - `flow:session-expired` handlers **no-op** if a refresh token is already present (re-login won).
 - Toast “Signed in” only after navigate off `/login`.
 - **Proactive keep-alive:** `sessionKeepAlive` refreshes access on tab wake / online / periodic while visible (access TTL 2h — must not equal logout).

@@ -101,14 +101,18 @@ export async function refreshAccessToken(): Promise<boolean> {
   const used = getRefreshToken();
   const generationAtStart = getAuthGeneration();
   try {
-    if (!used) return false;
+    if (!used) {
+      // Storage blip — keep session; wake keep-alive will retry.
+      return false;
+    }
     await refreshAccessTokenRaw();
     return true;
   } catch (err) {
     // Network blips must not wipe the session — only hard auth failures
     if (
       err instanceof ApiError &&
-      (err.status === 401 || err.code === "SESSION_EXPIRED")
+      (err.status === 401 || err.code === "SESSION_EXPIRED") &&
+      err.code !== "STORAGE_BLIP"
     ) {
       if (getAuthGeneration() !== generationAtStart) return false;
       if (getRefreshToken() && getRefreshToken() !== used) return false;

@@ -44,6 +44,12 @@ let isRefreshing = false;
 let failedQueue: QueueItem[] = [];
 /** Single-flight: SSE reconnect + HTTP 401 share one refresh. */
 let refreshInFlight: Promise<string> | null = null;
+/** When the current refresh flight started (for stuck-lock recovery). */
+let refreshStartedAt = 0;
+
+const REFRESH_HTTP_TIMEOUT_MS = 20_000;
+/** If a refresh lock outlives this, treat it as abandoned (bfcache / freeze). */
+const REFRESH_LOCK_STALE_MS = 45_000;
 
 function processQueue(error: unknown, token: string | null) {
   for (const p of failedQueue) {
@@ -60,12 +66,28 @@ function processQueue(error: unknown, token: string | null) {
 export function invalidateInFlightAuthRefresh(): void {
   refreshInFlight = null;
   isRefreshing = false;
+  refreshStartedAt = 0;
   if (failedQueue.length) {
     processQueue(
       new ApiError("Auth session replaced", 409, "AUTH_RESET"),
       null,
     );
   }
+}
+
+/**
+ * Recover mutexes left stuck after mobile background / bfcache freeze.
+ * Safe to call on every tab wake; no-ops when a fresh refresh is in flight.
+ */
+export function recoverAuthRefreshLocks(): void {
+  if (!isRefreshing && !refreshInFlight) return;
+  if (
+    refreshStartedAt &&
+    Date.now() - refreshStartedAt < REFRESH_LOCK_STALE_MS
+  ) {
+    return;
+  }
+  invalidateInFlightAuthRefresh();
 }
 
 function emitSessionExpired() {
@@ -82,7 +104,13 @@ function isPublicPath(url?: string): boolean {
 
 function isSessionExpiredError(err: unknown): boolean {
   if (err instanceof ApiError) {
-    if (err.code === "AUTH_RESET" || err.code === "STALE_REFRESH") return false;
+    if (
+      err.code === "AUTH_RESET" ||
+      err.code === "STALE_REFRESH" ||
+      err.code === "STORAGE_BLIP"
+    ) {
+      return false;
+    }
     return err.status === 401 || err.code === "SESSION_EXPIRED";
   }
   if (axios.isAxiosError(err)) {
@@ -115,19 +143,31 @@ export function unwrapApiData<T = unknown>(body: unknown): T {
 }
 
 export async function refreshAccessTokenRaw(): Promise<string> {
+  recoverAuthRefreshLocks();
   if (refreshInFlight) return refreshInFlight;
 
   const refreshTokenUsed = getRefreshToken();
   if (!refreshTokenUsed) {
+    // Storage blip: token may still be persisted — not a hard logout.
+    const persisted = loadPersistedAuth().refreshToken;
+    if (persisted) {
+      throw new ApiError(
+        "Refresh token temporarily unavailable",
+        503,
+        "STORAGE_BLIP",
+      );
+    }
     throw new ApiError("No refresh token", 401, "SESSION_EXPIRED");
   }
   const generationAtStart = getAuthGeneration();
 
   const thisFlight = (async () => {
     try {
-      const res = await rawHttp.post(API.auth.refresh, {
-        refreshToken: refreshTokenUsed,
-      });
+      const res = await rawHttp.post(
+        API.auth.refresh,
+        { refreshToken: refreshTokenUsed },
+        { timeout: REFRESH_HTTP_TIMEOUT_MS },
+      );
 
       const data = unwrapApiData<{
         accessToken: string;
@@ -180,11 +220,15 @@ export async function refreshAccessTokenRaw(): Promise<string> {
       }
       throw err;
     } finally {
-      if (refreshInFlight === thisFlight) refreshInFlight = null;
+      if (refreshInFlight === thisFlight) {
+        refreshInFlight = null;
+        refreshStartedAt = 0;
+      }
     }
   })();
 
   refreshInFlight = thisFlight;
+  refreshStartedAt = Date.now();
   return thisFlight;
 }
 
@@ -243,7 +287,10 @@ http.interceptors.response.use(
 
     const refreshTokenForAttempt = getRefreshToken();
     if (!refreshTokenForAttempt) {
-      clearAuthAndNotify(null, getAuthGeneration());
+      // Do not wipe a refresh token that is still in storage (mobile storage blip).
+      if (!loadPersistedAuth().refreshToken) {
+        clearAuthAndNotify(null, getAuthGeneration());
+      }
       return Promise.reject(
         new ApiError(
           "Session expired — please sign in again",
@@ -265,6 +312,7 @@ http.interceptors.response.use(
 
     original._retry = true;
     isRefreshing = true;
+    refreshStartedAt = Date.now();
     const generationAtStart = getAuthGeneration();
     try {
       const token = await refreshAccessTokenRaw();
@@ -289,6 +337,7 @@ http.interceptors.response.use(
       return Promise.reject(apiErr);
     } finally {
       isRefreshing = false;
+      if (!refreshInFlight) refreshStartedAt = 0;
     }
   },
 );
