@@ -106,16 +106,21 @@ export function clearPersistedAuth(): void {
 /**
  * Clear session only if storage still holds `expectedRefresh` (or there is no
  * refresh). Returns false when a newer login already replaced the token.
+ *
+ * Important: `expectedRefresh == null` must NOT wipe a present refresh token.
+ * On mobile wake, localStorage can briefly fail so getRefreshToken() returns
+ * null while the key still exists — clearing would false-logout the user.
  */
 export function clearPersistedAuthIfRefresh(
   expectedRefresh: string | null,
 ): boolean {
   const cur = loadPersistedAuth();
-  if (
-    expectedRefresh != null &&
-    cur.refreshToken &&
-    cur.refreshToken !== expectedRefresh
-  ) {
+  if (expectedRefresh == null) {
+    if (cur.refreshToken) return false;
+    clearPersistedAuth();
+    return true;
+  }
+  if (cur.refreshToken && cur.refreshToken !== expectedRefresh) {
     return false;
   }
   clearPersistedAuth();

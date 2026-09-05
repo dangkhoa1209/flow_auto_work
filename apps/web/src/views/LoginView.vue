@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from "vue";
+import { onMounted, onUnmounted, reactive, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { message } from "ant-design-vue";
 import type { AuthTokensResponse } from "@/api/authApi";
+import { recoverAuthRefreshLocks } from "@/api/http";
 import { LAST_LOGIN_KEY } from "@/api/tokenStorage";
 import { useAuthStore } from "@/stores/auth";
 import { useSessionStore, type Membership } from "@/stores/session";
@@ -78,6 +79,13 @@ function onPointerLeave() {
   glowActive.value = false;
 }
 
+function onLoginVisible() {
+  if (document.visibilityState !== "visible") return;
+  recoverAuthRefreshLocks();
+  // Mobile Home resume can leave a hung Sign-in attempt (button stuck disabled).
+  if (loading.value) loading.value = false;
+}
+
 onMounted(() => {
   try {
     reduceMotion.value = window.matchMedia(
@@ -88,12 +96,18 @@ onMounted(() => {
   }
   try {
     const raw = localStorage.getItem(LAST_LOGIN_KEY);
-    if (!raw) return;
-    const last = JSON.parse(raw) as { username?: string };
-    if (last?.username?.trim()) form.username = last.username.trim();
+    if (raw) {
+      const last = JSON.parse(raw) as { username?: string };
+      if (last?.username?.trim()) form.username = last.username.trim();
+    }
   } catch {
     /* ignore */
   }
+  document.addEventListener("visibilitychange", onLoginVisible);
+});
+
+onUnmounted(() => {
+  document.removeEventListener("visibilitychange", onLoginVisible);
 });
 
 function switchMode(next: "login" | "register") {
@@ -108,6 +122,7 @@ function normalizeUsername(raw: string) {
 }
 
 async function applyAuthAndGo(res: AuthTokensResponse) {
+  recoverAuthRefreshLocks();
   const username = normalizeUsername(
     res.user?.gitlabUsername || form.username,
   );
@@ -148,8 +163,14 @@ async function applyAuthAndGo(res: AuthTokensResponse) {
     }),
   );
 
-  await router.replace(postAuthPath());
-  if (route.name === "login" || router.currentRoute.value.name === "login") {
+  const target = postAuthPath();
+  await router.replace(target);
+  if (router.currentRoute.value.name === "login") {
+    // Stale expire / guard race — retry once after clearing hung refresh locks.
+    recoverAuthRefreshLocks();
+    await router.replace(target);
+  }
+  if (router.currentRoute.value.name === "login") {
     throw new Error(
       "Signed in but session was cleared — please try again",
     );
@@ -170,6 +191,7 @@ async function onLogin(e?: Event) {
   form.username = username;
 
   loading.value = true;
+  recoverAuthRefreshLocks();
   try {
     const res = await auth.login(username, form.password);
     await applyAuthAndGo(res);

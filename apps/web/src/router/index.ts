@@ -258,7 +258,8 @@ router.beforeEach(async (to) => {
       }
       const home = resolveHomeRoute(access);
       if (home === "/login") {
-        await session.logout();
+        // No capability yet (me not loaded) — stay on login without wiping
+        // refresh tokens (mobile wake used to false-logout here).
         return true;
       }
       return home;
