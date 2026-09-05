@@ -225,6 +225,9 @@ type SdkRun = Awaited<
 /** Active Cursor runs keyed by jobId — used by Force Stop. */
 const activeRunsByJob = new Map<string, CancellableRun>();
 
+/** Monotonic generation so a superseded run's end() does not untrack the next. */
+const runGenerationByJob = new Map<string, number>();
+
 /** Kill requested even before a Run is attached (create/send phase). */
 const killRequestedByJob = new Set<string>();
 
@@ -272,6 +275,8 @@ export function beginCancellableJob(jobId: string | undefined): {
     return { check: () => undefined, attach: () => undefined, end: () => undefined };
   }
   let attached: SdkRun | null = null;
+  const generation = (runGenerationByJob.get(jobId) || 0) + 1;
+  runGenerationByJob.set(jobId, generation);
   activeRunsByJob.set(jobId, {
     cancel: async () => {
       markJobKillRequested(jobId);
@@ -287,10 +292,16 @@ export function beginCancellableJob(jobId: string | undefined): {
   return {
     check: () => throwIfKillRequested(jobId),
     attach: (run) => {
+      // Ignore late attach from a run that was already superseded (Stop & send).
+      if (runGenerationByJob.get(jobId) !== generation) return;
       attached = run;
       trackRun(jobId, run);
     },
-    end: () => untrackRun(jobId),
+    end: () => {
+      // Old run's finally must not wipe the next run registered under same key.
+      if (runGenerationByJob.get(jobId) !== generation) return;
+      untrackRun(jobId);
+    },
   };
 }
 

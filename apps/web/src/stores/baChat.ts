@@ -89,6 +89,8 @@ export const useBaChatStore = defineStore("baChat", () => {
   const messages = ref<BaMessage[]>([]);
   const streaming = ref(false);
   const streamingMessageId = ref<string | null>(null);
+  /** True after send until the new assistant placeholder/delta arrives (Stop & send). */
+  const pendingNewStream = ref(false);
   const stopBusy = ref(false);
   const loading = ref(false);
   const errorText = ref("");
@@ -245,6 +247,7 @@ export const useBaChatStore = defineStore("baChat", () => {
     messages.value = [];
     streaming.value = false;
     streamingMessageId.value = null;
+    pendingNewStream.value = false;
     stopBusy.value = false;
     loading.value = false;
     errorText.value = "";
@@ -347,6 +350,9 @@ export const useBaChatStore = defineStore("baChat", () => {
     }
     const threadId = activeThreadId.value!;
     streaming.value = true;
+    // Ignore late ba_done/ba_error from the run we just stopped (Stop & send).
+    streamingMessageId.value = null;
+    pendingNewStream.value = true;
     errorText.value = "";
     clearProgress();
     progressVisible.value = true;
@@ -371,6 +377,7 @@ export const useBaChatStore = defineStore("baChat", () => {
       }
     } catch (e) {
       streaming.value = false;
+      pendingNewStream.value = false;
       errorText.value = e instanceof Error ? e.message : String(e);
       clearProgress();
       throw e;
@@ -403,6 +410,7 @@ export const useBaChatStore = defineStore("baChat", () => {
       if (!ev.message.content && prev.content) {
         streamingMessageId.value = ev.message.id;
         streaming.value = true;
+        pendingNewStream.value = false;
         return;
       }
       messages.value[idx] = ev.message;
@@ -412,6 +420,7 @@ export const useBaChatStore = defineStore("baChat", () => {
     if (ev.message.role === "assistant" && !ev.message.content) {
       streamingMessageId.value = ev.message.id;
       streaming.value = true;
+      pendingNewStream.value = false;
     }
   }
 
@@ -425,6 +434,7 @@ export const useBaChatStore = defineStore("baChat", () => {
     if (ev.threadId !== activeThreadId.value) return;
     streaming.value = true;
     streamingMessageId.value = ev.messageId;
+    pendingNewStream.value = false;
     const idx = messages.value.findIndex((m) => m.id === ev.messageId);
     if (idx >= 0) {
       messages.value[idx] = {
@@ -480,8 +490,18 @@ export const useBaChatStore = defineStore("baChat", () => {
         });
       }
     }
+    // Late done from a previous run must not end the new Stop & send stream.
+    if (
+      pendingNewStream.value ||
+      (streamingMessageId.value != null &&
+        streamingMessageId.value !== ev.messageId)
+    ) {
+      void loadThreads();
+      return;
+    }
     streaming.value = false;
     streamingMessageId.value = null;
+    pendingNewStream.value = false;
     errorText.value = "";
     void loadThreads();
     window.setTimeout(() => {
@@ -509,8 +529,18 @@ export const useBaChatStore = defineStore("baChat", () => {
         }
       }
     }
+    // Late error from a previous run must not end the new Stop & send stream.
+    if (
+      pendingNewStream.value ||
+      (ev.messageId &&
+        streamingMessageId.value != null &&
+        streamingMessageId.value !== ev.messageId)
+    ) {
+      return;
+    }
     streaming.value = false;
     streamingMessageId.value = null;
+    pendingNewStream.value = false;
   }
 
   function applyBaProgress(ev: {

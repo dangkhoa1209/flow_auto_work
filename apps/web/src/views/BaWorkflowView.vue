@@ -143,6 +143,8 @@ const wfThreadId = ref<string | null>(null);
 const wfMessages = ref<WfMessage[]>([]);
 const wfStreaming = ref(false);
 const wfStreamingMessageId = ref<string | null>(null);
+/** True after send until the new assistant placeholder arrives (Stop & send). */
+const wfPendingNewStream = ref(false);
 const wfStopBusy = ref(false);
 const wfProgress = ref<WfProgressItem[]>([]);
 const wfError = ref("");
@@ -238,6 +240,7 @@ function applyWfMessage(ev: RealtimeBaMessage) {
     if (!ev.message.content && prev.content) {
       wfStreamingMessageId.value = ev.message.id;
       wfStreaming.value = true;
+      wfPendingNewStream.value = false;
       return;
     }
     wfMessages.value[idx] = ev.message;
@@ -247,6 +250,7 @@ function applyWfMessage(ev: RealtimeBaMessage) {
   if (ev.message.role === "assistant" && !ev.message.content) {
     wfStreamingMessageId.value = ev.message.id;
     wfStreaming.value = true;
+    wfPendingNewStream.value = false;
   }
 }
 
@@ -268,8 +272,17 @@ function applyWfDone(ev: RealtimeBaDone) {
       createdAt: new Date().toISOString(),
     });
   }
+  // Late done from a previous run must not end the new Stop & send stream.
+  if (
+    wfPendingNewStream.value ||
+    (wfStreamingMessageId.value != null &&
+      wfStreamingMessageId.value !== ev.messageId)
+  ) {
+    return;
+  }
   wfStreaming.value = false;
   wfStreamingMessageId.value = null;
+  wfPendingNewStream.value = false;
   wfError.value = "";
   window.setTimeout(() => {
     if (!wfStreaming.value) clearWfProgress();
@@ -280,8 +293,17 @@ function applyWfError(ev: RealtimeBaError) {
   if (!isMyEvent(ev.userId)) return;
   if (ev.threadId !== wfThreadId.value) return;
   wfError.value = ev.error;
+  if (
+    wfPendingNewStream.value ||
+    (ev.messageId &&
+      wfStreamingMessageId.value != null &&
+      wfStreamingMessageId.value !== ev.messageId)
+  ) {
+    return;
+  }
   wfStreaming.value = false;
   wfStreamingMessageId.value = null;
+  wfPendingNewStream.value = false;
 }
 
 function applyWfProgress(ev: RealtimeBaProgress) {
@@ -352,6 +374,7 @@ async function loadWfMessages() {
   wfMessages.value = res.messages || [];
   wfStreaming.value = false;
   wfStreamingMessageId.value = null;
+  wfPendingNewStream.value = false;
 }
 
 async function ensureThreadForSelected() {
@@ -602,6 +625,9 @@ async function onWfSend(content: string) {
     if (wfStreaming.value) {
       await api(API.ba.stop(wfThreadId.value), { method: "POST" });
     }
+    // Ignore late ba_done from the run we just stopped (Stop & send).
+    wfStreamingMessageId.value = null;
+    wfPendingNewStream.value = true;
     await api(API.ba.messages(wfThreadId.value), {
       method: "POST",
       body: JSON.stringify({

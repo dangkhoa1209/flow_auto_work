@@ -801,6 +801,11 @@ export function kickBaChatAnswer(opts: {
    */
   postProcessAnswer?: (answer: string) => Promise<string | null>;
 }): void {
+  // Stop & send: prior stop() leaves killRequested on this thread. A new user
+  // message must start fresh — clear leftover flag here. Stop pressed after
+  // this kick still hits earlyStop / session.check inside runBaChatAgent.
+  clearJobKillRequested(baCancelKey(opts.threadId));
+
   const assistantId = `bam_${crypto.randomUUID().replace(/-/g, "").slice(0, 16)}`;
 
   void (async () => {
