@@ -237,6 +237,17 @@ function applyWfMessage(ev: RealtimeBaMessage) {
   const idx = wfMessages.value.findIndex((m) => m.id === ev.message.id);
   if (idx >= 0) {
     const prev = wfMessages.value[idx];
+    if (ev.resetStream) {
+      wfMessages.value[idx] = {
+        ...prev,
+        ...ev.message,
+        content: ev.message.content || "",
+      };
+      wfStreamingMessageId.value = ev.message.id;
+      wfStreaming.value = true;
+      wfPendingNewStream.value = false;
+      return;
+    }
     if (!ev.message.content && prev.content) {
       wfStreamingMessageId.value = ev.message.id;
       wfStreaming.value = true;

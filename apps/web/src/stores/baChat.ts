@@ -456,6 +456,7 @@ export const useBaChatStore = defineStore("baChat", () => {
   function applyBaMessage(ev: {
     userId: string;
     threadId: string;
+    resetStream?: boolean;
     message: BaMessage;
   }) {
     if (!isMyEvent(ev.userId)) return;
@@ -467,6 +468,19 @@ export const useBaChatStore = defineStore("baChat", () => {
     const idx = messages.value.findIndex((m) => m.id === ev.message.id);
     if (idx >= 0) {
       const prev = messages.value[idx];
+      // Transient Cursor retry: wipe partial before the next attempt streams.
+      if (ev.resetStream) {
+        messages.value[idx] = {
+          ...prev,
+          ...ev.message,
+          content: ev.message.content || "",
+        };
+        streamingMessageId.value = ev.message.id;
+        streaming.value = true;
+        pendingNewStream.value = false;
+        armStallWatch();
+        return;
+      }
       // Don't wipe streamed text if a late empty placeholder arrives
       if (!ev.message.content && prev.content) {
         streamingMessageId.value = ev.message.id;

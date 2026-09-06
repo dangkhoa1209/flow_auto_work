@@ -54,6 +54,8 @@ export type RealtimeEvent =
       type: "ba_message";
       userId: string;
       threadId: string;
+      /** Transient Cursor retry — clear prior partial deltas on the same bubble. */
+      resetStream?: boolean;
       message: {
         id: string;
         threadId: string;

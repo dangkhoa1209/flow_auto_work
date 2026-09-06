@@ -2,6 +2,7 @@ import { Agent } from "@cursor/sdk";
 import { setMaxListeners } from "node:events";
 import { logger } from "../../logger.js";
 import { publishRealtime } from "../realtime/hub.js";
+import { getConfig } from "../../config.js";
 import {
   beginCancellableJob,
   cancelActiveAgentRun,
@@ -10,6 +11,7 @@ import {
   formatCursorAgentFailure,
   isJobKillRequested,
   isTransientCursorTransportError,
+  markCursorTransient,
 } from "./run.js";
 import { persistCursorUsage } from "../cursor/recordUsage.js";
 import { readOnlyAgentPolicy } from "../cursor/agentPolicy.js";
@@ -795,31 +797,100 @@ export async function runBaChatAgent(opts: {
       return finalText;
     };
 
-    try {
-      const answer = await withTimeout(work(), BA_TIMEOUT_MS, "BA chat");
-      publishBaProgress({
-        userId: opts.userId,
-        threadId: opts.threadId,
-        messageId: opts.assistantMessageId,
-        step: "done",
-        label: "Xong",
-      });
-      return answer;
-    } catch (err) {
-      const raw = err instanceof Error ? err.message : String(err);
-      if (/Force-stopped|cancelled/i.test(raw)) {
-        const stopped = new Error("Force-stopped from UI") as Error & {
-          partial?: string;
-        };
-        stopped.partial = (err as Error & { partial?: string }).partial;
-        throw stopped;
+    // Same policy as /work (`queue.runAgentWithRetry`): Cursor cut / transport
+    // flakes retry up to AGENT_TRANSIENT_RETRIES before surfacing ba_error.
+    const maxRetries = Math.max(0, getConfig().AGENT_TRANSIENT_RETRIES);
+    let attempt = 0;
+    while (true) {
+      try {
+        const answer = await withTimeout(work(), BA_TIMEOUT_MS, "BA chat");
+        publishBaProgress({
+          userId: opts.userId,
+          threadId: opts.threadId,
+          messageId: opts.assistantMessageId,
+          step: "done",
+          label: "Xong",
+        });
+        return answer;
+      } catch (err) {
+        const raw = err instanceof Error ? err.message : String(err);
+        if (/Force-stopped|cancelled/i.test(raw)) {
+          const stopped = new Error("Force-stopped from UI") as Error & {
+            partial?: string;
+          };
+          stopped.partial = (err as Error & { partial?: string }).partial;
+          throw stopped;
+        }
+
+        const canRetry =
+          isTransientCursorTransportError(err) &&
+          attempt < maxRetries &&
+          !isJobKillRequested(cancelKey);
+
+        if (!canRetry) {
+          const wrapped = new Error(
+            formatCursorAgentFailure(
+              err,
+              err instanceof Error ? err.message : String(err),
+            ),
+          );
+          if (isTransientCursorTransportError(err)) {
+            markCursorTransient(wrapped);
+          }
+          throw wrapped;
+        }
+
+        attempt += 1;
+        const delayMs = attempt * 5000;
+        publishBaProgress({
+          userId: opts.userId,
+          threadId: opts.threadId,
+          messageId: opts.assistantMessageId,
+          step: "start",
+          label: `Lỗi mạng Cursor tạm thời — tự retry ${attempt}/${maxRetries} sau ${delayMs / 1000}s`,
+          detail: raw.slice(0, 120),
+        });
+        logger.warn("BA chat transient Cursor error — retrying", {
+          threadId: opts.threadId,
+          attempt,
+          maxRetries,
+          err: raw,
+        });
+
+        // Wipe partial so the next attempt does not append onto stale deltas.
+        try {
+          await updateBaMessageContent(opts.assistantMessageId, "", {
+            streamStatus: "streaming",
+          });
+        } catch {
+          /* best-effort */
+        }
+        publishRealtime({
+          type: "ba_message",
+          userId: opts.userId,
+          threadId: opts.threadId,
+          resetStream: true,
+          message: {
+            id: opts.assistantMessageId,
+            threadId: opts.threadId,
+            role: "assistant",
+            content: "",
+            createdAt: new Date().toISOString(),
+          },
+        });
+
+        await new Promise((r) => setTimeout(r, delayMs));
+        try {
+          session.check();
+        } catch (stopErr) {
+          const stopMsg =
+            stopErr instanceof Error ? stopErr.message : String(stopErr);
+          if (/Force-stopped|cancelled/i.test(stopMsg)) {
+            throw new Error("Force-stopped from UI");
+          }
+          throw stopErr;
+        }
       }
-      throw new Error(
-        formatCursorAgentFailure(
-          err,
-          err instanceof Error ? err.message : String(err),
-        ),
-      );
     }
   } finally {
     session.end();
