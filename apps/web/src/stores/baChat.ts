@@ -77,6 +77,9 @@ const STEP_ORDER: BaProgressStep[] = [
   "done",
 ];
 
+/** No SSE activity while streaming → reload thread from API (hub has no replay). */
+const STREAM_STALL_MS = 20_000;
+
 export const useBaChatStore = defineStore("baChat", () => {
   const session = useSessionStore();
 
@@ -92,6 +95,9 @@ export const useBaChatStore = defineStore("baChat", () => {
   /** True after send until the new assistant placeholder/delta arrives (Stop & send). */
   const pendingNewStream = ref(false);
   const stopBusy = ref(false);
+  let stallTimer: ReturnType<typeof setTimeout> | undefined;
+  let resyncTimer: ReturnType<typeof setTimeout> | undefined;
+  let resyncInFlight = false;
   const loading = ref(false);
   const errorText = ref("");
   const progress = ref<BaProgressItem[]>([]);
@@ -171,6 +177,57 @@ export const useBaChatStore = defineStore("baChat", () => {
     progressVisible.value = false;
   }
 
+  function clearStallWatch() {
+    if (stallTimer) {
+      clearTimeout(stallTimer);
+      stallTimer = undefined;
+    }
+  }
+
+  function armStallWatch() {
+    clearStallWatch();
+    if (!streaming.value) return;
+    stallTimer = setTimeout(() => {
+      stallTimer = undefined;
+      if (!streaming.value) return;
+      void resyncRealtime().finally(() => {
+        if (streaming.value) armStallWatch();
+      });
+    }, STREAM_STALL_MS);
+  }
+
+  /** Keep local streamed text when server still has empty placeholder. */
+  function mergeThreadMessages(
+    local: BaMessage[],
+    server: BaMessage[],
+  ): BaMessage[] {
+    const byId = new Map<string, BaMessage>();
+    for (const m of server) byId.set(m.id, { ...m });
+    for (const m of local) {
+      const s = byId.get(m.id);
+      if (!s) {
+        byId.set(m.id, m);
+        continue;
+      }
+      if ((m.content?.length || 0) > (s.content?.length || 0)) {
+        byId.set(m.id, { ...s, content: m.content });
+      }
+    }
+    const serverIds = new Set(server.map((m) => m.id));
+    const out = server.map((m) => byId.get(m.id)!);
+    for (const m of local) {
+      if (!serverIds.has(m.id)) out.push(byId.get(m.id)!);
+    }
+    return out;
+  }
+
+  function endStreamingUi() {
+    streaming.value = false;
+    streamingMessageId.value = null;
+    pendingNewStream.value = false;
+    clearStallWatch();
+  }
+
   function persistProjectId(id: string | null) {
     selectedProjectId.value = id;
     if (id) safeSetItem("flow_ba_project_id", id);
@@ -231,8 +288,7 @@ export const useBaChatStore = defineStore("baChat", () => {
     ) {
       activeThreadId.value = null;
       messages.value = [];
-      streaming.value = false;
-      streamingMessageId.value = null;
+      endStreamingUi();
       clearProgress();
     }
   }
@@ -245,12 +301,15 @@ export const useBaChatStore = defineStore("baChat", () => {
     threads.value = [];
     activeThreadId.value = null;
     messages.value = [];
-    streaming.value = false;
-    streamingMessageId.value = null;
-    pendingNewStream.value = false;
+    endStreamingUi();
     stopBusy.value = false;
     loading.value = false;
     errorText.value = "";
+    if (resyncTimer) {
+      clearTimeout(resyncTimer);
+      resyncTimer = undefined;
+    }
+    resyncInFlight = false;
     clearProgress();
     clearIssueDraft();
   }
@@ -363,6 +422,7 @@ export const useBaChatStore = defineStore("baChat", () => {
         at: new Date().toISOString(),
       },
     ];
+    armStallWatch();
     try {
       const data = await api<{ message?: BaMessage }>(API.ba.messages(threadId), {
         method: "POST",
@@ -376,8 +436,7 @@ export const useBaChatStore = defineStore("baChat", () => {
         if (!exists) messages.value.push(data.message);
       }
     } catch (e) {
-      streaming.value = false;
-      pendingNewStream.value = false;
+      endStreamingUi();
       errorText.value = e instanceof Error ? e.message : String(e);
       clearProgress();
       throw e;
@@ -411,6 +470,7 @@ export const useBaChatStore = defineStore("baChat", () => {
         streamingMessageId.value = ev.message.id;
         streaming.value = true;
         pendingNewStream.value = false;
+        armStallWatch();
         return;
       }
       messages.value[idx] = ev.message;
@@ -421,6 +481,7 @@ export const useBaChatStore = defineStore("baChat", () => {
       streamingMessageId.value = ev.message.id;
       streaming.value = true;
       pendingNewStream.value = false;
+      armStallWatch();
     }
   }
 
@@ -435,6 +496,7 @@ export const useBaChatStore = defineStore("baChat", () => {
     streaming.value = true;
     streamingMessageId.value = ev.messageId;
     pendingNewStream.value = false;
+    armStallWatch();
     const idx = messages.value.findIndex((m) => m.id === ev.messageId);
     if (idx >= 0) {
       messages.value[idx] = {
@@ -490,18 +552,16 @@ export const useBaChatStore = defineStore("baChat", () => {
         });
       }
     }
-    // Late done from a previous run must not end the new Stop & send stream.
+    // Only ignore late done once we know the new stream's message id.
+    // pendingNewStream alone must not block — missed ba_message left UI stuck.
     if (
-      pendingNewStream.value ||
-      (streamingMessageId.value != null &&
-        streamingMessageId.value !== ev.messageId)
+      streamingMessageId.value != null &&
+      streamingMessageId.value !== ev.messageId
     ) {
       void loadThreads();
       return;
     }
-    streaming.value = false;
-    streamingMessageId.value = null;
-    pendingNewStream.value = false;
+    endStreamingUi();
     errorText.value = "";
     void loadThreads();
     window.setTimeout(() => {
@@ -529,18 +589,19 @@ export const useBaChatStore = defineStore("baChat", () => {
         }
       }
     }
-    // Late error from a previous run must not end the new Stop & send stream.
     if (
-      pendingNewStream.value ||
-      (ev.messageId &&
-        streamingMessageId.value != null &&
-        streamingMessageId.value !== ev.messageId)
+      ev.messageId &&
+      streamingMessageId.value != null &&
+      streamingMessageId.value !== ev.messageId
     ) {
       return;
     }
-    streaming.value = false;
-    streamingMessageId.value = null;
-    pendingNewStream.value = false;
+    // While waiting for the new placeholder, ignore errors without messageId
+    // from a prior run (Stop & send).
+    if (pendingNewStream.value && !ev.messageId) {
+      return;
+    }
+    endStreamingUi();
   }
 
   function applyBaProgress(ev: {
@@ -555,6 +616,7 @@ export const useBaChatStore = defineStore("baChat", () => {
     if (!isChatTabThread(ev.threadId)) return;
     if (ev.threadId !== activeThreadId.value) return;
     progressVisible.value = true;
+    if (streaming.value) armStallWatch();
     const item: BaProgressItem = {
       step: ev.step,
       label: ev.label,
@@ -662,6 +724,7 @@ export const useBaChatStore = defineStore("baChat", () => {
             progress.value = keepProgress;
             progressVisible.value = keepProgress.length > 0;
           }
+          armStallWatch();
         } else if (!keepStreaming) {
           await selectThread(keepThreadId);
         }
@@ -671,15 +734,86 @@ export const useBaChatStore = defineStore("baChat", () => {
     }
   }
 
-  /** After SSE wake — refresh open thread unless a stream is in flight. */
+  /**
+   * After SSE wake / stall — refresh open thread.
+   * Must still merge while streaming: hub has no replay; disconnect mid-stream
+   * would otherwise leave the UI stuck until F5.
+   */
   async function resyncRealtime() {
     const id = activeThreadId.value;
-    if (!id || streaming.value) return;
-    try {
-      await selectThread(id);
-    } catch {
-      /* ignore */
-    }
+    if (!id) return;
+    if (resyncTimer) clearTimeout(resyncTimer);
+    resyncTimer = setTimeout(() => {
+      resyncTimer = undefined;
+      if (resyncInFlight) return;
+      resyncInFlight = true;
+      void (async () => {
+        try {
+          const wasStreaming = streaming.value;
+          const streamMsgId = streamingMessageId.value;
+          const localSnap = wasStreaming ? messages.value.slice() : null;
+
+          const data = await api<{
+            messages?: BaMessage[];
+            thread?: BaThread;
+          }>(API.ba.messages(id));
+          // User may have switched thread while the request was in flight.
+          if (activeThreadId.value !== id) return;
+
+          const serverMsgs = data.messages || [];
+          if (data.thread) {
+            const idx = threads.value.findIndex((t) => t.id === data.thread!.id);
+            if (idx >= 0) threads.value[idx] = data.thread;
+          }
+
+          if (!wasStreaming || !localSnap) {
+            messages.value = serverMsgs;
+            return;
+          }
+
+          messages.value = mergeThreadMessages(localSnap, serverMsgs);
+
+          if (streamMsgId) {
+            const serverMsg = serverMsgs.find((m) => m.id === streamMsgId);
+            if (serverMsg?.content?.trim()) {
+              endStreamingUi();
+              errorText.value = "";
+              window.setTimeout(() => {
+                if (!streaming.value) clearProgress();
+              }, 800);
+              return;
+            }
+            // Still empty on server — agent likely still running; keep local stream.
+            pendingNewStream.value = false;
+            return;
+          }
+
+          const lastAsst = [...serverMsgs]
+            .reverse()
+            .find((m) => m.role === "assistant");
+          if (lastAsst?.content?.trim()) {
+            // Finished while we were disconnected / missed ba_message+ba_done.
+            endStreamingUi();
+            errorText.value = "";
+            window.setTimeout(() => {
+              if (!streaming.value) clearProgress();
+            }, 800);
+            return;
+          }
+          if (lastAsst && !lastAsst.content?.trim()) {
+            streamingMessageId.value = lastAsst.id;
+            pendingNewStream.value = false;
+            streaming.value = true;
+            return;
+          }
+          // No assistant yet — keep waiting for placeholder.
+        } catch {
+          /* ignore */
+        } finally {
+          resyncInFlight = false;
+        }
+      })();
+    }, 250);
   }
 
   return {
