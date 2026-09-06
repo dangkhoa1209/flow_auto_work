@@ -82,6 +82,12 @@ const STEP_ORDER: BaProgressStep[] = [
 /** No SSE activity while streaming → reload thread from API (hub has no replay). */
 const STREAM_STALL_MS = 20_000;
 
+/**
+ * While streaming, if assistant bubble stays empty this long (despite resync),
+ * give up — agent likely hung / process died without finalize.
+ */
+const STREAM_EMPTY_GIVE_UP_MS = 3 * 60 * 1000;
+
 export const useBaChatStore = defineStore("baChat", () => {
   const session = useSessionStore();
 
@@ -98,6 +104,10 @@ export const useBaChatStore = defineStore("baChat", () => {
   const pendingNewStream = ref(false);
   const stopBusy = ref(false);
   let stallTimer: ReturnType<typeof setTimeout> | undefined;
+  /** Wall-clock when current stream started (empty give-up). */
+  let streamStartedAt = 0;
+  /** Last time we saw delta / progress / non-empty stream content. */
+  let streamLastActivityAt = 0;
   let resyncTimer: ReturnType<typeof setTimeout> | undefined;
   let resyncInFlight = false;
   const loading = ref(false);
@@ -186,12 +196,65 @@ export const useBaChatStore = defineStore("baChat", () => {
     }
   }
 
+  function markStreamActivity() {
+    streamLastActivityAt = Date.now();
+  }
+
+  function streamAssistantContent(): string {
+    const id = streamingMessageId.value;
+    if (!id) return "";
+    return messages.value.find((m) => m.id === id)?.content?.trim() || "";
+  }
+
+  function giveUpEmptyStream(reason: string) {
+    if (!streaming.value) return;
+    errorText.value = reason;
+    const id = streamingMessageId.value;
+    if (id) {
+      const idx = messages.value.findIndex((m) => m.id === id);
+      if (idx >= 0) {
+        const cur = messages.value[idx].content?.trim() || "";
+        if (!cur) {
+          messages.value[idx] = {
+            ...messages.value[idx],
+            content: `⚠️ ${reason}`,
+            streamStatus: "error",
+          };
+        } else if (!cur.includes("⚠️")) {
+          messages.value[idx] = {
+            ...messages.value[idx],
+            content: `${cur}\n\n⚠️ ${reason}`,
+            streamStatus: "error",
+          };
+        }
+      }
+    }
+    endStreamingUi();
+  }
+
   function armStallWatch() {
     clearStallWatch();
     if (!streaming.value) return;
     stallTimer = setTimeout(() => {
       stallTimer = undefined;
       if (!streaming.value) return;
+
+      const emptyMs = Date.now() - (streamLastActivityAt || streamStartedAt);
+      const sinceStart = Date.now() - (streamStartedAt || Date.now());
+      const emptyContent = !streamAssistantContent();
+      // Give up only when bubble still empty and no activity for STREAM_EMPTY_GIVE_UP_MS.
+      if (
+        emptyContent &&
+        streamStartedAt > 0 &&
+        sinceStart >= STREAM_EMPTY_GIVE_UP_MS &&
+        emptyMs >= STREAM_EMPTY_GIVE_UP_MS
+      ) {
+        giveUpEmptyStream(
+          "Agent không phản hồi (quá lâu không có nội dung) — hãy Gửi lại.",
+        );
+        return;
+      }
+
       void resyncRealtime().finally(() => {
         if (streaming.value) armStallWatch();
       });
@@ -227,6 +290,8 @@ export const useBaChatStore = defineStore("baChat", () => {
     streaming.value = false;
     streamingMessageId.value = null;
     pendingNewStream.value = false;
+    streamStartedAt = 0;
+    streamLastActivityAt = 0;
     clearStallWatch();
   }
 
@@ -414,6 +479,8 @@ export const useBaChatStore = defineStore("baChat", () => {
     // Ignore late ba_done/ba_error from the run we just stopped (Stop & send).
     streamingMessageId.value = null;
     pendingNewStream.value = true;
+    streamStartedAt = Date.now();
+    streamLastActivityAt = Date.now();
     errorText.value = "";
     clearProgress();
     progressVisible.value = true;
@@ -478,6 +545,9 @@ export const useBaChatStore = defineStore("baChat", () => {
         streamingMessageId.value = ev.message.id;
         streaming.value = true;
         pendingNewStream.value = false;
+        // Retry wipe — reset empty give-up clock so user isn't cut mid-retry.
+        streamStartedAt = Date.now();
+        markStreamActivity();
         armStallWatch();
         return;
       }
@@ -512,6 +582,7 @@ export const useBaChatStore = defineStore("baChat", () => {
     streaming.value = true;
     streamingMessageId.value = ev.messageId;
     pendingNewStream.value = false;
+    markStreamActivity();
     armStallWatch();
     const idx = messages.value.findIndex((m) => m.id === ev.messageId);
     if (idx >= 0) {
@@ -597,11 +668,22 @@ export const useBaChatStore = defineStore("baChat", () => {
       errorText.value = ev.error;
       if (ev.messageId) {
         const idx = messages.value.findIndex((m) => m.id === ev.messageId);
-        if (idx >= 0 && !messages.value[idx].content) {
-          messages.value[idx] = {
-            ...messages.value[idx],
-            content: `⚠️ ${ev.error}`,
-          };
+        if (idx >= 0) {
+          const cur = messages.value[idx].content?.trim() || "";
+          if (!cur) {
+            messages.value[idx] = {
+              ...messages.value[idx],
+              content: `⚠️ ${ev.error}`,
+              streamStatus: "error",
+            };
+          } else if (!cur.includes("⚠️")) {
+            // Partial text already shown — still mark failure so UX is not "done".
+            messages.value[idx] = {
+              ...messages.value[idx],
+              content: `${cur}\n\n⚠️ ${ev.error}`,
+              streamStatus: "error",
+            };
+          }
         }
       }
     }
@@ -632,6 +714,7 @@ export const useBaChatStore = defineStore("baChat", () => {
     if (!isChatTabThread(ev.threadId)) return;
     if (ev.threadId !== activeThreadId.value) return;
     progressVisible.value = true;
+    markStreamActivity();
     if (streaming.value) armStallWatch();
     const item: BaProgressItem = {
       step: ev.step,
@@ -793,6 +876,7 @@ export const useBaChatStore = defineStore("baChat", () => {
             const serverMsg = serverMsgs.find((m) => m.id === streamMsgId);
             if (serverMsg?.streamStatus === "streaming") {
               // Partial text may already be in DB — keep waiting for ba_done.
+              if (serverMsg.content?.trim()) markStreamActivity();
               pendingNewStream.value = false;
               return;
             }

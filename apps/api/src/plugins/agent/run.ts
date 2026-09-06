@@ -140,7 +140,7 @@ export function errorFromCursorRunStatus(
     return markCursorTransient(
       new Error(
         `Cursor cắt ${label.toLowerCase()} run sau ${when}${meta}. ` +
-          `Thường do timeout / mất stream phía Cursor — hệ thống sẽ tự thử lại nếu còn lượt; không thì Gửi/Run lại.`,
+          `Thường do timeout / mất stream phía Cursor — hệ thống có thể tự thử lại nếu còn lượt; hết lượt thì Gửi/Run lại.`,
       ),
     );
   }
@@ -290,7 +290,14 @@ export function beginCancellableJob(jobId: string | undefined): {
     },
   });
   return {
-    check: () => throwIfKillRequested(jobId),
+    check: () => {
+      throwIfKillRequested(jobId);
+      // Stop & send / supersede: new beginCancellableJob bumps generation and
+      // may clear killRequested — old run must still abort on next check.
+      if (runGenerationByJob.get(jobId) !== generation) {
+        throw new Error("Force-stopped from UI");
+      }
+    },
     attach: (run) => {
       // Ignore late attach from a run that was already superseded (Stop & send).
       if (runGenerationByJob.get(jobId) !== generation) return;

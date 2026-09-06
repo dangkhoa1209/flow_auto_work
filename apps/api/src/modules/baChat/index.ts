@@ -13,7 +13,16 @@ import {
 import { isGitRepo } from "../../workspace/clone.js";
 import { AppError } from "../../utils/AppError.js";
 import { publishRealtime } from "../../plugins/realtime/hub.js";
-import { kickBaChatAnswer, stopBaThreadAgent } from "../../plugins/agent/baChat.js";
+import {
+  baCancelKey,
+  isBaAnswerInFlight,
+  kickBaChatAnswer,
+  releaseBaAnswerClaim,
+  stopBaThreadAgent,
+  tryClaimBaAnswer,
+  waitBaAnswerIdle,
+} from "../../plugins/agent/baChat.js";
+import { isJobKillRequested } from "../../plugins/agent/run.js";
 import { getWorkflowChatContext } from "../baWorkbench/index.js";
 
 export async function baStopThread(userId: string, threadId: string) {
@@ -99,36 +108,69 @@ export async function baSendMessage(
     );
   }
 
-  const existing = await listBaMessages(threadId);
-  const userMsg = await appendBaMessage({
-    threadId,
-    role: "user",
-    content,
-  });
-  publishRealtime({
-    type: "ba_message",
-    userId: userId.toLowerCase(),
-    threadId,
-    message: userMsg,
-  });
+  // 1 thread = 1 agent run. Stop & send: client stops first (killRequested) → wait idle.
+  const cancelKey = baCancelKey(threadId);
+  if (isBaAnswerInFlight(threadId)) {
+    if (isJobKillRequested(cancelKey)) {
+      const idle = await waitBaAnswerIdle(threadId, 10_000);
+      if (!idle) {
+        throw new AppError(
+          "Agent đang dừng — thử lại sau vài giây",
+          409,
+          "ba_thread_stopping",
+        );
+      }
+    } else {
+      throw new AppError(
+        "Agent đang trả lời hội thoại này — dừng hoặc đợi xong rồi gửi tiếp",
+        409,
+        "ba_thread_busy",
+      );
+    }
+  }
+  if (!tryClaimBaAnswer(threadId)) {
+    throw new AppError(
+      "Agent đang trả lời hội thoại này — dừng hoặc đợi xong rồi gửi tiếp",
+      409,
+      "ba_thread_busy",
+    );
+  }
 
-  // Thread gắn YC workflow → chat có thể cập nhật thẳng Kết quả phân tích.
-  const workflowCtx = await getWorkflowChatContext(userId, threadId);
+  try {
+    const existing = await listBaMessages(threadId);
+    const userMsg = await appendBaMessage({
+      threadId,
+      role: "user",
+      content,
+    });
+    publishRealtime({
+      type: "ba_message",
+      userId: userId.toLowerCase(),
+      threadId,
+      message: userMsg,
+    });
 
-  kickBaChatAnswer({
-    userId: userId.toLowerCase(),
-    threadId,
-    baProjectId: thread.baProjectId,
-    question: content,
-    isFirstUserMessage: existing.filter((m) => m.role === "user").length === 0,
-    analysisMode: Boolean(body.analysisMode),
-    workflowBlock: workflowCtx?.workflowBlock,
-    postProcessAnswer: workflowCtx?.postProcessAnswer,
-  });
+    // Thread gắn YC workflow → chat có thể cập nhật thẳng Kết quả phân tích.
+    const workflowCtx = await getWorkflowChatContext(userId, threadId);
 
-  return {
-    message: userMsg,
-    streaming: true,
-    analysisMode: Boolean(body.analysisMode),
-  };
+    kickBaChatAnswer({
+      userId: userId.toLowerCase(),
+      threadId,
+      baProjectId: thread.baProjectId,
+      question: content,
+      isFirstUserMessage: existing.filter((m) => m.role === "user").length === 0,
+      analysisMode: Boolean(body.analysisMode),
+      workflowBlock: workflowCtx?.workflowBlock,
+      postProcessAnswer: workflowCtx?.postProcessAnswer,
+    });
+
+    return {
+      message: userMsg,
+      streaming: true,
+      analysisMode: Boolean(body.analysisMode),
+    };
+  } catch (err) {
+    releaseBaAnswerClaim(threadId);
+    throw err;
+  }
 }

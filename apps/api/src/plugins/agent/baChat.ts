@@ -9,6 +9,7 @@ import {
   clearJobKillRequested,
   errorFromCursorRunStatus,
   formatCursorAgentFailure,
+  hasActiveAgentRun,
   isJobKillRequested,
   isTransientCursorTransportError,
   markCursorTransient,
@@ -235,6 +236,66 @@ export function baCancelKey(threadId: string): string {
   return `ba:${threadId}`;
 }
 
+/**
+ * Claimed while kickBaChatAnswer is in flight (before/after Cursor attach).
+ * Closes the race where two POSTs both pass hasActiveAgentRun before either
+ * beginCancellableJob registers.
+ */
+const baAnswerClaimByThread = new Set<string>();
+
+export function isBaAnswerInFlight(threadId: string): boolean {
+  return (
+    baAnswerClaimByThread.has(threadId) ||
+    hasActiveAgentRun(baCancelKey(threadId))
+  );
+}
+
+function claimBaAnswer(threadId: string): boolean {
+  if (isBaAnswerInFlight(threadId)) return false;
+  baAnswerClaimByThread.add(threadId);
+  return true;
+}
+
+function releaseBaAnswer(threadId: string): void {
+  baAnswerClaimByThread.delete(threadId);
+}
+
+/** Wait until thread has no claim + no active Cursor run (Stop & send). */
+export async function waitBaAnswerIdle(
+  threadId: string,
+  timeoutMs = 10_000,
+): Promise<boolean> {
+  const start = Date.now();
+  while (isBaAnswerInFlight(threadId)) {
+    if (Date.now() - start >= timeoutMs) return false;
+    await new Promise((r) => setTimeout(r, 80));
+  }
+  return true;
+}
+
+/** Wait only for Cursor run to untrack (claim may already be held by new kick). */
+async function waitBaAgentRunIdle(
+  threadId: string,
+  timeoutMs = 8_000,
+): Promise<boolean> {
+  const key = baCancelKey(threadId);
+  const start = Date.now();
+  while (hasActiveAgentRun(key)) {
+    if (Date.now() - start >= timeoutMs) return false;
+    await new Promise((r) => setTimeout(r, 80));
+  }
+  return true;
+}
+
+/** Claim answer slot for this thread. Caller must release via kick finally / releaseBaAnswerClaim. */
+export function tryClaimBaAnswer(threadId: string): boolean {
+  return claimBaAnswer(threadId);
+}
+
+export function releaseBaAnswerClaim(threadId: string): void {
+  releaseBaAnswer(threadId);
+}
+
 export async function stopBaThreadAgent(threadId: string): Promise<boolean> {
   return cancelActiveAgentRun(baCancelKey(threadId));
 }
@@ -242,6 +303,12 @@ export async function stopBaThreadAgent(threadId: string): Promise<boolean> {
 setMaxListeners(50);
 
 const BA_TIMEOUT_MS = 10 * 60 * 1000;
+
+/** Wall-clock BA limit — must NOT auto-retry (unlike Cursor transport timeouts). */
+function isBaWallClockTimeout(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /^BA chat timed out after/i.test(msg);
+}
 
 function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -548,6 +615,7 @@ export async function runBaChatAgent(opts: {
       detail: dbAccess.allowed ? `${modelLabel} · DB ON` : modelLabel,
     });
 
+    // Prep (git/graphify/linked) runs once; only Cursor Agent.create+stream retries.
     const work = async (): Promise<string> => {
       session.check();
       const customTools = mergeBaAgentCustomTools(
@@ -620,8 +688,14 @@ export async function runBaChatAgent(opts: {
                 streamStatus: "streaming",
               }),
             )
-            .catch(() => {
-              /* best-effort mid-stream persist */
+            .catch((flushErr) => {
+              logger.warn("BA mid-stream DB flush failed", {
+                messageId: opts.assistantMessageId,
+                err:
+                  flushErr instanceof Error
+                    ? flushErr.message
+                    : String(flushErr),
+              });
             });
         };
         if (force) {
@@ -798,7 +872,7 @@ export async function runBaChatAgent(opts: {
     };
 
     // Same policy as /work (`queue.runAgentWithRetry`): Cursor cut / transport
-    // flakes retry up to AGENT_TRANSIENT_RETRIES before surfacing ba_error.
+    // flakes retry up to AGENT_TRANSIENT_RETRIES. BA wall-clock timeout does not.
     const maxRetries = Math.max(0, getConfig().AGENT_TRANSIENT_RETRIES);
     let attempt = 0;
     while (true) {
@@ -824,17 +898,28 @@ export async function runBaChatAgent(opts: {
 
         const canRetry =
           isTransientCursorTransportError(err) &&
+          !isBaWallClockTimeout(err) &&
           attempt < maxRetries &&
           !isJobKillRequested(cancelKey);
 
         if (!canRetry) {
-          const wrapped = new Error(
-            formatCursorAgentFailure(
-              err,
-              err instanceof Error ? err.message : String(err),
-            ),
+          let failMsg = formatCursorAgentFailure(
+            err,
+            err instanceof Error ? err.message : String(err),
           );
-          if (isTransientCursorTransportError(err)) {
+          if (
+            isTransientCursorTransportError(err) &&
+            !isBaWallClockTimeout(err) &&
+            attempt >= maxRetries &&
+            maxRetries > 0
+          ) {
+            failMsg = `${failMsg.replace(/\s*$/, "")} Đã hết lượt tự thử lại — hãy Gửi lại.`;
+          }
+          const wrapped = new Error(failMsg);
+          if (
+            isTransientCursorTransportError(err) &&
+            !isBaWallClockTimeout(err)
+          ) {
             markCursorTransient(wrapped);
           }
           throw wrapped;
@@ -914,15 +999,19 @@ export function kickBaChatAnswer(opts: {
    */
   postProcessAnswer?: (answer: string) => Promise<string | null>;
 }): void {
-  // Stop & send: prior stop() leaves killRequested on this thread. A new user
-  // message must start fresh — clear leftover flag here. Stop pressed after
-  // this kick still hits earlyStop / session.check inside runBaChatAgent.
-  clearJobKillRequested(baCancelKey(opts.threadId));
-
+  const cancelKey = baCancelKey(opts.threadId);
   const assistantId = `bam_${crypto.randomUUID().replace(/-/g, "").slice(0, 16)}`;
 
   void (async () => {
     try {
+      // Stop & send: cancel leftover run, wait for untrack, then clear kill so
+      // the new run is not immediately aborted. Generation check also supersedes.
+      if (hasActiveAgentRun(cancelKey) || isJobKillRequested(cancelKey)) {
+        await cancelActiveAgentRun(cancelKey);
+        await waitBaAgentRunIdle(opts.threadId, 8_000);
+      }
+      clearJobKillRequested(cancelKey);
+
       const placeholder = await appendBaMessage({
         id: assistantId,
         threadId: opts.threadId,
@@ -997,7 +1086,9 @@ export function kickBaChatAnswer(opts: {
           ? `${existing}\n\n⏹ Đã dừng theo yêu cầu.`
           : "⏹ Đã dừng theo yêu cầu."
         : existing
-          ? existing
+          ? existing.includes("⚠️")
+            ? existing
+            : `${existing}\n\n⚠️ ${msg}`
           : `⚠️ ${msg}`;
 
       try {
@@ -1040,6 +1131,8 @@ export function kickBaChatAnswer(opts: {
           detail: msg.slice(0, 120),
         });
       }
+    } finally {
+      releaseBaAnswer(opts.threadId);
     }
   })();
 }
