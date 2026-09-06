@@ -946,12 +946,17 @@ export type BaThread = {
 
 export type BaMessageRole = "user" | "assistant" | "system";
 
+/** Present while assistant is still streaming; omit / done / error after finalize. */
+export type BaMessageStreamStatus = "streaming" | "done" | "error";
+
 export type BaMessage = {
   id: string;
   threadId: string;
   role: BaMessageRole;
   content: string;
   createdAt: string;
+  /** Set on assistant placeholders; clients use this to avoid ending UI mid-stream. */
+  streamStatus?: BaMessageStreamStatus;
 };
 
 
@@ -1117,6 +1122,7 @@ export async function appendBaMessage(opts: {
   role: BaMessageRole;
   content: string;
   id?: string;
+  streamStatus?: BaMessageStreamStatus;
 }): Promise<BaMessage> {
   const doc: BaMessage = {
     id: opts.id || `bam_${crypto.randomUUID().replace(/-/g, "").slice(0, 16)}`,
@@ -1124,6 +1130,7 @@ export async function appendBaMessage(opts: {
     role: opts.role,
     content: opts.content,
     createdAt: new Date().toISOString(),
+    ...(opts.streamStatus ? { streamStatus: opts.streamStatus } : {}),
   };
   await BaMessageModel.insert(doc);
   await bumpBaThreadIssueDraftVersion(opts.threadId);
@@ -1133,11 +1140,37 @@ export async function appendBaMessage(opts: {
 export async function updateBaMessageContent(
   id: string,
   content: string,
+  opts?: {
+    streamStatus?: BaMessageStreamStatus;
+    /** Default true except mid-stream flushes (avoid thrashing issue-draft cache). */
+    bumpIssueDraft?: boolean;
+  },
 ): Promise<void> {
   const existing = await BaMessageModel.findOne({ id });
   if (!existing) return;
-  await BaMessageModel.updateOne({ id }, { $set: { content } });
-  await bumpBaThreadIssueDraftVersion(existing.threadId);
+  const $set: Record<string, unknown> = { content };
+  if (opts?.streamStatus) $set.streamStatus = opts.streamStatus;
+
+  // Mid-stream flushes must not clobber a finalized message (late timer race).
+  if (opts?.streamStatus === "streaming") {
+    await BaMessageModel.updateOne(
+      {
+        id,
+        $or: [
+          { streamStatus: "streaming" },
+          { streamStatus: { $exists: false } },
+        ],
+      },
+      { $set },
+    );
+    return;
+  }
+
+  await BaMessageModel.updateOne({ id }, { $set });
+  const bump = opts?.bumpIssueDraft !== false;
+  if (bump) {
+    await bumpBaThreadIssueDraftVersion(existing.threadId);
+  }
 }
 
 /* ── BA requirements (YC workflow) ── */

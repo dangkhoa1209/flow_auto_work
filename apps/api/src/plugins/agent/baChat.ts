@@ -595,6 +595,45 @@ export async function runBaChatAgent(opts: {
       let streamed = "";
       let lastPublished = "";
       let wroteOnce = false;
+      let lastFlushedToDb = "";
+      let dbFlushTimer: ReturnType<typeof setTimeout> | undefined;
+      let dbFlushChain: Promise<void> = Promise.resolve();
+
+      const flushStreamToDb = (text: string, force = false) => {
+        const body = text;
+        if (!body.trim()) {
+          if (force && dbFlushTimer) {
+            clearTimeout(dbFlushTimer);
+            dbFlushTimer = undefined;
+          }
+          return;
+        }
+        const runFlush = (snapshot: string) => {
+          dbFlushTimer = undefined;
+          if (!snapshot.trim() || snapshot === lastFlushedToDb) return;
+          lastFlushedToDb = snapshot;
+          dbFlushChain = dbFlushChain
+            .then(() =>
+              updateBaMessageContent(opts.assistantMessageId, snapshot, {
+                streamStatus: "streaming",
+              }),
+            )
+            .catch(() => {
+              /* best-effort mid-stream persist */
+            });
+        };
+        if (force) {
+          if (dbFlushTimer) clearTimeout(dbFlushTimer);
+          runFlush(body);
+          return;
+        }
+        // Throttle DB writes (~0.8s) — SSE still goes out every delta.
+        if (dbFlushTimer) return;
+        dbFlushTimer = setTimeout(
+          () => runFlush(streamed || lastPublished),
+          800,
+        );
+      };
 
       try {
         if (
@@ -643,6 +682,7 @@ export async function runBaChatAgent(opts: {
                 messageId: opts.assistantMessageId,
                 delta,
               });
+              flushStreamToDb(streamed);
             }
           }
         }
@@ -750,6 +790,8 @@ export async function runBaChatAgent(opts: {
         }
       }
 
+      flushStreamToDb(finalText, true);
+      await dbFlushChain;
       return finalText;
     };
 
@@ -815,6 +857,7 @@ export function kickBaChatAnswer(opts: {
         threadId: opts.threadId,
         role: "assistant",
         content: "",
+        streamStatus: "streaming",
       });
       publishRealtime({
         type: "ba_message",
@@ -846,7 +889,9 @@ export function kickBaChatAnswer(opts: {
         }
       }
 
-      await updateBaMessageContent(assistantId, answer);
+      await updateBaMessageContent(assistantId, answer, {
+        streamStatus: "done",
+      });
       publishRealtime({
         type: "ba_done",
         userId: opts.userId,
@@ -885,7 +930,9 @@ export function kickBaChatAnswer(opts: {
           : `⚠️ ${msg}`;
 
       try {
-        await updateBaMessageContent(assistantId, body);
+        await updateBaMessageContent(assistantId, body, {
+          streamStatus: stopped ? "done" : "error",
+        });
       } catch {
         /* ignore */
       }

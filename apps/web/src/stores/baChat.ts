@@ -52,6 +52,8 @@ export type BaMessage = {
   role: "user" | "assistant" | "system";
   content: string;
   createdAt: string;
+  /** Server: streaming while agent writes; done/error after finalize. */
+  streamStatus?: "streaming" | "done" | "error";
 };
 
 export type BaProgressStep =
@@ -775,7 +777,16 @@ export const useBaChatStore = defineStore("baChat", () => {
 
           if (streamMsgId) {
             const serverMsg = serverMsgs.find((m) => m.id === streamMsgId);
-            if (serverMsg?.content?.trim()) {
+            if (serverMsg?.streamStatus === "streaming") {
+              // Partial text may already be in DB — keep waiting for ba_done.
+              pendingNewStream.value = false;
+              return;
+            }
+            if (
+              serverMsg?.content?.trim() &&
+              serverMsg.streamStatus !== "streaming"
+            ) {
+              // done / error / legacy finalize-only messages
               endStreamingUi();
               errorText.value = "";
               window.setTimeout(() => {
@@ -791,7 +802,16 @@ export const useBaChatStore = defineStore("baChat", () => {
           const lastAsst = [...serverMsgs]
             .reverse()
             .find((m) => m.role === "assistant");
-          if (lastAsst?.content?.trim()) {
+          if (lastAsst?.streamStatus === "streaming") {
+            streamingMessageId.value = lastAsst.id;
+            pendingNewStream.value = false;
+            streaming.value = true;
+            return;
+          }
+          if (
+            lastAsst?.content?.trim() &&
+            lastAsst.streamStatus !== "streaming"
+          ) {
             // Finished while we were disconnected / missed ba_message+ba_done.
             endStreamingUi();
             errorText.value = "";
