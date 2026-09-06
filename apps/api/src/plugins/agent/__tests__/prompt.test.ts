@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   buildWorkPrompt,
+  commitMessageForIssue,
+  docsCommitMessageForIssue,
   extractChatBodyFromAgentText,
   parseAgentOutcome,
+  shortCommitSubject,
 } from "../prompt.js";
 
 const issue = {
@@ -16,6 +19,48 @@ const issue = {
   url: "https://example/issues/102",
   action: "manual",
 };
+
+describe("commitMessageForIssue", () => {
+  it("uses feat + iid + short subject from whatDone", () => {
+    const msg = commitMessageForIssue(issue, {
+      whatDone:
+        "SUMMARY: đã sửa SSE resync và auto-retry khi Cursor cắt stream\nASSUMPTIONS: give-up 3 phút",
+    });
+    expect(msg).toBe(
+      "feat #102 đã sửa SSE resync và auto-retry khi Cursor cắt stream",
+    );
+  });
+
+  it("falls back to truncated issue title", () => {
+    const long = {
+      ...issue,
+      title:
+        "một hai ba bốn năm sáu bảy tám chín mười mườimột mườihai title rất dài",
+    };
+    expect(commitMessageForIssue(long)).toBe(
+      "feat #102 một hai ba bốn năm sáu bảy tám chín mười",
+    );
+  });
+
+  it("omits iid for adhoc", () => {
+    const adhoc = { ...issue, issueIid: 0, action: "adhoc", title: "free fix" };
+    expect(commitMessageForIssue(adhoc)).toBe("feat free fix");
+  });
+
+  it("docs prefix mirrors feat rules", () => {
+    expect(
+      docsCommitMessageForIssue(issue, { whatDone: "cập nhật docs feature X" }),
+    ).toBe("docs #102 cập nhật docs feature X");
+  });
+});
+
+describe("shortCommitSubject", () => {
+  it("caps at 10 words", () => {
+    expect(
+      shortCommitSubject("a b c d e f g h i j k l m"),
+    ).toBe("a b c d e f g h i j");
+  });
+});
 
 describe("parseAgentOutcome", () => {
   it("parses DONE block", () => {

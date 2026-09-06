@@ -1,17 +1,68 @@
 import type { IssueJob } from "../../types.js";
 import { stripMediaAndAttachments } from "../gitlab/linked-context.js";
 
-export function commitMessageForIssue(issue: IssueJob): string {
-  const title = issue.title.replace(/\s+/g, " ").trim();
-  if (issue.issueIid <= 0 || issue.action === "adhoc") {
-    return `hotfix: ${title}`;
+/**
+ * Collapse agent DONE / issue title into a short commit subject (≤10 words).
+ * Prefer `SUMMARY:` when the text is a full DONE block.
+ */
+export function shortCommitSubject(
+  raw: string,
+  opts?: { maxWords?: number; fallback?: string },
+): string {
+  const maxWords = opts?.maxWords ?? 10;
+  const fallback = opts?.fallback ?? "code changes";
+  let text = (raw || "").replace(/\s+/g, " ").trim();
+  if (!text) return fallback;
+
+  const summaryLine = text.match(
+    /(?:^|\b)SUMMARY:\s*(.+?)(?:\s+(?:ASSUMPTIONS|RISKS|TESTED)\s*:|$)/i,
+  );
+  if (summaryLine?.[1]) {
+    text = summaryLine[1].trim();
+  } else {
+    // First clause when agent pasted a long sentence
+    const first = text.split(/[.;!?。]/)[0]?.trim();
+    if (first) text = first;
   }
-  return `feat #${issue.issueIid} ${title}`;
+
+  const words = text.split(/\s+/).filter(Boolean);
+  if (!words.length) return fallback;
+  return words.slice(0, maxWords).join(" ");
 }
 
-export function docsCommitMessageForIssue(issue: IssueJob): string {
-  const title = issue.title.replace(/\s+/g, " ").trim();
-  return `docs #${issue.issueIid} ${title}`;
+export type CommitMessageOpts = {
+  /** What the agent actually did (DONE summary) — preferred over issue title. */
+  whatDone?: string | null;
+};
+
+function issueCommitIid(issue: IssueJob): number | null {
+  if (issue.issueIid <= 0 || issue.action === "adhoc") return null;
+  return issue.issueIid;
+}
+
+/** Auto / default commit: `feat #id short-desc` or `feat short-desc` (no id). */
+export function commitMessageForIssue(
+  issue: IssueJob,
+  opts?: CommitMessageOpts,
+): string {
+  const subject = shortCommitSubject(
+    opts?.whatDone?.trim() || issue.title || "",
+    { fallback: "code changes" },
+  );
+  const iid = issueCommitIid(issue);
+  return iid ? `feat #${iid} ${subject}` : `feat ${subject}`;
+}
+
+export function docsCommitMessageForIssue(
+  issue: IssueJob,
+  opts?: CommitMessageOpts,
+): string {
+  const subject = shortCommitSubject(
+    opts?.whatDone?.trim() || issue.title || "",
+    { fallback: "docs update" },
+  );
+  const iid = issueCommitIid(issue);
+  return iid ? `docs #${iid} ${subject}` : `docs ${subject}`;
 }
 
 /**

@@ -349,7 +349,8 @@ export async function commitJobManual(
 
   const headBefore = await getHeadSha(repoPath);
   const message =
-    input.message?.trim() || commitMessageForIssue(job.issue);
+    input.message?.trim() ||
+    commitMessageForIssue(job.issue, { whatDone: job.summary });
 
   try {
     const result = await finalizeGitlabCommitForJob(
@@ -499,12 +500,12 @@ export async function groupJobCommits(
       message = subjects[0]!;
     } else if (subjects.length > 1) {
       const head =
-        commitMessageForIssue(job.issue) ||
+        commitMessageForIssue(job.issue, { whatDone: job.summary }) ||
         subjects[subjects.length - 1] ||
         "Group commits";
       message = `${head}\n\n${subjects.map((s) => `- ${s}`).join("\n")}`;
     } else {
-      message = commitMessageForIssue(job.issue);
+      message = commitMessageForIssue(job.issue, { whatDone: job.summary });
     }
   }
 
