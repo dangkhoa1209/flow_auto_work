@@ -1,6 +1,7 @@
 import { execFile, type ExecFileOptions } from "node:child_process";
 import { promisify } from "node:util";
 import { getRuntimeContext } from "../../workspace/runtime.js";
+import { redactGitError } from "./redact.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -48,15 +49,19 @@ export async function git(
   args: string[],
   maxBuffer?: number,
 ): Promise<{ stdout: string; stderr: string }> {
-  const result = await execFileAsync(
-    "git",
-    args,
-    gitExecOptions(repoPath, maxBuffer ?? 10 * 1024 * 1024),
-  );
-  return {
-    stdout: String(result.stdout),
-    stderr: String(result.stderr),
-  };
+  try {
+    const result = await execFileAsync(
+      "git",
+      args,
+      gitExecOptions(repoPath, maxBuffer ?? 10 * 1024 * 1024),
+    );
+    return {
+      stdout: String(result.stdout),
+      stderr: String(result.stderr),
+    };
+  } catch (err) {
+    throw redactGitError(err);
+  }
 }
 
 /** Same as git() but returns stdout only (throws on failure). */

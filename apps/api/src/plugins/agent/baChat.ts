@@ -37,6 +37,7 @@ import {
   queryProjectGraphify,
 } from "../../workspace/graphify.js";
 import { pullBaProjectLatest } from "../git/ba-pull.js";
+import { redactGitCredentials } from "../git/redact.js";
 import { buildBaDbCustomTools } from "../baDb/tools.js";
 import { mergeBaAgentCustomTools } from "../ba/graphifyTools.js";
 import { loadBaLinkedContext } from "../ba/ba-linked-context.js";
@@ -505,7 +506,7 @@ export async function runBaChatAgent(opts: {
         err: msg,
       });
       throw new Error(
-        `Không kéo được code mới nhất (git pull): ${msg.replace(/oauth2:[^@\s]+@/gi, "oauth2:***@")}`,
+        `Không kéo được code mới nhất (git pull): ${redactGitCredentials(msg)}`,
       );
     }
     session.check();

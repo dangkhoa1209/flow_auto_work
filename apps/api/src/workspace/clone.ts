@@ -3,6 +3,7 @@ import { access, mkdir } from "node:fs/promises";
 import { constants } from "node:fs";
 import path from "node:path";
 import { logger } from "../logger.js";
+import { redactGitCredentials } from "../plugins/git/redact.js";
 import {
   normalizeGitlabHost,
   type GitProvider,
@@ -119,10 +120,7 @@ export function runGitClone(opts: {
         resolve();
         return;
       }
-      // Redact token if it leaked into stderr
-      const safe = stderr
-        .replace(/oauth2:[^@\s]+@/gi, "oauth2:***@")
-        .replace(/x-access-token:[^@\s]+@/gi, "x-access-token:***@");
+      const safe = redactGitCredentials(stderr);
       reject(new Error(`git clone failed (exit ${code}): ${safe.slice(-800)}`));
     });
   });
