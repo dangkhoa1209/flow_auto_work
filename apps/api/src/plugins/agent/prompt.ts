@@ -1,37 +1,15 @@
+import {
+  buildCommitMessage,
+  shortCommitSubject as sharedShortCommitSubject,
+} from "@flow/shared";
 import type { IssueJob } from "../../types.js";
 import { stripMediaAndAttachments } from "../gitlab/linked-context.js";
 
-/**
- * Collapse agent DONE / issue title into a short commit subject (≤10 words).
- * Prefer `SUMMARY:` when the text is a full DONE block.
- */
-export function shortCommitSubject(
-  raw: string,
-  opts?: { maxWords?: number; fallback?: string },
-): string {
-  const maxWords = opts?.maxWords ?? 10;
-  const fallback = opts?.fallback ?? "code changes";
-  let text = (raw || "").replace(/\s+/g, " ").trim();
-  if (!text) return fallback;
-
-  const summaryLine = text.match(
-    /(?:^|\b)SUMMARY:\s*(.+?)(?:\s+(?:ASSUMPTIONS|RISKS|TESTED)\s*:|$)/i,
-  );
-  if (summaryLine?.[1]) {
-    text = summaryLine[1].trim();
-  } else {
-    // First clause when agent pasted a long sentence
-    const first = text.split(/[.;!?。]/)[0]?.trim();
-    if (first) text = first;
-  }
-
-  const words = text.split(/\s+/).filter(Boolean);
-  if (!words.length) return fallback;
-  return words.slice(0, maxWords).join(" ");
-}
+/** Re-export for tests / callers that still import from prompt. */
+export const shortCommitSubject = sharedShortCommitSubject;
 
 export type CommitMessageOpts = {
-  /** What the agent actually did (DONE summary) — preferred over issue title. */
+  /** Agent DONE text (may include COMMIT: / SUMMARY:) — preferred over issue title. */
   whatDone?: string | null;
 };
 
@@ -40,31 +18,62 @@ function issueCommitIid(issue: IssueJob): number | null {
   return issue.issueIid;
 }
 
-/** Auto / default commit: `feat #id short-desc` or `feat short-desc` (no id). */
+/**
+ * Auto / default commit label.
+ * Linked GitHub/GitLab task → `feat #iid <issue title>`;
+ * ad-hoc → Conventional Commits from DONE (`COMMIT:` / SUMMARY).
+ */
 export function commitMessageForIssue(
   issue: IssueJob,
   opts?: CommitMessageOpts,
 ): string {
-  const subject = shortCommitSubject(
-    opts?.whatDone?.trim() || issue.title || "",
-    { fallback: "code changes" },
-  );
   const iid = issueCommitIid(issue);
-  return iid ? `feat #${iid} ${subject}` : `feat ${subject}`;
+  const adhoc = issue.action === "adhoc" || issue.issueIid <= 0;
+  return buildCommitMessage({
+    whatDone: opts?.whatDone,
+    fallbackTitle: issue.title,
+    issueIid: iid,
+    adhoc,
+    subjectFallback: "code changes",
+  });
 }
 
 export function docsCommitMessageForIssue(
   issue: IssueJob,
   opts?: CommitMessageOpts,
 ): string {
-  const subject = shortCommitSubject(
-    opts?.whatDone?.trim() || issue.title || "",
-    { fallback: "docs update" },
-  );
   const iid = issueCommitIid(issue);
-  return iid ? `docs #${iid} ${subject}` : `docs ${subject}`;
+  return buildCommitMessage({
+    whatDone: opts?.whatDone,
+    fallbackTitle: issue.title,
+    issueIid: iid,
+    defaultType: "docs",
+    adhoc: issue.action === "adhoc" || issue.issueIid <= 0,
+    subjectFallback: "docs update",
+  });
 }
 
+/** Instruct agent how Flow builds the git commit message. */
+function commitLabelInstructions(opts?: {
+  issueIid?: number | null;
+}): string {
+  const iid =
+    opts?.issueIid != null && opts.issueIid > 0 ? opts.issueIid : null;
+  if (iid) {
+    return `
+COMMIT (optional for linked tasks — Flow auto-commit uses the issue title):
+- Flow commits as \`feat #${iid} <issue title>\` (docs phase: \`docs #${iid} …\`).
+- You may still add \`COMMIT:\` for the DONE block notes; it is **not** used as the git message when a GitHub/GitLab issue is linked.
+`;
+  }
+  return `
+COMMIT (required when you changed code/docs — Flow uses this as the git commit message):
+- One Conventional Commits line in **English**, imperative present (not past tense).
+- Look at the **git diff** of files you changed; describe the real technical/CSS/layout change.
+- Do **not** copy the human prompt; no chat tone ("as you wanted", "đã đổi…", "như bạn muốn").
+- Example: \`COMMIT: fix: top-align table cells on validation growth\`
+`;
+}
 /**
  * Instruct agent how to comment on GitLab when the human asks in chat.
  * Flow does **not** auto-comment after a code Run finishes (avoids spam);
@@ -434,13 +443,14 @@ If the task spans multiple modules, touches shared logic, or is risky:
 
 <<<DONE>>>
 SUMMARY: Short Vietnamese summary (1–3 sentences): what you did / main changes.
+COMMIT: (ad-hoc only) Conventional Commits one-liner — see rules below. Linked issue jobs: optional.
 ASSUMPTIONS: (only if any) tier-2 assumptions — one bullet each.
 RISKS: (only if any) risks / cut scope / reviewer notes.
 TESTED: how you verified (lint/build/test/manual) or "could not run because …".
 <<<END_DONE>>>
 
-The DONE block MUST be written in Vietnamese (tiếng Việt). Omit ASSUMPTIONS/RISKS lines when empty.
-${gitlabCommentInstructions(issue)}${extraBlock}`;
+SUMMARY / ASSUMPTIONS / RISKS / TESTED in Vietnamese (tiếng Việt). Linked task commits use \`feat #<iid> <issue title>\`; ad-hoc COMMIT in English. Omit ASSUMPTIONS/RISKS when empty.
+${commitLabelInstructions({ issueIid: issueCommitIid(issue) })}${gitlabCommentInstructions(issue)}${extraBlock}`;
 }
 
 export function buildResumePrompt(
@@ -459,7 +469,8 @@ Continue the same workflow on the CURRENT branch (do not switch branches).
 Implement now. If the answer only partially resolves your questions, fill the remaining small gaps yourself (repo search first, then safe assumptions recorded under ASSUMPTIONS) — do not bounce the same question back.
 ${budget ? `${budget}\n` : ""}Only use NEED_CLARIFICATION again for a NEW blocking gap (batch all questions, numbered, with options + recommended default).
 Leave file changes uncommitted — do NOT \`git commit\` or \`git push\` (orchestrator commits to GitLab via API).
-Then end with the DONE block (SUMMARY / ASSUMPTIONS / RISKS / TESTED) in Vietnamese (tiếng Việt).`;
+Then end with the DONE block (SUMMARY / COMMIT / ASSUMPTIONS / RISKS / TESTED). SUMMARY in Vietnamese; linked tasks → Flow uses \`feat #<iid> <title>\`; ad-hoc COMMIT → Conventional Commits (see rules).
+${commitLabelInstructions({ issueIid: issueCommitIid(issue) })}`;
 }
 
 /**
@@ -511,7 +522,7 @@ ${message.trim()}
 3. Prefer small, correct changes. Stay scoped to this issue unless they explicitly expand scope.
 4. If the request is vague: search the repo/docs first; minor gaps → proceed with the standard interpretation and say so in your reply; only end with NEED_CLARIFICATION when truly blocked (batch ALL questions, numbered, with options + your recommended default).
 5. Do NOT \`git commit\`, \`git push\`, force-push, amend remote commits, or open/merge MRs. Flow Auto Work commits to GitLab via API after you finish.
-6. If finished this follow-up, end with DONE (summary in Vietnamese; note any assumptions you made).
+6. If finished this follow-up, end with DONE (SUMMARY in Vietnamese; linked issue → Flow commits \`feat #<iid> <title>\`; note any assumptions).
 
 ## Chat reply style (UI is a narrow chat panel — keep it readable)
 - Put the **full answer the human asked for in the readable body** (above any machine tags). Flow shows that body in chat — NOT the DONE line alone.
@@ -520,7 +531,7 @@ ${message.trim()}
 - Không hiện thẻ máy kiểu \`<<<DONE>>>\` trong phần người đọc; DONE chỉ ở cuối, **1 câu status** (vd. "Đã phân tích #…; chưa code.").
 - Tránh lặp lại "Muốn sửa code thêm → Bật Run" trừ khi họ hỏi tiếp.
 
-${gitlabCommentInstructions(issue)}<<<NEED_CLARIFICATION>>> / <<<DONE>>> blocks same as usual when applicable.`;
+${commitLabelInstructions({ issueIid: issueCommitIid(issue) })}${gitlabCommentInstructions(issue)}<<<NEED_CLARIFICATION>>> / <<<DONE>>> blocks same as usual when applicable.`;
 }
 
 /** Free session (hotfix / adhoc) — no GitLab issue yet. */
@@ -571,7 +582,7 @@ ${message.trim()}
 3. Prefer small, correct changes. Stay scoped to the request.
 4. If the request is vague: search the repo first; minor gaps → proceed with the standard interpretation and say so in your reply; only end with NEED_CLARIFICATION when truly blocked (batch ALL questions, numbered, with options + your recommended default).
 5. Do NOT \`git commit\`, \`git push\`, force-push, amend remote commits, or open/merge MRs. Flow Auto Work commits to GitLab via API after you finish.
-6. If finished this follow-up, end with DONE (summary in Vietnamese — useful as issue description later; note any assumptions you made).
+6. If finished this follow-up, end with DONE (SUMMARY in Vietnamese — useful as issue description later; COMMIT in English when you changed files; note any assumptions).
 
 ## Chat reply style (UI is a narrow chat panel — keep it readable)
 - Put the **full answer the human asked for in the readable body** (above any machine tags). Flow shows that body in chat — NOT the DONE line alone.
@@ -580,7 +591,7 @@ ${message.trim()}
 - Không hiện thẻ máy kiểu \`<<<DONE>>>\` trong phần người đọc; DONE chỉ ở cuối, **1 câu status**.
 - Tránh lặp lại "Muốn sửa code thêm → Bật Run" trừ khi họ hỏi tiếp.
 
-<<<NEED_CLARIFICATION>>> / <<<DONE>>> blocks same as usual when applicable.`;
+${commitLabelInstructions()}<<<NEED_CLARIFICATION>>> / <<<DONE>>> blocks same as usual when applicable.`;
 }
 
 export function parseAgentOutcome(text: string): {

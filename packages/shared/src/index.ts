@@ -25,3 +25,18 @@ export {
   toSdkCursorModel,
   toUiRouterModelId,
 } from "./cursor-model.js";
+export type {
+  BuildCommitMessageInput,
+  CommitHint,
+  ConventionalCommitType,
+  FormatConventionalCommitOpts,
+} from "./commit-message.js";
+export {
+  buildCommitMessage,
+  CONVENTIONAL_COMMIT_TYPES,
+  formatConventionalCommit,
+  formatTaskCommit,
+  parseCommitHintFromDone,
+  sanitizeCommitSubject,
+  shortCommitSubject,
+} from "./commit-message.js";

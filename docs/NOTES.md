@@ -283,7 +283,7 @@ Browser EventSource → GET /api/events
 ## Git / commit
 
 - Work branch workspace hoặc `feat/…`.  
-- Message: `feat #<iid> <title>` · adhoc: `hotfix: …` · docs: `docs #<iid> …`.  
+- Message: `feat #<iid> <title>` · adhoc: Conventional Commits `fix: …` · docs: `docs #<iid> <title>`.  
 - **Commit qua GitLab Commits API** (author = chủ PAT); không `git commit` local làm nguồn sự thật.  
 - Sau API: fetch + reset local tới SHA GitLab (merge/handoff thấy tip đúng).  
 - Merge work → base: vẫn local `git merge` + `git push` target (trước merge có fetch source từ origin).  

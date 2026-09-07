@@ -21,36 +21,52 @@ const issue = {
 };
 
 describe("commitMessageForIssue", () => {
-  it("uses feat + iid + short subject from whatDone", () => {
+  it("linked task uses feat #iid + issue title (ignores COMMIT)", () => {
     const msg = commitMessageForIssue(issue, {
       whatDone:
-        "SUMMARY: đã sửa SSE resync và auto-retry khi Cursor cắt stream\nASSUMPTIONS: give-up 3 phút",
+        "SUMMARY: đã sửa SSE resync\nCOMMIT: fix(#102): retry SSE resync on stream cut\nASSUMPTIONS: give-up 3 phút",
     });
-    expect(msg).toBe(
-      "feat #102 đã sửa SSE resync và auto-retry khi Cursor cắt stream",
-    );
+    expect(msg).toBe("feat #102 Big table");
   });
 
-  it("falls back to truncated issue title", () => {
+  it("linked task keeps full issue title", () => {
     const long = {
       ...issue,
       title:
         "một hai ba bốn năm sáu bảy tám chín mười mườimột mườihai title rất dài",
     };
     expect(commitMessageForIssue(long)).toBe(
-      "feat #102 một hai ba bốn năm sáu bảy tám chín mười",
+      "feat #102 một hai ba bốn năm sáu bảy tám chín mười mườimột mườihai title rất dài",
     );
   });
 
-  it("omits iid for adhoc", () => {
+  it("adhoc prefers COMMIT Conventional Commits", () => {
     const adhoc = { ...issue, issueIid: 0, action: "adhoc", title: "free fix" };
-    expect(commitMessageForIssue(adhoc)).toBe("feat free fix");
+    expect(
+      commitMessageForIssue(adhoc, {
+        whatDone: "COMMIT: fix: retry SSE resync on stream cut",
+      }),
+    ).toBe("fix: retry SSE resync on stream cut");
   });
 
-  it("docs prefix mirrors feat rules", () => {
+  it("omits iid for adhoc and defaults to fix", () => {
+    const adhoc = { ...issue, issueIid: 0, action: "adhoc", title: "free fix" };
+    expect(commitMessageForIssue(adhoc)).toBe("fix: free fix");
+  });
+
+  it("strips conversational chat tone from adhoc subject", () => {
+    const adhoc = { ...issue, issueIid: 0, action: "adhoc", title: "x" };
+    expect(
+      commitMessageForIssue(adhoc, {
+        whatDone: "SUMMARY: Đã đổi theo 2 hướng như bạn muốn",
+      }),
+    ).toBe("fix: đổi theo 2 hướng");
+  });
+
+  it("docs phase uses docs #iid + issue title", () => {
     expect(
       docsCommitMessageForIssue(issue, { whatDone: "cập nhật docs feature X" }),
-    ).toBe("docs #102 cập nhật docs feature X");
+    ).toBe("docs #102 Big table");
   });
 });
 
@@ -168,5 +184,12 @@ describe("buildWorkPrompt graphify", () => {
   it("omits the map when no graphify block is passed", () => {
     const prompt = buildWorkPrompt(issue);
     expect(prompt).not.toContain("How to use Graphify");
+  });
+
+  it("linked task commit label uses feat #iid title form", () => {
+    const prompt = buildWorkPrompt(issue);
+    expect(prompt).toMatch(/COMMIT:/);
+    expect(prompt).toContain(`feat #${issue.issueIid}`);
+    expect(prompt).toMatch(/issue title/);
   });
 });
