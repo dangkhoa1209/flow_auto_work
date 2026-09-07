@@ -8,6 +8,7 @@ import {
   type BaProject,
 } from "../../workspace/baStore.js";
 import { scheduleProjectGraphify } from "../../workspace/graphify.js";
+import { redactGitError } from "./redact.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -18,20 +19,24 @@ async function gitBa(
   repoPath: string,
   args: string[],
 ): Promise<{ stdout: string; stderr: string }> {
-  const result = await execFileAsync("git", args, {
-    cwd: repoPath,
-    maxBuffer: 10 * 1024 * 1024,
-    encoding: "utf8",
-    env: {
-      ...process.env,
-      GIT_TERMINAL_PROMPT: "0",
-      GIT_ASKPASS: "echo",
-    },
-  });
-  return {
-    stdout: String(result.stdout),
-    stderr: String(result.stderr),
-  };
+  try {
+    const result = await execFileAsync("git", args, {
+      cwd: repoPath,
+      maxBuffer: 10 * 1024 * 1024,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        GIT_TERMINAL_PROMPT: "0",
+        GIT_ASKPASS: "echo",
+      },
+    });
+    return {
+      stdout: String(result.stdout),
+      stderr: String(result.stderr),
+    };
+  } catch (err) {
+    throw redactGitError(err);
+  }
 }
 
 async function pullBaProjectLatestUnlocked(project: BaProject): Promise<void> {
