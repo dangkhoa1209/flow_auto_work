@@ -5,6 +5,10 @@ import {
   prepareRepoForIssue,
 } from "./plugins/git/prep.js";
 import {
+  redactGitCredentials,
+  safeErrorMessage,
+} from "./plugins/git/redact.js";
+import {
   getProjectDefaultBranch,
 } from "./plugins/scm/index.js";
 import {
@@ -1037,10 +1041,8 @@ export class JobQueue {
       }
     } catch (err) {
       const errMsg = isStartupError(err)
-        ? `Cursor SDK startup error: ${err.message}`
-        : err instanceof Error
-          ? err.message
-          : String(err);
+        ? redactGitCredentials(`Cursor SDK startup error: ${err.message}`)
+        : safeErrorMessage(err);
 
       if (/Force-stopped|force stop|cancelled \(force/i.test(errMsg)) {
         const fresh = await loadJob(job.id);
@@ -1173,10 +1175,8 @@ export class JobQueue {
       }
     } catch (err) {
       const errMsg = isStartupError(err)
-        ? `Cursor SDK startup error: ${err.message}`
-        : err instanceof Error
-          ? err.message
-          : String(err);
+        ? redactGitCredentials(`Cursor SDK startup error: ${err.message}`)
+        : safeErrorMessage(err);
 
       if (/Force-stopped|force stop|cancelled \(force/i.test(errMsg)) {
         const fresh = await loadJob(job.id);
@@ -1284,10 +1284,8 @@ export class JobQueue {
       }
     } catch (err) {
       const errMsg = isStartupError(err)
-        ? `Cursor SDK startup error: ${err.message}`
-        : err instanceof Error
-          ? err.message
-          : String(err);
+        ? redactGitCredentials(`Cursor SDK startup error: ${err.message}`)
+        : safeErrorMessage(err);
 
       if (/Force-stopped|force stop|cancelled \(force/i.test(errMsg)) {
         const fresh = await loadJob(job.id);
@@ -1727,7 +1725,8 @@ export class JobQueue {
     job: Pick<JobRecord, "id" | "issue">,
     body: string,
   ): Promise<void> {
-    const text = body.trim();
+    // /work chat must never show PAT from `git push https://x-access-token:…@…`
+    const text = redactGitCredentials(body.trim());
     if (!text) return;
     try {
       await addChatMessage({
@@ -1740,7 +1739,7 @@ export class JobQueue {
     } catch (err) {
       logger.warn("Could not post issue to job chat", {
         jobId: job.id,
-        err: String(err),
+        err: safeErrorMessage(err),
       });
     }
   }
@@ -2406,10 +2405,8 @@ export class JobQueue {
       });
     } catch (err) {
       const message = isStartupError(err)
-        ? `Cursor SDK startup error: ${err.message}`
-        : err instanceof Error
-          ? err.message
-          : String(err);
+        ? redactGitCredentials(`Cursor SDK startup error: ${err.message}`)
+        : safeErrorMessage(err);
       job.status = "failed";
       job.error = message;
       await saveJob(job);

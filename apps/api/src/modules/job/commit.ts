@@ -10,6 +10,7 @@ import {
   syncLocalToRemoteCommit,
 } from "../../plugins/git/changes-for-api.js";
 import { git } from "../../plugins/git/exec.js";
+import { safeErrorMessage } from "../../plugins/git/redact.js";
 import {
   commitAllTracked,
   currentBranch,
@@ -387,9 +388,9 @@ export async function commitJobManual(
     if (err instanceof AppError) throw err;
     logger.error("Manual commit failed", {
       jobId: job.id,
-      err: String(err),
+      err: safeErrorMessage(err),
     });
-    throw new AppError(err instanceof Error ? err.message : String(err), 400);
+    throw new AppError(safeErrorMessage(err), 400);
   }
 }
 
