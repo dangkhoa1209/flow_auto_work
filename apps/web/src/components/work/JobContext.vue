@@ -995,6 +995,7 @@ onUnmounted(() => {
             :branch="currentJob ? jobBranch(currentJob) : null"
             :issue-iid="currentJob?.issue?.issueIid ?? null"
             :issue-title="currentJob?.issue?.title ?? detailTitle"
+            :job-summary="currentJob?.summary ?? null"
             @updated="emit('diffUpdated')"
           />
         </div>

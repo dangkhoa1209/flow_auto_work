@@ -1000,7 +1000,7 @@ export class JobQueue {
         job,
         repoPath,
         headBefore,
-        commitMessageForIssue(job.issue),
+        commitMessageForIssue(job.issue, { whatDone: result.summary }),
       );
 
       if (result.summary) job.summary = result.summary;
@@ -2284,7 +2284,9 @@ export class JobQueue {
           job,
           repoPath,
           headBefore,
-          docsCommitMessageForIssue(job.issue),
+          docsCommitMessageForIssue(job.issue, {
+            whatDone: summary || result.summary,
+          }),
         );
 
         if (result.summary) {
@@ -2372,7 +2374,7 @@ export class JobQueue {
         job,
         repoPath,
         headBefore,
-        commitMessageForIssue(job.issue),
+        commitMessageForIssue(job.issue, { whatDone: result.summary }),
       );
 
       job.status = "awaiting_handoff";

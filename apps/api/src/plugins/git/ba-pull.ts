@@ -11,6 +11,9 @@ import { scheduleProjectGraphify } from "../../workspace/graphify.js";
 
 const execFileAsync = promisify(execFile);
 
+/** Serialize fetch/checkout per BA project — shared clone is not multi-writer safe. */
+const pullChainByProject = new Map<string, Promise<void>>();
+
 async function gitBa(
   repoPath: string,
   args: string[],
@@ -31,11 +34,7 @@ async function gitBa(
   };
 }
 
-/**
- * Fast-forward shared BA clone to latest remote branch using project PAT.
- * Hard-resets to FETCH_HEAD so BA always answers from current remote code.
- */
-export async function pullBaProjectLatest(project: BaProject): Promise<void> {
+async function pullBaProjectLatestUnlocked(project: BaProject): Promise<void> {
   const token = await getBaProjectGitlabToken(project.id);
   if (!token) {
     throw new Error("GitLab PAT missing — admin cần cập nhật PAT rồi clone lại");
@@ -54,8 +53,13 @@ export async function pullBaProjectLatest(project: BaProject): Promise<void> {
   });
 
   try {
-    await gitBa(project.localPath, ["fetch", "--prune", url, `+refs/heads/${branch}:refs/remotes/origin/${branch}`]);
-  } catch (err) {
+    await gitBa(project.localPath, [
+      "fetch",
+      "--prune",
+      url,
+      `+refs/heads/${branch}:refs/remotes/origin/${branch}`,
+    ]);
+  } catch {
     // Fallback: fetch ref into FETCH_HEAD
     await gitBa(project.localPath, ["fetch", url, branch]);
     await gitBa(project.localPath, ["checkout", "-B", branch, "FETCH_HEAD"]);
@@ -79,6 +83,42 @@ export async function pullBaProjectLatest(project: BaProject): Promise<void> {
     branch,
   });
   scheduleProjectGraphify(project.localPath, "ba-pull");
+}
+
+/**
+ * Fast-forward shared BA clone to latest remote branch using project PAT.
+ * Hard-resets to FETCH_HEAD so BA always answers from current remote code.
+ * Concurrent pulls on the same project are queued (not parallel).
+ */
+export async function pullBaProjectLatest(project: BaProject): Promise<void> {
+  const key = project.id;
+  const prev = pullChainByProject.get(key) ?? Promise.resolve();
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  // Chain holders so waiters serialize; errors must not break the queue.
+  const holder = prev.then(
+    () => gate,
+    () => gate,
+  );
+  pullChainByProject.set(key, holder);
+
+  await prev.then(
+    () => undefined,
+    () => undefined,
+  );
+  try {
+    await pullBaProjectLatestUnlocked(project);
+  } finally {
+    release();
+    // Drop map entry only if we are still the tail waiter.
+    void holder.then(() => {
+      if (pullChainByProject.get(key) === holder) {
+        pullChainByProject.delete(key);
+      }
+    });
+  }
 }
 
 export async function pullBaProjectLatestById(projectId: string): Promise<void> {

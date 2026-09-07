@@ -51,6 +51,8 @@ export type RealtimeBaMessage = {
   type: "ba_message";
   userId: string;
   threadId: string;
+  /** Server retry — wipe local partial before new deltas. */
+  resetStream?: boolean;
   message: {
     id: string;
     threadId: string;

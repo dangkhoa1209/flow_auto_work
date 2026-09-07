@@ -52,6 +52,8 @@ export type BaMessage = {
   role: "user" | "assistant" | "system";
   content: string;
   createdAt: string;
+  /** Server: streaming while agent writes; done/error after finalize. */
+  streamStatus?: "streaming" | "done" | "error";
 };
 
 export type BaProgressStep =
@@ -77,6 +79,15 @@ const STEP_ORDER: BaProgressStep[] = [
   "done",
 ];
 
+/** No SSE activity while streaming → reload thread from API (hub has no replay). */
+const STREAM_STALL_MS = 20_000;
+
+/**
+ * While streaming, if assistant bubble stays empty this long (despite resync),
+ * give up — agent likely hung / process died without finalize.
+ */
+const STREAM_EMPTY_GIVE_UP_MS = 3 * 60 * 1000;
+
 export const useBaChatStore = defineStore("baChat", () => {
   const session = useSessionStore();
 
@@ -92,6 +103,13 @@ export const useBaChatStore = defineStore("baChat", () => {
   /** True after send until the new assistant placeholder/delta arrives (Stop & send). */
   const pendingNewStream = ref(false);
   const stopBusy = ref(false);
+  let stallTimer: ReturnType<typeof setTimeout> | undefined;
+  /** Wall-clock when current stream started (empty give-up). */
+  let streamStartedAt = 0;
+  /** Last time we saw delta / progress / non-empty stream content. */
+  let streamLastActivityAt = 0;
+  let resyncTimer: ReturnType<typeof setTimeout> | undefined;
+  let resyncInFlight = false;
   const loading = ref(false);
   const errorText = ref("");
   const progress = ref<BaProgressItem[]>([]);
@@ -171,6 +189,112 @@ export const useBaChatStore = defineStore("baChat", () => {
     progressVisible.value = false;
   }
 
+  function clearStallWatch() {
+    if (stallTimer) {
+      clearTimeout(stallTimer);
+      stallTimer = undefined;
+    }
+  }
+
+  function markStreamActivity() {
+    streamLastActivityAt = Date.now();
+  }
+
+  function streamAssistantContent(): string {
+    const id = streamingMessageId.value;
+    if (!id) return "";
+    return messages.value.find((m) => m.id === id)?.content?.trim() || "";
+  }
+
+  function giveUpEmptyStream(reason: string) {
+    if (!streaming.value) return;
+    errorText.value = reason;
+    const id = streamingMessageId.value;
+    if (id) {
+      const idx = messages.value.findIndex((m) => m.id === id);
+      if (idx >= 0) {
+        const cur = messages.value[idx].content?.trim() || "";
+        if (!cur) {
+          messages.value[idx] = {
+            ...messages.value[idx],
+            content: `⚠️ ${reason}`,
+            streamStatus: "error",
+          };
+        } else if (!cur.includes("⚠️")) {
+          messages.value[idx] = {
+            ...messages.value[idx],
+            content: `${cur}\n\n⚠️ ${reason}`,
+            streamStatus: "error",
+          };
+        }
+      }
+    }
+    endStreamingUi();
+  }
+
+  function armStallWatch() {
+    clearStallWatch();
+    if (!streaming.value) return;
+    stallTimer = setTimeout(() => {
+      stallTimer = undefined;
+      if (!streaming.value) return;
+
+      const emptyMs = Date.now() - (streamLastActivityAt || streamStartedAt);
+      const sinceStart = Date.now() - (streamStartedAt || Date.now());
+      const emptyContent = !streamAssistantContent();
+      // Give up only when bubble still empty and no activity for STREAM_EMPTY_GIVE_UP_MS.
+      if (
+        emptyContent &&
+        streamStartedAt > 0 &&
+        sinceStart >= STREAM_EMPTY_GIVE_UP_MS &&
+        emptyMs >= STREAM_EMPTY_GIVE_UP_MS
+      ) {
+        giveUpEmptyStream(
+          "Agent không phản hồi (quá lâu không có nội dung) — hãy Gửi lại.",
+        );
+        return;
+      }
+
+      void resyncRealtime().finally(() => {
+        if (streaming.value) armStallWatch();
+      });
+    }, STREAM_STALL_MS);
+  }
+
+  /** Keep local streamed text when server still has empty placeholder. */
+  function mergeThreadMessages(
+    local: BaMessage[],
+    server: BaMessage[],
+  ): BaMessage[] {
+    const byId = new Map<string, BaMessage>();
+    for (const m of server) byId.set(m.id, { ...m });
+    for (const m of local) {
+      const s = byId.get(m.id);
+      if (!s) {
+        byId.set(m.id, m);
+        continue;
+      }
+      if ((m.content?.length || 0) > (s.content?.length || 0)) {
+        byId.set(m.id, { ...s, content: m.content });
+      }
+    }
+    const serverIds = new Set(server.map((m) => m.id));
+    const out = server.map((m) => byId.get(m.id)!);
+    for (const m of local) {
+      if (!serverIds.has(m.id)) out.push(byId.get(m.id)!);
+    }
+    return out;
+  }
+
+  function endStreamingUi() {
+    streaming.value = false;
+    streamingMessageId.value = null;
+    pendingNewStream.value = false;
+    streamStartedAt = 0;
+    streamLastActivityAt = 0;
+    clearStallWatch();
+  }
+
   function persistProjectId(id: string | null) {
     selectedProjectId.value = id;
     if (id) safeSetItem("flow_ba_project_id", id);
@@ -231,8 +355,7 @@ export const useBaChatStore = defineStore("baChat", () => {
     ) {
       activeThreadId.value = null;
       messages.value = [];
-      streaming.value = false;
-      streamingMessageId.value = null;
+      endStreamingUi();
       clearProgress();
     }
   }
@@ -245,12 +368,15 @@ export const useBaChatStore = defineStore("baChat", () => {
     threads.value = [];
     activeThreadId.value = null;
     messages.value = [];
-    streaming.value = false;
-    streamingMessageId.value = null;
-    pendingNewStream.value = false;
+    endStreamingUi();
     stopBusy.value = false;
     loading.value = false;
     errorText.value = "";
+    if (resyncTimer) {
+      clearTimeout(resyncTimer);
+      resyncTimer = undefined;
+    }
+    resyncInFlight = false;
     clearProgress();
     clearIssueDraft();
   }
@@ -353,6 +479,8 @@ export const useBaChatStore = defineStore("baChat", () => {
     // Ignore late ba_done/ba_error from the run we just stopped (Stop & send).
     streamingMessageId.value = null;
     pendingNewStream.value = true;
+    streamStartedAt = Date.now();
+    streamLastActivityAt = Date.now();
     errorText.value = "";
     clearProgress();
     progressVisible.value = true;
@@ -363,6 +491,7 @@ export const useBaChatStore = defineStore("baChat", () => {
         at: new Date().toISOString(),
       },
     ];
+    armStallWatch();
     try {
       const data = await api<{ message?: BaMessage }>(API.ba.messages(threadId), {
         method: "POST",
@@ -376,8 +505,7 @@ export const useBaChatStore = defineStore("baChat", () => {
         if (!exists) messages.value.push(data.message);
       }
     } catch (e) {
-      streaming.value = false;
-      pendingNewStream.value = false;
+      endStreamingUi();
       errorText.value = e instanceof Error ? e.message : String(e);
       clearProgress();
       throw e;
@@ -395,6 +523,7 @@ export const useBaChatStore = defineStore("baChat", () => {
   function applyBaMessage(ev: {
     userId: string;
     threadId: string;
+    resetStream?: boolean;
     message: BaMessage;
   }) {
     if (!isMyEvent(ev.userId)) return;
@@ -406,11 +535,28 @@ export const useBaChatStore = defineStore("baChat", () => {
     const idx = messages.value.findIndex((m) => m.id === ev.message.id);
     if (idx >= 0) {
       const prev = messages.value[idx];
+      // Transient Cursor retry: wipe partial before the next attempt streams.
+      if (ev.resetStream) {
+        messages.value[idx] = {
+          ...prev,
+          ...ev.message,
+          content: ev.message.content || "",
+        };
+        streamingMessageId.value = ev.message.id;
+        streaming.value = true;
+        pendingNewStream.value = false;
+        // Retry wipe — reset empty give-up clock so user isn't cut mid-retry.
+        streamStartedAt = Date.now();
+        markStreamActivity();
+        armStallWatch();
+        return;
+      }
       // Don't wipe streamed text if a late empty placeholder arrives
       if (!ev.message.content && prev.content) {
         streamingMessageId.value = ev.message.id;
         streaming.value = true;
         pendingNewStream.value = false;
+        armStallWatch();
         return;
       }
       messages.value[idx] = ev.message;
@@ -421,6 +567,7 @@ export const useBaChatStore = defineStore("baChat", () => {
       streamingMessageId.value = ev.message.id;
       streaming.value = true;
       pendingNewStream.value = false;
+      armStallWatch();
     }
   }
 
@@ -435,6 +582,8 @@ export const useBaChatStore = defineStore("baChat", () => {
     streaming.value = true;
     streamingMessageId.value = ev.messageId;
     pendingNewStream.value = false;
+    markStreamActivity();
+    armStallWatch();
     const idx = messages.value.findIndex((m) => m.id === ev.messageId);
     if (idx >= 0) {
       messages.value[idx] = {
@@ -490,18 +639,16 @@ export const useBaChatStore = defineStore("baChat", () => {
         });
       }
     }
-    // Late done from a previous run must not end the new Stop & send stream.
+    // Only ignore late done once we know the new stream's message id.
+    // pendingNewStream alone must not block — missed ba_message left UI stuck.
     if (
-      pendingNewStream.value ||
-      (streamingMessageId.value != null &&
-        streamingMessageId.value !== ev.messageId)
+      streamingMessageId.value != null &&
+      streamingMessageId.value !== ev.messageId
     ) {
       void loadThreads();
       return;
     }
-    streaming.value = false;
-    streamingMessageId.value = null;
-    pendingNewStream.value = false;
+    endStreamingUi();
     errorText.value = "";
     void loadThreads();
     window.setTimeout(() => {
@@ -521,26 +668,38 @@ export const useBaChatStore = defineStore("baChat", () => {
       errorText.value = ev.error;
       if (ev.messageId) {
         const idx = messages.value.findIndex((m) => m.id === ev.messageId);
-        if (idx >= 0 && !messages.value[idx].content) {
-          messages.value[idx] = {
-            ...messages.value[idx],
-            content: `⚠️ ${ev.error}`,
-          };
+        if (idx >= 0) {
+          const cur = messages.value[idx].content?.trim() || "";
+          if (!cur) {
+            messages.value[idx] = {
+              ...messages.value[idx],
+              content: `⚠️ ${ev.error}`,
+              streamStatus: "error",
+            };
+          } else if (!cur.includes("⚠️")) {
+            // Partial text already shown — still mark failure so UX is not "done".
+            messages.value[idx] = {
+              ...messages.value[idx],
+              content: `${cur}\n\n⚠️ ${ev.error}`,
+              streamStatus: "error",
+            };
+          }
         }
       }
     }
-    // Late error from a previous run must not end the new Stop & send stream.
     if (
-      pendingNewStream.value ||
-      (ev.messageId &&
-        streamingMessageId.value != null &&
-        streamingMessageId.value !== ev.messageId)
+      ev.messageId &&
+      streamingMessageId.value != null &&
+      streamingMessageId.value !== ev.messageId
     ) {
       return;
     }
-    streaming.value = false;
-    streamingMessageId.value = null;
-    pendingNewStream.value = false;
+    // While waiting for the new placeholder, ignore errors without messageId
+    // from a prior run (Stop & send).
+    if (pendingNewStream.value && !ev.messageId) {
+      return;
+    }
+    endStreamingUi();
   }
 
   function applyBaProgress(ev: {
@@ -555,6 +714,8 @@ export const useBaChatStore = defineStore("baChat", () => {
     if (!isChatTabThread(ev.threadId)) return;
     if (ev.threadId !== activeThreadId.value) return;
     progressVisible.value = true;
+    markStreamActivity();
+    if (streaming.value) armStallWatch();
     const item: BaProgressItem = {
       step: ev.step,
       label: ev.label,
@@ -662,6 +823,7 @@ export const useBaChatStore = defineStore("baChat", () => {
             progress.value = keepProgress;
             progressVisible.value = keepProgress.length > 0;
           }
+          armStallWatch();
         } else if (!keepStreaming) {
           await selectThread(keepThreadId);
         }
@@ -671,15 +833,105 @@ export const useBaChatStore = defineStore("baChat", () => {
     }
   }
 
-  /** After SSE wake — refresh open thread unless a stream is in flight. */
+  /**
+   * After SSE wake / stall — refresh open thread.
+   * Must still merge while streaming: hub has no replay; disconnect mid-stream
+   * would otherwise leave the UI stuck until F5.
+   */
   async function resyncRealtime() {
     const id = activeThreadId.value;
-    if (!id || streaming.value) return;
-    try {
-      await selectThread(id);
-    } catch {
-      /* ignore */
-    }
+    if (!id) return;
+    if (resyncTimer) clearTimeout(resyncTimer);
+    resyncTimer = setTimeout(() => {
+      resyncTimer = undefined;
+      if (resyncInFlight) return;
+      resyncInFlight = true;
+      void (async () => {
+        try {
+          const wasStreaming = streaming.value;
+          const streamMsgId = streamingMessageId.value;
+          const localSnap = wasStreaming ? messages.value.slice() : null;
+
+          const data = await api<{
+            messages?: BaMessage[];
+            thread?: BaThread;
+          }>(API.ba.messages(id));
+          // User may have switched thread while the request was in flight.
+          if (activeThreadId.value !== id) return;
+
+          const serverMsgs = data.messages || [];
+          if (data.thread) {
+            const idx = threads.value.findIndex((t) => t.id === data.thread!.id);
+            if (idx >= 0) threads.value[idx] = data.thread;
+          }
+
+          if (!wasStreaming || !localSnap) {
+            messages.value = serverMsgs;
+            return;
+          }
+
+          messages.value = mergeThreadMessages(localSnap, serverMsgs);
+
+          if (streamMsgId) {
+            const serverMsg = serverMsgs.find((m) => m.id === streamMsgId);
+            if (serverMsg?.streamStatus === "streaming") {
+              // Partial text may already be in DB — keep waiting for ba_done.
+              if (serverMsg.content?.trim()) markStreamActivity();
+              pendingNewStream.value = false;
+              return;
+            }
+            if (
+              serverMsg?.content?.trim() &&
+              serverMsg.streamStatus !== "streaming"
+            ) {
+              // done / error / legacy finalize-only messages
+              endStreamingUi();
+              errorText.value = "";
+              window.setTimeout(() => {
+                if (!streaming.value) clearProgress();
+              }, 800);
+              return;
+            }
+            // Still empty on server — agent likely still running; keep local stream.
+            pendingNewStream.value = false;
+            return;
+          }
+
+          const lastAsst = [...serverMsgs]
+            .reverse()
+            .find((m) => m.role === "assistant");
+          if (lastAsst?.streamStatus === "streaming") {
+            streamingMessageId.value = lastAsst.id;
+            pendingNewStream.value = false;
+            streaming.value = true;
+            return;
+          }
+          if (
+            lastAsst?.content?.trim() &&
+            lastAsst.streamStatus !== "streaming"
+          ) {
+            // Finished while we were disconnected / missed ba_message+ba_done.
+            endStreamingUi();
+            errorText.value = "";
+            window.setTimeout(() => {
+              if (!streaming.value) clearProgress();
+            }, 800);
+            return;
+          }
+          if (lastAsst && !lastAsst.content?.trim()) {
+            streamingMessageId.value = lastAsst.id;
+            pendingNewStream.value = false;
+            streaming.value = true;
+            return;
+          }
+          // No assistant yet — keep waiting for placeholder.
+        } catch {
+          /* ignore */
+        } finally {
+          resyncInFlight = false;
+        }
+      })();
+    }, 250);
   }
 
   return {

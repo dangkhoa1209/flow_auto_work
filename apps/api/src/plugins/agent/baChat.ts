@@ -2,14 +2,17 @@ import { Agent } from "@cursor/sdk";
 import { setMaxListeners } from "node:events";
 import { logger } from "../../logger.js";
 import { publishRealtime } from "../realtime/hub.js";
+import { getConfig } from "../../config.js";
 import {
   beginCancellableJob,
   cancelActiveAgentRun,
   clearJobKillRequested,
   errorFromCursorRunStatus,
   formatCursorAgentFailure,
+  hasActiveAgentRun,
   isJobKillRequested,
   isTransientCursorTransportError,
+  markCursorTransient,
 } from "./run.js";
 import { persistCursorUsage } from "../cursor/recordUsage.js";
 import { readOnlyAgentPolicy } from "../cursor/agentPolicy.js";
@@ -233,6 +236,66 @@ export function baCancelKey(threadId: string): string {
   return `ba:${threadId}`;
 }
 
+/**
+ * Claimed while kickBaChatAnswer is in flight (before/after Cursor attach).
+ * Closes the race where two POSTs both pass hasActiveAgentRun before either
+ * beginCancellableJob registers.
+ */
+const baAnswerClaimByThread = new Set<string>();
+
+export function isBaAnswerInFlight(threadId: string): boolean {
+  return (
+    baAnswerClaimByThread.has(threadId) ||
+    hasActiveAgentRun(baCancelKey(threadId))
+  );
+}
+
+function claimBaAnswer(threadId: string): boolean {
+  if (isBaAnswerInFlight(threadId)) return false;
+  baAnswerClaimByThread.add(threadId);
+  return true;
+}
+
+function releaseBaAnswer(threadId: string): void {
+  baAnswerClaimByThread.delete(threadId);
+}
+
+/** Wait until thread has no claim + no active Cursor run (Stop & send). */
+export async function waitBaAnswerIdle(
+  threadId: string,
+  timeoutMs = 10_000,
+): Promise<boolean> {
+  const start = Date.now();
+  while (isBaAnswerInFlight(threadId)) {
+    if (Date.now() - start >= timeoutMs) return false;
+    await new Promise((r) => setTimeout(r, 80));
+  }
+  return true;
+}
+
+/** Wait only for Cursor run to untrack (claim may already be held by new kick). */
+async function waitBaAgentRunIdle(
+  threadId: string,
+  timeoutMs = 8_000,
+): Promise<boolean> {
+  const key = baCancelKey(threadId);
+  const start = Date.now();
+  while (hasActiveAgentRun(key)) {
+    if (Date.now() - start >= timeoutMs) return false;
+    await new Promise((r) => setTimeout(r, 80));
+  }
+  return true;
+}
+
+/** Claim answer slot for this thread. Caller must release via kick finally / releaseBaAnswerClaim. */
+export function tryClaimBaAnswer(threadId: string): boolean {
+  return claimBaAnswer(threadId);
+}
+
+export function releaseBaAnswerClaim(threadId: string): void {
+  releaseBaAnswer(threadId);
+}
+
 export async function stopBaThreadAgent(threadId: string): Promise<boolean> {
   return cancelActiveAgentRun(baCancelKey(threadId));
 }
@@ -240,6 +303,12 @@ export async function stopBaThreadAgent(threadId: string): Promise<boolean> {
 setMaxListeners(50);
 
 const BA_TIMEOUT_MS = 10 * 60 * 1000;
+
+/** Wall-clock BA limit — must NOT auto-retry (unlike Cursor transport timeouts). */
+function isBaWallClockTimeout(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /^BA chat timed out after/i.test(msg);
+}
 
 function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -546,6 +615,7 @@ export async function runBaChatAgent(opts: {
       detail: dbAccess.allowed ? `${modelLabel} · DB ON` : modelLabel,
     });
 
+    // Prep (git/graphify/linked) runs once; only Cursor Agent.create+stream retries.
     const work = async (): Promise<string> => {
       session.check();
       const customTools = mergeBaAgentCustomTools(
@@ -595,6 +665,51 @@ export async function runBaChatAgent(opts: {
       let streamed = "";
       let lastPublished = "";
       let wroteOnce = false;
+      let lastFlushedToDb = "";
+      let dbFlushTimer: ReturnType<typeof setTimeout> | undefined;
+      let dbFlushChain: Promise<void> = Promise.resolve();
+
+      const flushStreamToDb = (text: string, force = false) => {
+        const body = text;
+        if (!body.trim()) {
+          if (force && dbFlushTimer) {
+            clearTimeout(dbFlushTimer);
+            dbFlushTimer = undefined;
+          }
+          return;
+        }
+        const runFlush = (snapshot: string) => {
+          dbFlushTimer = undefined;
+          if (!snapshot.trim() || snapshot === lastFlushedToDb) return;
+          lastFlushedToDb = snapshot;
+          dbFlushChain = dbFlushChain
+            .then(() =>
+              updateBaMessageContent(opts.assistantMessageId, snapshot, {
+                streamStatus: "streaming",
+              }),
+            )
+            .catch((flushErr) => {
+              logger.warn("BA mid-stream DB flush failed", {
+                messageId: opts.assistantMessageId,
+                err:
+                  flushErr instanceof Error
+                    ? flushErr.message
+                    : String(flushErr),
+              });
+            });
+        };
+        if (force) {
+          if (dbFlushTimer) clearTimeout(dbFlushTimer);
+          runFlush(body);
+          return;
+        }
+        // Throttle DB writes (~0.8s) — SSE still goes out every delta.
+        if (dbFlushTimer) return;
+        dbFlushTimer = setTimeout(
+          () => runFlush(streamed || lastPublished),
+          800,
+        );
+      };
 
       try {
         if (
@@ -643,6 +758,7 @@ export async function runBaChatAgent(opts: {
                 messageId: opts.assistantMessageId,
                 delta,
               });
+              flushStreamToDb(streamed);
             }
           }
         }
@@ -750,34 +866,116 @@ export async function runBaChatAgent(opts: {
         }
       }
 
+      flushStreamToDb(finalText, true);
+      await dbFlushChain;
       return finalText;
     };
 
-    try {
-      const answer = await withTimeout(work(), BA_TIMEOUT_MS, "BA chat");
-      publishBaProgress({
-        userId: opts.userId,
-        threadId: opts.threadId,
-        messageId: opts.assistantMessageId,
-        step: "done",
-        label: "Xong",
-      });
-      return answer;
-    } catch (err) {
-      const raw = err instanceof Error ? err.message : String(err);
-      if (/Force-stopped|cancelled/i.test(raw)) {
-        const stopped = new Error("Force-stopped from UI") as Error & {
-          partial?: string;
-        };
-        stopped.partial = (err as Error & { partial?: string }).partial;
-        throw stopped;
+    // Same policy as /work (`queue.runAgentWithRetry`): Cursor cut / transport
+    // flakes retry up to AGENT_TRANSIENT_RETRIES. BA wall-clock timeout does not.
+    const maxRetries = Math.max(0, getConfig().AGENT_TRANSIENT_RETRIES);
+    let attempt = 0;
+    while (true) {
+      try {
+        const answer = await withTimeout(work(), BA_TIMEOUT_MS, "BA chat");
+        publishBaProgress({
+          userId: opts.userId,
+          threadId: opts.threadId,
+          messageId: opts.assistantMessageId,
+          step: "done",
+          label: "Xong",
+        });
+        return answer;
+      } catch (err) {
+        const raw = err instanceof Error ? err.message : String(err);
+        if (/Force-stopped|cancelled/i.test(raw)) {
+          const stopped = new Error("Force-stopped from UI") as Error & {
+            partial?: string;
+          };
+          stopped.partial = (err as Error & { partial?: string }).partial;
+          throw stopped;
+        }
+
+        const canRetry =
+          isTransientCursorTransportError(err) &&
+          !isBaWallClockTimeout(err) &&
+          attempt < maxRetries &&
+          !isJobKillRequested(cancelKey);
+
+        if (!canRetry) {
+          let failMsg = formatCursorAgentFailure(
+            err,
+            err instanceof Error ? err.message : String(err),
+          );
+          if (
+            isTransientCursorTransportError(err) &&
+            !isBaWallClockTimeout(err) &&
+            attempt >= maxRetries &&
+            maxRetries > 0
+          ) {
+            failMsg = `${failMsg.replace(/\s*$/, "")} Đã hết lượt tự thử lại — hãy Gửi lại.`;
+          }
+          const wrapped = new Error(failMsg);
+          if (
+            isTransientCursorTransportError(err) &&
+            !isBaWallClockTimeout(err)
+          ) {
+            markCursorTransient(wrapped);
+          }
+          throw wrapped;
+        }
+
+        attempt += 1;
+        const delayMs = attempt * 5000;
+        publishBaProgress({
+          userId: opts.userId,
+          threadId: opts.threadId,
+          messageId: opts.assistantMessageId,
+          step: "start",
+          label: `Lỗi mạng Cursor tạm thời — tự retry ${attempt}/${maxRetries} sau ${delayMs / 1000}s`,
+          detail: raw.slice(0, 120),
+        });
+        logger.warn("BA chat transient Cursor error — retrying", {
+          threadId: opts.threadId,
+          attempt,
+          maxRetries,
+          err: raw,
+        });
+
+        // Wipe partial so the next attempt does not append onto stale deltas.
+        try {
+          await updateBaMessageContent(opts.assistantMessageId, "", {
+            streamStatus: "streaming",
+          });
+        } catch {
+          /* best-effort */
+        }
+        publishRealtime({
+          type: "ba_message",
+          userId: opts.userId,
+          threadId: opts.threadId,
+          resetStream: true,
+          message: {
+            id: opts.assistantMessageId,
+            threadId: opts.threadId,
+            role: "assistant",
+            content: "",
+            createdAt: new Date().toISOString(),
+          },
+        });
+
+        await new Promise((r) => setTimeout(r, delayMs));
+        try {
+          session.check();
+        } catch (stopErr) {
+          const stopMsg =
+            stopErr instanceof Error ? stopErr.message : String(stopErr);
+          if (/Force-stopped|cancelled/i.test(stopMsg)) {
+            throw new Error("Force-stopped from UI");
+          }
+          throw stopErr;
+        }
       }
-      throw new Error(
-        formatCursorAgentFailure(
-          err,
-          err instanceof Error ? err.message : String(err),
-        ),
-      );
     }
   } finally {
     session.end();
@@ -801,20 +999,25 @@ export function kickBaChatAnswer(opts: {
    */
   postProcessAnswer?: (answer: string) => Promise<string | null>;
 }): void {
-  // Stop & send: prior stop() leaves killRequested on this thread. A new user
-  // message must start fresh — clear leftover flag here. Stop pressed after
-  // this kick still hits earlyStop / session.check inside runBaChatAgent.
-  clearJobKillRequested(baCancelKey(opts.threadId));
-
+  const cancelKey = baCancelKey(opts.threadId);
   const assistantId = `bam_${crypto.randomUUID().replace(/-/g, "").slice(0, 16)}`;
 
   void (async () => {
     try {
+      // Stop & send: cancel leftover run, wait for untrack, then clear kill so
+      // the new run is not immediately aborted. Generation check also supersedes.
+      if (hasActiveAgentRun(cancelKey) || isJobKillRequested(cancelKey)) {
+        await cancelActiveAgentRun(cancelKey);
+        await waitBaAgentRunIdle(opts.threadId, 8_000);
+      }
+      clearJobKillRequested(cancelKey);
+
       const placeholder = await appendBaMessage({
         id: assistantId,
         threadId: opts.threadId,
         role: "assistant",
         content: "",
+        streamStatus: "streaming",
       });
       publishRealtime({
         type: "ba_message",
@@ -846,7 +1049,9 @@ export function kickBaChatAnswer(opts: {
         }
       }
 
-      await updateBaMessageContent(assistantId, answer);
+      await updateBaMessageContent(assistantId, answer, {
+        streamStatus: "done",
+      });
       publishRealtime({
         type: "ba_done",
         userId: opts.userId,
@@ -881,11 +1086,15 @@ export function kickBaChatAnswer(opts: {
           ? `${existing}\n\n⏹ Đã dừng theo yêu cầu.`
           : "⏹ Đã dừng theo yêu cầu."
         : existing
-          ? existing
+          ? existing.includes("⚠️")
+            ? existing
+            : `${existing}\n\n⚠️ ${msg}`
           : `⚠️ ${msg}`;
 
       try {
-        await updateBaMessageContent(assistantId, body);
+        await updateBaMessageContent(assistantId, body, {
+          streamStatus: stopped ? "done" : "error",
+        });
       } catch {
         /* ignore */
       }
@@ -922,6 +1131,8 @@ export function kickBaChatAnswer(opts: {
           detail: msg.slice(0, 120),
         });
       }
+    } finally {
+      releaseBaAnswer(opts.threadId);
     }
   })();
 }
