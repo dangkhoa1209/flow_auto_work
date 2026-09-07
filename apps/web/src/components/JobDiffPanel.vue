@@ -9,6 +9,7 @@ import {
 } from "@ant-design/icons-vue";
 import { api } from "@/api/client";
 import { API } from "@/api/endpoints";
+import { buildCommitMessage } from "@flow/shared";
 import {
   buildDiffBlocks,
   parseDiffRows,
@@ -114,30 +115,15 @@ function formatDate(iso: string) {
   });
 }
 
-/** ≤10 words for default commit subject (mirrors API shortCommitSubject). */
-function shortCommitSubject(raw: string, fallback = "code changes"): string {
-  let text = (raw || "").replace(/\s+/g, " ").trim();
-  if (!text) return fallback;
-  const summaryLine = text.match(
-    /(?:^|\b)SUMMARY:\s*(.+?)(?:\s+(?:ASSUMPTIONS|RISKS|TESTED)\s*:|$)/i,
-  );
-  if (summaryLine?.[1]) text = summaryLine[1].trim();
-  else {
-    const first = text.split(/[.;!?。]/)[0]?.trim();
-    if (first) text = first;
-  }
-  const words = text.split(/\s+/).filter(Boolean);
-  if (!words.length) return fallback;
-  return words.slice(0, 10).join(" ");
-}
-
 function defaultCommitMessage() {
   const iid = props.issueIid && props.issueIid > 0 ? props.issueIid : null;
-  const subject = shortCommitSubject(
-    props.jobSummary || props.issueTitle || "",
-    "code changes",
-  );
-  return iid ? `feat #${iid} ${subject}` : `feat ${subject}`;
+  return buildCommitMessage({
+    whatDone: props.jobSummary,
+    fallbackTitle: props.issueTitle,
+    issueIid: iid,
+    adhoc: !iid,
+    subjectFallback: "code changes",
+  });
 }
 
 async function loadCommits() {
@@ -379,7 +365,7 @@ function buildGroupDefaults() {
   groupTitle.value =
     newest?.subject?.trim() ||
     defaultCommitMessage() ||
-    "feat grouped changes";
+    "feat: grouped changes";
   groupBody.value = oldestFirst
     .map((c) => `* ${c.shortSha} ${c.subject}`)
     .join("\n");

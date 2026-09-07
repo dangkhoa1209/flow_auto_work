@@ -21,13 +21,21 @@ const issue = {
 };
 
 describe("commitMessageForIssue", () => {
-  it("uses feat + iid + short subject from whatDone", () => {
+  it("prefers COMMIT line over SUMMARY (Conventional Commits)", () => {
     const msg = commitMessageForIssue(issue, {
       whatDone:
-        "SUMMARY: đã sửa SSE resync và auto-retry khi Cursor cắt stream\nASSUMPTIONS: give-up 3 phút",
+        "SUMMARY: đã sửa SSE resync\nCOMMIT: fix(#102): retry SSE resync on stream cut\nASSUMPTIONS: give-up 3 phút",
+    });
+    expect(msg).toBe("fix(#102): retry SSE resync on stream cut");
+  });
+
+  it("sanitizes past-tense SUMMARY into feat(#iid): subject", () => {
+    const msg = commitMessageForIssue(issue, {
+      whatDone:
+        "SUMMARY: Đã sửa SSE resync và auto-retry khi Cursor cắt stream\nASSUMPTIONS: give-up 3 phút",
     });
     expect(msg).toBe(
-      "feat #102 đã sửa SSE resync và auto-retry khi Cursor cắt stream",
+      "feat(#102): sửa SSE resync và auto-retry khi Cursor cắt stream",
     );
   });
 
@@ -38,19 +46,28 @@ describe("commitMessageForIssue", () => {
         "một hai ba bốn năm sáu bảy tám chín mười mườimột mườihai title rất dài",
     };
     expect(commitMessageForIssue(long)).toBe(
-      "feat #102 một hai ba bốn năm sáu bảy tám chín mười",
+      "feat(#102): một hai ba bốn năm sáu bảy tám chín mười",
     );
   });
 
-  it("omits iid for adhoc", () => {
+  it("omits iid for adhoc and defaults to fix", () => {
     const adhoc = { ...issue, issueIid: 0, action: "adhoc", title: "free fix" };
-    expect(commitMessageForIssue(adhoc)).toBe("feat free fix");
+    expect(commitMessageForIssue(adhoc)).toBe("fix: free fix");
   });
 
-  it("docs prefix mirrors feat rules", () => {
+  it("strips conversational chat tone from subject", () => {
+    const adhoc = { ...issue, issueIid: 0, action: "adhoc", title: "x" };
+    expect(
+      commitMessageForIssue(adhoc, {
+        whatDone: "SUMMARY: Đã đổi theo 2 hướng như bạn muốn",
+      }),
+    ).toBe("fix: đổi theo 2 hướng");
+  });
+
+  it("docs prefix mirrors conventional rules", () => {
     expect(
       docsCommitMessageForIssue(issue, { whatDone: "cập nhật docs feature X" }),
-    ).toBe("docs #102 cập nhật docs feature X");
+    ).toBe("docs(#102): cập nhật docs feature X");
   });
 });
 
@@ -168,5 +185,12 @@ describe("buildWorkPrompt graphify", () => {
   it("omits the map when no graphify block is passed", () => {
     const prompt = buildWorkPrompt(issue);
     expect(prompt).not.toContain("How to use Graphify");
+  });
+
+  it("requires COMMIT conventional label in DONE block", () => {
+    const prompt = buildWorkPrompt(issue);
+    expect(prompt).toMatch(/COMMIT:/);
+    expect(prompt).toMatch(/Conventional Commits/);
+    expect(prompt).toContain(`fix(#${issue.issueIid}):`);
   });
 });
