@@ -1,6 +1,7 @@
 /**
  * Strip credentials from git command/error text before logs or UI.
  * Node execFile prefixes failures with `Command failed: git … <url-with-token>`.
+ * /work surfaces this via queue `Chat lỗi:` / `Run lỗi:` → must redact before chat.
  */
 export function redactGitCredentials(text: string): string {
   return text
@@ -10,6 +11,13 @@ export function redactGitCredentials(text: string): string {
     .replace(/\bgithub_pat_[A-Za-z0-9_]+/g, "github_pat_***")
     .replace(/\bghp_[A-Za-z0-9_]+/g, "ghp_***")
     .replace(/\bglpat-[A-Za-z0-9_-]+/g, "glpat-***");
+}
+
+/** Safe string for job.error / chat — never leave PAT in UI. */
+export function safeErrorMessage(err: unknown): string {
+  const raw =
+    err instanceof Error ? err.message : typeof err === "string" ? err : String(err);
+  return redactGitCredentials(raw);
 }
 
 /** Mutate Error (+ execFile extras) so message/cmd/stderr never leak PATs. */
