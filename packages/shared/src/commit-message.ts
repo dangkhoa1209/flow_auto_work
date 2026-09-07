@@ -1,6 +1,7 @@
 /**
- * Conventional Commits helpers for Flow auto / manual commit labels.
- * Format: `type(#iid): subject` or `type: subject` (no issue).
+ * Commit label helpers for Flow auto / manual commits.
+ * - Linked GitHub/GitLab task: `feat #123 Issue title` (or `docs #123 …`)
+ * - Ad-hoc / no task: Conventional Commits `type: subject`
  */
 
 export const CONVENTIONAL_COMMIT_TYPES = [
@@ -42,7 +43,6 @@ export type CommitHint = {
 
 export type FormatConventionalCommitOpts = {
   type: string;
-  issueIid?: number | null;
   subject: string;
   /** Prefer explicit scope from agent COMMIT line when set. */
   scope?: string | null;
@@ -133,9 +133,24 @@ export function parseCommitHintFromDone(raw: string | null | undefined): CommitH
 }
 
 /**
- * Build `type(#iid): subject` or `type: subject`.
- * If `scope` is already `#N` or a non-empty module scope, keep it;
- * otherwise inject `#iid` when available.
+ * Linked-task label: `feat #123 Issue title` (space form, not Conventional scope).
+ */
+export function formatTaskCommit(opts: {
+  type?: string;
+  issueIid: number;
+  title: string;
+  fallback?: string;
+}): string {
+  const type = normalizeType(opts.type) || "feat";
+  const title =
+    (opts.title || "").replace(/\s+/g, " ").trim() ||
+    (opts.fallback || "code changes");
+  return `${type} #${opts.issueIid} ${title}`;
+}
+
+/**
+ * Ad-hoc Conventional Commits: `type: subject` (optional `type(scope): subject`).
+ * Does not inject `#iid` — linked tasks use {@link formatTaskCommit} instead.
  */
 export function formatConventionalCommit(
   opts: FormatConventionalCommitOpts,
@@ -144,19 +159,12 @@ export function formatConventionalCommit(
   const subject =
     sanitizeCommitSubject(opts.subject) || "code changes";
 
-  const iid =
-    opts.issueIid != null && opts.issueIid > 0 ? opts.issueIid : null;
   let scope = (opts.scope || "").trim();
-
   if (scope) {
-    // Normalize `# 123` / `123` → `#123` when numeric
     const num = scope.replace(/^#/, "").trim();
     if (/^\d+$/.test(num)) scope = `#${num}`;
-  } else if (iid) {
-    scope = `#${iid}`;
+    return `${type}(${scope}): ${subject}`;
   }
-
-  if (scope) return `${type}(${scope}): ${subject}`;
   return `${type}: ${subject}`;
 }
 
@@ -175,26 +183,38 @@ export type BuildCommitMessageInput = {
 
 /**
  * Full auto-commit label from agent DONE + issue context.
+ * Linked task → `feat #iid <issue title>`; ad-hoc → Conventional Commits from DONE.
  */
 export function buildCommitMessage(input: BuildCommitMessageInput): string {
-  const hint = parseCommitHintFromDone(input.whatDone);
-  const defaultType = normalizeType(input.defaultType) ||
-    (input.adhoc ? "fix" : "feat");
-  const type = hint?.type || defaultType;
+  const iid =
+    input.issueIid != null && input.issueIid > 0 ? input.issueIid : null;
 
+  // GitHub / GitLab job with issue: always feat|docs #id + task title
+  if (iid) {
+    const type = normalizeType(input.defaultType) || "feat";
+    return formatTaskCommit({
+      type,
+      issueIid: iid,
+      title: input.fallbackTitle || "",
+      fallback: input.subjectFallback || "code changes",
+    });
+  }
+
+  const hint = parseCommitHintFromDone(input.whatDone);
+  const defaultType =
+    normalizeType(input.defaultType) || (input.adhoc ? "fix" : "feat");
+  const type = hint?.type || defaultType;
   const rawSubject =
     hint?.subject ||
     input.whatDone?.trim() ||
     input.fallbackTitle?.trim() ||
     "";
-
   const subject = shortCommitSubject(rawSubject, {
     fallback: input.subjectFallback || "code changes",
   });
 
   return formatConventionalCommit({
     type,
-    issueIid: input.issueIid,
     subject,
     scope: hint?.scope,
   });

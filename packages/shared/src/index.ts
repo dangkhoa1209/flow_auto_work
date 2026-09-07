@@ -35,6 +35,7 @@ export {
   buildCommitMessage,
   CONVENTIONAL_COMMIT_TYPES,
   formatConventionalCommit,
+  formatTaskCommit,
   parseCommitHintFromDone,
   sanitizeCommitSubject,
   shortCommitSubject,
