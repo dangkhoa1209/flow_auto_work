@@ -50,3 +50,19 @@ describe("safeErrorMessage / redactGitError", () => {
     expect(err.message).not.toContain("token123");
   });
 });
+
+describe("stripCloneUrlCredentials / gitHttpAuthEnvFromCloneUrl", () => {
+  it("keeps PAT out of public URL used in git argv", async () => {
+    const { stripCloneUrlCredentials, gitHttpAuthEnvFromCloneUrl } =
+      await import("../../../workspace/clone.js");
+    const patUrl = `https://x-access-token:${FAKE_GITHUB_PAT}@github.com/o/r.git`;
+    const publicUrl = stripCloneUrlCredentials(patUrl);
+    expect(publicUrl).toBe("https://github.com/o/r.git");
+    expect(publicUrl).not.toContain("github_pat_");
+    const env = gitHttpAuthEnvFromCloneUrl(patUrl);
+    expect(env.GIT_CONFIG_COUNT).toBe("1");
+    expect(env.GIT_CONFIG_KEY_0).toBe("http.https://github.com/.extraheader");
+    expect(String(env.GIT_CONFIG_VALUE_0)).toMatch(/^AUTHORIZATION: basic /);
+    expect(String(env.GIT_CONFIG_VALUE_0)).not.toContain(FAKE_GITHUB_PAT);
+  });
+});

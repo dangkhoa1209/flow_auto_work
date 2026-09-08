@@ -1,5 +1,9 @@
 import { logger } from "../../logger.js";
-import { buildCloneUrl } from "../../workspace/clone.js";
+import {
+  buildCloneUrl,
+  gitHttpAuthEnvFromCloneUrl,
+  stripCloneUrlCredentials,
+} from "../../workspace/clone.js";
 import { resolveRepoPath } from "../../workspace/creds.js";
 import { scheduleProjectGraphify } from "../../workspace/graphify.js";
 import { getRuntimeContext } from "../../workspace/runtime.js";
@@ -26,6 +30,54 @@ function resolvePatPushUrl(): string {
     token,
     path: gitlabPath,
   });
+}
+
+function isTransientGitNetworkError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /Couldn't connect to server|Failed to connect|Could not resolve host|Connection timed out|SSL connection timeout|Operation timed out|Network is unreachable|Temporary failure in name resolution|recv failure|gnutls_handshake|OpenSSL SSL_connect|unable to access/i.test(
+    msg,
+  );
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Push with PAT in env (not argv) + retry on transient GitHub/GitLab network errors. */
+async function pushWithPatUrl(
+  repoPath: string,
+  branch: string,
+  force: boolean,
+): Promise<void> {
+  const patUrl = resolvePatPushUrl();
+  const publicUrl = stripCloneUrlCredentials(patUrl);
+  const authEnv = gitHttpAuthEnvFromCloneUrl(patUrl);
+  const args = force
+    ? ["push", "--force", publicUrl, `HEAD:refs/heads/${branch}`]
+    : ["push", publicUrl, `HEAD:refs/heads/${branch}`];
+
+  const maxAttempts = 3;
+  let lastErr: unknown;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      await git(repoPath, args, undefined, authEnv);
+      return;
+    } catch (err) {
+      lastErr = err;
+      if (!isTransientGitNetworkError(err) || attempt === maxAttempts) {
+        throw err;
+      }
+      logger.warn("git push network failure — retrying", {
+        branch,
+        force,
+        attempt,
+        maxAttempts,
+        err: err instanceof Error ? err.message.slice(0, 240) : String(err),
+      });
+      await sleep(2000 * attempt);
+    }
+  }
+  throw lastErr;
 }
 
 /** Full HEAD SHA, or null if unavailable */
@@ -234,9 +286,8 @@ export async function pushBranch(
   repoPath: string,
   branch: string,
 ): Promise<void> {
-  const url = resolvePatPushUrl();
-  // One-shot PAT URL — do not `push -u` (would write token into branch.*.remote)
-  await git(repoPath, ["push", url, `HEAD:refs/heads/${branch}`]);
+  // One-shot auth via env — do not `push -u` (would write token into branch.*.remote)
+  await pushWithPatUrl(repoPath, branch, false);
   await refreshOriginBranchRef(repoPath, branch);
 }
 
@@ -245,8 +296,7 @@ export async function forcePushBranch(
   repoPath: string,
   branch: string,
 ): Promise<void> {
-  const url = resolvePatPushUrl();
-  await git(repoPath, ["push", "--force", url, `HEAD:refs/heads/${branch}`]);
+  await pushWithPatUrl(repoPath, branch, true);
   await refreshOriginBranchRef(repoPath, branch);
 }
 

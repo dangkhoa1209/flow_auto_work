@@ -1,7 +1,11 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { logger } from "../../logger.js";
-import { buildOauthCloneUrl } from "../../workspace/clone.js";
+import {
+  buildOauthCloneUrl,
+  gitHttpAuthEnvFromCloneUrl,
+  stripCloneUrlCredentials,
+} from "../../workspace/clone.js";
 import {
   getBaProject,
   getBaProjectGitlabToken,
@@ -18,6 +22,7 @@ const pullChainByProject = new Map<string, Promise<void>>();
 async function gitBa(
   repoPath: string,
   args: string[],
+  extraEnv?: NodeJS.ProcessEnv,
 ): Promise<{ stdout: string; stderr: string }> {
   try {
     const result = await execFileAsync("git", args, {
@@ -28,6 +33,7 @@ async function gitBa(
         ...process.env,
         GIT_TERMINAL_PROMPT: "0",
         GIT_ASKPASS: "echo",
+        ...extraEnv,
       },
     });
     return {
@@ -45,11 +51,13 @@ async function pullBaProjectLatestUnlocked(project: BaProject): Promise<void> {
     throw new Error("GitLab PAT missing — admin cần cập nhật PAT rồi clone lại");
   }
   const branch = (project.mainBranch || "main").trim() || "main";
-  const url = buildOauthCloneUrl(
+  const patUrl = buildOauthCloneUrl(
     project.gitlabHost,
     token,
     project.gitlabPath,
   );
+  const url = stripCloneUrlCredentials(patUrl);
+  const authEnv = gitHttpAuthEnvFromCloneUrl(patUrl);
 
   logger.info("BA project git pull starting", {
     projectId: project.id,
@@ -58,15 +66,19 @@ async function pullBaProjectLatestUnlocked(project: BaProject): Promise<void> {
   });
 
   try {
-    await gitBa(project.localPath, [
-      "fetch",
-      "--prune",
-      url,
-      `+refs/heads/${branch}:refs/remotes/origin/${branch}`,
-    ]);
+    await gitBa(
+      project.localPath,
+      [
+        "fetch",
+        "--prune",
+        url,
+        `+refs/heads/${branch}:refs/remotes/origin/${branch}`,
+      ],
+      authEnv,
+    );
   } catch {
     // Fallback: fetch ref into FETCH_HEAD
-    await gitBa(project.localPath, ["fetch", url, branch]);
+    await gitBa(project.localPath, ["fetch", url, branch], authEnv);
     await gitBa(project.localPath, ["checkout", "-B", branch, "FETCH_HEAD"]);
     logger.info("BA project git pull done (FETCH_HEAD)", {
       projectId: project.id,

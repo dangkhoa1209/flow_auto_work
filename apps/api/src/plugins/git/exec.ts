@@ -35,12 +35,13 @@ export function gitExecEnv(extra?: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
 export function gitExecOptions(
   repoPath: string,
   maxBuffer = 10 * 1024 * 1024,
+  extraEnv?: NodeJS.ProcessEnv,
 ): ExecFileOptions {
   return {
     cwd: repoPath,
     maxBuffer,
     encoding: "utf8",
-    env: gitExecEnv(),
+    env: gitExecEnv(extraEnv),
   };
 }
 
@@ -48,12 +49,13 @@ export async function git(
   repoPath: string,
   args: string[],
   maxBuffer?: number,
+  extraEnv?: NodeJS.ProcessEnv,
 ): Promise<{ stdout: string; stderr: string }> {
   try {
     const result = await execFileAsync(
       "git",
       args,
-      gitExecOptions(repoPath, maxBuffer ?? 10 * 1024 * 1024),
+      gitExecOptions(repoPath, maxBuffer ?? 10 * 1024 * 1024, extraEnv),
     );
     return {
       stdout: String(result.stdout),
@@ -69,7 +71,8 @@ export async function gitStdout(
   repoPath: string,
   args: string[],
   maxBuffer?: number,
+  extraEnv?: NodeJS.ProcessEnv,
 ): Promise<string> {
-  const { stdout } = await git(repoPath, args, maxBuffer);
+  const { stdout } = await git(repoPath, args, maxBuffer, extraEnv);
   return stdout;
 }
