@@ -3,6 +3,13 @@ import type { SyncDbPhase, SyncDbProgress } from "./types.js";
 /**
  * Parse mongodump / mongorestore verbose lines for collection progress.
  * Patterns are best-effort across tool versions — not a public API.
+ *
+ * Database Tools 100.x wraps namespaces / archive paths in backticks:
+ *   writing `DB.coll` to `archive on stdout`
+ *   done dumping `DB.coll` (N documents)
+ *   restoring `DB.coll` from `archive on stdin`
+ *   finished restoring `DB.coll` (N documents, 0 failures)
+ * Legacy (no backticks) is still accepted.
  */
 export function parseToolLine(
   line: string,
@@ -11,26 +18,31 @@ export function parseToolLine(
   const text = line.trim();
   if (!text) return null;
 
-  // mongodump: "writing DB.coll to archive on stdout"
-  // mongodump: "done dumping DB.coll (N documents)"
-  let m = text.match(/\bwriting\s+([^\s]+)\s+to\s+archive/i);
+  // mongodump: writing [`]DB.coll[`] to [`]archive…
+  let m = text.match(/\bwriting\s+`?([^\s`]+)`?\s+to\s+`?archive\b/i);
   if (m) {
     return { kind: "start", name: stripDb(m[1], dbName), phaseHint: "dump" };
   }
-  m = text.match(/\bdone dumping\s+([^\s(]+)/i);
+  m = text.match(/\bdone dumping\s+`?([^\s`(]+)`?/i);
   if (m) {
     return { kind: "done", name: stripDb(m[1], dbName), phaseHint: "dump" };
   }
 
-  // mongorestore: "restoring to DB.coll from archive"
-  // mongorestore: "finished restoring DB.coll (N documents)"
-  m = text.match(/\brestoring\s+(?:to\s+)?([^\s]+)\s+from\s+archive/i);
+  // mongorestore: restoring [to ][`]DB.coll[`] from [`]archive…
+  m = text.match(/\brestoring\s+(?:to\s+)?`?([^\s`]+)`?\s+from\s+`?archive\b/i);
   if (m) {
     return { kind: "start", name: stripDb(m[1], dbName), phaseHint: "restore" };
   }
-  m = text.match(/\bfinished restoring\s+([^\s(]+)/i);
+  m = text.match(/\bfinished restoring\s+`?([^\s`(]+)`?/i);
   if (m) {
     return { kind: "done", name: stripDb(m[1], dbName), phaseHint: "restore" };
+  }
+
+  // Progress bar (either tool): [####....]  DB.coll  123/456  (27.0%)
+  // Phase comes from which child stderr (streamHint in applyLine).
+  m = text.match(/\[[#.\s]+\]\s+(\S+)\s+\d+\/\d+/);
+  if (m) {
+    return { kind: "start", name: stripDb(m[1], dbName) };
   }
 
   return null;
@@ -88,6 +100,14 @@ export function createProgressTracker(dbName: string): ProgressTracker {
     const showRestore =
       phase === "restore" || (sawRestore && (currentRestore.size > 0 || restoreDone > 0));
     const current = showRestore ? [...currentRestore] : [...currentDump];
+    // While both run in the pipe, prefer showing dump currents if restore empty,
+    // else merge a short preview so header is not stuck on "…".
+    const merged =
+      current.length > 0
+        ? current
+        : showRestore
+          ? [...currentDump]
+          : [...currentRestore];
     return {
       phase,
       total,
@@ -95,7 +115,7 @@ export function createProgressTracker(dbName: string): ProgressTracker {
       collections: base || collections,
       dumpDone,
       restoreDone,
-      current: current.slice(0, 8),
+      current: merged.slice(0, 8),
       dbName,
     };
   };
@@ -124,36 +144,41 @@ export function createProgressTracker(dbName: string): ProgressTracker {
       }
       return snap();
     },
-    applyLine(line, phaseHint) {
+    applyLine(line, streamHint) {
       const ev = parseToolLine(line, dbName);
       if (!ev) return snap();
 
-      if (ev.phaseHint === "dump") {
+      const hint: "dump" | "restore" | undefined =
+        ev.phaseHint ??
+        (streamHint === "dump" || streamHint === "restore"
+          ? streamHint
+          : undefined);
+      // Progress bars without a stream hint cannot be classified — skip.
+      if (!hint) return snap();
+
+      if (hint === "dump") {
         sawDump = true;
         if (phase !== "done" && phase !== "failed" && !sawRestore) {
           phase = "dump";
         }
-      }
-      if (ev.phaseHint === "restore") {
+      } else {
         sawRestore = true;
         if (phase !== "done" && phase !== "failed") {
           phase = "restore";
         }
-      }
-      if (phaseHint === "dump" || phaseHint === "restore") {
-        if (phase !== "done" && phase !== "failed") phase = phaseHint;
       }
 
       const name = ev.name;
       if (!name || name === "*") return snap();
       known.add(name);
 
-      const isDump = ev.phaseHint === "dump";
+      const isDump = hint === "dump";
       const finished = isDump ? finishedDump : finishedRestore;
       const current = isDump ? currentDump : currentRestore;
 
       if (ev.kind === "start") {
-        current.add(name);
+        // Do not revive a collection already counted done in this phase.
+        if (!finished.has(name)) current.add(name);
       } else {
         current.delete(name);
         finished.add(name);

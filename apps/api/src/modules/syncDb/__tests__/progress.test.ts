@@ -31,15 +31,35 @@ describe("syncDb excluded collections", () => {
 });
 
 describe("syncDb progress parse", () => {
-  it("parses dump/restore collection lines", () => {
+  it("parses dump/restore collection lines (legacy + Database Tools 100.x backticks)", () => {
     expect(parseToolLine("writing YKK.users to archive on stdout", "YKK")).toEqual({
       kind: "start",
       name: "users",
       phaseHint: "dump",
     });
+    expect(
+      parseToolLine(
+        "2026-09-09T10:24:26.374+0700\twriting `YKK.attendance_records` to `archive on stdout`",
+        "YKK",
+      ),
+    ).toEqual({
+      kind: "start",
+      name: "attendance_records",
+      phaseHint: "dump",
+    });
     expect(parseToolLine("done dumping YKK.users (12 documents)", "YKK")).toEqual({
       kind: "done",
       name: "users",
+      phaseHint: "dump",
+    });
+    expect(
+      parseToolLine(
+        "done dumping `YKK.attendance_record_raws` (945801 documents)",
+        "YKK",
+      ),
+    ).toEqual({
+      kind: "done",
+      name: "attendance_record_raws",
       phaseHint: "dump",
     });
     expect(
@@ -49,15 +69,47 @@ describe("syncDb progress parse", () => {
       name: "orders",
       phaseHint: "restore",
     });
+    expect(
+      parseToolLine(
+        "restoring `YKK.timekeepings` from `archive on stdin`",
+        "YKK",
+      ),
+    ).toEqual({
+      kind: "start",
+      name: "timekeepings",
+      phaseHint: "restore",
+    });
+    expect(
+      parseToolLine(
+        "finished restoring `YKK.attendance_record_raws` (945801 documents, 0 failures)",
+        "YKK",
+      ),
+    ).toEqual({
+      kind: "done",
+      name: "attendance_record_raws",
+      phaseHint: "restore",
+    });
+  });
+
+  it("parses progress-bar lines for current collection", () => {
+    expect(
+      parseToolLine(
+        "[######..................]          YKK.timekeepings    247709/976144  (25.4%)",
+        "YKK",
+      ),
+    ).toEqual({
+      kind: "start",
+      name: "timekeepings",
+    });
   });
 
   it("tracks done/total across lines", () => {
     const t = createProgressTracker("YKK");
     t.setTotal(2, ["users", "orders"]);
     t.setPhase("dump");
-    t.applyLine("writing YKK.users to archive on stdout");
+    t.applyLine("writing `YKK.users` to `archive on stdout`");
     expect(t.snapshot().current).toContain("users");
-    t.applyLine("done dumping YKK.users (1 documents)");
+    t.applyLine("done dumping `YKK.users` (1 documents)");
     expect(t.snapshot().dumpDone).toBe(1);
     expect(t.snapshot().done).toBe(1);
     // Pipe expects dump+restore → total = 2 * collections
@@ -68,26 +120,46 @@ describe("syncDb progress parse", () => {
     const t = createProgressTracker("YKK");
     t.setTotal(3, ["a", "b", "c"]);
     t.setPhase("dump");
-    t.applyLine("writing YKK.a to archive on stdout");
-    t.applyLine("done dumping YKK.a (1 documents)");
-    t.applyLine("writing YKK.b to archive on stdout");
-    t.applyLine("done dumping YKK.b (1 documents)");
+    t.applyLine("writing `YKK.a` to `archive on stdout`");
+    t.applyLine("done dumping `YKK.a` (1 documents)");
+    t.applyLine("writing `YKK.b` to `archive on stdout`");
+    t.applyLine("done dumping `YKK.b` (1 documents)");
     expect(t.snapshot().dumpDone).toBe(2);
     expect(t.snapshot().done).toBe(2);
 
     // Restore starts while dump still running — must NOT reset dump counters.
-    t.applyLine("restoring to YKK.a from archive");
-    t.applyLine("finished restoring YKK.a (1 documents)");
+    t.applyLine("restoring `YKK.a` from `archive on stdin`");
+    t.applyLine(
+      "finished restoring `YKK.a` (1 documents, 0 failures)",
+    );
     expect(t.snapshot().dumpDone).toBe(2);
     expect(t.snapshot().restoreDone).toBe(1);
     expect(t.snapshot().done).toBe(3);
     expect(t.snapshot().phase).toBe("restore");
 
-    t.applyLine("done dumping YKK.c (1 documents)");
+    t.applyLine("done dumping `YKK.c` (1 documents)");
     expect(t.snapshot().dumpDone).toBe(3);
     expect(t.snapshot().restoreDone).toBe(1);
     expect(t.snapshot().done).toBe(4);
     expect(t.snapshot().total).toBe(6);
+  });
+
+  it("uses stream hint for progress bars so current is not empty", () => {
+    const t = createProgressTracker("YKK");
+    t.setTotal(2, ["timekeepings", "users"]);
+    t.setPhase("dump");
+    t.applyLine(
+      "[####....................]            YKK.timekeepings    202840/976144  (20.8%)",
+      "dump",
+    );
+    expect(t.snapshot().current).toContain("timekeepings");
+    expect(t.snapshot().dumpDone).toBe(0);
+    t.applyLine(
+      "done dumping `YKK.timekeepings` (976144 documents)",
+      "dump",
+    );
+    expect(t.snapshot().dumpDone).toBe(1);
+    expect(t.snapshot().current).not.toContain("timekeepings");
   });
 });
 
