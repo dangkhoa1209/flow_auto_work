@@ -13,9 +13,7 @@ export function parseToolLine(
 
   // mongodump: "writing DB.coll to archive on stdout"
   // mongodump: "done dumping DB.coll (N documents)"
-  let m = text.match(
-    /\bwriting\s+([^\s]+)\s+to\s+archive/i,
-  );
+  let m = text.match(/\bwriting\s+([^\s]+)\s+to\s+archive/i);
   if (m) {
     return { kind: "start", name: stripDb(m[1], dbName), phaseHint: "dump" };
   }
@@ -54,37 +52,73 @@ export type ProgressTracker = {
   snapshot(): SyncDbProgress;
 };
 
+/**
+ * Pipeline mongodump | mongorestore interleaves stderr from both tools.
+ * Track dump/restore separately and NEVER reset one when the other emits —
+ * otherwise UI flickers 1/N ↔ 2/N then jumps to N/N on success.
+ *
+ * Display `done/total` spans both phases: total = collections * 2,
+ * done = dumpFinished + restoreFinished (smooth climb through the pipe).
+ */
 export function createProgressTracker(dbName: string): ProgressTracker {
   let phase: SyncDbPhase = "queued";
-  let total = 0;
-  let done = 0;
-  const finished = new Set<string>();
-  const current = new Set<string>();
+  /** Collection count from listCollections (one phase). */
+  let collections = 0;
+  const finishedDump = new Set<string>();
+  const finishedRestore = new Set<string>();
+  const currentDump = new Set<string>();
+  const currentRestore = new Set<string>();
   const known = new Set<string>();
+  let sawDump = false;
+  let sawRestore = false;
 
-  const snap = (): SyncDbProgress => ({
-    phase,
-    total,
-    done,
-    current: [...current].slice(0, 8),
-    dbName,
-  });
+  const snap = (): SyncDbProgress => {
+    const dumpDone = finishedDump.size;
+    const restoreDone = finishedRestore.size;
+    const base = Math.max(collections, known.size);
+    // Archive pipe always runs dump + restore; count both so done climbs 0→2N.
+    const inPipe =
+      phase === "dump" ||
+      phase === "restore" ||
+      phase === "done" ||
+      sawDump ||
+      sawRestore;
+    const phaseCount = inPipe ? 2 : 1;
+    const total = Math.max(base * phaseCount, dumpDone + restoreDone);
+    const showRestore =
+      phase === "restore" || (sawRestore && (currentRestore.size > 0 || restoreDone > 0));
+    const current = showRestore ? [...currentRestore] : [...currentDump];
+    return {
+      phase,
+      total,
+      done: dumpDone + restoreDone,
+      collections: base || collections,
+      dumpDone,
+      restoreDone,
+      current: current.slice(0, 8),
+      dbName,
+    };
+  };
 
   return {
     setPhase(p) {
       phase = p;
-      if (p === "dump" || p === "restore") {
-        current.clear();
-        // dump→restore: reset done for restore phase display
-        if (p === "restore") {
-          done = 0;
-          finished.clear();
-        }
+      // Do not clear finished* — pipeline stderr is interleaved; clearing
+      // caused done to snap back to 0/1 and look "stuck" until success.
+      if (p === "dump") {
+        currentDump.clear();
+        sawDump = true;
+      } else if (p === "restore") {
+        currentRestore.clear();
+        sawRestore = true;
+      } else if (p === "done" || p === "failed") {
+        currentDump.clear();
+        currentRestore.clear();
       }
       return snap();
     },
     setTotal(t, names) {
-      total = Math.max(0, t);
+      collections = Math.max(0, t);
       if (names) {
         for (const n of names) known.add(n);
       }
@@ -93,34 +127,37 @@ export function createProgressTracker(dbName: string): ProgressTracker {
     applyLine(line, phaseHint) {
       const ev = parseToolLine(line, dbName);
       if (!ev) return snap();
-      if (ev.phaseHint === "dump" && phase !== "dump") {
-        phase = "dump";
-        done = 0;
-        finished.clear();
-        current.clear();
+
+      if (ev.phaseHint === "dump") {
+        sawDump = true;
+        if (phase !== "done" && phase !== "failed" && !sawRestore) {
+          phase = "dump";
+        }
       }
-      if (ev.phaseHint === "restore" && phase !== "restore") {
-        phase = "restore";
-        done = 0;
-        finished.clear();
-        current.clear();
+      if (ev.phaseHint === "restore") {
+        sawRestore = true;
+        if (phase !== "done" && phase !== "failed") {
+          phase = "restore";
+        }
       }
       if (phaseHint === "dump" || phaseHint === "restore") {
-        phase = phaseHint;
+        if (phase !== "done" && phase !== "failed") phase = phaseHint;
       }
+
       const name = ev.name;
       if (!name || name === "*") return snap();
       known.add(name);
+
+      const isDump = ev.phaseHint === "dump";
+      const finished = isDump ? finishedDump : finishedRestore;
+      const current = isDump ? currentDump : currentRestore;
+
       if (ev.kind === "start") {
         current.add(name);
       } else {
         current.delete(name);
-        if (!finished.has(name)) {
-          finished.add(name);
-          done = finished.size;
-        }
+        finished.add(name);
       }
-      if (total < known.size) total = known.size;
       return snap();
     },
     snapshot: snap,

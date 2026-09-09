@@ -7,6 +7,7 @@ import { getConfig } from "../../config.js";
 import { logger } from "../../logger.js";
 import { AppError } from "../../utils/AppError.js";
 import type { BaDbConnectionResolved } from "../../workspace/baStore.js";
+import { partitionSyncCollections, SYNC_DB_SKIP_COLLECTIONS } from "./excludedCollections.js";
 import { publishSyncDbEvent } from "./events.js";
 import { openSyncDbLog, type SyncDbLogWriter } from "./logFile.js";
 import { createProgressTracker } from "./progress.js";
@@ -25,6 +26,11 @@ import type {
 } from "./types.js";
 
 export { assertSafeRestoreTarget } from "./safety.js";
+export {
+  isSkippedSyncCollection,
+  partitionSyncCollections,
+  SYNC_DB_SKIP_COLLECTIONS,
+} from "./excludedCollections.js";
 
 export type SyncDbRunResult = {
   job: SyncDbJob;
@@ -252,6 +258,59 @@ async function listSourceCollections(
   });
 }
 
+/** Map sshpass / OpenSSH early-exit codes to actionable admin messages. */
+export function formatSshTunnelExitMessage(
+  code: number | null,
+  stderrHint?: string,
+): string {
+  const hint = (stderrHint || "").trim().replace(/\s+/g, " ").slice(0, 240);
+  const lower = hint.toLowerCase();
+  if (
+    code === 5 ||
+    lower.includes("permission denied") ||
+    lower.includes("wrong password")
+  ) {
+    return (
+      "SSH authentication failed (wrong password or user) — " +
+      "fix SSH username/password in Admin → Sync DB" +
+      (hint ? ` [${hint}]` : "")
+    );
+  }
+  if (code === 6) {
+    return (
+      "SSH host key unknown — accept host once or pin known_hosts" +
+      (hint ? ` [${hint}]` : "")
+    );
+  }
+  if (code === 7 || lower.includes("remote host identification has changed")) {
+    return (
+      "SSH host key changed (possible MITM) — verify host then update known_hosts" +
+      (hint ? ` [${hint}]` : "")
+    );
+  }
+  if (code === 4) {
+    return (
+      "sshpass could not parse SSH prompt — check SSH user/host or use a private key" +
+      (hint ? ` [${hint}]` : "")
+    );
+  }
+  if (lower.includes("connection refused") || lower.includes("no route to host")) {
+    return (
+      `SSH could not reach host — check sshHost/sshPort in Admin → Sync DB` +
+      (hint ? ` [${hint}]` : "")
+    );
+  }
+  if (lower.includes("name or service not known") || lower.includes("could not resolve")) {
+    return (
+      "SSH hostname could not be resolved — check sshHost in Admin → Sync DB" +
+      (hint ? ` [${hint}]` : "")
+    );
+  }
+  return (
+    `SSH tunnel exited early (code ${code})` + (hint ? `: ${hint}` : "")
+  );
+}
+
 function openSshTunnel(
   source: SyncDbSystemConfigResolved,
 ): {
@@ -259,6 +318,7 @@ function openSshTunnel(
   keyFile: string | null;
   cleanup: () => Promise<void>;
 } {
+  const usePassword = Boolean(source.sshPassword && !source.sshPrivateKey);
   const args = [
     "-L",
     `${source.tunnelLocalPort}:${source.remoteMongoHost}:${source.remoteMongoPort}`,
@@ -277,6 +337,10 @@ function openSshTunnel(
     "TCPKeepAlive=yes",
     "-N",
   ];
+  // Fail fast on bad password (sshpass code 5) instead of retry prompts.
+  if (usePassword) {
+    args.push("-o", "NumberOfPasswordPrompts=1");
+  }
 
   let keyFile: string | null = null;
   const env = { ...process.env };
@@ -292,7 +356,7 @@ function openSshTunnel(
   }
 
   let child: ChildProcess;
-  if (source.sshPassword && !source.sshPrivateKey) {
+  if (usePassword) {
     env.SSHPASS = source.sshPassword;
     child = spawn("sshpass", ["-e", "ssh", ...args], {
       env,
@@ -394,10 +458,47 @@ export async function runSyncDbJob(
   const children: ChildProcess[] = [];
   let tunnelCleanup: (() => Promise<void>) | null = null;
 
-  const publishProgress = async (progress: SyncDbProgress) => {
-    job = await updateSyncDbJob(jobId, { progress });
-    publishSyncDbEvent({ type: "progress", jobId, progress });
-    publishSyncDbEvent({ type: "job", job });
+  // Serialize + throttle progress writes. Concurrent void publishProgress caused
+  // last-write-wins flicker (1/N ↔ 2/N) under interleaved dump/restore stderr.
+  let progressChain: Promise<void> = Promise.resolve();
+  let pendingProgress: SyncDbProgress | null = null;
+  let progressTimer: ReturnType<typeof setTimeout> | null = null;
+
+  const flushProgressNow = () => {
+    const progress = pendingProgress;
+    pendingProgress = null;
+    if (!progress) return progressChain;
+    progressChain = progressChain.then(
+      async () => {
+        job = await updateSyncDbJob(jobId, { progress });
+        publishSyncDbEvent({ type: "progress", jobId, progress });
+      },
+      async () => {
+        job = await updateSyncDbJob(jobId, { progress });
+        publishSyncDbEvent({ type: "progress", jobId, progress });
+      },
+    );
+    return progressChain;
+  };
+
+  const publishProgress = async (progress: SyncDbProgress, force = false) => {
+    pendingProgress = progress;
+    if (force) {
+      if (progressTimer) {
+        clearTimeout(progressTimer);
+        progressTimer = null;
+      }
+      await flushProgressNow();
+      return;
+    }
+    // Throttle (not debounce): publish immediately, then at most once / 200ms.
+    if (!progressTimer) {
+      void flushProgressNow();
+      progressTimer = setTimeout(() => {
+        progressTimer = null;
+        if (pendingProgress) void flushProgressNow();
+      }, 200);
+    }
   };
 
   const cancel = (reason: string) => {
@@ -428,7 +529,7 @@ export async function runSyncDbJob(
       "Safety: dump read-only from live via SSH tunnel; restore only to project Connect DB target",
     );
 
-    await publishProgress(tracker.setPhase("connecting"));
+    await publishProgress(tracker.setPhase("connecting"), true);
 
     await assertTunnelPortFree(source.tunnelLocalPort);
     const tunnel = openSshTunnel(source);
@@ -442,29 +543,38 @@ export async function runSyncDbJob(
     await waitTunnelReady(tunnel.child, source.tunnelLocalPort, 20_000);
     emitLog(job, log, "system", `SSH tunnel ready on 127.0.0.1:${source.tunnelLocalPort}`);
 
-    await publishProgress(tracker.setPhase("listing"));
+    await publishProgress(tracker.setPhase("listing"), true);
     emitLog(job, log, "system", "Verifying source Mongo user is read-only…");
     await assertSourceReadonlyViaTunnel(source, job.dbName);
     emitLog(job, log, "system", "Source user privilege check OK (no write on live)");
 
     let collections: string[] = [];
+    let skippedCollections: string[] = [];
     try {
-      collections = await listSourceCollections(source, job.dbName);
+      const listed = await listSourceCollections(source, job.dbName);
+      const parted = partitionSyncCollections(listed);
+      collections = parted.included;
+      skippedCollections = parted.skipped;
       emitLog(
         job,
         log,
         "system",
-        `Listed ${collections.length} collection(s) on source`,
+        `Listed ${listed.length} collection(s) on source` +
+          (skippedCollections.length
+            ? ` — skip ${skippedCollections.join(", ")} (heavy)`
+            : ""),
       );
-      await publishProgress(tracker.setTotal(collections.length, collections));
+      await publishProgress(tracker.setTotal(collections.length, collections), true);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       emitLog(job, log, "system", `listCollections warning: ${msg}`);
+      // Still exclude known heavy names even if listCollections failed.
+      skippedCollections = [...SYNC_DB_SKIP_COLLECTIONS];
     }
 
     if (cancelReason) throw new Error(cancelReason);
 
-    await publishProgress(tracker.setPhase("dump"));
+    await publishProgress(tracker.setPhase("dump"), true);
 
     const dumpPassCfg = writeMongoPasswordConfig(source.sourcePassword);
     const restorePassCfg = target.password
@@ -493,6 +603,18 @@ export async function runSyncDbJob(
       "--archive",
       "-v",
     ];
+    // Always exclude heavy collections from dump (even if listCollections missed them).
+    const excludeNames = [
+      ...new Set([
+        ...skippedCollections,
+        ...SYNC_DB_SKIP_COLLECTIONS,
+      ]
+        .map((n) => n.trim())
+        .filter(Boolean)),
+    ];
+    for (const name of excludeNames) {
+      dumpArgs.push("--excludeCollection", name);
+    }
 
     const restoreArgs = [
       "--host",
@@ -523,7 +645,10 @@ export async function runSyncDbJob(
       job,
       log,
       "system",
-      `Pipeline: mongodump (tunnel) | mongorestore (${target.host}:${target.port}) writeConcern=w:1`,
+      `Pipeline: mongodump (tunnel) | mongorestore (${target.host}:${target.port}) writeConcern=w:1` +
+        (excludeNames.length
+          ? `; excludeCollection=${excludeNames.join(",")}`
+          : ""),
     );
 
     try {
@@ -548,22 +673,22 @@ export async function runSyncDbJob(
       dump.stdout.on("error", () => forceKillProcessTree(restore));
       restore.stdin.on("error", () => forceKillProcessTree(dump));
 
-      const onProgress = async (line: string) => {
+      const onProgress = (line: string) => {
         const next = tracker.applyLine(line);
-        await publishProgress(next);
+        void publishProgress(next, false);
       };
 
       const dumpErr = createLineSplitter((line) => {
         emitLog(job!, log, "stderr", line);
-        void onProgress(line);
+        onProgress(line);
       });
       const restoreErr = createLineSplitter((line) => {
         emitLog(job!, log, "stderr", line);
-        void onProgress(line);
+        onProgress(line);
       });
       const restoreOut = createLineSplitter((line) => {
         emitLog(job!, log, "stdout", line);
-        void onProgress(line);
+        onProgress(line);
       });
 
       dump.stderr?.on("data", (c: Buffer) => dumpErr.push(c));
@@ -634,9 +759,16 @@ export async function runSyncDbJob(
         status === "success" ? "done" : "failed",
       );
       if (status === "success" && finalProgress.total > 0) {
-        finalProgress.done = finalProgress.total;
+        // Prefer tracked counts; only fill remaining if parse missed a few lines.
+        const tracked = (finalProgress.dumpDone ?? 0) + (finalProgress.restoreDone ?? 0);
+        finalProgress.done = Math.max(tracked, finalProgress.total);
+        finalProgress.dumpDone = finalProgress.collections ?? finalProgress.dumpDone;
+        finalProgress.restoreDone =
+          finalProgress.collections ?? finalProgress.restoreDone;
         finalProgress.current = [];
       }
+      await publishProgress(finalProgress, true);
+      await progressChain;
 
       job = await updateSyncDbJob(jobId, {
         status,

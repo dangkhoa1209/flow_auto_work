@@ -14,6 +14,9 @@ export type SyncDbProgress = {
   phase: string;
   total: number;
   done: number;
+  collections?: number;
+  dumpDone?: number;
+  restoreDone?: number;
   current: string[];
   dbName: string;
 };

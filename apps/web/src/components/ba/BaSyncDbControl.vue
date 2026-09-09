@@ -43,10 +43,13 @@ const progressText = computed(() => {
   if (!mine) {
     return `Another project syncing · Queue: ${sync.queue.queued}`;
   }
-  const phase = p.phase === "restore" ? "restore" : p.phase;
   const cur = p.current.length ? p.current.join(", ") : "…";
-  if (p.total > 0) return `${phase} ${p.done}/${p.total} · ${cur}`;
-  return `${phase} · ${cur}`;
+  const cols = p.collections ?? 0;
+  if (cols > 0 && (p.dumpDone != null || p.restoreDone != null)) {
+    return `dump ${p.dumpDone ?? 0}/${cols} · restore ${p.restoreDone ?? 0}/${cols} · ${cur}`;
+  }
+  if (p.total > 0) return `${p.phase} ${p.done}/${p.total} · ${cur}`;
+  return `${p.phase} · ${cur}`;
 });
 
 watch(

@@ -52,12 +52,16 @@ export const useSyncDbStore = defineStore("syncDb", () => {
     if (queue.value.running) {
       if (!mine) return "BUSY";
       if (queue.value.currentDbName) {
-        if (p && p.total > 0) {
-          const cur = p.current[0] ? ` · ${p.current[0]}` : "";
-          return `SYNC ${p.done}/${p.total}${cur}`;
+          if (p && p.total > 0) {
+            const cols = p.collections ?? 0;
+            if (cols > 0 && p.restoreDone != null && p.dumpDone != null) {
+              return `SYNC ${p.done}/${p.total}`;
+            }
+            const cur = p.current[0] ? ` · ${p.current[0]}` : "";
+            return `SYNC ${p.done}/${p.total}${cur}`;
+          }
+          return `RUNNING · ${queue.value.currentDbName}`;
         }
-        return `RUNNING · ${queue.value.currentDbName}`;
-      }
       return "RUNNING";
     }
     if (queue.value.queued > 0) return `Queue: ${queue.value.queued}`;
