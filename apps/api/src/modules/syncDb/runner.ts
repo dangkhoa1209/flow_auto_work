@@ -673,22 +673,23 @@ export async function runSyncDbJob(
       dump.stdout.on("error", () => forceKillProcessTree(restore));
       restore.stdin.on("error", () => forceKillProcessTree(dump));
 
-      const onProgress = (line: string) => {
-        const next = tracker.applyLine(line);
+      const onProgress = (line: string, phaseHint?: "dump" | "restore") => {
+        // Stream hint classifies progress-bar lines (no dump/restore keyword).
+        const next = tracker.applyLine(line, phaseHint);
         void publishProgress(next, false);
       };
 
       const dumpErr = createLineSplitter((line) => {
         emitLog(job!, log, "stderr", line);
-        onProgress(line);
+        onProgress(line, "dump");
       });
       const restoreErr = createLineSplitter((line) => {
         emitLog(job!, log, "stderr", line);
-        onProgress(line);
+        onProgress(line, "restore");
       });
       const restoreOut = createLineSplitter((line) => {
         emitLog(job!, log, "stdout", line);
-        onProgress(line);
+        onProgress(line, "restore");
       });
 
       dump.stderr?.on("data", (c: Buffer) => dumpErr.push(c));
