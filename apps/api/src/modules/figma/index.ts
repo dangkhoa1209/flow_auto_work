@@ -132,6 +132,16 @@ export async function continueJobAfterFigmaAuth(jobId: string): Promise<{
     );
     await requireProjectLocalClone(job.workspaceProjectId);
   }
+  if (job.pendingFollowUpMessage?.trim()) {
+    const resumed = await jobQueue.resumePendingFollowUp(jobId);
+    const fresh = await requireJobRecord(jobId);
+    return {
+      ok: resumed.ok,
+      enqueued: resumed.enqueued,
+      reason: resumed.reason,
+      job: fresh,
+    };
+  }
   const result = await jobQueue.enqueueExisting(jobId, {
     source: "figma_auth_continue",
   });

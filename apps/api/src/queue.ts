@@ -326,6 +326,11 @@ export class JobQueue {
     job.clarifyRound = 0;
     job.lastQuestion = undefined;
     job.handedOffAt = undefined;
+    // Full Run must not keep a stale chat follow-up payload — boot restore
+    // would otherwise treat this job as restore_followup instead of run.
+    job.pendingFollowUpMessage = undefined;
+    job.pendingFollowUpKind = undefined;
+    job.followUpRestoreStatus = undefined;
 
     // Pin ownership once — do not rebind workspace/base when switching projects.
     if (rt) {
@@ -570,6 +575,126 @@ export class JobQueue {
     });
     void this.pump();
     return { ok: true, queued: true, job, kind: "queued" };
+  }
+
+  /**
+   * Re-queue an in-flight chat Send/Ask that paused for Google/Figma (or
+   * survived a restart with pendingFollowUp* still set). Does not append
+   * another user chat line — the original message is already in history.
+   */
+  async resumePendingFollowUp(jobId: string): Promise<{
+    ok: boolean;
+    enqueued: boolean;
+    reason?: string;
+    job: JobRecord;
+  }> {
+    const loaded = await loadJob(jobId);
+    if (!loaded) throw new Error("Job not found");
+    let job: JobRecord = loaded;
+    const msg = job.pendingFollowUpMessage?.trim();
+    if (!msg) {
+      return {
+        ok: false,
+        enqueued: false,
+        reason: "No pending follow-up",
+        job,
+      };
+    }
+
+    if (isJobBusy(job.status) && !hasActiveAgentRun(jobId)) {
+      const reclaimTo: JobStatus =
+        job.followUpRestoreStatus ||
+        (job.handedOffAt
+          ? "succeeded"
+          : job.completedAt
+            ? "awaiting_handoff"
+            : "draft");
+      logger.warn("Reclaiming orphaned busy job before pending resume", {
+        jobId,
+        from: job.status,
+        to: reclaimTo,
+      });
+      job.status = reclaimTo;
+      job.error = undefined;
+      await saveJob(job);
+      if (this.isCurrent(jobId)) {
+        this.clearCurrent(jobId);
+        this.publishStatus();
+      }
+    }
+
+    if (hasActiveAgentRun(jobId) || isJobBusy(job.status)) {
+      return {
+        ok: false,
+        enqueued: false,
+        reason:
+          "Agent is running on this job — wait for it to finish or Force Stop",
+        job,
+      };
+    }
+
+    const key = busyIssueKeyForJob(job);
+    if (
+      this.activeIssueKeys.has(key) ||
+      this.queue.some((q) => q.job.id === job.id)
+    ) {
+      return {
+        ok: false,
+        enqueued: false,
+        reason: "Job already queued or running",
+        job,
+      };
+    }
+
+    const kind = job.pendingFollowUpKind === "ask" ? "ask" : "send";
+    const restoreStatus: JobStatus =
+      job.followUpRestoreStatus ||
+      (job.handedOffAt
+        ? "succeeded"
+        : job.completedAt
+          ? "awaiting_handoff"
+          : "draft");
+
+    job.pendingFollowUpMessage = msg;
+    job.pendingFollowUpKind = kind;
+    job.followUpRestoreStatus = restoreStatus;
+    job.status = "queued";
+    job.error = undefined;
+    await saveJob(job);
+
+    this.activeIssueKeys.add(key);
+    this.rememberJobScope(job);
+    if (kind === "ask") {
+      this.sources.set(job.id, "chat_ask_resume");
+      this.queue.push({
+        job,
+        source: "chat_ask_resume",
+        askOnlyMessage: msg,
+        followUpRestoreStatus: restoreStatus,
+      });
+      appendJobProgress(job.id, "status", "Ask resumed after auth / restart");
+    } else {
+      this.sources.set(job.id, "chat_followup_resume");
+      this.queue.push({
+        job,
+        source: "chat_followup_resume",
+        followUpMessage: msg,
+        followUpRestoreStatus: restoreStatus,
+      });
+      appendJobProgress(
+        job.id,
+        "status",
+        "Follow-up resumed after auth / restart",
+      );
+    }
+    this.publishStatus("resume-pending-followup");
+    logger.info("Resumed pending chat follow-up", {
+      jobId: job.id,
+      kind,
+      msgPreview: msg.slice(0, 120),
+    });
+    void this.pump();
+    return { ok: true, enqueued: true, job };
   }
 
   /**

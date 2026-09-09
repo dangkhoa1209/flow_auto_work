@@ -189,7 +189,7 @@ export function createQueuedSyncDbJob(opts: {
 /**
  * Boot recovery: jobs left `running` when Node died → `queued` so the pump
  * can claim and re-run (dump/restore restarts from scratch). Keeps queuedAt
- * for FIFO order. Awaiting user cancel is not applicable here.
+ * for FIFO order. Jobs already cancel-requested stay cancelled (user intent).
  */
 export async function requeueInterruptedSyncDbJobs(): Promise<number> {
   const running = await listRunningSyncDbJobs();
@@ -198,6 +198,21 @@ export async function requeueInterruptedSyncDbJobs(): Promise<number> {
   const c = await col();
   for (const job of running) {
     if (isTerminalSyncDbStatus(job.status)) continue;
+    if (job.cancelRequested) {
+      await c.findOneAndUpdate(
+        withActive({ id: job.id, status: "running" }),
+        {
+          $set: {
+            status: "cancelled",
+            finishedAt: now,
+            updatedAt: now,
+            errorMessage: "Cancelled — interrupted during cancel (server restart)",
+            cancelRequested: true,
+          },
+        },
+      );
+      continue;
+    }
     const res = await c.findOneAndUpdate(
       withActive({ id: job.id, status: "running" }),
       {

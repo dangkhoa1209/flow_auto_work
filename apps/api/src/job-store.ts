@@ -398,44 +398,15 @@ export function issueKey(
  * Boot recovery for jobs left `running` when the Node process died.
  * Re-queues them (status → queued) so JobQueue.restoreQueuedJobs can pump again.
  * Keeps pending follow-up / ask payload when present; clears dead Cursor agentId.
+ * Does NOT invent pendingFollowUp from chat — that mis-labels a full Run as chat Send.
  * Awaiting_* wait states are left alone (durable UI gates).
  */
 export async function failInterruptedJobs(): Promise<number> {
-  const { listChatMessages, addChatMessage } = await import("./models/chat.js");
+  const { addChatMessage } = await import("./models/chat.js");
   const jobs = await listJobs();
   let recovered = 0;
   for (const job of jobs) {
     if (job.status !== "running") continue;
-
-    // Legacy mid-run clear: recover last unpaired user chat as pending follow-up
-    if (!job.pendingFollowUpMessage?.trim()) {
-      try {
-        const chat = await listChatMessages({ jobId: job.id, limit: 40 });
-        let lastUser: (typeof chat)[number] | undefined;
-        for (const m of chat) {
-          if (m.role === "user" && m.body?.trim()) lastUser = m;
-          else if (m.role === "agent") lastUser = undefined;
-        }
-        if (lastUser?.body?.trim()) {
-          job.pendingFollowUpMessage = lastUser.body.trim();
-          job.pendingFollowUpKind =
-            job.pendingFollowUpKind ||
-            (lastUser.kind === "clarify" ? "ask" : "send");
-          if (!job.followUpRestoreStatus) {
-            job.followUpRestoreStatus = job.handedOffAt
-              ? "succeeded"
-              : job.completedAt
-                ? "awaiting_handoff"
-                : "draft";
-          }
-        }
-      } catch (err) {
-        logger.warn("Could not recover pending chat for interrupted job", {
-          jobId: job.id,
-          err: String(err),
-        });
-      }
-    }
 
     job.status = "queued";
     // Cursor agent window died with the process — force a fresh window on retry

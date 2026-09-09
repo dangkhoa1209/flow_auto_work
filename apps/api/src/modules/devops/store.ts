@@ -144,6 +144,7 @@ export function createQueuedBuildJob(opts: {
 /**
  * Boot recovery: builds left `running` when Node died → `queued` so the pump
  * can claim and re-run the script from scratch. Keeps queuedAt for FIFO.
+ * Jobs already cancel-requested stay cancelled (user / shutdown intent).
  */
 export async function requeueInterruptedBuildJobs(): Promise<number> {
   const running = await listRunningBuildJobs();
@@ -152,6 +153,21 @@ export async function requeueInterruptedBuildJobs(): Promise<number> {
   const c = await col();
   for (const job of running) {
     if (isTerminalBuildStatus(job.status)) continue;
+    if (job.cancelRequested) {
+      await c.findOneAndUpdate(
+        withActive({ id: job.id, status: "running" }),
+        {
+          $set: {
+            status: "cancelled",
+            finishedAt: now,
+            updatedAt: now,
+            errorMessage: "Cancelled — interrupted during cancel (server restart)",
+            cancelRequested: true,
+          },
+        },
+      );
+      continue;
+    }
     const res = await c.findOneAndUpdate(
       withActive({ id: job.id, status: "running" }),
       {
