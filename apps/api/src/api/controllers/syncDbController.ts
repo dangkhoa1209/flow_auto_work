@@ -240,6 +240,15 @@ export const syncDbController = {
 
   adminPutConfig: asyncHandler(async (req: Request, res: Response) => {
     const body = (req.body ?? {}) as Record<string, unknown>;
+    // Guard: empty PUT used to wipe config when the client sent Axios `body`
+    // instead of `data` (ignored → `{}`).
+    if (!body || typeof body !== "object" || Object.keys(body).length === 0) {
+      throw new AppError(
+        "Empty Sync DB settings body — nothing to save",
+        400,
+        "sync_db_empty_body",
+      );
+    }
     const config = await adminUpdateSyncDbConfig(
       {
         enabled: body.enabled as boolean | undefined,
