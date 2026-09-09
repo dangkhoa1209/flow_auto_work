@@ -5,12 +5,16 @@ import {
   CloudSyncOutlined,
   HistoryOutlined,
 } from "@ant-design/icons-vue";
+import type { SyncDbJob } from "@/api/syncDbApi";
 import { useBaChatStore } from "@/stores/baChat";
 import { useSyncDbStore } from "@/stores/syncDb";
+import { formatBuildDurationMs } from "@/utils/formatBuildDuration";
 
 const ba = useBaChatStore();
 const sync = useSyncDbStore();
 const popOpen = ref(false);
+const nowTick = ref(Date.now());
+let tickTimer: ReturnType<typeof setInterval> | undefined;
 
 const projectId = computed(() => ba.selectedProjectId);
 
@@ -62,9 +66,13 @@ watch(
 
 onMounted(() => {
   void sync.bootstrap(projectId.value);
+  tickTimer = setInterval(() => {
+    nowTick.value = Date.now();
+  }, 1000);
 });
 
 onUnmounted(() => {
+  if (tickTimer) clearInterval(tickTimer);
   sync.dispose();
 });
 
@@ -94,6 +102,25 @@ function statusColor(status: string): string {
   if (status === "running") return "text-amber-600";
   if (status === "queued") return "text-sky-600";
   return "text-ink-muted";
+}
+
+function formatSyncAt(job: SyncDbJob): string {
+  const iso = job.startedAt || job.queuedAt || job.createdAt;
+  if (!iso) return "—";
+  const t = new Date(iso);
+  if (Number.isNaN(t.getTime())) return "—";
+  return t.toLocaleString("en-US", { hour12: false });
+}
+
+function formatDuration(job: SyncDbJob): string {
+  if (job.durationMs != null) return formatBuildDurationMs(job.durationMs);
+  if (job.status === "running" && job.startedAt) {
+    void nowTick.value;
+    const t = Date.parse(job.startedAt);
+    if (!Number.isFinite(t)) return "—";
+    return formatBuildDurationMs(Date.now() - t);
+  }
+  return "—";
 }
 </script>
 
@@ -152,9 +179,11 @@ function statusColor(status: string): string {
               <div class="text-xs text-ink truncate">
                 {{ job.dbName }}
                 <span :class="statusColor(job.status)">· {{ job.status }}</span>
+                <span class="text-ink-muted font-normal"> · {{ formatDuration(job) }}</span>
               </div>
               <div class="text-[11px] text-ink-muted truncate">
                 @{{ job.triggeredBy }}
+                · sync at {{ formatSyncAt(job) }}
                 <template v-if="job.progress?.total">
                   · {{ job.progress.done }}/{{ job.progress.total }}
                 </template>
