@@ -141,21 +141,49 @@ export function createQueuedBuildJob(opts: {
   };
 }
 
-export async function markInterruptedBuildsFailed(): Promise<number> {
+/**
+ * Boot recovery: builds left `running` when Node died → `queued` so the pump
+ * can claim and re-run the script from scratch. Keeps queuedAt for FIFO.
+ */
+export async function requeueInterruptedBuildJobs(): Promise<number> {
   const running = await listRunningBuildJobs();
   let n = 0;
   const now = new Date().toISOString();
+  const c = await col();
   for (const job of running) {
     if (isTerminalBuildStatus(job.status)) continue;
-    const startedMs = job.startedAt ? Date.parse(job.startedAt) : Date.now();
-    await updateBuildJob(job.id, {
-      status: "failed",
-      finishedAt: now,
-      durationMs: Number.isFinite(startedMs) ? Date.now() - startedMs : 0,
-      errorMessage: "Interrupted by server restart",
-      exitCode: null,
-    });
+    const res = await c.findOneAndUpdate(
+      withActive({ id: job.id, status: "running" }),
+      {
+        $set: {
+          status: "queued",
+          updatedAt: now,
+        },
+        $unset: {
+          startedAt: "",
+          finishedAt: "",
+          durationMs: "",
+          exitCode: "",
+          errorMessage: "",
+          cancelRequested: "",
+        },
+      },
+      { returnDocument: "after" },
+    );
+    if (!res) continue;
+    try {
+      const { openBuildLog } = await import("./logFile.js");
+      const log = await openBuildLog(job.id);
+      log.write(
+        "system",
+        "Server restarted — this build was re-queued automatically.",
+      );
+      await log.close();
+    } catch {
+      /* best-effort note */
+    }
     n += 1;
   }
   return n;
 }
+
