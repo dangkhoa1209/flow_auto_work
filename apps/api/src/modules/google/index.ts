@@ -403,7 +403,7 @@ export async function revokeJobGoogleAuth(jobId: string): Promise<{
   return { ok: true, job: redactJobGoogleAuthForClient(job) };
 }
 
-/** After OAuth popup — re-enqueue the job to continue Run. */
+/** After OAuth popup — re-enqueue the job to continue Run / pending chat. */
 export async function continueJobAfterGoogleAuth(jobId: string): Promise<{
   ok: boolean;
   enqueued: boolean;
@@ -421,6 +421,18 @@ export async function continueJobAfterGoogleAuth(jobId: string): Promise<{
       "../../workspace/resolve.js"
     );
     await requireProjectLocalClone(job.workspaceProjectId);
+  }
+  // Chat Send/Ask that paused for Sheets must resume the same follow-up —
+  // enqueueExisting would clear pending and start a full Run instead.
+  if (job.pendingFollowUpMessage?.trim()) {
+    const resumed = await jobQueue.resumePendingFollowUp(jobId);
+    const fresh = await requireJobRecord(jobId);
+    return {
+      ok: resumed.ok,
+      enqueued: resumed.enqueued,
+      reason: resumed.reason,
+      job: redactJobGoogleAuthForClient(fresh),
+    };
   }
   const result = await jobQueue.enqueueExisting(jobId, {
     source: "google_auth_continue",

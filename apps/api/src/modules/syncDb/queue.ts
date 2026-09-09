@@ -18,7 +18,7 @@ import {
   insertSyncDbJob,
   listQueuedSyncDbJobs,
   listRunningSyncDbJobs,
-  markInterruptedSyncDbFailed,
+  requeueInterruptedSyncDbJobs,
   requireSyncDbJob,
   requireSyncDbJobForProject,
   tryClaimSyncDbJobForRun,
@@ -227,9 +227,9 @@ export class SyncDbQueue {
   }
 
   async restoreQueued(): Promise<number> {
-    const interrupted = await markInterruptedSyncDbFailed();
+    const interrupted = await requeueInterruptedSyncDbJobs();
     if (interrupted > 0) {
-      logger.warn("Marked interrupted sync-db jobs as failed", {
+      logger.warn("Re-queued interrupted sync-db jobs after restart", {
         count: interrupted,
       });
     }

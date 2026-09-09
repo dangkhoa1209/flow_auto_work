@@ -205,8 +205,9 @@ export type JobRecord = {
     fileHints?: string[];
   };
   /**
-   * Chat "Send" command waiting in the job queue (not a full Run).
-   * Cleared when the follow-up starts executing.
+   * Chat "Send" / Ask command waiting in the job queue (not a full Run).
+   * Kept while the follow-up is running so a process restart can re-queue it;
+   * cleared when the follow-up finishes (success, fail, or kill).
    */
   pendingFollowUpMessage?: string;
   /** send = chat Send (may edit code); ask = Ask only (Q&A). Needed to restore the right kind after restart. */

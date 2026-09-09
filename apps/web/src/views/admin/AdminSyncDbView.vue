@@ -85,7 +85,17 @@ async function save() {
 
     const data = await syncDbApi.adminPutConfig(body);
     applyConfig(data.config);
-    message.success("Sync Database settings saved");
+    if (data.config.configured && data.config.enabled) {
+      message.success(
+        "Saved — Ready. Enable BA feature “Sync Database” (lab/production) and use a Mongo Connect DB project to see the chat Sync chip.",
+      );
+    } else if (data.config.configured) {
+      message.success("Saved — turn on Enable Sync Database to go Ready.");
+    } else {
+      message.warning(
+        "Saved but incomplete: need SSH host/user + password or key, and source Mongo user/password. Password fields clear after save when kept (see green “(set)”).",
+      );
+    }
   } catch (e) {
     message.error(e instanceof Error ? e.message : String(e));
   } finally {
@@ -113,6 +123,12 @@ onMounted(() => {
       show-icon
       class="mb-4"
       message="Live DB must use a read-only Mongo user. Restore target is hard-locked to loopback. Secrets are encrypted at rest and never returned to the browser or BA agent tools."
+    />
+    <a-alert
+      type="info"
+      show-icon
+      class="mb-4"
+      message="Nút Sync trên BA Chat chỉ hiện khi: (1) form này Ready (Enable + đủ SSH/source), (2) Admin → BA features → Sync Database ≠ Hide, (3) project đã Connect DB Mongo (host loopback). Ô password để trống sau Save là bình thường nếu đã có “(set)”."
     />
 
     <div

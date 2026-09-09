@@ -714,6 +714,7 @@ export function useWorkbench() {
   async function sendChat(mode: "continue" | "ask") {
     const msg = chatInput.value.trim();
     if (!msg) return;
+
     if (selectedJobId.value && !(await confirmBadContextIfNeeded())) return;
 
     const run = async () => {
@@ -1160,7 +1161,10 @@ export function useWorkbench() {
     adhocOpen.value = true;
   }
 
+  /** Chat always starts a blank adhoc composer; Send creates a new job. */
   function openMobileComposer() {
+    work.clearOpenSelection();
+    midTab.value = "detail";
     mobilePane.value = "chat";
     void nextTick(() => {
       const el = document.querySelector(

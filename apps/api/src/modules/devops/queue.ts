@@ -9,7 +9,7 @@ import {
   insertBuildJob,
   listQueuedBuildJobs,
   listRunningBuildJobs,
-  markInterruptedBuildsFailed,
+  requeueInterruptedBuildJobs,
   requireBuildJob,
   tryClaimBuildJobForRun,
   updateBuildJob,
@@ -203,9 +203,11 @@ export class BuildQueue {
   }
 
   async restoreQueued(): Promise<number> {
-    const interrupted = await markInterruptedBuildsFailed();
+    const interrupted = await requeueInterruptedBuildJobs();
     if (interrupted > 0) {
-      logger.warn("Marked interrupted builds as failed", { count: interrupted });
+      logger.warn("Re-queued interrupted builds after restart", {
+        count: interrupted,
+      });
     }
     await this.syncQueuedFromDb();
     const restored = this.queuedIds.length;

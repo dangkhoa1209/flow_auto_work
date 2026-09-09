@@ -121,7 +121,7 @@ export const syncDbApi = {
     return request<{ job: SyncDbJob; queue: SyncDbQueueSnapshot }>({
       url: API.ba.syncDb.jobs,
       method: "POST",
-      body: JSON.stringify({ projectId }),
+      data: { projectId },
     });
   },
 
@@ -129,7 +129,7 @@ export const syncDbApi = {
     return request<{ job: SyncDbJob; queue: SyncDbQueueSnapshot }>({
       url: API.ba.syncDb.jobCancel(id),
       method: "POST",
-      body: JSON.stringify({ projectId }),
+      data: { projectId },
     });
   },
 
@@ -159,7 +159,7 @@ export const syncDbApi = {
     return request<{ config: SyncDbSystemConfigPublic }>({
       url: API.admin.syncDb,
       method: "PUT",
-      body: JSON.stringify(body),
+      data: body,
     });
   },
 };

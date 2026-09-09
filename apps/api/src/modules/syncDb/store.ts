@@ -186,25 +186,64 @@ export function createQueuedSyncDbJob(opts: {
   };
 }
 
-export async function markInterruptedSyncDbFailed(): Promise<number> {
+/**
+ * Boot recovery: jobs left `running` when Node died → `queued` so the pump
+ * can claim and re-run (dump/restore restarts from scratch). Keeps queuedAt
+ * for FIFO order. Jobs already cancel-requested stay cancelled (user intent).
+ */
+export async function requeueInterruptedSyncDbJobs(): Promise<number> {
   const running = await listRunningSyncDbJobs();
   let n = 0;
   const now = new Date().toISOString();
+  const c = await col();
   for (const job of running) {
     if (isTerminalSyncDbStatus(job.status)) continue;
-    const startedMs = job.startedAt ? Date.parse(job.startedAt) : Date.now();
-    await updateSyncDbJob(job.id, {
-      status: "failed",
-      finishedAt: now,
-      durationMs: Math.max(0, Date.now() - startedMs),
-      exitCode: null,
-      errorMessage: "Interrupted — server restarted while sync was running",
-      progress: {
-        ...job.progress,
-        phase: "failed",
-        current: [],
+    if (job.cancelRequested) {
+      await c.findOneAndUpdate(
+        withActive({ id: job.id, status: "running" }),
+        {
+          $set: {
+            status: "cancelled",
+            finishedAt: now,
+            updatedAt: now,
+            errorMessage: "Cancelled — interrupted during cancel (server restart)",
+            cancelRequested: true,
+          },
+        },
+      );
+      continue;
+    }
+    const res = await c.findOneAndUpdate(
+      withActive({ id: job.id, status: "running" }),
+      {
+        $set: {
+          status: "queued",
+          progress: emptyProgress(job.dbName),
+          updatedAt: now,
+        },
+        $unset: {
+          startedAt: "",
+          finishedAt: "",
+          durationMs: "",
+          exitCode: "",
+          errorMessage: "",
+          cancelRequested: "",
+        },
       },
-    });
+      { returnDocument: "after" },
+    );
+    if (!res) continue;
+    try {
+      const { openSyncDbLog } = await import("./logFile.js");
+      const log = await openSyncDbLog(job.id);
+      log.write(
+        "system",
+        "Server restarted — this sync was re-queued automatically.",
+      );
+      await log.close();
+    } catch {
+      /* best-effort note */
+    }
     n += 1;
   }
   return n;
