@@ -78,18 +78,49 @@ function killProcessTree(child: ChildProcess, signal: NodeJS.Signals): void {
 
 /** SIGTERM then SIGKILL so leftover tunnels do not hold tunnelLocalPort. */
 function forceKillProcessTree(child: ChildProcess): void {
+  if (child.exitCode !== null) return;
   killProcessTree(child, "SIGTERM");
   const pid = child.pid;
   if (!pid) return;
   setTimeout(() => {
     try {
-      if (!child.killed && child.exitCode === null) {
+      if (child.exitCode === null) {
         killProcessTree(child, "SIGKILL");
       }
     } catch {
       /* already gone */
     }
   }, 1500).unref?.();
+}
+
+/** Wait until child exits (SIGTERM → SIGKILL) so tunnelLocalPort is freed before next job. */
+function forceKillProcessTreeAndWait(
+  child: ChildProcess,
+  timeoutMs = 4000,
+): Promise<void> {
+  return new Promise((resolve) => {
+    if (child.exitCode !== null) {
+      resolve();
+      return;
+    }
+    let settled = false;
+    const done = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(killTimer);
+      clearTimeout(hardTimer);
+      resolve();
+    };
+    child.once("close", done);
+    child.once("error", done);
+    killProcessTree(child, "SIGTERM");
+    const killTimer = setTimeout(() => {
+      if (child.exitCode === null) killProcessTree(child, "SIGKILL");
+    }, Math.min(1500, timeoutMs));
+    const hardTimer = setTimeout(done, timeoutMs);
+    killTimer.unref?.();
+    hardTimer.unref?.();
+  });
 }
 
 async function assertTunnelPortFree(port: number): Promise<void> {
@@ -223,7 +254,11 @@ async function listSourceCollections(
 
 function openSshTunnel(
   source: SyncDbSystemConfigResolved,
-): { child: ChildProcess; keyFile: string | null; cleanup: () => void } {
+): {
+  child: ChildProcess;
+  keyFile: string | null;
+  cleanup: () => Promise<void>;
+} {
   const args = [
     "-L",
     `${source.tunnelLocalPort}:${source.remoteMongoHost}:${source.remoteMongoPort}`,
@@ -272,14 +307,9 @@ function openSshTunnel(
     });
   }
 
-  // No ssh -f: Node owns the child (detached process group). -f would fork-and-exit
-  // and we would lose the tunnel PID needed for reliable cleanup.
-  const cleanup = () => {
-    try {
-      forceKillProcessTree(child);
-    } catch {
-      /* */
-    }
+  // No ssh -f: Node owns the child (detached process group) while dump|restore runs.
+  // -f would fork-and-exit and we would lose the tunnel PID needed for reliable cleanup.
+  const cleanupKey = () => {
     if (keyFile && existsSync(keyFile)) {
       try {
         unlinkSync(keyFile);
@@ -287,6 +317,15 @@ function openSshTunnel(
         /* */
       }
     }
+  };
+
+  const cleanup = async () => {
+    try {
+      await forceKillProcessTreeAndWait(child);
+    } catch {
+      forceKillProcessTree(child);
+    }
+    cleanupKey();
   };
 
   return { child, keyFile, cleanup };
@@ -353,7 +392,7 @@ export async function runSyncDbJob(
   const tracker = createProgressTracker(job.dbName);
   let cancelReason: string | null = null;
   const children: ChildProcess[] = [];
-  let tunnelCleanup: (() => void) | null = null;
+  let tunnelCleanup: (() => Promise<void>) | null = null;
 
   const publishProgress = async (progress: SyncDbProgress) => {
     job = await updateSyncDbJob(jobId, { progress });
@@ -364,7 +403,7 @@ export async function runSyncDbJob(
   const cancel = (reason: string) => {
     cancelReason = reason;
     for (const c of children) forceKillProcessTree(c);
-    tunnelCleanup?.();
+    void tunnelCleanup?.();
   };
 
   active.set(jobId, { jobId, children, cancel });
@@ -504,7 +543,10 @@ export async function runSyncDbJob(
         throw new Error("Failed to pipe mongodump → mongorestore");
       }
       // Node pipe + wait BOTH exits (pipefail equivalent — bash | alone is not used).
-      dump.stdout.pipe(restore.stdin);
+      dump.stdout.pipe(restore.stdin, { end: true });
+      // If one side dies, stop the other so we do not hang or keep writing a bad archive.
+      dump.stdout.on("error", () => forceKillProcessTree(restore));
+      restore.stdin.on("error", () => forceKillProcessTree(dump));
 
       const onProgress = async (line: string) => {
         const next = tracker.applyLine(line);
@@ -537,12 +579,24 @@ export async function runSyncDbJob(
       }, timeoutMs);
 
       const dumpExit = new Promise<number | null>((resolve) => {
-        dump.on("close", (code) => resolve(code));
-        dump.on("error", () => resolve(1));
+        dump.on("close", (code, signal) => {
+          if (code !== 0 || signal) forceKillProcessTree(restore);
+          resolve(signal && code === null ? 1 : code);
+        });
+        dump.on("error", () => {
+          forceKillProcessTree(restore);
+          resolve(1);
+        });
       });
       const restoreExit = new Promise<number | null>((resolve) => {
-        restore.on("close", (code) => resolve(code));
-        restore.on("error", () => resolve(1));
+        restore.on("close", (code, signal) => {
+          if (code !== 0 || signal) forceKillProcessTree(dump);
+          resolve(signal && code === null ? 1 : code);
+        });
+        restore.on("error", () => {
+          forceKillProcessTree(dump);
+          resolve(1);
+        });
       });
 
       const [dumpCode, restoreCode] = await Promise.all([dumpExit, restoreExit]);
@@ -551,8 +605,10 @@ export async function runSyncDbJob(
       restoreErr.flush();
       restoreOut.flush();
 
-      tunnelCleanup?.();
-      tunnelCleanup = null;
+      if (tunnelCleanup) {
+        await tunnelCleanup();
+        tunnelCleanup = null;
+      }
 
       const durationMs = Date.now() - started;
       let status: SyncDbStatus = "success";
@@ -630,7 +686,10 @@ export async function runSyncDbJob(
     publishSyncDbEvent({ type: "done", jobId, job });
     return { job, status: job.status, exitCode: null, durationMs };
   } finally {
-    tunnelCleanup?.();
+    if (tunnelCleanup) {
+      await tunnelCleanup().catch(() => undefined);
+      tunnelCleanup = null;
+    }
     active.delete(jobId);
     await log.close();
   }
