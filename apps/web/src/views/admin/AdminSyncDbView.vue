@@ -103,7 +103,8 @@ onMounted(() => {
     <h1 class="text-xl font-semibold text-ink m-0 mb-1">Sync Database</h1>
     <p class="text-sm text-ink-muted mb-4">
       System credentials for BA Chat sync: SSH tunnel + <strong>read-only</strong>
-      source Mongo (live). Target DB comes from each project’s Connect DB —
+      source Mongo (live). Target DB comes from each project’s Connect DB and
+      <strong>must be loopback</strong> (<code>127.0.0.1</code> / <code>localhost</code>) —
       never restore to live.
     </p>
 
@@ -111,7 +112,7 @@ onMounted(() => {
       type="warning"
       show-icon
       class="mb-4"
-      message="Live DB must use a read-only Mongo user. Secrets are encrypted at rest and never returned to the browser or BA agent tools."
+      message="Live DB must use a read-only Mongo user. Restore target is hard-locked to loopback. Secrets are encrypted at rest and never returned to the browser or BA agent tools."
     />
 
     <div

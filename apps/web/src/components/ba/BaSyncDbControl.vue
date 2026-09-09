@@ -30,6 +30,19 @@ const syncDisabled = computed(
 const progressText = computed(() => {
   const p = sync.queue.currentProgress;
   if (!p || !sync.queue.running) return "";
+  const mine =
+    Boolean(
+      sync.queue.currentJobId &&
+        sync.jobs.some((j) => j.id === sync.queue.currentJobId),
+    ) ||
+    Boolean(
+      sync.queue.currentDbName &&
+        sync.capability?.dbName &&
+        sync.queue.currentDbName === sync.capability.dbName,
+    );
+  if (!mine) {
+    return `Another project syncing · Queue: ${sync.queue.queued}`;
+  }
   const phase = p.phase === "restore" ? "restore" : p.phase;
   const cur = p.current.length ? p.current.join(", ") : "…";
   if (p.total > 0) return `${phase} ${p.done}/${p.total} · ${cur}`;

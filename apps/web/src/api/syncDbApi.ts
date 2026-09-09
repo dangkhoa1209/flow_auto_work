@@ -125,24 +125,28 @@ export const syncDbApi = {
     });
   },
 
-  cancel(id: string) {
+  cancel(id: string, projectId: string) {
     return request<{ job: SyncDbJob; queue: SyncDbQueueSnapshot }>({
       url: API.ba.syncDb.jobCancel(id),
       method: "POST",
-      body: JSON.stringify({}),
+      body: JSON.stringify({ projectId }),
     });
   },
 
-  getJob(id: string) {
-    return request<{ job: SyncDbJob }>({ url: API.ba.syncDb.job(id) });
+  getJob(id: string, projectId: string) {
+    const qs = new URLSearchParams({ projectId });
+    return request<{ job: SyncDbJob }>({
+      url: `${API.ba.syncDb.job(id)}?${qs}`,
+    });
   },
 
-  getLog(id: string) {
+  getLog(id: string, projectId: string) {
+    const qs = new URLSearchParams({ projectId });
     return request<{
       job: SyncDbJob;
       text: string;
       lines: SyncDbLogLine[];
-    }>({ url: API.ba.syncDb.jobLog(id) });
+    }>({ url: `${API.ba.syncDb.jobLog(id)}?${qs}` });
   },
 
   adminGetConfig() {
@@ -160,15 +164,15 @@ export const syncDbApi = {
   },
 };
 
-export function syncDbEventsUrl(): string {
-  const qs = new URLSearchParams();
+export function syncDbEventsUrl(projectId: string): string {
+  const qs = new URLSearchParams({ projectId });
   const access = getAccessToken();
   if (access) qs.set("access_token", access);
-  return `${API.ba.syncDb.events}${qs.toString() ? `?${qs}` : ""}`;
+  return `${API.ba.syncDb.events}?${qs}`;
 }
 
-export function syncDbJobStreamUrl(id: string): string {
-  const qs = new URLSearchParams();
+export function syncDbJobStreamUrl(id: string, projectId: string): string {
+  const qs = new URLSearchParams({ projectId });
   const access = getAccessToken();
   if (access) qs.set("access_token", access);
   return `${API.ba.syncDb.jobStream(id)}?${qs}`;

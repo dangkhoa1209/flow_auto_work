@@ -11,6 +11,7 @@ import {
   isSyncDbRunning,
   runSyncDbJob,
 } from "./runner.js";
+import { assertSafeRestoreTarget } from "./safety.js";
 import {
   createQueuedSyncDbJob,
   findActiveJobForProject,
@@ -19,10 +20,15 @@ import {
   listRunningSyncDbJobs,
   markInterruptedSyncDbFailed,
   requireSyncDbJob,
+  requireSyncDbJobForProject,
   tryClaimSyncDbJobForRun,
   updateSyncDbJob,
 } from "./store.js";
-import { isSyncDbSystemReady, getSyncDbSystemConfig } from "./systemConfig.js";
+import {
+  isSyncDbSystemReady,
+  getSyncDbSystemConfig,
+  resolveSyncDbSystemConfig,
+} from "./systemConfig.js";
 import {
   emptyProgress,
   isTerminalSyncDbStatus,
@@ -102,6 +108,18 @@ export class SyncDbQueue {
       );
     }
 
+    // Fail fast before enqueue — same live-safety rules as the runner.
+    const target = await resolveBaProjectDb(project.id);
+    if (!target) {
+      throw new AppError(
+        "Project DB connection missing",
+        409,
+        "sync_db_project_no_db",
+      );
+    }
+    const source = await resolveSyncDbSystemConfig();
+    assertSafeRestoreTarget(target, source);
+
     const dup = await findActiveJobForProject(project.id);
     if (dup) {
       throw new AppError(
@@ -143,8 +161,20 @@ export class SyncDbQueue {
     return job;
   }
 
-  async cancel(jobId: string, reason = "Cancelled by user"): Promise<SyncDbJob> {
-    const job = await requireSyncDbJob(jobId);
+  async cancel(
+    jobId: string,
+    reason = "Cancelled by user",
+    opts?: { projectId?: string },
+  ): Promise<SyncDbJob> {
+    const projectId = String(opts?.projectId || "").trim();
+    if (!projectId) {
+      throw new AppError(
+        "projectId required to cancel a sync job",
+        400,
+        "sync_db_project_required",
+      );
+    }
+    const job = await requireSyncDbJobForProject(jobId, projectId);
     if (isTerminalSyncDbStatus(job.status)) return job;
 
     const queuedIdx = this.queuedIds.indexOf(jobId);

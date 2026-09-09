@@ -10,6 +10,10 @@ import type { BaDbConnectionResolved } from "../../workspace/baStore.js";
 import { publishSyncDbEvent } from "./events.js";
 import { openSyncDbLog, type SyncDbLogWriter } from "./logFile.js";
 import { createProgressTracker } from "./progress.js";
+import {
+  assertSafeRestoreTarget,
+  assertSourceUserReadonly,
+} from "./safety.js";
 import { resolveSyncDbSystemConfig } from "./systemConfig.js";
 import { getSyncDbJob, updateSyncDbJob } from "./store.js";
 import type {
@@ -19,6 +23,8 @@ import type {
   SyncDbStatus,
   SyncDbSystemConfigResolved,
 } from "./types.js";
+
+export { assertSafeRestoreTarget } from "./safety.js";
 
 export type SyncDbRunResult = {
   job: SyncDbJob;
@@ -34,8 +40,6 @@ type ActiveRun = {
 };
 
 const active = new Map<string, ActiveRun>();
-
-const LOOPBACK = new Set(["127.0.0.1", "localhost", "::1"]);
 
 function createLineSplitter(onLine: (line: string) => void) {
   let buf = "";
@@ -81,7 +85,8 @@ function emitLog(
   // Never leak secrets into logs
   const scrubbed = text
     .replace(/--password=\S+/gi, "--password=***")
-    .replace(/SSHPASS=\S+/gi, "SSHPASS=***");
+    .replace(/SSHPASS=\S+/gi, "SSHPASS=***")
+    .replace(/mongodb:\/\/[^/\s]+@/gi, "mongodb://***@");
   const at = new Date().toISOString();
   log.write(stream, scrubbed, at);
   publishSyncDbEvent({
@@ -93,38 +98,30 @@ function emitLog(
   });
 }
 
-/**
- * Hard safety: restore ONLY to project Connect DB target.
- * Never allow restore host to be the SSH/live server host.
- * Prefer loopback / private targets.
- */
-export function assertSafeRestoreTarget(
-  target: BaDbConnectionResolved,
-  source: SyncDbSystemConfigResolved,
-): void {
-  const th = target.host.trim().toLowerCase();
-  const ssh = source.sshHost.trim().toLowerCase();
-  if (!th) {
-    throw new AppError("Target DB host missing", 400, "sync_db_bad_target");
-  }
-  if (th === ssh) {
-    throw new AppError(
-      "Refusing sync: target host matches SSH/live server — restore to live is forbidden",
-      403,
-      "sync_db_live_forbidden",
-    );
-  }
-  // Source dump always via local tunnel — never restore to tunnel port as if it were target
-  if (
-    LOOPBACK.has(th) &&
-    target.port === source.tunnelLocalPort
-  ) {
-    throw new AppError(
-      "Refusing sync: target port equals tunnel port (would hit live via tunnel)",
-      403,
-      "sync_db_live_forbidden",
-    );
-  }
+/** Password via YAML config file (0600) — never on process argv / ps. */
+function writeMongoPasswordConfig(password: string): {
+  path: string;
+  cleanup: () => void;
+} {
+  const file = path.join(
+    tmpdir(),
+    `flow-sync-mongo-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.yml`,
+  );
+  writeFileSync(file, `password: ${JSON.stringify(password)}\n`, {
+    mode: 0o600,
+  });
+  return {
+    path: file,
+    cleanup: () => {
+      if (existsSync(file)) {
+        try {
+          unlinkSync(file);
+        } catch {
+          /* */
+        }
+      }
+    },
+  };
 }
 
 export function isSyncDbRunning(jobId: string): boolean {
@@ -141,24 +138,47 @@ export async function cancelRunningSyncDb(
   return true;
 }
 
-async function listSourceCollections(
+async function withSourceMongoClient<T>(
   source: SyncDbSystemConfigResolved,
   dbName: string,
-): Promise<string[]> {
+  fn: (client: MongoClient) => Promise<T>,
+): Promise<T> {
   const uri = `mongodb://${encodeURIComponent(source.sourceUsername)}:${encodeURIComponent(source.sourcePassword)}@127.0.0.1:${source.tunnelLocalPort}/${encodeURIComponent(dbName)}?authSource=${encodeURIComponent(source.sourceAuthSource)}&directConnection=true`;
   const client = new MongoClient(uri, {
     serverSelectionTimeoutMS: 15_000,
   });
   try {
     await client.connect();
+    return await fn(client);
+  } finally {
+    await client.close().catch(() => undefined);
+  }
+}
+
+async function assertSourceReadonlyViaTunnel(
+  source: SyncDbSystemConfigResolved,
+  dbName: string,
+): Promise<void> {
+  await withSourceMongoClient(source, dbName, async (client) => {
+    const status = await client.db("admin").command({
+      connectionStatus: 1,
+      showPrivileges: true,
+    });
+    assertSourceUserReadonly(status, dbName);
+  });
+}
+
+async function listSourceCollections(
+  source: SyncDbSystemConfigResolved,
+  dbName: string,
+): Promise<string[]> {
+  return withSourceMongoClient(source, dbName, async (client) => {
     const cols = await client.db(dbName).listCollections().toArray();
     return cols
       .map((c) => c.name)
       .filter((n) => n && !n.startsWith("system."))
       .sort();
-  } finally {
-    await client.close().catch(() => undefined);
-  }
+  });
 }
 
 function openSshTunnel(
@@ -341,6 +361,10 @@ export async function runSyncDbJob(
     emitLog(job, log, "system", `SSH tunnel ready on 127.0.0.1:${source.tunnelLocalPort}`);
 
     await publishProgress(tracker.setPhase("listing"));
+    emitLog(job, log, "system", "Verifying source Mongo user is read-only…");
+    await assertSourceReadonlyViaTunnel(source, job.dbName);
+    emitLog(job, log, "system", "Source user privilege check OK (no write on live)");
+
     let collections: string[] = [];
     try {
       collections = await listSourceCollections(source, job.dbName);
@@ -360,6 +384,15 @@ export async function runSyncDbJob(
 
     await publishProgress(tracker.setPhase("dump"));
 
+    const dumpPassCfg = writeMongoPasswordConfig(source.sourcePassword);
+    const restorePassCfg = target.password
+      ? writeMongoPasswordConfig(target.password)
+      : null;
+    const secretFilesCleanup = () => {
+      dumpPassCfg.cleanup();
+      restorePassCfg?.cleanup();
+    };
+
     const dumpArgs = [
       "--host",
       "127.0.0.1",
@@ -369,7 +402,8 @@ export async function runSyncDbJob(
       job.dbName,
       "--username",
       source.sourceUsername,
-      `--password=${source.sourcePassword}`,
+      "--config",
+      dumpPassCfg.path,
       "--authenticationDatabase",
       source.sourceAuthSource,
       "--numParallelCollections",
@@ -395,13 +429,13 @@ export async function runSyncDbJob(
     if (source.dropTarget) restoreArgs.push("--drop");
     if (target.username) {
       restoreArgs.push("--username", target.username);
-      if (target.password) {
-        restoreArgs.push(`--password=${target.password}`);
+      if (restorePassCfg) {
+        restoreArgs.push("--config", restorePassCfg.path);
       }
       restoreArgs.push("--authenticationDatabase", "admin");
     }
 
-    // CRITICAL: never pass source credentials to mongorestore
+    // CRITICAL: never pass source credentials to mongorestore; never put passwords on argv
     emitLog(
       job,
       log,
@@ -409,121 +443,125 @@ export async function runSyncDbJob(
       `Pipeline: mongodump (tunnel) | mongorestore (${target.host}:${target.port})`,
     );
 
-    const dump = spawn("mongodump", dumpArgs, {
-      stdio: ["ignore", "pipe", "pipe"],
-      detached: true,
-      env: { ...process.env },
-    });
-    const restore = spawn("mongorestore", restoreArgs, {
-      stdio: ["pipe", "pipe", "pipe"],
-      detached: true,
-      env: { ...process.env },
-    });
-    children.push(dump, restore);
+    try {
+      const dump = spawn("mongodump", dumpArgs, {
+        stdio: ["ignore", "pipe", "pipe"],
+        detached: true,
+        env: { ...process.env },
+      });
+      const restore = spawn("mongorestore", restoreArgs, {
+        stdio: ["pipe", "pipe", "pipe"],
+        detached: true,
+        env: { ...process.env },
+      });
+      children.push(dump, restore);
 
-    if (!dump.stdout || !restore.stdin) {
-      throw new Error("Failed to pipe mongodump → mongorestore");
+      if (!dump.stdout || !restore.stdin) {
+        throw new Error("Failed to pipe mongodump → mongorestore");
+      }
+      dump.stdout.pipe(restore.stdin);
+
+      const onProgress = async (line: string) => {
+        const next = tracker.applyLine(line);
+        await publishProgress(next);
+      };
+
+      const dumpErr = createLineSplitter((line) => {
+        emitLog(job!, log, "stderr", line);
+        void onProgress(line);
+      });
+      const restoreErr = createLineSplitter((line) => {
+        emitLog(job!, log, "stderr", line);
+        void onProgress(line);
+      });
+      const restoreOut = createLineSplitter((line) => {
+        emitLog(job!, log, "stdout", line);
+        void onProgress(line);
+      });
+
+      dump.stderr?.on("data", (c: Buffer) => dumpErr.push(c));
+      restore.stderr?.on("data", (c: Buffer) => restoreErr.push(c));
+      restore.stdout?.on("data", (c: Buffer) => restoreOut.push(c));
+
+      const timeoutMs =
+        (source.timeoutSec || getConfig().SYNC_DB_TIMEOUT_SEC || 3600) * 1000;
+      let timedOut = false;
+      const timer = setTimeout(() => {
+        timedOut = true;
+        cancel("Sync timed out");
+      }, timeoutMs);
+
+      const dumpExit = new Promise<number | null>((resolve) => {
+        dump.on("close", (code) => resolve(code));
+        dump.on("error", () => resolve(1));
+      });
+      const restoreExit = new Promise<number | null>((resolve) => {
+        restore.on("close", (code) => resolve(code));
+        restore.on("error", () => resolve(1));
+      });
+
+      const [dumpCode, restoreCode] = await Promise.all([dumpExit, restoreExit]);
+      clearTimeout(timer);
+      dumpErr.flush();
+      restoreErr.flush();
+      restoreOut.flush();
+
+      tunnelCleanup?.();
+      tunnelCleanup = null;
+
+      const durationMs = Date.now() - started;
+      let status: SyncDbStatus = "success";
+      let errorMessage: string | undefined;
+      let exitCode: number | null = restoreCode ?? dumpCode;
+
+      if (cancelReason) {
+        status = timedOut ? "timeout" : "cancelled";
+        errorMessage = cancelReason;
+        exitCode = null;
+      } else if (dumpCode !== 0) {
+        status = "failed";
+        errorMessage = `mongodump failed (exit ${dumpCode})`;
+        exitCode = dumpCode;
+      } else if (restoreCode !== 0) {
+        status = "failed";
+        errorMessage = `mongorestore failed (exit ${restoreCode})`;
+        exitCode = restoreCode;
+      }
+
+      const finalProgress = tracker.setPhase(
+        status === "success" ? "done" : "failed",
+      );
+      if (status === "success" && finalProgress.total > 0) {
+        finalProgress.done = finalProgress.total;
+        finalProgress.current = [];
+      }
+
+      job = await updateSyncDbJob(jobId, {
+        status,
+        finishedAt: new Date().toISOString(),
+        durationMs,
+        exitCode,
+        errorMessage,
+        progress: finalProgress,
+        cancelRequested: Boolean(cancelReason),
+      });
+
+      emitLog(
+        job,
+        log,
+        "system",
+        status === "success"
+          ? `Sync OK in ${(durationMs / 1000).toFixed(1)}s`
+          : `Sync ${status}: ${errorMessage || status}`,
+      );
+      publishSyncDbEvent({ type: "job", job });
+      publishSyncDbEvent({ type: "done", jobId, job });
+      publishSyncDbEvent({ type: "progress", jobId, progress: finalProgress });
+
+      return { job, status, exitCode, durationMs };
+    } finally {
+      secretFilesCleanup();
     }
-    dump.stdout.pipe(restore.stdin);
-
-    const onProgress = async (line: string) => {
-      const next = tracker.applyLine(line);
-      await publishProgress(next);
-    };
-
-    const dumpErr = createLineSplitter((line) => {
-      emitLog(job!, log, "stderr", line);
-      void onProgress(line);
-    });
-    const restoreErr = createLineSplitter((line) => {
-      emitLog(job!, log, "stderr", line);
-      void onProgress(line);
-    });
-    const restoreOut = createLineSplitter((line) => {
-      emitLog(job!, log, "stdout", line);
-      void onProgress(line);
-    });
-
-    dump.stderr?.on("data", (c: Buffer) => dumpErr.push(c));
-    restore.stderr?.on("data", (c: Buffer) => restoreErr.push(c));
-    restore.stdout?.on("data", (c: Buffer) => restoreOut.push(c));
-
-    const timeoutMs =
-      (source.timeoutSec || getConfig().SYNC_DB_TIMEOUT_SEC || 3600) * 1000;
-    let timedOut = false;
-    const timer = setTimeout(() => {
-      timedOut = true;
-      cancel("Sync timed out");
-    }, timeoutMs);
-
-    const dumpExit = new Promise<number | null>((resolve) => {
-      dump.on("close", (code) => resolve(code));
-      dump.on("error", () => resolve(1));
-    });
-    const restoreExit = new Promise<number | null>((resolve) => {
-      restore.on("close", (code) => resolve(code));
-      restore.on("error", () => resolve(1));
-    });
-
-    const [dumpCode, restoreCode] = await Promise.all([dumpExit, restoreExit]);
-    clearTimeout(timer);
-    dumpErr.flush();
-    restoreErr.flush();
-    restoreOut.flush();
-
-    tunnelCleanup?.();
-    tunnelCleanup = null;
-
-    const durationMs = Date.now() - started;
-    let status: SyncDbStatus = "success";
-    let errorMessage: string | undefined;
-    let exitCode: number | null = restoreCode ?? dumpCode;
-
-    if (cancelReason) {
-      status = timedOut ? "timeout" : "cancelled";
-      errorMessage = cancelReason;
-      exitCode = null;
-    } else if (dumpCode !== 0) {
-      status = "failed";
-      errorMessage = `mongodump failed (exit ${dumpCode})`;
-      exitCode = dumpCode;
-    } else if (restoreCode !== 0) {
-      status = "failed";
-      errorMessage = `mongorestore failed (exit ${restoreCode})`;
-      exitCode = restoreCode;
-    }
-
-    const finalProgress = tracker.setPhase(
-      status === "success" ? "done" : "failed",
-    );
-    if (status === "success" && finalProgress.total > 0) {
-      finalProgress.done = finalProgress.total;
-      finalProgress.current = [];
-    }
-
-    job = await updateSyncDbJob(jobId, {
-      status,
-      finishedAt: new Date().toISOString(),
-      durationMs,
-      exitCode,
-      errorMessage,
-      progress: finalProgress,
-      cancelRequested: Boolean(cancelReason),
-    });
-
-    emitLog(
-      job,
-      log,
-      "system",
-      status === "success"
-        ? `Sync OK in ${(durationMs / 1000).toFixed(1)}s`
-        : `Sync ${status}: ${errorMessage || status}`,
-    );
-    publishSyncDbEvent({ type: "job", job });
-    publishSyncDbEvent({ type: "done", jobId, job });
-    publishSyncDbEvent({ type: "progress", jobId, progress: finalProgress });
-
-    return { job, status, exitCode, durationMs };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     logger.error("Sync DB runner failed", { jobId, err: msg });
