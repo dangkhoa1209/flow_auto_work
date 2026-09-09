@@ -39,12 +39,26 @@ export const useSyncDbStore = defineStore("syncDb", () => {
   const headerLabel = computed(() => {
     if (queue.value.shuttingDown) return "SYNC OFF";
     const p = queue.value.currentProgress;
-    if (queue.value.running && queue.value.currentDbName) {
-      if (p && p.total > 0) {
-        const cur = p.current[0] ? ` · ${p.current[0]}` : "";
-        return `SYNC ${p.done}/${p.total}${cur}`;
+    const mine =
+      Boolean(
+        queue.value.currentJobId &&
+          jobs.value.some((j) => j.id === queue.value.currentJobId),
+      ) ||
+      Boolean(
+        queue.value.currentDbName &&
+          capability.value?.dbName &&
+          queue.value.currentDbName === capability.value.dbName,
+      );
+    if (queue.value.running) {
+      if (!mine) return "BUSY";
+      if (queue.value.currentDbName) {
+        if (p && p.total > 0) {
+          const cur = p.current[0] ? ` · ${p.current[0]}` : "";
+          return `SYNC ${p.done}/${p.total}${cur}`;
+        }
+        return `RUNNING · ${queue.value.currentDbName}`;
       }
-      return `RUNNING · ${queue.value.currentDbName}`;
+      return "RUNNING";
     }
     if (queue.value.queued > 0) return `Queue: ${queue.value.queued}`;
     return "SYNC";
@@ -59,6 +73,13 @@ export const useSyncDbStore = defineStore("syncDb", () => {
   );
 
   function upsertJob(job: SyncDbJob) {
+    if (
+      projectIdWatched &&
+      job.projectId &&
+      job.projectId !== projectIdWatched
+    ) {
+      return;
+    }
     const i = jobs.value.findIndex((j) => j.id === job.id);
     if (i >= 0) jobs.value[i] = job;
     else jobs.value = [job, ...jobs.value].slice(0, 80);
@@ -114,11 +135,11 @@ export const useSyncDbStore = defineStore("syncDb", () => {
     }
   }
 
-  async function startEvents() {
+  async function startEvents(projectId: string) {
     stopEvents();
     await ensureTokenFresh();
     if (!getAccessToken()) return;
-    const es = new EventSource(syncDbEventsUrl());
+    const es = new EventSource(syncDbEventsUrl(projectId));
     eventsEs = es;
 
     const onQueue = (ev: MessageEvent) => {
@@ -183,11 +204,13 @@ export const useSyncDbStore = defineStore("syncDb", () => {
   async function bootstrap(projectId: string | null) {
     projectIdWatched = projectId;
     await refreshCapability(projectId);
-    if (capability.value?.featureVisible) {
-      await refreshHistory();
-      await startEvents();
+    if (capability.value?.featureVisible && projectId) {
+      await refreshHistory(projectId);
+      await startEvents(projectId);
     } else {
       stopEvents();
+      history.value = [];
+      jobs.value = [];
     }
   }
 
@@ -219,7 +242,10 @@ export const useSyncDbStore = defineStore("syncDb", () => {
   }
 
   async function cancel(jobId: string) {
-    const data = await syncDbApi.cancel(jobId);
+    if (!projectIdWatched) {
+      throw new Error("No project selected");
+    }
+    const data = await syncDbApi.cancel(jobId, projectIdWatched);
     queue.value = data.queue;
     upsertJob(data.job);
   }

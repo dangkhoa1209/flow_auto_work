@@ -3,6 +3,7 @@ import { withActive } from "../../models/base.js";
 import { SyncDbJobModel } from "../../models/syncDb.js";
 import { AppError } from "../../utils/AppError.js";
 import { logPathForSyncDb } from "./logFile.js";
+import { isDuplicateKeyError } from "./safety.js";
 import {
   emptyProgress,
   isTerminalSyncDbStatus,
@@ -22,7 +23,18 @@ async function col(): Promise<Collection<SyncDbJob>> {
 }
 
 export async function insertSyncDbJob(job: SyncDbJob): Promise<SyncDbJob> {
-  await SyncDbJobModel.insert({ ...job, deleted: false, deletedAt: null });
+  try {
+    await SyncDbJobModel.insert({ ...job, deleted: false, deletedAt: null });
+  } catch (err) {
+    if (isDuplicateKeyError(err)) {
+      throw new AppError(
+        `Sync already queued/running for this project (${job.dbName})`,
+        409,
+        "sync_db_project_busy",
+      );
+    }
+    throw err;
+  }
   return job;
 }
 
@@ -35,6 +47,23 @@ export async function getSyncDbJob(id: string): Promise<SyncDbJob | null> {
 export async function requireSyncDbJob(id: string): Promise<SyncDbJob> {
   const job = await getSyncDbJob(id);
   if (!job) throw new AppError("Sync DB job not found", 404, "sync_db_not_found");
+  return job;
+}
+
+/** Require job and that it belongs to projectId (no cross-project peek/cancel). */
+export async function requireSyncDbJobForProject(
+  id: string,
+  projectId: string,
+): Promise<SyncDbJob> {
+  const job = await requireSyncDbJob(id);
+  const pid = projectId.trim();
+  if (!pid || job.projectId !== pid) {
+    throw new AppError(
+      "Sync DB job not found for this project",
+      404,
+      "sync_db_not_found",
+    );
+  }
   return job;
 }
 
@@ -108,23 +137,25 @@ export async function findActiveJobForProject(
 }
 
 /**
- * Atomically start the next queued job only if nothing else is running
- * (Mongo is the global mutex — concurrency 1 system-wide).
+ * Atomically claim a queued job. Unique partial index on status=running
+ * is the global mutex (E11000 → another runner won the race).
  */
 export async function tryClaimSyncDbJobForRun(
   jobId: string,
 ): Promise<SyncDbJob | null> {
   const c = await col();
-  const otherRunning = await c.findOne(withActive({ status: "running" }));
-  if (otherRunning) return null;
-
   const now = new Date().toISOString();
-  const res = await c.findOneAndUpdate(
-    withActive({ id: jobId, status: "queued" }),
-    { $set: { status: "running", startedAt: now, updatedAt: now } },
-    { returnDocument: "after" },
-  );
-  return res ?? null;
+  try {
+    const res = await c.findOneAndUpdate(
+      withActive({ id: jobId, status: "queued" }),
+      { $set: { status: "running", startedAt: now, updatedAt: now } },
+      { returnDocument: "after" },
+    );
+    return res ?? null;
+  } catch (err) {
+    if (isDuplicateKeyError(err)) return null;
+    throw err;
+  }
 }
 
 export function createQueuedSyncDbJob(opts: {

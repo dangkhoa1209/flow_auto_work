@@ -12,7 +12,7 @@ import {
   ensureSyncDbIndexes,
   getSyncDbJob,
   listSyncDbJobs,
-  requireSyncDbJob,
+  requireSyncDbJobForProject,
 } from "./store.js";
 import {
   getSyncDbSystemConfig,
@@ -105,12 +105,24 @@ export async function triggerSyncDb(opts: {
 export async function cancelSyncDb(
   jobId: string,
   reason?: string,
+  opts?: { projectId?: string },
 ): Promise<SyncDbJob> {
-  return syncDbQueue.cancel(jobId, reason);
+  return syncDbQueue.cancel(jobId, reason, opts);
 }
 
-export async function getSyncDb(jobId: string): Promise<SyncDbJob> {
-  return requireSyncDbJob(jobId);
+export async function getSyncDb(
+  jobId: string,
+  opts?: { projectId?: string },
+): Promise<SyncDbJob> {
+  const projectId = String(opts?.projectId || "").trim();
+  if (!projectId) {
+    throw new AppError(
+      "projectId required",
+      400,
+      "sync_db_project_required",
+    );
+  }
+  return requireSyncDbJobForProject(jobId, projectId);
 }
 
 export async function listSyncDbs(opts?: {
@@ -119,26 +131,53 @@ export async function listSyncDbs(opts?: {
   status?: SyncDbJob["status"];
   projectId?: string;
 }): Promise<SyncDbJob[]> {
-  return listSyncDbJobs(opts);
+  const projectId = String(opts?.projectId || "").trim();
+  if (!projectId) {
+    throw new AppError(
+      "projectId required to list sync jobs",
+      400,
+      "sync_db_project_required",
+    );
+  }
+  return listSyncDbJobs({ ...opts, projectId });
 }
 
 export async function countSyncDbs(opts?: {
   status?: SyncDbJob["status"];
   projectId?: string;
 }): Promise<number> {
-  return countSyncDbJobs(opts);
+  const projectId = String(opts?.projectId || "").trim();
+  if (!projectId) {
+    throw new AppError(
+      "projectId required",
+      400,
+      "sync_db_project_required",
+    );
+  }
+  return countSyncDbJobs({ ...opts, projectId });
 }
 
 export function getSyncDbQueueSnapshot(): SyncDbQueueSnapshot {
   return syncDbQueue.snapshot();
 }
 
-export async function readSyncDbLog(jobId: string): Promise<{
+export async function readSyncDbLog(
+  jobId: string,
+  opts?: { projectId?: string },
+): Promise<{
   job: SyncDbJob;
   text: string;
   lines: ReturnType<typeof parseLogLines>;
 }> {
-  const job = await requireSyncDbJob(jobId);
+  const projectId = String(opts?.projectId || "").trim();
+  if (!projectId) {
+    throw new AppError(
+      "projectId required",
+      400,
+      "sync_db_project_required",
+    );
+  }
+  const job = await requireSyncDbJobForProject(jobId, projectId);
   const text = await readSyncDbLogTail(job.logFile);
   return { job, text, lines: parseLogLines(text) };
 }
