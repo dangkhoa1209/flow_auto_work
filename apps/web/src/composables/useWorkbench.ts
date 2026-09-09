@@ -715,20 +715,6 @@ export function useWorkbench() {
     const msg = chatInput.value.trim();
     if (!msg) return;
 
-    // Attach to an in-flight chat before busy/lock checks (avoids duplicate sessions).
-    if (!selectedJobId.value) {
-      const resumeId = pickResumeChatJobId();
-      if (resumeId) {
-        try {
-          await work.selectJob(resumeId);
-          mobilePane.value = "chat";
-        } catch (e) {
-          message.error(e instanceof Error ? e.message : String(e));
-          return;
-        }
-      }
-    }
-
     if (selectedJobId.value && !(await confirmBadContextIfNeeded())) return;
 
     const run = async () => {
@@ -1175,38 +1161,10 @@ export function useWorkbench() {
     adhocOpen.value = true;
   }
 
-  /** In-flight / waiting-on-user jobs — Chat should resume these, not spawn a blank session. */
-  function isResumableChatStatus(status: string | undefined): boolean {
-    if (!status) return false;
-    if (status === "queued" || status === "running") return true;
-    return status.startsWith("awaiting_");
-  }
-
-  /**
-   * Prefer the selected job when it is still active; otherwise the newest
-   * active job in the list. Null → blank composer (new session on Send).
-   */
-  function pickResumeChatJobId(): string | null {
-    const selected = selectedJobId.value;
-    if (selected) {
-      const cur =
-        jobs.value.find((j) => j.id === selected) || currentJob.value;
-      if (cur && isResumableChatStatus(cur.status)) return selected;
-    }
-    const hit = sortedJobs.value.find((j) => isResumableChatStatus(j.status));
-    return hit?.id ?? null;
-  }
-
-  async function openMobileComposer() {
-    const resumeId = pickResumeChatJobId();
-    if (resumeId && resumeId !== selectedJobId.value) {
-      try {
-        await work.selectJob(resumeId);
-        midTab.value = "detail";
-      } catch (e) {
-        message.error(e instanceof Error ? e.message : String(e));
-      }
-    }
+  /** Chat always starts a blank adhoc composer; Send creates a new job. */
+  function openMobileComposer() {
+    work.clearOpenSelection();
+    midTab.value = "detail";
     mobilePane.value = "chat";
     void nextTick(() => {
       const el = document.querySelector(

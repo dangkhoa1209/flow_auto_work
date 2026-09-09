@@ -363,7 +363,7 @@ watch(
         <button
           type="button"
           class="faw-btn faw-btn--run"
-          title="Resume active chat, or type a request (no GitLab issue)"
+          title="New chat — type a request (no GitLab issue)"
           @click="emit('startChat')"
         >
           Chat
