@@ -1,4 +1,8 @@
 import { describe, expect, it } from "vitest";
+import {
+  isSkippedSyncCollection,
+  partitionSyncCollections,
+} from "../excludedCollections.js";
 import { createProgressTracker, parseToolLine } from "../progress.js";
 import {
   assertSafeRestoreTarget,
@@ -6,6 +10,25 @@ import {
 } from "../safety.js";
 import type { SyncDbSystemConfigResolved } from "../types.js";
 import type { BaDbConnectionResolved } from "../../../workspace/baStore.js";
+
+describe("syncDb excluded collections", () => {
+  it("skips logs case-insensitively", () => {
+    expect(isSkippedSyncCollection("logs")).toBe(true);
+    expect(isSkippedSyncCollection("Logs")).toBe(true);
+    expect(isSkippedSyncCollection("users")).toBe(false);
+    expect(isSkippedSyncCollection("activity_logs")).toBe(false);
+  });
+
+  it("partitions list for progress totals", () => {
+    const { included, skipped } = partitionSyncCollections([
+      "users",
+      "logs",
+      "orders",
+    ]);
+    expect(included).toEqual(["users", "orders"]);
+    expect(skipped).toEqual(["logs"]);
+  });
+});
 
 describe("syncDb progress parse", () => {
   it("parses dump/restore collection lines", () => {

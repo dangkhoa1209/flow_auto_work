@@ -7,6 +7,7 @@ import { getConfig } from "../../config.js";
 import { logger } from "../../logger.js";
 import { AppError } from "../../utils/AppError.js";
 import type { BaDbConnectionResolved } from "../../workspace/baStore.js";
+import { partitionSyncCollections, SYNC_DB_SKIP_COLLECTIONS } from "./excludedCollections.js";
 import { publishSyncDbEvent } from "./events.js";
 import { openSyncDbLog, type SyncDbLogWriter } from "./logFile.js";
 import { createProgressTracker } from "./progress.js";
@@ -25,6 +26,11 @@ import type {
 } from "./types.js";
 
 export { assertSafeRestoreTarget } from "./safety.js";
+export {
+  isSkippedSyncCollection,
+  partitionSyncCollections,
+  SYNC_DB_SKIP_COLLECTIONS,
+} from "./excludedCollections.js";
 
 export type SyncDbRunResult = {
   job: SyncDbJob;
@@ -543,18 +549,27 @@ export async function runSyncDbJob(
     emitLog(job, log, "system", "Source user privilege check OK (no write on live)");
 
     let collections: string[] = [];
+    let skippedCollections: string[] = [];
     try {
-      collections = await listSourceCollections(source, job.dbName);
+      const listed = await listSourceCollections(source, job.dbName);
+      const parted = partitionSyncCollections(listed);
+      collections = parted.included;
+      skippedCollections = parted.skipped;
       emitLog(
         job,
         log,
         "system",
-        `Listed ${collections.length} collection(s) on source`,
+        `Listed ${listed.length} collection(s) on source` +
+          (skippedCollections.length
+            ? ` — skip ${skippedCollections.join(", ")} (heavy)`
+            : ""),
       );
       await publishProgress(tracker.setTotal(collections.length, collections), true);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       emitLog(job, log, "system", `listCollections warning: ${msg}`);
+      // Still exclude known heavy names even if listCollections failed.
+      skippedCollections = [...SYNC_DB_SKIP_COLLECTIONS];
     }
 
     if (cancelReason) throw new Error(cancelReason);
@@ -588,6 +603,18 @@ export async function runSyncDbJob(
       "--archive",
       "-v",
     ];
+    // Always exclude heavy collections from dump (even if listCollections missed them).
+    const excludeNames = [
+      ...new Set([
+        ...skippedCollections,
+        ...SYNC_DB_SKIP_COLLECTIONS,
+      ]
+        .map((n) => n.trim())
+        .filter(Boolean)),
+    ];
+    for (const name of excludeNames) {
+      dumpArgs.push("--excludeCollection", name);
+    }
 
     const restoreArgs = [
       "--host",
@@ -618,7 +645,10 @@ export async function runSyncDbJob(
       job,
       log,
       "system",
-      `Pipeline: mongodump (tunnel) | mongorestore (${target.host}:${target.port}) writeConcern=w:1`,
+      `Pipeline: mongodump (tunnel) | mongorestore (${target.host}:${target.port}) writeConcern=w:1` +
+        (excludeNames.length
+          ? `; excludeCollection=${excludeNames.join(",")}`
+          : ""),
     );
 
     try {
