@@ -76,6 +76,46 @@ function killProcessTree(child: ChildProcess, signal: NodeJS.Signals): void {
   }
 }
 
+/** SIGTERM then SIGKILL so leftover tunnels do not hold tunnelLocalPort. */
+function forceKillProcessTree(child: ChildProcess): void {
+  killProcessTree(child, "SIGTERM");
+  const pid = child.pid;
+  if (!pid) return;
+  setTimeout(() => {
+    try {
+      if (!child.killed && child.exitCode === null) {
+        killProcessTree(child, "SIGKILL");
+      }
+    } catch {
+      /* already gone */
+    }
+  }, 1500).unref?.();
+}
+
+async function assertTunnelPortFree(port: number): Promise<void> {
+  const net = await import("node:net");
+  await new Promise<void>((resolve, reject) => {
+    const server = net.createServer();
+    server.once("error", (err: NodeJS.ErrnoException) => {
+      if (err.code === "EADDRINUSE") {
+        reject(
+          new AppError(
+            `SSH tunnel port ${port} already in use — leftover tunnel from a prior run? Free the port or change tunnelLocalPort in Admin Sync DB`,
+            409,
+            "sync_db_tunnel_port_busy",
+          ),
+        );
+        return;
+      }
+      reject(err);
+    });
+    server.once("listening", () => {
+      server.close(() => resolve());
+    });
+    server.listen(port, "127.0.0.1");
+  });
+}
+
 function emitLog(
   job: SyncDbJob,
   log: SyncDbLogWriter,
@@ -232,9 +272,11 @@ function openSshTunnel(
     });
   }
 
+  // No ssh -f: Node owns the child (detached process group). -f would fork-and-exit
+  // and we would lose the tunnel PID needed for reliable cleanup.
   const cleanup = () => {
     try {
-      killProcessTree(child, "SIGTERM");
+      forceKillProcessTree(child);
     } catch {
       /* */
     }
@@ -321,7 +363,7 @@ export async function runSyncDbJob(
 
   const cancel = (reason: string) => {
     cancelReason = reason;
-    for (const c of children) killProcessTree(c, "SIGTERM");
+    for (const c of children) forceKillProcessTree(c);
     tunnelCleanup?.();
   };
 
@@ -349,6 +391,7 @@ export async function runSyncDbJob(
 
     await publishProgress(tracker.setPhase("connecting"));
 
+    await assertTunnelPortFree(source.tunnelLocalPort);
     const tunnel = openSshTunnel(source);
     tunnelCleanup = tunnel.cleanup;
     children.push(tunnel.child);
@@ -422,7 +465,8 @@ export async function runSyncDbJob(
       "--numParallelCollections",
       "4",
       "--bypassDocumentValidation",
-      "--writeConcern={w:0}",
+      // Acknowledged writes — {w:0} can exit OK while target silently dropped data.
+      "--writeConcern={w:1}",
       "--archive",
       "-v",
     ];
@@ -440,7 +484,7 @@ export async function runSyncDbJob(
       job,
       log,
       "system",
-      `Pipeline: mongodump (tunnel) | mongorestore (${target.host}:${target.port})`,
+      `Pipeline: mongodump (tunnel) | mongorestore (${target.host}:${target.port}) writeConcern=w:1`,
     );
 
     try {
@@ -459,6 +503,7 @@ export async function runSyncDbJob(
       if (!dump.stdout || !restore.stdin) {
         throw new Error("Failed to pipe mongodump → mongorestore");
       }
+      // Node pipe + wait BOTH exits (pipefail equivalent — bash | alone is not used).
       dump.stdout.pipe(restore.stdin);
 
       const onProgress = async (line: string) => {
@@ -514,6 +559,7 @@ export async function runSyncDbJob(
       let errorMessage: string | undefined;
       let exitCode: number | null = restoreCode ?? dumpCode;
 
+      // Fail if either side of the pipe fails (or exits null / signal) — never trust restore alone.
       if (cancelReason) {
         status = timedOut ? "timeout" : "cancelled";
         errorMessage = cancelReason;
