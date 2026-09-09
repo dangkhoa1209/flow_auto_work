@@ -25,8 +25,14 @@ export type SyncDbPhase =
 
 export type SyncDbProgress = {
   phase: SyncDbPhase;
+  /** Display denominator: collections × active phases (2 while dump|restore pipe). */
   total: number;
+  /** dumpDone + restoreDone — climbs smoothly through the pipe. */
   done: number;
+  /** Raw collection count from listCollections (0 if unknown). */
+  collections?: number;
+  dumpDone?: number;
+  restoreDone?: number;
   current: string[];
   dbName: string;
 };
@@ -199,6 +205,9 @@ export function emptyProgress(dbName = ""): SyncDbProgress {
     phase: "queued",
     total: 0,
     done: 0,
+    collections: 0,
+    dumpDone: 0,
+    restoreDone: 0,
     current: [],
     dbName,
   };

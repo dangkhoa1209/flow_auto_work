@@ -35,7 +35,36 @@ describe("syncDb progress parse", () => {
     t.applyLine("writing YKK.users to archive on stdout");
     expect(t.snapshot().current).toContain("users");
     t.applyLine("done dumping YKK.users (1 documents)");
+    expect(t.snapshot().dumpDone).toBe(1);
     expect(t.snapshot().done).toBe(1);
+    // Pipe expects dump+restore → total = 2 * collections
+    expect(t.snapshot().total).toBe(4);
+  });
+
+  it("keeps dump progress when restore stderr interleaves", () => {
+    const t = createProgressTracker("YKK");
+    t.setTotal(3, ["a", "b", "c"]);
+    t.setPhase("dump");
+    t.applyLine("writing YKK.a to archive on stdout");
+    t.applyLine("done dumping YKK.a (1 documents)");
+    t.applyLine("writing YKK.b to archive on stdout");
+    t.applyLine("done dumping YKK.b (1 documents)");
+    expect(t.snapshot().dumpDone).toBe(2);
+    expect(t.snapshot().done).toBe(2);
+
+    // Restore starts while dump still running — must NOT reset dump counters.
+    t.applyLine("restoring to YKK.a from archive");
+    t.applyLine("finished restoring YKK.a (1 documents)");
+    expect(t.snapshot().dumpDone).toBe(2);
+    expect(t.snapshot().restoreDone).toBe(1);
+    expect(t.snapshot().done).toBe(3);
+    expect(t.snapshot().phase).toBe("restore");
+
+    t.applyLine("done dumping YKK.c (1 documents)");
+    expect(t.snapshot().dumpDone).toBe(3);
+    expect(t.snapshot().restoreDone).toBe(1);
+    expect(t.snapshot().done).toBe(4);
+    expect(t.snapshot().total).toBe(6);
   });
 });
 
