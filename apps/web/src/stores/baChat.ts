@@ -23,7 +23,7 @@ export type BaProject = {
 
 export type BaFeatureState = "hide" | "lab" | "production";
 
-export type BaFeatureKey = "createIssue" | "workflow" | "tasks";
+export type BaFeatureKey = "createIssue" | "workflow" | "tasks" | "syncDatabase";
 
 export type BaFeatures = {
   flags: Record<BaFeatureKey, BaFeatureState>;
@@ -32,7 +32,12 @@ export type BaFeatures = {
 };
 
 const DEFAULT_BA_FEATURES: BaFeatures = {
-  flags: { createIssue: "hide", workflow: "hide", tasks: "hide" },
+  flags: {
+    createIssue: "hide",
+    workflow: "hide",
+    tasks: "hide",
+    syncDatabase: "hide",
+  },
   workflowTabLabel: "Phân tích YC",
   devMode: false,
 };

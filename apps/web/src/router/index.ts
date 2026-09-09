@@ -128,6 +128,11 @@ const router = createRouter({
           component: () => import("@/views/admin/AdminBaFeaturesView.vue"),
         },
         {
+          path: "sync-db",
+          name: "admin-sync-db",
+          component: () => import("@/views/admin/AdminSyncDbView.vue"),
+        },
+        {
           path: "settings",
           component: () => import("@/layouts/AdminSettingsLayout.vue"),
           children: [

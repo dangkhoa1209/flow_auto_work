@@ -177,6 +177,7 @@ const BA_FEATURE_GUARD_LABELS: Record<BaFeatureKey, string> = {
   createIssue: "Tạo issue từ chat",
   workflow: "Phân tích yêu cầu → task",
   tasks: "Quản lý task",
+  syncDatabase: "Sync Database",
 };
 
 /** Chặn API khi tính năng đang ở trạng thái hide (trừ dev mode). */

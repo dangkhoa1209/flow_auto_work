@@ -62,6 +62,7 @@ export function applyGlobalMiddleware(app: Express): void {
             p === "/events" ||
             p.startsWith("/events?") ||
             p === "/devops/events" ||
+            p === "/ba/sync-db/events" ||
             p.endsWith("/stream")
           );
         },

@@ -15,6 +15,7 @@ const tabs = [
   { to: "/admin/ai-engine", label: "AI Engine", short: "AI" },
   { to: "/admin/task-types", label: "Task labels", short: "Labels" },
   { to: "/admin/ba-features", label: "BA features", short: "Features" },
+  { to: "/admin/sync-db", label: "Sync DB", short: "Sync" },
 ];
 
 const inSettings = computed(() => route.path.startsWith("/admin/settings"));

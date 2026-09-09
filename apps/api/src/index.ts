@@ -78,6 +78,12 @@ async function main() {
     logger.info(`Restored ${restoredBuilds} queued build(s) after restart`);
   }
 
+  const { restoreSyncDbQueue } = await import("./modules/syncDb/index.js");
+  const restoredSync = await restoreSyncDbQueue();
+  if (restoredSync > 0) {
+    logger.info(`Restored ${restoredSync} queued sync-db job(s) after restart`);
+  }
+
   await startHttpServer();
 }
 

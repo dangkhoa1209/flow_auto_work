@@ -7,7 +7,12 @@ import { API } from "@/api/endpoints";
 type FeatureState = "hide" | "lab" | "production";
 
 type BaFeaturesResponse = {
-  flags: { createIssue: FeatureState; workflow: FeatureState; tasks: FeatureState };
+  flags: {
+    createIssue: FeatureState;
+    workflow: FeatureState;
+    tasks: FeatureState;
+    syncDatabase: FeatureState;
+  };
   workflowTabLabel: string;
   devMode: boolean;
   updatedAt: string | null;
@@ -17,10 +22,13 @@ const loading = ref(false);
 const saving = ref(false);
 const devMode = ref(false);
 const workflowTabLabel = ref("Requirements");
-const flags = ref<Record<"createIssue" | "workflow" | "tasks", FeatureState>>({
+const flags = ref<
+  Record<"createIssue" | "workflow" | "tasks" | "syncDatabase", FeatureState>
+>({
   createIssue: "hide",
   workflow: "hide",
   tasks: "hide",
+  syncDatabase: "hide",
 });
 
 const STATE_OPTIONS: { value: FeatureState; label: string }[] = [
@@ -29,7 +37,11 @@ const STATE_OPTIONS: { value: FeatureState; label: string }[] = [
   { value: "production", label: "Production — fully visible" },
 ];
 
-const FEATURES: { key: "createIssue" | "workflow" | "tasks"; name: string; desc: string }[] = [
+const FEATURES: {
+  key: "createIssue" | "workflow" | "tasks" | "syncDatabase";
+  name: string;
+  desc: string;
+}[] = [
   {
     key: "createIssue",
     name: "Create issue (BA Chat)",
@@ -44,6 +56,11 @@ const FEATURES: { key: "createIssue" | "workflow" | "tasks"; name: string; desc:
     key: "tasks",
     name: "Tasks",
     desc: "Tab to manage task drafts and publish to GitLab.",
+  },
+  {
+    key: "syncDatabase",
+    name: "Sync Database",
+    desc: "Header control to dump live Mongo → restore project Connect DB (system Sync DB config required).",
   },
 ];
 

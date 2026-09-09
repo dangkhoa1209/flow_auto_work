@@ -55,6 +55,40 @@ export function buildCloneUrl(opts: {
   return buildOauthCloneUrl(opts.host, opts.token, opts.path);
 }
 
+/**
+ * Public HTTPS URL without embedded user:token.
+ * Prefer this for `git push|fetch|clone` argv so Node `execFile` errors
+ * (`Command failed: git …`) never contain the PAT.
+ */
+export function stripCloneUrlCredentials(cloneUrl: string): string {
+  return cloneUrl.replace(/^(https?:\/\/)[^/@\s]+@/i, "$1");
+}
+
+/**
+ * Auth via GIT_CONFIG_* env (not argv). Node error.message includes cmd/args,
+ * not env — so PAT stays out of /work "Chat lỗi:" even before redact.
+ */
+export function gitHttpAuthEnvFromCloneUrl(
+  cloneUrl: string,
+): NodeJS.ProcessEnv {
+  const m = cloneUrl.match(
+    /^(https?):\/\/([^:/@\s]+):([^@/\s]+)@([^/\s]+)/i,
+  );
+  if (!m) return { GIT_TERMINAL_PROMPT: "0" };
+  const scheme = m[1].toLowerCase();
+  const user = decodeURIComponent(m[2]);
+  const token = decodeURIComponent(m[3]);
+  const host = m[4];
+  const basic = Buffer.from(`${user}:${token}`, "utf8").toString("base64");
+  const origin = `${scheme}://${host}`;
+  return {
+    GIT_TERMINAL_PROMPT: "0",
+    GIT_CONFIG_COUNT: "1",
+    GIT_CONFIG_KEY_0: `http.${origin}/.extraheader`,
+    GIT_CONFIG_VALUE_0: `AUTHORIZATION: basic ${basic}`,
+  };
+}
+
 export async function pathExists(p: string): Promise<boolean> {
   try {
     await access(p, constants.F_OK);
@@ -101,12 +135,14 @@ export function runGitClone(opts: {
     }
 
     logger.info("git clone starting", { localPath: opts.localPath });
+    const publicUrl = stripCloneUrlCredentials(opts.cloneUrl);
+    const authEnv = gitHttpAuthEnvFromCloneUrl(opts.cloneUrl);
     const child = spawn(
       "git",
-      ["clone", "--", opts.cloneUrl, opts.localPath],
+      ["clone", "--", publicUrl, opts.localPath],
       {
         stdio: ["ignore", "pipe", "pipe"],
-        env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
+        env: { ...process.env, ...authEnv },
       },
     );
     let stderr = "";

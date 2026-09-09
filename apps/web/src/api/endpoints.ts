@@ -51,6 +51,7 @@ export const API = {
       `/api/admin/settings/cursor-pats/${encodeURIComponent(patId)}/active`,
     taskTypeLabels: "/api/admin/settings/task-type-labels",
     baFeatures: "/api/admin/settings/ba-features",
+    syncDb: "/api/admin/settings/sync-db",
     users: "/api/admin/users",
     user: (id: string) => `/api/admin/users/${encodeURIComponent(id)}`,
     userDisable: (id: string) =>
@@ -91,6 +92,20 @@ export const API = {
     googleStatus: "/api/ba/google/status",
     googleAuthUrl: "/api/ba/google/auth-url",
     googleRevoke: "/api/ba/google/revoke",
+    syncDb: {
+      capability: "/api/ba/sync-db/capability",
+      queue: "/api/ba/sync-db/queue",
+      events: "/api/ba/sync-db/events",
+      jobs: "/api/ba/sync-db/jobs",
+      job: (id: string) =>
+        `/api/ba/sync-db/jobs/${encodeURIComponent(id)}`,
+      jobLog: (id: string) =>
+        `/api/ba/sync-db/jobs/${encodeURIComponent(id)}/log`,
+      jobStream: (id: string) =>
+        `/api/ba/sync-db/jobs/${encodeURIComponent(id)}/stream`,
+      jobCancel: (id: string) =>
+        `/api/ba/sync-db/jobs/${encodeURIComponent(id)}/cancel`,
+    },
   },
   projects: {
     root: "/api/projects",
