@@ -197,7 +197,7 @@ export class JobQueue {
 
   /**
    * Boot recovery: re-enqueue jobs left `queued` in DB by a restart
-   * (running jobs are failed by failInterruptedJobs).
+   * (running jobs are first re-queued by failInterruptedJobs).
    */
   async restoreQueuedJobs(): Promise<number> {
     const jobs = await listJobs();
@@ -785,9 +785,7 @@ export class JobQueue {
       prevStatus === "awaiting_handoff" || prevStatus === "succeeded";
     const key = busyIssueKeyForJob(job);
 
-    job.pendingFollowUpMessage = undefined;
-    job.pendingFollowUpKind = undefined;
-    job.followUpRestoreStatus = undefined;
+    // Keep pendingFollowUp* until finally so a process restart can re-queue
     this.activeIssueKeys.add(key);
     this.setCurrent(job);
     this.publishStatus();
@@ -1074,6 +1072,23 @@ export class JobQueue {
       await this.notifyJobChat(job, `Chat lỗi:\n${errMsg}`);
       logger.error("IDE follow-up failed", { jobId: job.id, err: errMsg });
     } finally {
+      try {
+        const fresh = await loadJob(job.id);
+        // Crash never reaches finally — pending stays for boot re-queue.
+        // Skip clear if somehow already re-queued.
+        if (fresh && fresh.status !== "queued") {
+          fresh.pendingFollowUpMessage = undefined;
+          fresh.pendingFollowUpKind = undefined;
+          fresh.followUpRestoreStatus = undefined;
+          await saveJob(fresh);
+          job = fresh;
+        }
+      } catch (err) {
+        logger.warn("Could not clear pending follow-up after run", {
+          jobId: job.id,
+          err: String(err),
+        });
+      }
       job.pendingFollowUpMessage = undefined;
       job.pendingFollowUpKind = undefined;
       job.followUpRestoreStatus = undefined;
@@ -1110,9 +1125,7 @@ export class JobQueue {
           : "draft");
     const key = busyIssueKeyForJob(job);
 
-    job.pendingFollowUpMessage = undefined;
-    job.pendingFollowUpKind = undefined;
-    job.followUpRestoreStatus = undefined;
+    // Keep pendingFollowUp* until finally so a process restart can re-queue
     this.activeIssueKeys.add(key);
     this.setCurrent(job);
     this.publishStatus();
@@ -1198,6 +1211,21 @@ export class JobQueue {
       await this.notifyJobChat(job, `Ask only lỗi:\n${errMsg}`);
       logger.error("Ask only failed", { jobId: job.id, err: errMsg });
     } finally {
+      try {
+        const fresh = await loadJob(job.id);
+        if (fresh && fresh.status !== "queued") {
+          fresh.pendingFollowUpMessage = undefined;
+          fresh.pendingFollowUpKind = undefined;
+          fresh.followUpRestoreStatus = undefined;
+          await saveJob(fresh);
+          job = fresh;
+        }
+      } catch (err) {
+        logger.warn("Could not clear pending follow-up after ask", {
+          jobId: job.id,
+          err: String(err),
+        });
+      }
       job.pendingFollowUpMessage = undefined;
       job.pendingFollowUpKind = undefined;
       job.followUpRestoreStatus = undefined;
@@ -1232,9 +1260,7 @@ export class JobQueue {
           : "draft");
     const key = busyIssueKeyForJob(job);
 
-    job.pendingFollowUpMessage = undefined;
-    job.pendingFollowUpKind = undefined;
-    job.followUpRestoreStatus = undefined;
+    // Keep pendingFollowUp* until finally so a process restart can re-queue
     this.activeIssueKeys.add(key);
     this.setCurrent(job);
     this.publishStatus();
@@ -1310,6 +1336,21 @@ export class JobQueue {
       await this.notifyJobChat(job, `Sinh testcase lỗi:\n${errMsg}`);
       logger.error("Generate testcases failed", { jobId: job.id, err: errMsg });
     } finally {
+      try {
+        const fresh = await loadJob(job.id);
+        if (fresh && fresh.status !== "queued") {
+          fresh.pendingFollowUpMessage = undefined;
+          fresh.pendingFollowUpKind = undefined;
+          fresh.followUpRestoreStatus = undefined;
+          await saveJob(fresh);
+          job = fresh;
+        }
+      } catch (err) {
+        logger.warn("Could not clear pending follow-up after testcases", {
+          jobId: job.id,
+          err: String(err),
+        });
+      }
       job.pendingFollowUpMessage = undefined;
       job.pendingFollowUpKind = undefined;
       job.followUpRestoreStatus = undefined;

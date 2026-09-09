@@ -394,19 +394,78 @@ export function issueKey(
   return busyIssueKey(workspaceProjectId, projectId, issueIid);
 }
 
-/** Mark interrupted RUNNING jobs failed after restart (queued jobs are re-queued by JobQueue.restoreQueuedJobs). */
-export async function failInterruptedJobs(): Promise<void> {
+/**
+ * Boot recovery for jobs left `running` when the Node process died.
+ * Re-queues them (status → queued) so JobQueue.restoreQueuedJobs can pump again.
+ * Keeps pending follow-up / ask payload when present; clears dead Cursor agentId.
+ * Awaiting_* wait states are left alone (durable UI gates).
+ */
+export async function failInterruptedJobs(): Promise<number> {
+  const { listChatMessages, addChatMessage } = await import("./models/chat.js");
   const jobs = await listJobs();
+  let recovered = 0;
   for (const job of jobs) {
-    if (job.status === "running") {
-      job.status = "failed";
-      job.error =
-        job.error ??
-        "Interrupted by process restart. Re-assign or update the issue to retry.";
-      await saveJob(job);
-      logger.warn("Marked interrupted job as failed", { jobId: job.id });
+    if (job.status !== "running") continue;
+
+    // Legacy mid-run clear: recover last unpaired user chat as pending follow-up
+    if (!job.pendingFollowUpMessage?.trim()) {
+      try {
+        const chat = await listChatMessages({ jobId: job.id, limit: 40 });
+        let lastUser: (typeof chat)[number] | undefined;
+        for (const m of chat) {
+          if (m.role === "user" && m.body?.trim()) lastUser = m;
+          else if (m.role === "agent") lastUser = undefined;
+        }
+        if (lastUser?.body?.trim()) {
+          job.pendingFollowUpMessage = lastUser.body.trim();
+          job.pendingFollowUpKind =
+            job.pendingFollowUpKind ||
+            (lastUser.kind === "clarify" ? "ask" : "send");
+          if (!job.followUpRestoreStatus) {
+            job.followUpRestoreStatus = job.handedOffAt
+              ? "succeeded"
+              : job.completedAt
+                ? "awaiting_handoff"
+                : "draft";
+          }
+        }
+      } catch (err) {
+        logger.warn("Could not recover pending chat for interrupted job", {
+          jobId: job.id,
+          err: String(err),
+        });
+      }
     }
+
+    job.status = "queued";
+    // Cursor agent window died with the process — force a fresh window on retry
+    job.agentId = undefined;
+    job.error = undefined;
+    await saveJob(job);
+    try {
+      await addChatMessage({
+        jobId: job.id,
+        issueIid: job.issue.issueIid,
+        role: "system",
+        kind: "note",
+        body: "Server restarted — this job was re-queued automatically.",
+      });
+    } catch (err) {
+      logger.warn("Could not write restart note to chat", {
+        jobId: job.id,
+        err: String(err),
+      });
+    }
+    recovered += 1;
+    logger.warn("Re-queued interrupted job after restart", {
+      jobId: job.id,
+      iid: job.issue.issueIid,
+      kind: job.pendingFollowUpMessage
+        ? job.pendingFollowUpKind || "send"
+        : "run",
+    });
   }
+  return recovered;
 }
 
 /**

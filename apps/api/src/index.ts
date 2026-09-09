@@ -51,14 +51,17 @@ async function main() {
   await ensureBaIndexes();
   logger.info("Workspace + auth + model indexes OK");
 
-  await failInterruptedJobs();
+  const interrupted = await failInterruptedJobs();
+  if (interrupted > 0) {
+    logger.info(`Re-queued ${interrupted} interrupted job(s) after restart`);
+  }
   const legacy = await resolveLegacyDiffApprovalJobs();
   if (legacy > 0) {
     logger.info(`Migrated ${legacy} legacy job(s)`);
   }
   logger.info("Job store OK");
 
-  // Requeue jobs that were still waiting in queue when the process died
+  // Requeue jobs that were still waiting / interrupted when the process died
   const { jobQueue } = await import("./queue.js");
   const restored = await jobQueue.restoreQueuedJobs();
   if (restored > 0) {
