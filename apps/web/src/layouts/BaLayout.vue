@@ -9,6 +9,7 @@ import { useSessionStore } from "@/stores/session";
 import { useBaChatStore } from "@/stores/baChat";
 import BaProjectSelect from "@/components/ba/BaProjectSelect.vue";
 import BaGitPatModal from "@/components/ba/BaGitPatModal.vue";
+import BaSyncDbControl from "@/components/ba/BaSyncDbControl.vue";
 import MobileBottomNav from "@/components/MobileBottomNav.vue";
 
 const router = useRouter();
@@ -160,6 +161,7 @@ onMounted(() => {
           </span>
         </template>
         <template #extra>
+          <BaSyncDbControl />
           <RouterLink v-if="session.isAdmin" to="/admin/users" class="faw-btn">
             Admin
           </RouterLink>

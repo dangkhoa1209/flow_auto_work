@@ -36,12 +36,19 @@ async function resolveBearerUser(req: Request): Promise<{
   roles: UserRole[];
 }> {
   const bearer = (req.get("Authorization") || "").trim();
-  if (!bearer.toLowerCase().startsWith("bearer ")) {
+  let token = "";
+  if (bearer.toLowerCase().startsWith("bearer ")) {
+    token = bearer.slice(7).trim();
+  } else {
+    // EventSource cannot set Authorization — allow query token (SSE only)
+    token = String(req.query.access_token || "").trim();
+  }
+  if (!token) {
     throw new AppError("Bearer access token required", 401, "unauthorized");
   }
   let username = "";
   try {
-    username = verifyAccessToken(bearer.slice(7).trim()).sub;
+    username = verifyAccessToken(token).sub;
   } catch (err) {
     throw new AppError(
       err instanceof Error ? err.message : "Invalid or expired access token",

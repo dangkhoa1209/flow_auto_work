@@ -102,6 +102,12 @@ const envSchema = z.object({
   BUILD_KILL_GRACE_MS: z.coerce.number().default(8000),
   /** Max jobs waiting in the FIFO (running slot not counted) */
   BUILD_QUEUE_MAX: z.coerce.number().default(50),
+  /** Sync DB job timeout seconds (default 1h) */
+  SYNC_DB_TIMEOUT_SEC: z.coerce.number().default(3600),
+  /** Max sync-db jobs waiting in FIFO */
+  SYNC_DB_QUEUE_MAX: z.coerce.number().default(20),
+  /** Optional sync-db log directory */
+  SYNC_DB_LOG_DIR: z.string().optional(),
 });
 
 export type AppConfig = z.infer<typeof envSchema> & {

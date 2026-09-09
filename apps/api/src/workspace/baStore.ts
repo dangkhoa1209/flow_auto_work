@@ -105,7 +105,7 @@ export type TaskTypeLabelMapping = {
  */
 export type BaFeatureState = "hide" | "lab" | "production";
 
-export type BaFeatureKey = "createIssue" | "workflow" | "tasks";
+export type BaFeatureKey = "createIssue" | "workflow" | "tasks" | "syncDatabase";
 
 export type BaFeatureFlags = Record<BaFeatureKey, BaFeatureState>;
 
@@ -132,6 +132,8 @@ export type SystemSettings = {
   taskTypeLabelsUpdatedAt?: string;
   baFeatures?: Partial<BaFeatureFlags> & { workflowTabLabel?: string };
   baFeaturesUpdatedAt?: string;
+  /** SSH + source Mongo for BA Sync Database (encrypted secrets). */
+  syncDb?: import("../modules/syncDb/types.js").SyncDbSystemConfig;
   updatedAt: string;
 };
 
@@ -517,6 +519,7 @@ export const BA_FEATURE_KEYS: BaFeatureKey[] = [
   "createIssue",
   "workflow",
   "tasks",
+  "syncDatabase",
 ];
 
 export const DEFAULT_BA_WORKFLOW_TAB_LABEL = "Phân tích YC";
@@ -534,6 +537,9 @@ export function normalizeBaFeatures(
       createIssue: normalizeBaFeatureState(raw?.createIssue),
       workflow: normalizeBaFeatureState(raw?.workflow),
       tasks: normalizeBaFeatureState(raw?.tasks),
+      syncDatabase: normalizeBaFeatureState(
+        (raw as { syncDatabase?: unknown } | null | undefined)?.syncDatabase,
+      ),
     },
     workflowTabLabel:
       (raw?.workflowTabLabel ?? "").trim() || DEFAULT_BA_WORKFLOW_TAB_LABEL,
@@ -554,7 +560,12 @@ export async function getEffectiveBaFeatures(): Promise<BaFeatureSettingsEffecti
   const devMode = isBaDevMode();
   if (!devMode) return { ...base, devMode };
   return {
-    flags: { createIssue: "production", workflow: "production", tasks: "production" },
+    flags: {
+      createIssue: "production",
+      workflow: "production",
+      tasks: "production",
+      syncDatabase: "production",
+    },
     workflowTabLabel: base.workflowTabLabel,
     devMode,
   };

@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { adminController } from "../controllers/adminController.js";
+import { syncDbController } from "../controllers/syncDbController.js";
 import { requireAdmin } from "../middleware/roleAuth.js";
 
 export const routePath = "/admin";
@@ -32,6 +33,9 @@ export function createAdminRoutes(): Router {
 
   router.get("/settings/ba-features", adminController.getBaFeatures);
   router.put("/settings/ba-features", adminController.putBaFeatures);
+
+  router.get("/settings/sync-db", syncDbController.adminGetConfig);
+  router.put("/settings/sync-db", syncDbController.adminPutConfig);
 
   router.get("/cursor-usage", adminController.cursorUsage);
 

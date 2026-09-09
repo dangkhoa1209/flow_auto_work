@@ -43,6 +43,12 @@ export async function startHttpServer(): Promise<ListenResult> {
     } catch (err) {
       logger.warn("Build queue shutdown error", { err: String(err) });
     }
+    try {
+      const { shutdownSyncDbQueue } = await import("./modules/syncDb/index.js");
+      await shutdownSyncDbQueue(15_000);
+    } catch (err) {
+      logger.warn("Sync DB queue shutdown error", { err: String(err) });
+    }
     await new Promise<void>((resolve) => {
       server.close(() => resolve());
       setTimeout(resolve, 3000).unref?.();
