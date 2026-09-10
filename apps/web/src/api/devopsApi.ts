@@ -35,6 +35,8 @@ export type BuildJob = {
   durationMs?: number;
   exitCode?: number | null;
   errorMessage?: string;
+  /** Log section for fail keywords (e.g. rsync error) — warning banner. */
+  warningMessage?: string;
   logFile: string;
   cancelRequested?: boolean;
   createdAt: string;

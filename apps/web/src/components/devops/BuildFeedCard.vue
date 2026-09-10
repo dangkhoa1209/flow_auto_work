@@ -41,6 +41,8 @@ const timeLabel = computed(() => {
   if (ms == null) return "—";
   return formatBuildDurationMs(ms);
 });
+
+const warningText = computed(() => props.job.warningMessage?.trim() || "");
 </script>
 
 <template>
@@ -58,6 +60,11 @@ const timeLabel = computed(() => {
       <span class="faw-build-card__time">{{ timeLabel }}</span>
     </header>
     <div v-show="open" class="faw-build-card__body">
+      <pre
+        v-if="warningText"
+        class="faw-build-card__warn"
+        role="status"
+      >{{ warningText }}</pre>
       <BuildLogPane :lines="lines" :running="job.status === 'running'" />
       <p
         v-if="job.errorMessage"

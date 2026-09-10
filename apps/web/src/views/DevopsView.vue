@@ -25,6 +25,7 @@ const editingId = ref<string | null>(null);
 const stdinText = ref("");
 const stdinSecret = ref(false);
 const lastFailedToastId = ref<string | null>(null);
+const lastWarningToastId = ref<string | null>(null);
 const scriptSearch = ref("");
 const expandedBuildId = ref<string | null>(null);
 const logCache = ref<Record<string, BuildLogLine[]>>({});
@@ -437,10 +438,27 @@ watch(
 
 watch(
   () => devops.liveBuild,
-  (job) => {
-    if (!job || job.status !== "failed") return;
+  (job, prev) => {
+    if (!job) return;
+    const warn = job.warningMessage?.trim();
+
+    // One warning toast per job when the keyword section first appears (mid-build).
+    if (
+      warn &&
+      job.status === "running" &&
+      lastWarningToastId.value !== job.id
+    ) {
+      lastWarningToastId.value = job.id;
+      message.warning(warn.length > 480 ? `${warn.slice(0, 480)}…` : warn, 12);
+    }
+
+    if (job.status !== "failed") return;
     if (lastFailedToastId.value === job.id) return;
     lastFailedToastId.value = job.id;
+    if (warn && lastWarningToastId.value !== job.id) {
+      lastWarningToastId.value = job.id;
+      message.warning(warn.length > 480 ? `${warn.slice(0, 480)}…` : warn, 12);
+    }
     message.error(job.errorMessage?.trim() || "Build failed", 8);
   },
 );
@@ -723,8 +741,17 @@ onUnmounted(() => {
             </div>
           </template>
           <template v-else-if="column.key === 'status'">
-            <span :class="statusClass((record as BuildJob).status)">
-              {{ (record as BuildJob).status }}
+            <span class="inline-flex items-center gap-1.5">
+              <span :class="statusClass((record as BuildJob).status)">
+                {{ (record as BuildJob).status }}
+              </span>
+              <span
+                v-if="(record as BuildJob).warningMessage?.trim()"
+                class="text-[10px] font-semibold uppercase tracking-wide text-amber-700"
+                title="Log warning"
+              >
+                warn
+              </span>
             </span>
           </template>
           <template v-else-if="column.key === 'duration'">
@@ -913,16 +940,21 @@ onUnmounted(() => {
             Download
           </button>
         </div>
-        <div class="text-[11px] font-mono text-ink-muted break-all">
-          $ {{ devops.selected.command }}
-          <span class="text-ink-faint"> (cwd {{ devops.selected.workingDir }})</span>
-        </div>
+        <pre
+          v-if="devops.selected.warningMessage?.trim()"
+          class="faw-build-card__warn m-0"
+          role="status"
+        >{{ devops.selected.warningMessage }}</pre>
         <p
           v-if="devops.selected.errorMessage"
           class="m-0 text-xs text-red-500"
         >
           {{ devops.selected.errorMessage }}
         </p>
+        <div class="text-[11px] font-mono text-ink-muted break-all">
+          $ {{ devops.selected.command }}
+          <span class="text-ink-faint"> (cwd {{ devops.selected.workingDir }})</span>
+        </div>
         <div class="faw-dev-drawer-term">
           <BuildTerminal
             :lines="devops.viewLogLines"

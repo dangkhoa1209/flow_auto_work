@@ -670,7 +670,15 @@ watch(chatBox, (el, prev) => {
               }}</span>
             </div>
             <div
-              class="leading-snug break-words whitespace-pre-wrap max-h-36 overflow-y-auto text-[10.5px]"
+              class="leading-snug break-words whitespace-pre-wrap overflow-y-auto text-[10.5px]"
+              :class="
+                l.kind === 'assistant' ||
+                l.kind === 'thinking' ||
+                l.kind === 'task' ||
+                l.kind === 'prompt'
+                  ? 'max-h-[min(70vh,28rem)]'
+                  : 'max-h-36'
+              "
             >
               {{ l.text }}
             </div>

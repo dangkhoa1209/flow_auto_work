@@ -6,6 +6,7 @@ import {
   appendSdkMessage,
   appendSubagentDelta,
   clearJobProgress,
+  getJobCapturedPlan,
   getJobProgress,
   PROGRESS_PUBLISH_MS,
 } from "../progress.js";
@@ -233,5 +234,26 @@ describe("appendSdkMessage tool labels", () => {
     );
     const { lines } = getJobProgress(JOB);
     expect(lines[0]!.text).toBe("Shell: git status ✓");
+  });
+
+  it("captures createPlan full body and mirrors to Process", () => {
+    const plan = [
+      "## Mục tiêu",
+      "Sửa recalc used",
+      "## Bước",
+      "1. Đọc service",
+      "2. Gắn off_hours",
+    ].join("\n");
+    appendSdkMessage(
+      JOB,
+      toolCall("createPlan", { plan }, "completed"),
+    );
+    expect(getJobCapturedPlan(JOB)).toBe(plan);
+    const { lines } = getJobProgress(JOB);
+    const assistant = lines.find((l) => l.kind === "assistant");
+    expect(assistant?.text).toContain("Sửa recalc used");
+    expect(assistant?.text).toContain("off_hours");
+    const tool = lines.find((l) => l.kind === "tool");
+    expect(tool?.text).toMatch(/^createPlan:/);
   });
 });

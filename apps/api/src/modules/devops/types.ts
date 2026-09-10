@@ -43,6 +43,11 @@ export type BuildJob = {
   /** null when the process never spawned or was killed before close. */
   exitCode?: number | null;
   errorMessage?: string;
+  /**
+   * Log paragraph for fail keywords (e.g. "rsync error") — shown as a warning
+   * in Build UI / history. Persisted with the job.
+   */
+  warningMessage?: string;
   logFile: string;
   cancelRequested?: boolean;
   createdAt: string;

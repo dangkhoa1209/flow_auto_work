@@ -5,9 +5,39 @@
 import { addChatMessage } from "../../models/chat.js";
 import { saveJob } from "../../job-store.js";
 import { logger } from "../../logger.js";
+import { redactGitCredentials, safeErrorMessage } from "../../plugins/git/redact.js";
 import type { IssueJob, JobRecord } from "../../types.js";
 import { AppError } from "../../utils/AppError.js";
 import { requireJobDoc } from "./lifecycle.js";
+
+const MERGE_OP_HISTORY_MAX = 30;
+
+type MergeOpHistoryEntry = NonNullable<JobRecord["mergeOpHistory"]>[number];
+
+/** Append Sync base / Merge outcome for /work Issue tab (redact secrets). */
+export function pushMergeOpHistory(
+  job: JobRecord,
+  entry: Omit<MergeOpHistoryEntry, "at" | "message"> & {
+    message: string;
+    at?: string;
+  },
+): void {
+  const row: MergeOpHistoryEntry = {
+    kind: entry.kind,
+    status: entry.status,
+    at: entry.at || new Date().toISOString(),
+    message: redactGitCredentials(String(entry.message || "").trim()).slice(
+      0,
+      2000,
+    ),
+    ...(entry.source ? { source: entry.source } : {}),
+    ...(entry.target ? { target: entry.target } : {}),
+  };
+  job.mergeOpHistory = [row, ...(job.mergeOpHistory ?? [])].slice(
+    0,
+    MERGE_OP_HISTORY_MAX,
+  );
+}
 
 export type CompletionActionsInput = {
   assignees?: string[];
@@ -256,7 +286,20 @@ async function markJobNeedsChatConflictResolve(
   summary: string,
 ) {
   job.pendingConflictResolve = pending;
-  job.mergeError = `Conflict — use Chat Send to resolve: ${pending.files.join(", ")}`;
+  const fileHint = pending.files.slice(0, 8).join(", ");
+  job.mergeError = redactGitCredentials(
+    `Conflict — use Chat Send to resolve: ${pending.files.join(", ")}`,
+  );
+  pushMergeOpHistory(job, {
+    kind: pending.kind,
+    status: "conflict",
+    source: pending.source,
+    target: pending.target,
+    message:
+      `Conflict — use Chat Send to resolve` +
+      (fileHint ? `: ${fileHint}${pending.files.length > 8 ? "…" : ""}` : "") +
+      (summary.trim() ? ` — ${summary.trim().slice(0, 400)}` : ""),
+  });
   await saveJob(job);
   const fileList = pending.files.map((f) => `- ${f}`).join("\n");
   await addChatMessage({
@@ -353,6 +396,16 @@ export async function tryFinalizePendingConflict(
     job.mergeAiResolved = true;
     job.mergePushedAt = new Date().toISOString();
   }
+  pushMergeOpHistory(job, {
+    kind: kind === "merge" ? "merge" : "sync-base",
+    status: "ok",
+    source: source || undefined,
+    target: target || undefined,
+    message:
+      `Conflict finalized via Chat` +
+      (commitSha ? ` (${commitSha.slice(0, 8)})` : "") +
+      (wipWarning ? ` · ${wipWarning}` : ""),
+  });
   await saveJob(job);
 
   logger.info("Finalized pending conflict via chat", {
@@ -396,86 +449,132 @@ export async function syncJobBranchWithBase(
   input: { targetBranch?: string },
 ) {
   const job = await requireJobDoc(jobId);
-  if (job.status === "running" || job.status === "queued") {
-    throw new AppError("Job is running — stop it or wait before syncing base", 409);
-  }
-  const source = (job.branch || job.workBranch || "").trim();
-  if (!source) {
-    throw new AppError("Job has no work branch to sync", 400);
-  }
+  let source = "";
+  let target = "";
+  try {
+    if (job.status === "running" || job.status === "queued") {
+      throw new AppError("Job is running — stop it or wait before syncing base", 409);
+    }
+    source = (job.branch || job.workBranch || "").trim();
+    if (!source) {
+      throw new AppError("Job has no work branch to sync", 400);
+    }
 
-  const { getRuntimeContext } = await import("../../workspace/runtime.js");
+    const { getRuntimeContext } = await import("../../workspace/runtime.js");
 
-  const rt = getRuntimeContext();
-  const repoPath = rt?.repoPath?.trim();
-  if (!repoPath) {
-    throw new AppError("No local repo path — join a project first", 400);
-  }
+    const rt = getRuntimeContext();
+    const repoPath = rt?.repoPath?.trim();
+    if (!repoPath) {
+      throw new AppError("No local repo path — join a project first", 400);
+    }
 
-  // Clear a previous half-open conflict so Sync base can retry cleanly
-  if (job.pendingConflictResolve) {
-    const cleared = await abortPendingConflictOnRepo(
+    // Clear a previous half-open conflict so Sync base can retry cleanly
+    if (job.pendingConflictResolve) {
+      const cleared = await abortPendingConflictOnRepo(
+        repoPath,
+        job.pendingConflictResolve,
+      );
+      job.pendingConflictResolve = undefined;
+      job.mergeError = undefined;
+      await saveJob(job);
+      if (cleared.wipWarning) {
+        logger.warn("WIP warning while aborting prior conflict", {
+          jobId: job.id,
+          warning: cleared.wipWarning,
+        });
+      }
+    } else {
+      const { isMergeInProgress, abortMerge } = await import(
+        "../../plugins/git/merge.js"
+      );
+      if (await isMergeInProgress(repoPath)) {
+        await abortMerge(repoPath).catch(() => undefined);
+      }
+    }
+
+    // Settings project branch wins — job.baseBranch is a stale snapshot and the
+    // GitLab default branch is a guess. No setting → user must pick explicitly.
+    target = input.targetBranch?.trim() || rt?.baseBranch?.trim() || "";
+    if (!target) {
+      throw new AppError(
+        "BASE_BRANCH_NOT_SET: Project main branch is not set — pick a source branch to pull",
+        400,
+      );
+    }
+    if (target === source) {
+      throw new AppError("Work branch IS the base branch — nothing to sync", 400);
+    }
+
+    const result = await pullBaseIntoWorkBranch({
       repoPath,
-      job.pendingConflictResolve,
-    );
-    job.pendingConflictResolve = undefined;
-    job.mergeError = undefined;
-    await saveJob(job);
-    if (cleared.wipWarning) {
-      logger.warn("WIP warning while aborting prior conflict", {
+      source,
+      target,
+      issue: job.issue,
+    });
+
+    if (result.needsChatResolve) {
+      // pending: source=base (incoming), target=work (checked out)
+      await markJobNeedsChatConflictResolve(
+        job,
+        {
+          kind: "sync-base",
+          source: target,
+          target: source,
+          files: result.conflictedFiles ?? [],
+          wipStashMarker: result.wipStashMarker,
+          startedAt: new Date().toISOString(),
+        },
+        result.summary,
+      );
+      logger.warn("Sync base needs chat conflict resolve", {
         jobId: job.id,
-        warning: cleared.wipWarning,
+        source,
+        target,
+        files: result.conflictedFiles,
       });
+      return {
+        ok: true,
+        job,
+        sync: {
+          source,
+          target,
+          ...result,
+        },
+      };
     }
-  } else {
-    const { isMergeInProgress, abortMerge } = await import(
-      "../../plugins/git/merge.js"
-    );
-    if (await isMergeInProgress(repoPath)) {
-      await abortMerge(repoPath).catch(() => undefined);
+
+    if (result.commitSha && !result.alreadyUpToDate) {
+      job.commitSha = result.commitSha;
+      job.commitShas = [...(job.commitShas ?? []), result.commitSha].slice(-20);
+      job.pendingConflictResolve = undefined;
+      job.mergeError = undefined;
     }
-  }
 
-  // Settings project branch wins — job.baseBranch is a stale snapshot and the
-  // GitLab default branch is a guess. No setting → user must pick explicitly.
-  const target = input.targetBranch?.trim() || rt?.baseBranch?.trim() || "";
-  if (!target) {
-    throw new AppError(
-      "BASE_BRANCH_NOT_SET: Project main branch is not set — pick a source branch to pull",
-      400,
-    );
-  }
-  if (target === source) {
-    throw new AppError("Work branch IS the base branch — nothing to sync", 400);
-  }
+    const status = result.alreadyUpToDate ? "up_to_date" : "ok";
+    const message = result.alreadyUpToDate
+      ? `Already up to date with ${target}`
+      : result.aiResolved
+        ? `Pulled ${target} — AI resolved conflicts`
+        : `Pulled ${target} into ${source}`;
+    pushMergeOpHistory(job, {
+      kind: "sync-base",
+      status,
+      source,
+      target,
+      message:
+        message +
+        (result.wipWarning ? ` · ${result.wipWarning}` : ""),
+    });
+    await saveJob(job);
 
-  const result = await pullBaseIntoWorkBranch({
-    repoPath,
-    source,
-    target,
-    issue: job.issue,
-  });
-
-  if (result.needsChatResolve) {
-    // pending: source=base (incoming), target=work (checked out)
-    await markJobNeedsChatConflictResolve(
-      job,
-      {
-        kind: "sync-base",
-        source: target,
-        target: source,
-        files: result.conflictedFiles ?? [],
-        wipStashMarker: result.wipStashMarker,
-        startedAt: new Date().toISOString(),
-      },
-      result.summary,
-    );
-    logger.warn("Sync base needs chat conflict resolve", {
+    logger.info("Job branch synced with base", {
       jobId: job.id,
       source,
       target,
-      files: result.conflictedFiles,
+      aiResolved: result.aiResolved,
+      alreadyUpToDate: result.alreadyUpToDate,
     });
+
     return {
       ok: true,
       job,
@@ -485,33 +584,23 @@ export async function syncJobBranchWithBase(
         ...result,
       },
     };
+  } catch (err) {
+    const msg = safeErrorMessage(err);
+    // Skip noisy history when user must pick a branch (modal flow)
+    if (!msg.includes("BASE_BRANCH_NOT_SET")) {
+      pushMergeOpHistory(job, {
+        kind: "sync-base",
+        status: "error",
+        source: source || undefined,
+        target: target || undefined,
+        message: msg,
+      });
+      job.mergeError = msg;
+      await saveJob(job).catch(() => undefined);
+    }
+    if (err instanceof AppError) throw err;
+    throw new AppError(msg, 500);
   }
-
-  if (result.commitSha && !result.alreadyUpToDate) {
-    job.commitSha = result.commitSha;
-    job.commitShas = [...(job.commitShas ?? []), result.commitSha].slice(-20);
-    job.pendingConflictResolve = undefined;
-    job.mergeError = undefined;
-    await saveJob(job);
-  }
-
-  logger.info("Job branch synced with base", {
-    jobId: job.id,
-    source,
-    target,
-    aiResolved: result.aiResolved,
-    alreadyUpToDate: result.alreadyUpToDate,
-  });
-
-  return {
-    ok: true,
-    job,
-    sync: {
-      source,
-      target,
-      ...result,
-    },
-  };
 }
 
 /**
@@ -594,7 +683,12 @@ export async function mergeJobBranch(
       );
 
       /** Sync base → work + AI clear conflicts, then GitLab can accept the MR. */
-      const aiFixMrConflicts = async (reason: string) => {
+      const aiFixMrConflicts = async (
+        reason: string,
+      ): Promise<
+        | { needsChatResolve: true; files: string[]; summary: string }
+        | { needsChatResolve?: false }
+      > => {
         if (!repoPath) {
           throw new AppError(
             "MR has conflicts but no local repo for AI auto-fix — attach a project clone or Sync base manually",
@@ -632,10 +726,11 @@ export async function mergeJobBranch(
             },
             fix.summary,
           );
-          throw new AppError(
-            `MR conflict — AI could not clear; use Chat Send to resolve: ${(fix.conflictedFiles ?? []).join(", ")}`,
-            409,
-          );
+          return {
+            needsChatResolve: true,
+            files: fix.conflictedFiles ?? [],
+            summary: fix.summary,
+          };
         }
         aiResolved = aiResolved || fix.aiResolved || !fix.alreadyUpToDate;
         aiSummary = fix.summary;
@@ -646,6 +741,7 @@ export async function mergeJobBranch(
             ? "AI resolved conflict — retrying MR accept"
             : "Synced base into work — retrying MR accept",
         );
+        return {};
       };
 
       // Proactive: GitLab already marks conflicts → fix before first accept
@@ -665,7 +761,29 @@ export async function mergeJobBranch(
             ready.state !== "merged" &&
             (ready.has_conflicts || st === "cannot_be_merged")
           ) {
-            await aiFixMrConflicts("precheck");
+            const preFix = await aiFixMrConflicts("precheck");
+            if (preFix.needsChatResolve) {
+              return {
+                ok: true,
+                job,
+                merge: {
+                  source,
+                  target,
+                  commitSha: null,
+                  alreadyUpToDate: false,
+                  via: "gitlab_mr_accept",
+                  mergeRequestIid: existingMr.iid,
+                  mergeRequestUrl: existingMr.webUrl,
+                  createdMr: false,
+                  localSynced: false,
+                  syncError: null,
+                  aiResolved: false,
+                  aiSummary: preFix.summary,
+                  needsChatResolve: true,
+                  conflictedFiles: preFix.files,
+                },
+              };
+            }
           }
         } catch (err) {
           // Soft — still attempt accept; conflict path below will retry with AI
@@ -687,7 +805,29 @@ export async function mergeJobBranch(
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         if (!MR_CONFLICT_RE.test(msg)) throw err;
-        await aiFixMrConflicts("accept-failed");
+        const acceptFix = await aiFixMrConflicts("accept-failed");
+        if (acceptFix.needsChatResolve) {
+          return {
+            ok: true,
+            job,
+            merge: {
+              source,
+              target,
+              commitSha: null,
+              alreadyUpToDate: false,
+              via: "gitlab_mr_accept",
+              mergeRequestIid: existingMr.iid,
+              mergeRequestUrl: existingMr.webUrl,
+              createdMr: false,
+              localSynced: false,
+              syncError: null,
+              aiResolved: false,
+              aiSummary: acceptFix.summary,
+              needsChatResolve: true,
+              conflictedFiles: acceptFix.files,
+            },
+          };
+        }
         merged = await acceptMergeRequest({
           projectId: projectIdOrPath,
           mergeRequestIid: existingMr.iid,
@@ -726,6 +866,18 @@ export async function mergeJobBranch(
         job.commitSha = mergeSha;
         job.commitShas = [...(job.commitShas ?? []), mergeSha].slice(-20);
       }
+      pushMergeOpHistory(job, {
+        kind: "merge",
+        status: "ok",
+        source,
+        target,
+        message:
+          (merged.alreadyMerged
+            ? `Already merged → ${target} (MR !${existingMr.iid})`
+            : `Merged → ${target} via MR !${existingMr.iid}`) +
+          (aiResolved ? " — AI resolved conflicts" : "") +
+          (syncError ? ` · local sync warning: ${syncError}` : ""),
+      });
       await saveJob(job);
 
       logger.info("Job branch merged via existing MR", {
@@ -878,6 +1030,18 @@ export async function mergeJobBranch(
         job.commitSha = commitSha;
         job.commitShas = [...(job.commitShas ?? []), commitSha].slice(-20);
       }
+      pushMergeOpHistory(job, {
+        kind: "merge",
+        status: alreadyUpToDate ? "up_to_date" : "ok",
+        source,
+        target,
+        message:
+          (alreadyUpToDate
+            ? `Already up to date → ${target}`
+            : `Merged ${source} → ${target} (local)`) +
+          (aiResolved ? " — AI resolved conflicts" : "") +
+          (wipWarning ? ` · ${wipWarning}` : ""),
+      });
       await saveJob(job);
 
       logger.info("Job branch merged locally (no MR)", {
@@ -921,8 +1085,18 @@ export async function mergeJobBranch(
       }
     }
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = safeErrorMessage(err);
     job.mergeError = msg;
+    // Conflict already logged via markJobNeedsChatConflictResolve — don't double-write
+    if (!job.pendingConflictResolve) {
+      pushMergeOpHistory(job, {
+        kind: "merge",
+        status: "error",
+        source,
+        target,
+        message: msg,
+      });
+    }
     await saveJob(job);
     logger.warn("Merge failed", { jobId: job.id, err: msg });
     if (err instanceof AppError) throw err;

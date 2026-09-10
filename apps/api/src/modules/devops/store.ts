@@ -181,6 +181,7 @@ export async function requeueInterruptedBuildJobs(): Promise<number> {
           durationMs: "",
           exitCode: "",
           errorMessage: "",
+          warningMessage: "",
           cancelRequested: "",
         },
       },

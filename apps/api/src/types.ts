@@ -258,6 +258,18 @@ export type JobRecord = {
     wipStashMarker?: string | null;
     startedAt: string;
   };
+  /**
+   * Recent Sync base / Merge attempts (newest first). Messages must be redacted
+   * (no PAT / URL credentials) before save — shown on /work Issue tab.
+   */
+  mergeOpHistory?: Array<{
+    kind: "sync-base" | "merge";
+    status: "ok" | "up_to_date" | "conflict" | "error";
+    at: string;
+    message: string;
+    source?: string;
+    target?: string;
+  }>;
   createdAt: string;
   updatedAt: string;
 };

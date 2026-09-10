@@ -2,6 +2,8 @@
 import { computed } from "vue";
 import type { BuildLogLine } from "@/api/devopsApi";
 
+const RSYNC_ERROR_RE = /rsync\s+error/i;
+
 const props = defineProps<{
   lines: BuildLogLine[];
   running?: boolean;
@@ -14,6 +16,7 @@ const rows = computed(() =>
     else if (line.stream === "stderr") kind = "err";
     else if (/finished status=success/i.test(line.text)) kind = "ok";
     else if (/^started command:/i.test(line.text)) kind = "cmd";
+    if (RSYNC_ERROR_RE.test(line.text)) kind = "warn";
     return { kind, text: line.text };
   }),
 );
