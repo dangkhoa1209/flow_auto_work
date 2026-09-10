@@ -20,6 +20,7 @@ let lastBuildId: string | null = null;
 
 function ansiLine(line: BuildLogLine): string {
   const text = line.text ?? "";
+  if (/rsync\s+error/i.test(text)) return `\x1b[33m${text}\x1b[0m`;
   if (line.stream === "stderr") return `\x1b[31m${text}\x1b[0m`;
   if (line.stream === "system") return `\x1b[36m${text}\x1b[0m`;
   return text;

@@ -6,6 +6,7 @@ import { AppError } from "../../utils/AppError.js";
 import { requireWhitelistedScript } from "./catalog.js";
 import { publishBuildEvent } from "./events.js";
 import { openBuildLog, type BuildLogWriter } from "./logFile.js";
+import { resolveBuildStatusFromLogKeywords } from "./logWarnings.js";
 import { getBuildJob, updateBuildJob } from "./store.js";
 import type { BuildJob, BuildLogStream, BuildStatus } from "./types.js";
 
@@ -189,11 +190,14 @@ export async function runBuildJob(jobId: string): Promise<BuildRunResult> {
     workingDir: script.workingDir,
     scriptLabel: script.label,
     errorMessage: "",
+    warningMessage: "",
     cancelRequested: false,
   });
   publishBuildEvent({ type: "job", job });
 
   const log = await openBuildLog(job.id);
+  /** Captured stdout/stderr lines for fail-keyword scan (e.g. rsync error). */
+  const capturedLogLines: string[] = [];
   emitLog(job, log, "system", `started command: ${script.command}`);
   emitLog(job, log, "system", `cwd: ${script.workingDir}`);
 
@@ -204,12 +208,14 @@ export async function runBuildJob(jobId: string): Promise<BuildRunResult> {
     let timeoutTimer: ReturnType<typeof setTimeout> | null = null;
     let killTimer: ReturnType<typeof setTimeout> | null = null;
 
-    const stdoutSplit = createLineSplitter((line) =>
-      emitLog(job, log, "stdout", line),
-    );
-    const stderrSplit = createLineSplitter((line) =>
-      emitLog(job, log, "stderr", line),
-    );
+    const stdoutSplit = createLineSplitter((line) => {
+      capturedLogLines.push(line);
+      emitLog(job, log, "stdout", line);
+    });
+    const stderrSplit = createLineSplitter((line) => {
+      capturedLogLines.push(line);
+      emitLog(job, log, "stderr", line);
+    });
 
     const finish = async (
       status: BuildStatus,
@@ -224,23 +230,49 @@ export async function runBuildJob(jobId: string): Promise<BuildRunResult> {
       stdoutSplit.flush();
       stderrSplit.flush();
 
+      const resolved = resolveBuildStatusFromLogKeywords(
+        status,
+        capturedLogLines,
+        errorMessage,
+      );
+      const finalStatus = resolved.status;
+      const finalError = resolved.errorMessage;
+      const warningMessage = resolved.warningMessage;
+
+      if (resolved.forcedFail) {
+        emitLog(
+          job,
+          log,
+          "system",
+          `fail-keyword override: ${finalError ?? "keyword hit in log"}`,
+        );
+      } else if (warningMessage) {
+        emitLog(
+          job,
+          log,
+          "system",
+          `log warning captured (${warningMessage.split("\n")[0]})`,
+        );
+      }
+
       const finishedAt = new Date();
       const durationMs = Math.max(0, finishedAt.getTime() - startedAt.getTime());
       emitLog(
         job,
         log,
         "system",
-        `finished status=${status} exitCode=${exitCode ?? "n/a"} durationMs=${durationMs}`,
+        `finished status=${finalStatus} exitCode=${exitCode ?? "n/a"} durationMs=${durationMs}`,
       );
       await log.close().catch(() => undefined);
 
       try {
         job = await updateBuildJob(jobId, {
-          status,
+          status: finalStatus,
           finishedAt: finishedAt.toISOString(),
           durationMs,
           exitCode,
-          errorMessage,
+          errorMessage: finalError,
+          warningMessage: warningMessage || "",
         });
       } catch (err) {
         logger.error("Failed to persist build result", {
@@ -250,7 +282,7 @@ export async function runBuildJob(jobId: string): Promise<BuildRunResult> {
       }
       publishBuildEvent({ type: "job", job });
       publishBuildEvent({ type: "done", buildId: jobId, job });
-      resolve({ job, status, exitCode, durationMs });
+      resolve({ job, status: finalStatus, exitCode, durationMs });
     };
 
     let child: ChildProcess;
