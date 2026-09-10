@@ -343,7 +343,10 @@ export const jobController = {
   /** POST /api/jobs/:id/continue */
   continueChat: asyncHandler(async (req: Request, res: Response) => {
     res.formatter.ok(
-      await continueJobChat(jobId(req), body<{ message?: string }>(req)),
+      await continueJobChat(
+        jobId(req),
+        body<{ message?: string; planFirst?: boolean }>(req),
+      ),
     );
   }),
 

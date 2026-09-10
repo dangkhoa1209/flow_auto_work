@@ -7,6 +7,7 @@ import { useProjectClone } from "@/composables/useProjectClone";
 import { useSessionStore } from "@/stores/session";
 import { useSettingsStore } from "@/stores/settings";
 import { useWorkStore, isAdhocJob, type TaskDetail } from "@/stores/work";
+import { formatIssueMeta } from "@/utils/formatIssueMeta";
 import { statusLabel } from "@/utils/status";
 import { titleFromWorkRequest } from "@/utils/sessionTitle";
 
@@ -226,20 +227,7 @@ export function useWorkbench() {
     () => taskDetail.value?.title || currentJob.value?.issue?.title || "",
   );
 
-  const detailMeta = computed(() => {
-    const d = taskDetail.value;
-    if (!d) return "";
-    const assignees =
-      (d.assignees || []).map((a) => `@${a.username}`).join(", ") || "—";
-    const parts = [d.state || "—", `assignee ${assignees}`];
-    if (d.taskCompletion) {
-      parts.push(
-        `checklist ${d.taskCompletion.completedCount}/${d.taskCompletion.count}`,
-      );
-    }
-    if (d.milestone?.title) parts.push(`milestone ${d.milestone.title}`);
-    return parts.join(" · ");
-  });
+  const detailMeta = computed(() => formatIssueMeta(taskDetail.value));
 
   const agentJobBusy = computed(() => {
     const st = currentJob.value?.status;
@@ -736,7 +724,10 @@ export function useWorkbench() {
             await projectClone.withCloneRetry(() => work.sendAsk(msg));
           } else {
             const res = await projectClone.withCloneRetry(() =>
-              work.createAdhocSession({ message: msg }),
+              work.createAdhocSession({
+                message: msg,
+                planFirst: planFirst.value,
+              }),
             );
             if (!res) return;
           }
@@ -748,7 +739,9 @@ export function useWorkbench() {
           currentJob.value?.status === "awaiting_clarification";
         if (useContinue) {
           const res = await projectClone.withCloneRetry(() =>
-            work.sendContinue(msg),
+            work.sendContinue(msg, {
+              planFirst: mode === "continue" ? planFirst.value : undefined,
+            }),
           );
           if (!res) return;
         } else {
@@ -851,6 +844,8 @@ export function useWorkbench() {
     approvePlanBusy.value = true;
     try {
       await work.approvePlan(selectedJobId.value);
+      // Composer mode: Plan → Agent so the next Send codes (not re-plans)
+      planFirst.value = false;
       message.success("Plan approved — code phase enqueued");
       mobilePane.value = "chat";
     } catch (e) {

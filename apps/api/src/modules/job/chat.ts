@@ -16,7 +16,7 @@ import { requireProjectLocalClone } from "../../workspace/resolve.js";
  */
 export async function continueJobChat(
   jobId: string,
-  input: { message?: string },
+  input: { message?: string; planFirst?: boolean },
 ) {
   const job = await requireJobDoc(jobId);
   if (!input.message?.trim()) {
@@ -26,7 +26,10 @@ export async function continueJobChat(
     await requireProjectLocalClone(job.workspaceProjectId);
   }
   try {
-    return await jobQueue.followUpChat(job.id, input.message);
+    return await jobQueue.followUpChat(job.id, input.message, {
+      planFirst:
+        input.planFirst !== undefined ? Boolean(input.planFirst) : undefined,
+    });
   } catch (err) {
     if (err instanceof AppError) throw err;
     const msg = err instanceof Error ? err.message : String(err);

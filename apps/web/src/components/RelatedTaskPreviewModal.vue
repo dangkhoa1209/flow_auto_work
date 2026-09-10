@@ -5,6 +5,7 @@ import ChatMessageBody from "@/components/ChatMessageBody.vue";
 import IssueIidLink from "@/components/IssueIidLink.vue";
 import GitlabLabelChip from "@/components/GitlabLabelChip.vue";
 import { gitlabIssueUrl } from "@/utils/gitlabIssueUrl";
+import { formatIssueMeta } from "@/utils/formatIssueMeta";
 import { useSessionStore } from "@/stores/session";
 
 const props = defineProps<{
@@ -58,20 +59,7 @@ const humanComments = computed(() =>
   (props.detail?.notes || []).filter((n) => !n.system && n.body?.trim()),
 );
 
-const meta = computed(() => {
-  const d = props.detail;
-  if (!d) return "";
-  const assignees =
-    (d.assignees || []).map((a) => `@${a.username}`).join(", ") || "—";
-  const parts = [d.state || "—", `assignee ${assignees}`];
-  if (d.taskCompletion) {
-    parts.push(
-      `checklist ${d.taskCompletion.completedCount}/${d.taskCompletion.count}`,
-    );
-  }
-  if (d.milestone?.title) parts.push(`milestone ${d.milestone.title}`);
-  return parts.join(" · ");
-});
+const meta = computed(() => formatIssueMeta(props.detail));
 </script>
 
 <template>

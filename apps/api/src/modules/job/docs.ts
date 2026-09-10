@@ -1,5 +1,6 @@
 /**
- * Feature-docs phase: read docs for PM review, approve, re-run.
+ * Feature docs (project-side Docs-first): inline in code phase — read → code → update/create.
+ * Legacy awaiting_docs_approval still supports approve → continue.
  */
 import { loadJob, saveJob } from "../../job-store.js";
 import { jobQueue } from "../../queue.js";
@@ -8,7 +9,7 @@ import { AppError } from "../../utils/AppError.js";
 import { requireJobRecord } from "./lifecycle.js";
 import { requireProjectLocalClone } from "../../workspace/resolve.js";
 
-/** Feature docs (.md/.mdc) for PM review while awaiting_docs_approval. */
+/** Feature docs (.md/.mdc) paths stored on the job (legacy review UI). */
 export async function getJobDocsForReview(jobId: string) {
   const job = await requireJobRecord(jobId, "job not found");
   const { readRepoDocs } = await import("../../plugins/docs/analysis.js");
@@ -30,7 +31,7 @@ export async function getJobDocsForReview(jobId: string) {
   };
 }
 
-/** PM approves feature docs → enqueue code phase. */
+/** Legacy: PM approves feature docs → enqueue Plan (if Plan) or Code. */
 export async function approveJobDocs(jobId: string) {
   const job = await requireJobRecord(jobId, "job not found");
   if (job.status !== "awaiting_docs_approval") {
@@ -50,7 +51,7 @@ export async function approveJobDocs(jobId: string) {
   return { ok: true, job: updated, jobId: result.jobId };
 }
 
-/** Re-run docs phase only (from awaiting_docs_approval or with flag). */
+/** Re-run coding with Docs-first (read → code → update/create docs). */
 export async function rerunJobDocs(jobId: string) {
   const job = await requireJobRecord(jobId, "job not found");
   if (isJobBusy(job.status)) {
@@ -67,7 +68,8 @@ export async function rerunJobDocs(jobId: string) {
     completion: job.completion,
     devNotes: resolveDevNotes(job) || undefined,
     requireDocsFirst: true,
-    forceCodePhase: false,
+    forceCodePhase: true,
+    forceAgentPhase: true,
   });
   if (!result.enqueued) {
     throw new AppError(result.reason ?? "Could not enqueue", 409);

@@ -189,7 +189,7 @@ export type JobRecord = {
   lastTeamsMessageId?: string;
   error?: string;
   summary?: string;
-  /** Docs-phase summary (Vietnamese) while awaiting approval */
+  /** Docs-phase summary (Vietnamese) while awaiting approval — shown in UI + chat */
   docsSummary?: string;
   completion?: CompletionActions;
   /** Dev notes — highest priority in agent prompt (Mongo only) */
@@ -214,11 +214,11 @@ export type JobRecord = {
   pendingFollowUpKind?: "send" | "ask";
   /** Status to restore if a queued follow-up is cancelled / fails soft. */
   followUpRestoreStatus?: JobStatus;
-  /** Hard gate: read/update project feature docs before any app code */
+  /** Project-side gate: read/update feature docs before any app code */
   requireDocsFirst?: boolean;
-  /** Plan-first: Cursor `mode: "plan"` then PM approves before coding */
+  /** Agent-side: Cursor `mode: "plan"` then PM approves before coding */
   planFirst?: boolean;
-  /** Plan-phase summary (Vietnamese) while awaiting approval */
+  /** Plan-phase summary (Vietnamese) while awaiting approval — shown in UI + chat */
   planSummary?: string;
   /** Set when PM approves plan → next run is code phase */
   planApprovedAt?: string;

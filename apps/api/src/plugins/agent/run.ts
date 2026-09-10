@@ -546,6 +546,8 @@ type RunOpts = {
   devNotes?: string;
   phase?: "docs" | "plan" | "code";
   approvedDocsPaths?: string[];
+  /** Inline Docs-first in code phase (read → code → update/create). */
+  docsFirst?: boolean;
   chatContext?: string;
   /** Resume this agent window (1 task = 1 agent). */
   existingAgentId?: string;
@@ -639,6 +641,7 @@ async function buildMissionPrompt(
           })
       : buildWorkPrompt(issue, extraContext, linkedBlock, notes, {
           approvedDocsPaths: opts.approvedDocsPaths,
+          docsFirst: opts.docsFirst,
           chatContext: opts.chatContext,
           contextQualityBlock: opts.contextQualityBlock,
           googleSheetsBlock: opts.googleSheetsBlock,

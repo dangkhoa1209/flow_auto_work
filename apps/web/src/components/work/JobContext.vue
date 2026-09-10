@@ -2,7 +2,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { RouterLink } from "vue-router";
 import { message } from "ant-design-vue";
-import { CopyOutlined } from "@ant-design/icons-vue";
+import { CopyOutlined, ExclamationCircleOutlined } from "@ant-design/icons-vue";
 import ChatMessageBody from "@/components/ChatMessageBody.vue";
 import IssueIidLink from "@/components/IssueIidLink.vue";
 import GitlabLabelChip from "@/components/GitlabLabelChip.vue";
@@ -62,7 +62,6 @@ const emit = defineEmits<{
   "update:midTab": [MidTab];
   "update:notesDraft": [string];
   "update:requireDocsFirst": [boolean];
-  "update:planFirst": [boolean];
   openStandards: [];
   openCreateIssue: [];
   openRelated: [opts: { iid: number; title?: string; url?: string }];
@@ -144,6 +143,24 @@ const canRevokeJobGoogle = computed(
       googleStatus.value?.jobAuthorized || props.currentJob?.googleAuth?.email,
     ),
 );
+
+/** Legacy docs pause — Run continues (Docs-first no longer needs Approve). */
+const docsApproveNextHint = computed(() =>
+  props.planFirst
+    ? "Press Run to continue (Plan next if composer is Plan)"
+    : "Press Run to continue with code",
+);
+
+const docsSummaryPreview = computed(
+  () => (props.currentJob?.docsSummary || "").trim() || null,
+);
+const planSummaryPreview = computed(
+  () => (props.currentJob?.planSummary || "").trim() || null,
+);
+const docsPathsPreview = computed(() => {
+  const paths = props.currentJob?.docsPaths;
+  return paths?.length ? paths : null;
+});
 
 function sheetLabel(s: { spreadsheetId: string; url: string }): string {
   try {
@@ -486,19 +503,36 @@ onUnmounted(() => {
 
             <a-alert
               v-if="awaitingDocsApproval"
-              type="success"
+              type="info"
               show-icon
               class="mb-3"
-              message="Docs phase complete — approve to run code"
+              message="Legacy Docs pause — press Run to continue"
             >
-              <template #action>
-                <a-button
-                  size="small"
-                  type="primary"
-                  :loading="approveDocsBusy"
-                  @click="emit('approveDocs')"
-                  >Approve Docs</a-button
-                >
+              <template #description>
+                <div class="text-[12px] text-ink-soft space-y-2">
+                  <p class="m-0">
+                    Docs-first no longer waits for Approve. {{ docsApproveNextHint }}.
+                    Full report is also in Chat.
+                  </p>
+                  <div
+                    v-if="docsSummaryPreview"
+                    class="whitespace-pre-wrap rounded-md border border-[var(--app-border)] bg-[var(--app-panel-soft)] px-2.5 py-2 max-h-48 overflow-y-auto text-ink"
+                  >
+                    {{ docsSummaryPreview }}
+                  </div>
+                  <ul
+                    v-if="docsPathsPreview?.length"
+                    class="m-0 pl-4 text-[11px] text-ink-muted"
+                  >
+                    <li v-for="p in docsPathsPreview" :key="p">{{ p }}</li>
+                  </ul>
+                  <p
+                    v-if="!docsSummaryPreview"
+                    class="m-0 text-ink-muted"
+                  >
+                    No summary stored — open Chat for the agent report.
+                  </p>
+                </div>
               </template>
             </a-alert>
 
@@ -507,8 +541,28 @@ onUnmounted(() => {
               type="success"
               show-icon
               class="mb-3"
-              message="Plan ready — approve to run code"
+              message="Plan complete — review analysis, then approve"
             >
+              <template #description>
+                <div class="text-[12px] text-ink-soft space-y-2">
+                  <p class="m-0">
+                    Agent plan phase (Cursor plan mode). Approve to run code.
+                    Full report is also in Chat.
+                  </p>
+                  <div
+                    v-if="planSummaryPreview"
+                    class="whitespace-pre-wrap rounded-md border border-[var(--app-border)] bg-[var(--app-panel-soft)] px-2.5 py-2 max-h-56 overflow-y-auto text-ink"
+                  >
+                    {{ planSummaryPreview }}
+                  </div>
+                  <p
+                    v-if="!planSummaryPreview"
+                    class="m-0 text-ink-muted"
+                  >
+                    No summary stored — open Chat for the agent plan.
+                  </p>
+                </div>
+              </template>
               <template #action>
                 <a-button
                   size="small"
@@ -823,27 +877,43 @@ onUnmounted(() => {
                   }
                 "
               />
-              <div class="mt-2 flex items-center gap-1.5">
-                <a-switch
-                  :checked="requireDocsFirst"
-                  size="small"
-                  @update:checked="
-                    (v: boolean) => emit('update:requireDocsFirst', v)
-                  "
-                />
-                <span class="text-[11px] text-ink-muted"
-                  >Docs-first (read docs before coding)</span
-                >
-              </div>
-              <div class="mt-2 flex items-center gap-1.5">
-                <a-switch
-                  :checked="planFirst"
-                  size="small"
-                  @update:checked="(v: boolean) => emit('update:planFirst', v)"
-                />
-                <span class="text-[11px] text-ink-muted"
-                  >Plan-first (Cursor plan mode, then approve)</span
-                >
+              <div
+                class="mt-2 rounded-lg border border-[var(--app-border)] bg-[var(--app-panel-soft)] px-2.5 py-2 space-y-2"
+              >
+                <div class="text-[10px] uppercase tracking-wide text-ink-faint font-medium">
+                  Run gates
+                </div>
+                <div class="flex items-start gap-1.5">
+                  <a-switch
+                    class="mt-0.5"
+                    :checked="requireDocsFirst"
+                    size="small"
+                    @update:checked="
+                      (v: boolean) => emit('update:requireDocsFirst', v)
+                    "
+                  />
+                  <div class="min-w-0">
+                    <div class="text-[11px] text-ink-soft font-medium flex items-center gap-1">
+                      Docs-first
+                      <span class="font-normal text-ink-faint"
+                        >(project)</span
+                      >
+                      <a-tooltip
+                        title="On: agent reports existing feature docs, reads them, codes, then updates or creates docs. No Approve Docs step. Plan (composer) still needs Approve Plan."
+                      >
+                        <ExclamationCircleOutlined
+                          class="text-ink-faint text-[11px] cursor-help"
+                        />
+                      </a-tooltip>
+                    </div>
+                    <div class="text-[10px] text-ink-muted leading-snug">
+                      Read → code → update/create feature docs (no approve)
+                      <span v-if="planFirst">
+                        · after Approve Plan if composer is Plan</span
+                      >.
+                    </div>
+                  </div>
+                </div>
               </div>
 
               <div
@@ -1019,16 +1089,6 @@ onUnmounted(() => {
           ▶ Run
         </button>
       </a-tooltip>
-      <button
-        v-if="awaitingDocsApproval"
-        type="button"
-        class="faw-btn faw-btn--run"
-        :class="mobileTouch ? '!min-h-[44px]' : ''"
-        :disabled="approveDocsBusy"
-        @click="emit('approveDocs')"
-      >
-        Approve Docs
-      </button>
       <button
         v-if="awaitingPlanApproval"
         type="button"

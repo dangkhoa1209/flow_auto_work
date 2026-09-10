@@ -328,9 +328,11 @@ ${linkedBlock}${sheetsBlock}${figmaBlock}
 5. When the plan is ready, end with EXACTLY this block:
 
 <<<PLAN_READY>>>
-PLAN: Vietnamese — structured plan (goals, files, steps, risks).
+ANALYZED: Vietnamese — what you analyzed (2–5 bullets): issue scope, neo code/files found, docs/rules skimmed, gaps or assumptions. Not only a file list.
+PLAN: Vietnamese — structured plan (mục tiêu, phạm vi, files/neo, rủi ro, bước implement).
 <<<END_PLAN_READY>>>
 
+Both ANALYZED and PLAN are required — Flow shows them in chat for the pair (PM/dev).
 Flow Auto Work will pause for the human to approve, then a later Run will implement in agent mode.
 ${gitlabCommentInstructions(issue)}`;
 }
@@ -354,6 +356,8 @@ export function buildWorkPrompt(
   devNotes?: string,
   opts?: {
     approvedDocsPaths?: string[];
+    /** Project Docs-first: read → code → update/create docs (no approve pause). */
+    docsFirst?: boolean;
     chatContext?: string;
     contextQualityBlock?: string;
     googleSheetsBlock?: string;
@@ -390,8 +394,24 @@ export function buildWorkPrompt(
   const paths = (opts?.approvedDocsPaths ?? [])
     .map((p) => p.trim())
     .filter(Boolean);
+  const docsFirst = Boolean(opts?.docsFirst);
+  const docsFirstBlock = docsFirst
+    ? `
+# DOCS-FIRST (project gate — no Approve Docs)
+Feature docs live with the product (usually under \`docs/\`). There is **no** separate docs phase or approve pause.
+1. **Report** early (in chat or briefly in SUMMARY): which matching feature docs exist (paths), or that none exist yet.
+2. **Read** those docs (\`AGENTS.md\` → docs hub → module/feature) before changing app code.
+3. **Code** the issue on the current branch.
+4. **Update** matching feature docs after the change, or **create** them if missing (follow project templates; no per-issue docs files like \`*-issue-123.md\`).
+5. Include \`DOCS:\` in the DONE block with paths you created/updated (or \`- (none)\`).
+${
+  paths.length
+    ? `Known paths from a prior run (re-read; update after code):\n${paths.map((p) => `- \`${p}\``).join("\n")}\n`
+    : ""
+}`
+    : "";
   const docsGateBlock =
-    paths.length > 0
+    !docsFirst && paths.length > 0
       ? `
 # APPROVED FEATURE DOCS (MUST FOLLOW)
 PM approved these project docs (\`.md\` / \`.mdc\`). Read them fully and implement accordingly — still obey \`AGENTS.md\` and \`.cursor/rules/**/*.mdc\`:
@@ -399,6 +419,10 @@ ${paths.map((p) => `- \`${p}\``).join("\n")}
 Do not contradict these docs unless DEV NOTES or UI CHAT REQUESTS override a specific point.
 `
       : "";
+
+  const docsDoneLine = docsFirst
+    ? "DOCS: bullet paths of feature docs created/updated, or `- (none)`.\n"
+    : "";
 
   return `# MISSION
 You are an expert developer implementing a feature based on a GitLab issue for the **current project checkout** (any product — follow this repo’s own conventions).
@@ -410,7 +434,7 @@ Do NOT \`git commit\`, \`git push\`, force-push, amend remote commits, or create
 Do NOT switch git branches. Stay on the branch that is already checked out.
 Flow Auto Work will commit your file changes to GitLab via API (PAT identity) after you finish.
 
-${qualityBlock}${chatBlock}${notesBlock}${docsGateBlock}# BUSINESS REQUIREMENTS (GITLAB ISSUE #${issue.issueIid})
+${qualityBlock}${chatBlock}${notesBlock}${docsFirstBlock}${docsGateBlock}# BUSINESS REQUIREMENTS (GITLAB ISSUE #${issue.issueIid})
 Title: ${issue.title}
 URL: ${issue.url}
 Labels: ${issue.labels.join(", ") || "(none)"}
@@ -456,7 +480,7 @@ Do not silently drop scope; anything skipped goes under \`RISKS:\` in the DONE b
 
 # EXECUTION PLAN
 1. Analyze the requirements but execute them EXACTLY as demanded in UI CHAT REQUESTS and DEV NOTES when present (those override conflicting business wording). Latest Human chat messages win for this run.
-2. Investigate via **code_map_query** first (when the tool is attached), then docs (and the approved feature docs if listed above). Launch Task \`explore\` **only** if the module is still unfamiliar or search would fan out; then write a short plan for hard tasks.
+2. Investigate via **code_map_query** first (when the tool is attached), then docs${docsFirst ? " (Docs-first: report → read → code → update/create)" : " (and the approved feature docs if listed above)"}. Launch Task \`explore\` **only** if the module is still unfamiliar or search would fan out; then write a short plan for hard tasks.
 3. Implement on the CURRENT git branch only (do not checkout/create other branches). Keep the change scoped to this issue.
 4. Leave changes as modified files in the working tree — do NOT \`git commit\` or \`git push\`. The orchestrator commits to GitLab when you are done.
 5. VERIFY before finishing: re-read your diff against the requirements; launch Task \`code-reviewer\` and/or Task \`test-writer\` **only** when their gates above match; run the cheapest relevant check. Report what you verified under \`TESTED:\`.
@@ -468,7 +492,7 @@ COMMIT: (ad-hoc only) Conventional Commits one-liner — see rules below. Linked
 ASSUMPTIONS: (only if any) tier-2 assumptions — one bullet each.
 RISKS: (only if any) risks / cut scope / reviewer notes.
 TESTED: how you verified (lint/build/test/manual) or "could not run because …".
-<<<END_DONE>>>
+${docsDoneLine}<<<END_DONE>>>
 
 SUMMARY / ASSUMPTIONS / RISKS / TESTED in Vietnamese (tiếng Việt). Linked task commits use \`feat #<iid> <issue title>\`; ad-hoc COMMIT in English. Omit ASSUMPTIONS/RISKS when empty.
 ${commitLabelInstructions({ issueIid: issueCommitIid(issue) })}${gitlabCommentInstructions(issue)}${extraBlock}`;

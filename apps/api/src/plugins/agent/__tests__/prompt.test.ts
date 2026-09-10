@@ -107,7 +107,7 @@ describe("parseAgentOutcome", () => {
 
   it("parses PLAN_READY block", () => {
     const out = parseAgentOutcome(
-      "<<<PLAN_READY>>>\nPLAN: sửa LoginForm.vue\n<<<END_PLAN_READY>>>",
+      "<<<PLAN_READY>>>\nANALYZED: đọc LoginForm\nPLAN: sửa LoginForm.vue\n<<<END_PLAN_READY>>>",
     );
     expect(out.kind).toBe("plan_ready");
     expect(out.summary).toContain("LoginForm");
@@ -209,6 +209,18 @@ describe("buildWorkPrompt graphify", () => {
     expect(prompt).toMatch(/DATA \/ ENTITY FIDELITY/);
     expect(prompt).toMatch(/Do \*\*not\*\* pick another person\/row/);
     expect(prompt).toMatch(/which person\/row\/entity/);
+  });
+
+  it("Docs-first injects read→code→update block and DOCS in DONE", () => {
+    const prompt = buildWorkPrompt(issue, undefined, undefined, undefined, {
+      docsFirst: true,
+      approvedDocsPaths: ["docs/modules/foo/README.md"],
+    });
+    expect(prompt).toMatch(/DOCS-FIRST/);
+    expect(prompt).toMatch(/no Approve Docs/i);
+    expect(prompt).toContain("docs/modules/foo/README.md");
+    expect(prompt).toMatch(/DOCS: bullet paths/);
+    expect(prompt).not.toMatch(/APPROVED FEATURE DOCS/);
   });
 });
 
