@@ -7,6 +7,8 @@ import { logger } from "../logger.js";
 
 const execFileAsync = promisify(execFile);
 const inFlight = new Set<string>();
+/** In-process gate so two projects in the same API worker do not race-start updates. */
+let hostUpdateClaimed = false;
 
 /** Stamp in graphify-out — skip rebuild when HEAD + dirty tree unchanged. */
 const STAMP_NAME = ".flow-graphify-stamp";
@@ -156,6 +158,92 @@ async function writeStamp(outDir: string, stamp: string): Promise<void> {
   await writeFile(stampPath(outDir), `${stamp}\n`, "utf8");
 }
 
+/**
+ * True when a process args line looks like a graphify rebuild (not query/path/explain).
+ */
+export function isGraphifyUpdateProcessArgs(argsLine: string): boolean {
+  const s = argsLine.trim();
+  if (!s || !/graphify/i.test(s)) return false;
+  if (/\b(ps|pgrep)\b/.test(s)) return false;
+  // Read-only CLI — cheap; do not treat as a blocking rebuild.
+  if (/\b(query|path|explain)\b/.test(s) && !/\bupdate\b/.test(s)) {
+    return false;
+  }
+  return true;
+}
+
+/**
+ * True when another graphify rebuild (or its workers) is already on the host.
+ * Lightweight `query` / `path` / `explain` alone do not block a new update.
+ */
+export async function isHostGraphifyUpdateBusy(): Promise<boolean> {
+  try {
+    const { stdout } = await execFileAsync("ps", ["-eo", "args="], {
+      encoding: "utf8",
+      maxBuffer: 5 * 1024 * 1024,
+    });
+    for (const line of stdout.split("\n")) {
+      if (isGraphifyUpdateProcessArgs(line)) return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+/** Skip spawning graphify update when aggregate host CPU busy exceeds this %. */
+const DEFAULT_CPU_SKIP_PERCENT = 50;
+
+export function graphifyCpuSkipThresholdPercent(): number {
+  const raw = (process.env.GRAPHIFY_SKIP_CPU_PERCENT || "").trim();
+  if (!raw) return DEFAULT_CPU_SKIP_PERCENT;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0 || n > 100) return DEFAULT_CPU_SKIP_PERCENT;
+  return n;
+}
+
+export function parseProcStatCpuLine(
+  raw: string,
+): { idle: number; total: number } | null {
+  const line = raw.split("\n").find((l) => l.startsWith("cpu "));
+  if (!line) return null;
+  const parts = line.trim().split(/\s+/).slice(1).map(Number);
+  if (parts.length < 4 || parts.some((n) => !Number.isFinite(n))) return null;
+  // idle + iowait — matches common “%idle” accounting for host busy %.
+  const idle = parts[3]! + (parts[4] ?? 0);
+  const total = parts.reduce((a, b) => a + b, 0);
+  return { idle, total };
+}
+
+export function cpuUsagePercentFromProcStatSamples(
+  first: { idle: number; total: number },
+  second: { idle: number; total: number },
+): number | null {
+  const idleDelta = second.idle - first.idle;
+  const totalDelta = second.total - first.total;
+  if (totalDelta <= 0) return null;
+  const busy = (1 - idleDelta / totalDelta) * 100;
+  if (!Number.isFinite(busy)) return null;
+  return Math.max(0, Math.min(100, busy));
+}
+
+/**
+ * Aggregate host CPU busy % from two /proc/stat samples (~200ms apart).
+ * Returns null when unavailable (non-Linux / read error) — callers fail open.
+ */
+export async function getHostCpuUsagePercent(): Promise<number | null> {
+  try {
+    const first = parseProcStatCpuLine(await readFile("/proc/stat", "utf8"));
+    if (!first) return null;
+    await new Promise((r) => setTimeout(r, 200));
+    const second = parseProcStatCpuLine(await readFile("/proc/stat", "utf8"));
+    if (!second) return null;
+    return cpuUsagePercentFromProcStatSamples(first, second);
+  } catch {
+    return null;
+  }
+}
+
 async function runProjectGraphifyUpdate(
   source: string,
   reason: string,
@@ -187,47 +275,82 @@ async function runProjectGraphifyUpdate(
     }
   }
 
-  const args = force
-    ? ["update", source, "--force"]
-    : ["update", source];
-  logger.info("graphify update starting", {
-    source,
-    outDir,
-    reason,
-    bin,
-    mode: force ? "full" : "incremental",
-  });
-  const { code, stdout, stderr } = await runSpawn(
-    bin,
-    args,
-    { ...process.env, GRAPHIFY_OUT: outDir },
-    path.dirname(outDir),
-    force ? 5 * 60_000 : 3 * 60_000,
-  );
-  if (code === 0) {
-    if (currentStamp) {
-      await writeStamp(outDir, currentStamp).catch(() => undefined);
-    } else {
-      const after = await sourceChangeStamp(source);
-      if (after) await writeStamp(outDir, after).catch(() => undefined);
+  // Multi-user hosts: skip when the box is already hot, or another rebuild is
+  // in flight. Work/BA continues with existing graph (or Grep).
+  const cpuThreshold = graphifyCpuSkipThresholdPercent();
+  const cpuPercent = await getHostCpuUsagePercent();
+  if (cpuPercent != null && cpuPercent > cpuThreshold) {
+    logger.info("graphify skip — host CPU too high (work continues)", {
+      source,
+      reason,
+      hasGraph,
+      cpuPercent: Math.round(cpuPercent),
+      threshold: cpuThreshold,
+    });
+    return hasGraph;
+  }
+
+  if (hostUpdateClaimed) {
+    logger.info(
+      "graphify skip — another graphify already running (work continues)",
+      { source, reason, hasGraph },
+    );
+    return hasGraph;
+  }
+  hostUpdateClaimed = true;
+  try {
+    if (await isHostGraphifyUpdateBusy()) {
+      logger.info(
+        "graphify skip — another graphify already running (work continues)",
+        { source, reason, hasGraph },
+      );
+      return hasGraph;
     }
-    logger.info("graphify update ready", {
+
+    const args = force
+      ? ["update", source, "--force"]
+      : ["update", source];
+    logger.info("graphify update starting", {
       source,
       outDir,
       reason,
+      bin,
       mode: force ? "full" : "incremental",
-      detail: stdout.trim().slice(-400),
     });
-    return true;
+    const { code, stdout, stderr } = await runSpawn(
+      bin,
+      args,
+      { ...process.env, GRAPHIFY_OUT: outDir },
+      path.dirname(outDir),
+      force ? 5 * 60_000 : 3 * 60_000,
+    );
+    if (code === 0) {
+      if (currentStamp) {
+        await writeStamp(outDir, currentStamp).catch(() => undefined);
+      } else {
+        const after = await sourceChangeStamp(source);
+        if (after) await writeStamp(outDir, after).catch(() => undefined);
+      }
+      logger.info("graphify update ready", {
+        source,
+        outDir,
+        reason,
+        mode: force ? "full" : "incremental",
+        detail: stdout.trim().slice(-400),
+      });
+      return true;
+    }
+    logger.warn("graphify update failed", {
+      source,
+      outDir,
+      reason,
+      code,
+      stderr: stderr.trim().slice(-800),
+    });
+    return false;
+  } finally {
+    hostUpdateClaimed = false;
   }
-  logger.warn("graphify update failed", {
-    source,
-    outDir,
-    reason,
-    code,
-    stderr: stderr.trim().slice(-800),
-  });
-  return false;
 }
 
 /**
@@ -278,6 +401,8 @@ export async function ensureProjectGraphifyReady(
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     if (await pathExists(graphJson)) return true;
+    // Update finished/skipped without a graph — do not block the work task.
+    if (!inFlight.has(source)) break;
     await new Promise((r) => setTimeout(r, 500));
   }
   return await pathExists(graphJson);
