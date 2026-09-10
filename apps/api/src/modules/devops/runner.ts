@@ -6,7 +6,11 @@ import { AppError } from "../../utils/AppError.js";
 import { requireWhitelistedScript } from "./catalog.js";
 import { publishBuildEvent } from "./events.js";
 import { openBuildLog, type BuildLogWriter } from "./logFile.js";
-import { resolveBuildStatusFromLogKeywords } from "./logWarnings.js";
+import {
+  lineMatchesBuildFailKeyword,
+  resolveBuildStatusFromLogKeywords,
+  warningMessageFromLogLines,
+} from "./logWarnings.js";
 import { getBuildJob, updateBuildJob } from "./store.js";
 import type { BuildJob, BuildLogStream, BuildStatus } from "./types.js";
 
@@ -207,14 +211,58 @@ export async function runBuildJob(jobId: string): Promise<BuildRunResult> {
     let timedOut = false;
     let timeoutTimer: ReturnType<typeof setTimeout> | null = null;
     let killTimer: ReturnType<typeof setTimeout> | null = null;
+    /** Last warning published mid-run (so UI sees it before log scrolls away). */
+    let lastPublishedWarning = "";
+    let warnedKeywordLogged = false;
+    let warningPublishChain: Promise<void> = Promise.resolve();
+
+    const publishWarningMidBuild = (lineJustMatched: boolean) => {
+      if (settled) return;
+      const warningMessage = warningMessageFromLogLines(capturedLogLines);
+      if (!warningMessage || warningMessage === lastPublishedWarning) return;
+      lastPublishedWarning = warningMessage;
+
+      if (lineJustMatched && !warnedKeywordLogged) {
+        warnedKeywordLogged = true;
+        emitLog(
+          job,
+          log,
+          "system",
+          "log warning detected mid-build — see warning banner",
+        );
+      }
+
+      warningPublishChain = warningPublishChain
+        .then(async () => {
+          if (settled) return;
+          try {
+            job = await updateBuildJob(jobId, { warningMessage });
+            publishBuildEvent({ type: "job", job });
+          } catch (err) {
+            logger.warn("Failed to persist mid-build warning", {
+              jobId,
+              err: String(err),
+            });
+          }
+        })
+        .catch(() => undefined);
+    };
+
+    const onCapturedLine = (line: string, stream: "stdout" | "stderr") => {
+      capturedLogLines.push(line);
+      emitLog(job, log, stream, line);
+      const matched = lineMatchesBuildFailKeyword(line);
+      // Re-scan after match, and keep refining section while context arrives.
+      if (matched || lastPublishedWarning) {
+        publishWarningMidBuild(matched);
+      }
+    };
 
     const stdoutSplit = createLineSplitter((line) => {
-      capturedLogLines.push(line);
-      emitLog(job, log, "stdout", line);
+      onCapturedLine(line, "stdout");
     });
     const stderrSplit = createLineSplitter((line) => {
-      capturedLogLines.push(line);
-      emitLog(job, log, "stderr", line);
+      onCapturedLine(line, "stderr");
     });
 
     const finish = async (
@@ -229,6 +277,8 @@ export async function runBuildJob(jobId: string): Promise<BuildRunResult> {
       active.delete(jobId);
       stdoutSplit.flush();
       stderrSplit.flush();
+      // Let any in-flight mid-build warning writes finish (they no-op once settled).
+      await warningPublishChain.catch(() => undefined);
 
       const resolved = resolveBuildStatusFromLogKeywords(
         status,

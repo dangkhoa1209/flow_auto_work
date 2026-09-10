@@ -71,6 +71,20 @@ export function findBuildLogKeywordHits(lines: string[]): BuildLogKeywordHit[] {
   return hits;
 }
 
+/** Join hit sections for UI / persistence (undefined when no hits). */
+export function warningMessageFromLogLines(
+  lines: string[],
+): string | undefined {
+  const hits = findBuildLogKeywordHits(lines);
+  if (!hits.length) return undefined;
+  return hits.map((h) => h.section).join("\n\n");
+}
+
+/** True if a single log line matches any fail keyword. */
+export function lineMatchesBuildFailKeyword(line: string): boolean {
+  return BUILD_LOG_FAIL_KEYWORDS.some((kw) => kw.pattern.test(line));
+}
+
 export type LogKeywordResolution = {
   status: BuildStatus;
   /** Short reason stored on the job (and shown as error). */
@@ -100,7 +114,7 @@ export function resolveBuildStatusFromLogKeywords(
     };
   }
 
-  const warningMessage = hits.map((h) => h.section).join("\n\n");
+  const warningMessage = warningMessageFromLogLines(logLines)!;
   const labels = hits.map((h) => h.label).join(", ");
   const detected = `Detected ${labels} in build log`;
 

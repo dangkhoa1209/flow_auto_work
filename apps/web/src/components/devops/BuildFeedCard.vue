@@ -60,12 +60,12 @@ const warningText = computed(() => props.job.warningMessage?.trim() || "");
       <span class="faw-build-card__time">{{ timeLabel }}</span>
     </header>
     <div v-show="open" class="faw-build-card__body">
-      <BuildLogPane :lines="lines" :running="job.status === 'running'" />
       <pre
         v-if="warningText"
         class="faw-build-card__warn"
         role="status"
       >{{ warningText }}</pre>
+      <BuildLogPane :lines="lines" :running="job.status === 'running'" />
       <p
         v-if="job.errorMessage"
         class="faw-build-card__err"

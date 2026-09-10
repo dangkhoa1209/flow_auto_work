@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   extractLogSection,
   findBuildLogKeywordHits,
+  lineMatchesBuildFailKeyword,
   resolveBuildStatusFromLogKeywords,
+  warningMessageFromLogLines,
 } from "../logWarnings.js";
 
 describe("extractLogSection", () => {
@@ -42,6 +44,22 @@ describe("findBuildLogKeywordHits", () => {
 
   it("returns empty when keyword is absent", () => {
     expect(findBuildLogKeywordHits(["all good", "exit 0"])).toEqual([]);
+  });
+});
+
+describe("warningMessageFromLogLines / lineMatchesBuildFailKeyword", () => {
+  it("matches rsync error on a single line", () => {
+    expect(lineMatchesBuildFailKeyword("rsync error: code 23")).toBe(true);
+    expect(lineMatchesBuildFailKeyword("all good")).toBe(false);
+  });
+
+  it("builds warning text from captured lines", () => {
+    const msg = warningMessageFromLogLines([
+      "ok",
+      "rsync error: timeout",
+      "detail",
+    ]);
+    expect(msg).toContain("rsync error: timeout");
   });
 });
 
