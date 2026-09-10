@@ -26,13 +26,15 @@ describe("planReadySection", () => {
 });
 
 describe("formatPlanReadyChatBody", () => {
-  it("shows analysis + plan for the pair", () => {
+  it("shows analysis + plan without rigid dual headings", () => {
     const body = formatPlanReadyChatBody(sample);
     expect(body).toContain("PLAN READY:");
-    expect(body).toContain("### Đã phân tích");
     expect(body).toContain("nghỉ trưa");
-    expect(body).toContain("### Kế hoạch");
     expect(body).toContain("Trừ giờ nghỉ trưa");
+    expect(body).not.toContain("### Tóm tắt vấn đề");
+    expect(body).not.toContain("### Cách giải quyết");
+    expect(body).not.toContain("### Đã phân tích");
+    expect(body).not.toContain("### Kế hoạch");
   });
 
   it("prefers long createPlan body over thin PLAN_READY one-liner", () => {
@@ -53,7 +55,7 @@ describe("formatPlanReadyChatBody", () => {
     expect(pickPlanReadySource(thin, createPlan)).toBe(createPlan);
     const body = formatPlanReadyChatBody(thin, { prose: createPlan });
     expect(body).toContain("AttendanceService");
-    expect(body).toContain("### Kế hoạch");
+    expect(body).toContain("## Mục tiêu");
     expect(body).not.toMatch(/Đang xác nhận cách load ca$/m);
   });
 
@@ -77,10 +79,12 @@ describe("formatPlanReadyChatBody", () => {
 });
 
 describe("planReadySummaryText", () => {
-  it("keeps analysis and plan", () => {
+  it("keeps analysis and plan without rigid labels", () => {
     const text = planReadySummaryText(sample);
-    expect(text).toContain("Đã phân tích");
-    expect(text).toContain("Kế hoạch");
+    expect(text).toContain("nghỉ trưa");
+    expect(text).toContain("Trừ giờ nghỉ trưa");
+    expect(text).not.toContain("Tóm tắt vấn đề");
+    expect(text).not.toContain("Cách giải quyết");
   });
 });
 

@@ -323,16 +323,16 @@ ${linkedBlock}${sheetsBlock}${figmaBlock}
 # HARD RULES (PLAN PHASE)
 1. Only read/search tools (\`read\`, \`grep\`, \`glob\`, \`ls\`, code map). No app code, no docs file writes.
 2. Search the repo before guessing file paths.
-3. Write the plan in Vietnamese (unless DEV NOTES say otherwise): mục tiêu, phạm vi, file/neo code, rủi ro, bước implement.
+3. Write in Vietnamese (unless DEV NOTES say otherwise). Summarize what you analyzed and the approach — concise, no filler or status one-liners ("Đang xác nhận…"). No fixed section titles required in the chat body.
 4. Batch questions; only use NEED_CLARIFICATION when truly blocked.
 5. When the plan is ready, end with EXACTLY this block:
 
 <<<PLAN_READY>>>
-ANALYZED: Vietnamese — what you analyzed (2–5 bullets): issue scope, neo code/files found, docs/rules skimmed, gaps or assumptions. Not only a file list.
-PLAN: Vietnamese — the **full** structured plan (mục tiêu, phạm vi, files/neo, rủi ro, bước implement). Do NOT put a one-line status like "Đang xác nhận…". If you used createPlan, paste that same full plan text here.
+ANALYZED: Vietnamese — short summary of what you analyzed (issue, current vs expected, key files/neos, assumptions). Not a status one-liner.
+PLAN: Vietnamese — the plan itself (goals, scope, files, risks, steps). Trim redundant chrome. If you used createPlan, paste that same full plan text here.
 <<<END_PLAN_READY>>>
 
-Both ANALYZED and PLAN are required — Flow shows them in chat for the pair (PM/dev).
+Both ANALYZED and PLAN are required — Flow shows a Vietnamese summary in chat (labels stripped).
 Flow Auto Work will pause for the human to approve, then a later Run will implement in agent mode.
 ${gitlabCommentInstructions(issue)}`;
 }

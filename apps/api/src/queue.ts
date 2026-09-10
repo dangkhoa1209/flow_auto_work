@@ -2551,12 +2551,13 @@ export class JobQueue {
         let planChat = formatPlanReadyChatBody(formatSource, {
           prose: prose && prose !== "(no reply)" ? prose : undefined,
         });
-        const hasPlanSections = /### Đã phân tích|### Kế hoạch/.test(planChat);
-        if (!hasPlanSections && formatSource) {
-          // Formatter only has "PLAN READY:" chrome — prefer prose / summary
+        const planChatBody = planChat.replace(/^PLAN READY:\s*/i, "").trim();
+        if (planChatBody.length < 40 && formatSource) {
+          // Thin chrome only — prefer prose / richer summary
           planChat =
-            (prose && prose !== "(no reply)" ? prose : "") ||
-            formatPlanReadyChatBody(formatSource);
+            (prose && prose !== "(no reply)"
+              ? formatPlanReadyChatBody(formatSource, { prose })
+              : "") || formatPlanReadyChatBody(formatSource);
           if (!planChat.startsWith("PLAN READY:")) {
             planChat = formatPlanReadyChatBody(planChat || formatSource);
           }
