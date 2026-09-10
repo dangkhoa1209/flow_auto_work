@@ -153,6 +153,20 @@ ${lines.join("\n\n")}
 }
 
 /**
+ * Hard rule: named entities in DB/seed/verify must stay exact.
+ * Stops the common failure “look up NV A → miss → continue with NV B”.
+ */
+export function dataEntityFidelityBlock(): string {
+  return `# DATA / ENTITY FIDELITY (DB, seed, verify) — HARD
+When the human names a **specific** entity (mã NV / staff code / id / name / order / contract / …):
+1. Query / filter / seed / verify **that exact identifier only** — do not broaden to a “similar” row.
+2. If **0 rows** (or create/seed of that exact entity fails): **STOP**. Say clearly you could not find **exactly** the code/name they named (or why create failed). Do **not** pick another person/row and continue as if success.
+3. Optional: list other rows **only as candidates** for the human to choose — never treat them as the target, never seed/mutate/report results under the wrong identity.
+4. Do **not** “helpfully” switch NV A → NV B, use LIKE/\`%\` to land on someone else, or verify on a substitute. Entity identity is **never** a SAFE ASSUMPTION (same tier as irreversible data / money / permissions).
+`;
+}
+
+/**
  * Shared “how to load project conventions” — AGENTS.md first, then rules/skills/docs
  * that exist in the checkout (not hard-coded to one product).
  */
@@ -412,7 +426,7 @@ Ignore image/file attachments — only use text. Do not try to download or open 
 Real tickets are often incomplete. When something is unclear or missing:
 1. **SELF-RESOLVE first.** Call \`code_map_query\` when that tool is attached, then search the repo, feature docs, and the linked issues/comments above. Most "missing" info (file paths, existing patterns, field names, similar screens) is discoverable in the codebase — never ask the human for something the code can answer.
 2. **SAFE ASSUMPTION.** If the gap is minor and one interpretation is clearly standard for this codebase (naming, placement, UI copy, default sort/validation style), proceed — but record it and report it under \`ASSUMPTIONS:\` in the DONE block.
-   NEVER assume on: deleting/migrating data, permissions/security, money or regulated formulas, external API contracts, or anything irreversible → those go to tier 3.
+   NEVER assume on: deleting/migrating data, permissions/security, money or regulated formulas, external API contracts, **which person/row/entity** to use when the named one is missing, or anything irreversible → those go to tier 3.
 3. **ASK (last resort).** Only when the gap genuinely blocks a correct implementation. The human answers in the **Flow Auto Work UI**. End your reply with EXACTLY this block (nothing after it):
 
 <<<NEED_CLARIFICATION>>>
@@ -426,6 +440,7 @@ Question quality rules (strict):
 - Say briefly what you already checked (files/docs/keywords searched) so the human doesn't repeat known info.
 - Do NOT ask about things you can decide via tier 1/2.
 
+${dataEntityFidelityBlock()}
 # TASK / SUBAGENT FLOW (coding Run)
 Use Task/subagents as a **complete pipeline only when each gate matches**. Do **not** spawn all three by default; do **not** use for Q&A-only or trivial one-line / already-known single-file edits.
 
@@ -529,7 +544,7 @@ ${message.trim()}
 
 ## How to behave (IDE-like)
 1. If they ask a question → answer clearly (Vietnamese if they wrote Vietnamese). Start repo lookup with \`code_map_query\` when that tool is attached. If they pasted \`#id\` / issue link, use the **GitLab task (chỉ đọc)** block above — do not call GitLab yourself.
-2. If they ask to fix / add / change / re-test / seed data / run something → **do it** on the CURRENT branch (do not switch branches). Subagent flow (skip steps that do not apply — do not spawn all three by default): Task \`explore\` only if path still unclear after map/search; Task \`code-reviewer\` only after multi-file / shared-logic / risky diffs; Task \`test-writer\` only when nearby tests exist. Skip subagents for Q&A-only or trivial one-file edits.
+2. If they ask to fix / add / change / re-test / seed data / run something → **do it** on the CURRENT branch (do not switch branches). Subagent flow (skip steps that do not apply — do not spawn all three by default): Task \`explore\` only if path still unclear after map/search; Task \`code-reviewer\` only after multi-file / shared-logic / risky diffs; Task \`test-writer\` only when nearby tests exist. Skip subagents for Q&A-only or trivial one-file edits. **Data fidelity:** if they named a specific NV/id/code and DB returns 0 — STOP and report not found; do **not** switch to another person/row.
 3. Prefer small, correct changes. Stay scoped to this issue unless they explicitly expand scope.
 4. If the request is vague: search the repo/docs first; minor gaps → proceed with the standard interpretation and say so in your reply; only end with NEED_CLARIFICATION when truly blocked (batch ALL questions, numbered, with options + your recommended default).
 5. Do NOT \`git commit\`, \`git push\`, force-push, amend remote commits, or open/merge MRs. Flow Auto Work commits to GitLab via API after you finish.
@@ -599,7 +614,7 @@ ${message.trim()}
 
 ## How to behave (IDE-like)
 1. If they ask a question → answer clearly (Vietnamese if they wrote Vietnamese). Start repo lookup with \`code_map_query\` when that tool is attached. If a **GitLab task (chỉ đọc)** block is present, use it for issue title/description/comments.
-2. If they ask to fix / add / change / re-test / seed data / run something → **do it** on the CURRENT branch (do not switch branches). Subagent flow (skip steps that do not apply — do not spawn all three by default): Task \`explore\` only if path still unclear after map/search; Task \`code-reviewer\` only after multi-file / shared-logic / risky diffs; Task \`test-writer\` only when nearby tests exist. Skip subagents for Q&A-only or trivial one-file edits.
+2. If they ask to fix / add / change / re-test / seed data / run something → **do it** on the CURRENT branch (do not switch branches). Subagent flow (skip steps that do not apply — do not spawn all three by default): Task \`explore\` only if path still unclear after map/search; Task \`code-reviewer\` only after multi-file / shared-logic / risky diffs; Task \`test-writer\` only when nearby tests exist. Skip subagents for Q&A-only or trivial one-file edits. **Data fidelity:** if they named a specific NV/id/code and DB returns 0 — STOP and report not found; do **not** switch to another person/row.
 3. Prefer small, correct changes. Stay scoped to the request.
 4. If the request is vague: search the repo first; minor gaps → proceed with the standard interpretation and say so in your reply; only end with NEED_CLARIFICATION when truly blocked (batch ALL questions, numbered, with options + your recommended default).
 5. Do NOT \`git commit\`, \`git push\`, force-push, amend remote commits, or open/merge MRs. Flow Auto Work commits to GitLab via API after you finish.

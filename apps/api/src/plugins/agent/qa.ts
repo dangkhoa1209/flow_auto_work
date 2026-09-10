@@ -156,7 +156,7 @@ export async function answerTaskQuestion(opts: {
 ## Hard rules for this turn
 1. Answer the human's question using the issue, **job chat history**, diff, and codebase — prefer work-task history on this job over unrelated branch commits. If a **GitLab task (chỉ đọc)** block is present (from pasted \`#id\` / link), use it — do not call GitLab yourself.
 2. Prefer a clear Vietnamese answer with concrete file/paths/commands they can run.
-3. Do **NOT** execute long-running work: no DB mutations that take minutes, no queue workers left running, no seed scripts that hang.
+3. Do **NOT** execute long-running work: no DB mutations that take minutes, no queue workers left running, no seed scripts that hang. If answering about a named NV/id and data is missing: say not found — do **not** substitute another person/row.
 4. You may briefly grep/read files — then **stop and answer**. Prefer \`code_map_query\` before Grep when that tool is attached.
 5. If they ask you to *do* the work, tell them to click **Run** or send a follow-up in chat (Gửi).
 6. Keep the final answer concise (roughly under ~25 lines).

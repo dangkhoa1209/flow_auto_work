@@ -203,6 +203,13 @@ describe("buildWorkPrompt graphify", () => {
     expect(prompt).toMatch(/Task `code-reviewer`/);
     expect(prompt).toMatch(/Task `test-writer`/);
   });
+
+  it("forbids substituting another entity when named DB lookup misses", () => {
+    const prompt = buildWorkPrompt(issue);
+    expect(prompt).toMatch(/DATA \/ ENTITY FIDELITY/);
+    expect(prompt).toMatch(/Do \*\*not\*\* pick another person\/row/);
+    expect(prompt).toMatch(/which person\/row\/entity/);
+  });
 });
 
 describe("follow-up GitLab task + subagents", () => {
@@ -216,6 +223,8 @@ describe("follow-up GitLab task + subagents", () => {
     expect(prompt).toMatch(/Task `explore`/);
     expect(prompt).toMatch(/do not spawn all three by default/);
     expect(prompt).toMatch(/do not call GitLab yourself/);
+    expect(prompt).toMatch(/Data fidelity/);
+    expect(prompt).toMatch(/do \*\*not\*\* switch to another person\/row/);
   });
 
   it("adhoc follow-up notes pasted GitLab context when block present", () => {
@@ -227,6 +236,7 @@ describe("follow-up GitLab task + subagents", () => {
     expect(prompt).toContain("#12 — Fix");
     expect(prompt).toMatch(/Task `explore`/);
     expect(prompt).toMatch(/Skip subagents for Q&A-only/);
+    expect(prompt).toMatch(/Data fidelity/);
   });
 
   it("adhoc without block still mentions paste #id / link", () => {
