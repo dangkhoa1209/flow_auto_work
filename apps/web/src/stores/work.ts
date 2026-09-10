@@ -147,6 +147,10 @@ export type TaskDetail = {
   url?: string;
   labels?: string[];
   assignees?: Array<{ username: string; name?: string }>;
+  /** GitLab/GitHub issue author username */
+  author?: string;
+  createdAt?: string;
+  updatedAt?: string;
   milestone?: { title?: string } | null;
   taskCompletion?: { count: number; completedCount: number };
   notes?: TaskNote[];

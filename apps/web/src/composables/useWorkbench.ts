@@ -7,6 +7,7 @@ import { useProjectClone } from "@/composables/useProjectClone";
 import { useSessionStore } from "@/stores/session";
 import { useSettingsStore } from "@/stores/settings";
 import { useWorkStore, isAdhocJob, type TaskDetail } from "@/stores/work";
+import { formatIssueMeta } from "@/utils/formatIssueMeta";
 import { statusLabel } from "@/utils/status";
 import { titleFromWorkRequest } from "@/utils/sessionTitle";
 
@@ -226,20 +227,7 @@ export function useWorkbench() {
     () => taskDetail.value?.title || currentJob.value?.issue?.title || "",
   );
 
-  const detailMeta = computed(() => {
-    const d = taskDetail.value;
-    if (!d) return "";
-    const assignees =
-      (d.assignees || []).map((a) => `@${a.username}`).join(", ") || "—";
-    const parts = [d.state || "—", `assignee ${assignees}`];
-    if (d.taskCompletion) {
-      parts.push(
-        `checklist ${d.taskCompletion.completedCount}/${d.taskCompletion.count}`,
-      );
-    }
-    if (d.milestone?.title) parts.push(`milestone ${d.milestone.title}`);
-    return parts.join(" · ");
-  });
+  const detailMeta = computed(() => formatIssueMeta(taskDetail.value));
 
   const agentJobBusy = computed(() => {
     const st = currentJob.value?.status;
