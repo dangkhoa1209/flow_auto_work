@@ -4,8 +4,10 @@ import { RouterLink } from "vue-router";
 import { message } from "ant-design-vue";
 import BaGitPatForm from "@/components/ba/BaGitPatForm.vue";
 import { useBaGitPat } from "@/composables/useBaGitPat";
+import { useProjectChatBase } from "@/composables/useProjectChatBase";
 
 const { modalOpen, saveGitPat, closePatModal } = useBaGitPat();
+const { basePath } = useProjectChatBase();
 
 const saving = ref(false);
 const patFormRef = ref<InstanceType<typeof BaGitPatForm> | null>(null);
@@ -41,7 +43,7 @@ async function onSave() {
     <p class="text-[11px] text-[var(--app-faint)] m-0 mt-4">
       Hoặc vào
       <RouterLink
-        to="/ba/settings"
+        :to="`${basePath}/settings`"
         class="text-[var(--app-accent)] hover:underline"
         @click="closePatModal"
       >

@@ -61,6 +61,52 @@ const router = createRouter({
       ],
     },
     {
+      path: "/qc",
+      component: () => import("@/layouts/BaLayout.vue"),
+      meta: { requiresQc: true },
+      children: [
+        {
+          path: "",
+          name: "qc-chat",
+          component: () => import("@/views/BaChatView.vue"),
+        },
+        {
+          path: "workflow",
+          name: "qc-workflow",
+          component: () => import("@/views/BaWorkflowView.vue"),
+        },
+        {
+          path: "tasks",
+          name: "qc-tasks",
+          component: () => import("@/views/BaTasksView.vue"),
+        },
+        {
+          path: "settings",
+          component: () => import("@/layouts/BaSettingsLayout.vue"),
+          children: [
+            { path: "", redirect: "/qc/settings/gitlab" },
+            {
+              path: "gitlab",
+              name: "qc-settings-gitlab",
+              component: () =>
+                import("@/views/ba/settings/BaGitPatSettings.vue"),
+            },
+            {
+              path: "google",
+              name: "qc-settings-google",
+              component: () =>
+                import("@/views/ba/settings/BaGoogleSettings.vue"),
+            },
+            {
+              path: "account",
+              name: "qc-settings-account",
+              component: () => import("@/views/settings/AccountSettings.vue"),
+            },
+          ],
+        },
+      ],
+    },
+    {
       path: "/devops",
       component: () => import("@/layouts/DevopsLayout.vue"),
       meta: { requiresDevops: true },
@@ -243,8 +289,10 @@ router.beforeEach(async (to) => {
   const access = {
     isAdmin: session.isAdmin,
     isDevopsAudience: session.isDevopsAudience,
+    isQcAudience: session.isQcAudience,
     canAccessWork: session.canAccessWork,
     canAccessBa: session.canAccessBa,
+    canAccessQc: session.canAccessQc,
     canAccessDevops: session.canAccessDevops,
   };
 

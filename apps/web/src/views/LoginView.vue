@@ -36,7 +36,7 @@ const roleOptions = [
   { value: "dev", label: "Dev — WorkBench" },
   { value: "ba", label: "BA — Project chat" },
   { value: "pd", label: "PD — Project chat" },
-  { value: "qc", label: "QC — Project chat" },
+  { value: "qc", label: "QC — QC chat" },
   { value: "devops", label: "Devops" },
 ];
 
@@ -55,8 +55,10 @@ function postAuthPath(): string {
   const access = {
     isAdmin: session.isAdmin,
     isDevopsAudience: session.isDevopsAudience,
+    isQcAudience: session.isQcAudience,
     canAccessWork: session.canAccessWork,
     canAccessBa: session.canAccessBa,
+    canAccessQc: session.canAccessQc,
     canAccessDevops: session.canAccessDevops,
   };
   const redirect = safeRedirectTarget();

@@ -28,6 +28,12 @@ function settingsTarget(): { to: string; match: (path: string) => boolean } {
       match: (p) => p.startsWith("/ba/settings"),
     };
   }
+  if (route.path.startsWith("/qc")) {
+    return {
+      to: "/qc/settings/gitlab",
+      match: (p) => p.startsWith("/qc/settings"),
+    };
+  }
   if (route.path.startsWith("/devops")) {
     return {
       to: "/devops/settings/account",
@@ -44,6 +50,12 @@ function settingsTarget(): { to: string; match: (path: string) => boolean } {
     return {
       to: "/ba/settings/gitlab",
       match: (p) => p.startsWith("/ba/settings"),
+    };
+  }
+  if (session.canAccessQc) {
+    return {
+      to: "/qc/settings/gitlab",
+      match: (p) => p.startsWith("/qc/settings"),
     };
   }
   if (session.isAdmin) {
@@ -89,9 +101,17 @@ const tabs = computed(() => {
   if (session.canAccessBa) {
     items.push({
       to: "/ba",
-      label: "Chat",
+      label: session.canAccessQc ? "BA" : "Chat",
       icon: MessageOutlined,
       match: (p) => p.startsWith("/ba") && !p.startsWith("/ba/settings"),
+    });
+  }
+  if (session.canAccessQc) {
+    items.push({
+      to: "/qc",
+      label: session.canAccessBa ? "QC" : "Chat",
+      icon: MessageOutlined,
+      match: (p) => p.startsWith("/qc") && !p.startsWith("/qc/settings"),
     });
   }
   if (session.canAccessDevops) {

@@ -12,7 +12,18 @@ const links = computed(() => {
     out.push({ to: "/work", label: "Work", prefix: "/work" });
   }
   if (session.canAccessBa) {
-    out.push({ to: "/ba", label: "Chat", prefix: "/ba" });
+    out.push({
+      to: "/ba",
+      label: session.canAccessQc ? "BA" : "Chat",
+      prefix: "/ba",
+    });
+  }
+  if (session.canAccessQc) {
+    out.push({
+      to: "/qc",
+      label: session.canAccessBa ? "QC" : "Chat",
+      prefix: "/qc",
+    });
   }
   if (session.canAccessDevops) {
     out.push({ to: "/devops", label: "Build", prefix: "/devops" });

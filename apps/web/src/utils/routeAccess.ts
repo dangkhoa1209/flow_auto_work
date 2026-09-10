@@ -3,8 +3,10 @@ import type { RouteLocationNormalized } from "vue-router";
 type SessionAccess = {
   isAdmin: boolean;
   isDevopsAudience: boolean;
+  isQcAudience: boolean;
   canAccessWork: boolean;
   canAccessBa: boolean;
+  canAccessQc: boolean;
   canAccessDevops: boolean;
 };
 
@@ -13,7 +15,9 @@ export function resolveHomeRoute(session: SessionAccess): string {
   if (session.isAdmin) return "/admin/users";
   if (session.canAccessWork) return "/work";
   if (session.isDevopsAudience) return "/devops";
+  if (session.isQcAudience) return "/qc";
   if (session.canAccessBa) return "/ba";
+  if (session.canAccessQc) return "/qc";
   if (session.canAccessDevops) return "/devops";
   return "/login";
 }
@@ -25,6 +29,7 @@ export function isRouteAllowed(
   if (to.meta.requiresAdmin && !session.isAdmin) return false;
   if (to.meta.requiresDevops && !session.canAccessDevops) return false;
   if (to.meta.requiresBa && !session.canAccessBa) return false;
+  if (to.meta.requiresQc && !session.canAccessQc) return false;
   if (to.meta.requiresDev && !session.canAccessWork) return false;
   if (
     to.meta.requiresDev &&
@@ -41,6 +46,7 @@ export function isPathAllowed(path: string, session: SessionAccess): boolean {
   if (path.startsWith("/admin")) return session.isAdmin;
   if (path.startsWith("/devops")) return session.canAccessDevops;
   if (path.startsWith("/ba")) return session.canAccessBa;
+  if (path.startsWith("/qc")) return session.canAccessQc;
   if (
     path.startsWith("/work") ||
     path.startsWith("/handoff") ||
