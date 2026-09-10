@@ -133,6 +133,7 @@ Run / follow-up chat (mọi chỗ gọi Cursor để code)
 
 - **Docs-first** = phía **project** (switch trong Run gates / Dev Notes).
 - **Plan vs Agent** = phía **composer** (dropdown cạnh Send): **Plan** = chỉ lên plan; **Agent** = code.
+- **Approve Plan** → enqueue code ngay **và** tự chuyển dropdown về **Agent** (`planFirst = false`).
 - Khi phase xong, UI hiện summary phân tích trên alert + Chat (không chỉ nút Docs/Plan rồi ẩn).
 
 Clarify (agent hỏi giữa chừng): `NEED_CLARIFICATION` → UI → `buildResumePrompt` trên cùng window.

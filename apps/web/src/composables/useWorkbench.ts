@@ -844,6 +844,8 @@ export function useWorkbench() {
     approvePlanBusy.value = true;
     try {
       await work.approvePlan(selectedJobId.value);
+      // Composer mode: Plan → Agent so the next Send codes (not re-plans)
+      planFirst.value = false;
       message.success("Plan approved — code phase enqueued");
       mobilePane.value = "chat";
     } catch (e) {

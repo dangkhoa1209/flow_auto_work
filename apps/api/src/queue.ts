@@ -447,13 +447,15 @@ export class JobQueue {
       };
     }
     job.planApprovedAt = new Date().toISOString();
+    // Composer mode flips Plan → Agent after approval (next Send codes)
+    job.planFirst = false;
     await saveJob(job);
     return this.enqueue(job.issue, {
       source: "plan_approved",
       completion: job.completion,
       devNotes: resolveDevNotes(job) || undefined,
       requireDocsFirst: job.requireDocsFirst,
-      planFirst: job.planFirst,
+      planFirst: false,
       forceCodePhase: true,
       forceAgentPhase: true,
     });
