@@ -10,7 +10,7 @@ import type { AgentDefinition } from "@cursor/sdk";
 export const WORK_CODING_SUBAGENTS: Record<string, AgentDefinition> = {
   explore: {
     description:
-      "REQUIRED before first edit when path/module is unclear or search would span many files: locate files, symbols, call paths, and patterns. Use early in /work coding and non-trivial follow-ups.",
+      "Use only when path/module is still unclear after code_map/search, or search would span many files — locate files, symbols, call paths. Skip if the target file is already known. Part of /work coding flow step 1 (before first edit).",
     prompt: `You are a read-focused codebase explorer for Flow Auto Work /work jobs.
 Goal: locate the right files, symbols, and patterns quickly and report findings.
 - Prefer search (grep/glob/semSearch/read) over guessing paths.
@@ -21,7 +21,7 @@ Goal: locate the right files, symbols, and patterns quickly and report findings.
   },
   "code-reviewer": {
     description:
-      "REQUIRED after non-trivial diffs (multi-file, shared logic, auth/money/data): review for bugs, regressions, security, and ticket mismatch before DONE.",
+      "Use only after non-trivial diffs (multi-file, shared logic, auth/money/data) — review bugs, regressions, security, ticket fit before DONE. Skip for small single-file edits already re-read. Part of /work coding flow after implement.",
     prompt: `You are a strict code reviewer for a Flow Auto Work /work job.
 Focus on correctness, regressions, security, and ticket fit — not style nits.
 - Read the changed / relevant files; cite paths.
@@ -32,7 +32,7 @@ Focus on correctness, regressions, security, and ticket fit — not style nits.
   },
   "test-writer": {
     description:
-      "REQUIRED when behavior changed and a nearby test harness exists: write/extend focused unit/integration tests for the code just changed.",
+      "Use only when behavior changed and a nearby test harness exists — write/extend focused tests for the code just changed. Skip if no tests nearby or change is docs/copy-only. Part of /work coding flow before DONE.",
     prompt: `You are a test specialist for a Flow Auto Work /work job.
 - Match the repo's existing test style, paths, and runner (vitest/jest/etc.).
 - Cover the behavior just implemented; avoid unrelated broad suites.

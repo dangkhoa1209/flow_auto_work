@@ -195,9 +195,10 @@ describe("buildWorkPrompt graphify", () => {
     expect(prompt).toMatch(/issue title/);
   });
 
-  it("nudges Task subagents in hard tasks and execution plan", () => {
+  it("defines gated Task/subagent flow in Run prompt", () => {
     const prompt = buildWorkPrompt(issue);
     expect(prompt).toMatch(/Use Task\/subagents/);
+    expect(prompt).toMatch(/Do \*\*not\*\* spawn all three by default/);
     expect(prompt).toMatch(/Task `explore`/);
     expect(prompt).toMatch(/Task `code-reviewer`/);
     expect(prompt).toMatch(/Task `test-writer`/);
@@ -213,6 +214,7 @@ describe("follow-up GitLab task + subagents", () => {
     expect(prompt).toContain("GitLab task (chỉ đọc");
     expect(prompt).toContain("#55 — Demo");
     expect(prompt).toMatch(/Task `explore`/);
+    expect(prompt).toMatch(/do not spawn all three by default/);
     expect(prompt).toMatch(/do not call GitLab yourself/);
   });
 
@@ -224,6 +226,7 @@ describe("follow-up GitLab task + subagents", () => {
     expect(prompt).toMatch(/already loaded them into \*\*GitLab task/);
     expect(prompt).toContain("#12 — Fix");
     expect(prompt).toMatch(/Task `explore`/);
+    expect(prompt).toMatch(/Skip subagents for Q&A-only/);
   });
 
   it("adhoc without block still mentions paste #id / link", () => {

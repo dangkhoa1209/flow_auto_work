@@ -426,23 +426,25 @@ Question quality rules (strict):
 - Say briefly what you already checked (files/docs/keywords searched) so the human doesn't repeat known info.
 - Do NOT ask about things you can decide via tier 1/2.
 
-# HARD / LARGE TASKS
-If the task spans multiple modules, touches shared logic, or is risky:
-- Write a short bullet plan BEFORE editing; follow it in small verifiable steps.
-- **Use Task/subagents** (do not skip for non-trivial work):
-  - \`explore\` — before first edit when the module/path is unfamiliar or search would fan out across many files.
-  - \`code-reviewer\` — after a non-trivial diff (multi-file, shared logic, auth/money/data), before DONE.
-  - \`test-writer\` — when you added/changed behavior that already has a test harness nearby.
-  You keep ownership of the final DONE; subagents are helpers, not optional decoration.
-- If mid-way you find the requirement contradicts codebase reality (screen/field/API named in the ticket doesn't exist or behaves differently), STOP and use NEED_CLARIFICATION **with evidence** (file + what you found) instead of forcing a wrong change.
-- Do not silently drop scope; anything skipped goes under \`RISKS:\` in the DONE block.
+# TASK / SUBAGENT FLOW (coding Run)
+Use Task/subagents as a **complete pipeline only when each gate matches**. Do **not** spawn all three by default; do **not** use for Q&A-only or trivial one-line / already-known single-file edits.
+
+Flow — skip any step that does not apply:
+1. \`explore\` — **only if** after code_map_query / a quick search the path/module is still unclear or search would fan out across many files. Skip when the target file is already known.
+2. Implement yourself (parent owns the diff). For multi-module / shared / risky work: write a short bullet plan BEFORE editing; follow it in small verifiable steps.
+3. \`code-reviewer\` — **only if** the diff is non-trivial (multi-file, shared logic, auth/money/data). Skip for small scoped edits you already re-read carefully.
+4. \`test-writer\` — **only if** behavior changed **and** a nearby test harness exists. Skip when no tests nearby or the change is docs/copy-only.
+5. You keep ownership of DONE / VERIFY; subagents help one step each — they do not replace your final check.
+
+If mid-way you find the requirement contradicts codebase reality (screen/field/API named in the ticket doesn't exist or behaves differently), STOP and use NEED_CLARIFICATION **with evidence** (file + what you found) instead of forcing a wrong change.
+Do not silently drop scope; anything skipped goes under \`RISKS:\` in the DONE block.
 
 # EXECUTION PLAN
 1. Analyze the requirements but execute them EXACTLY as demanded in UI CHAT REQUESTS and DEV NOTES when present (those override conflicting business wording). Latest Human chat messages win for this run.
-2. Investigate via **code_map_query** first (when the tool is attached), then docs (and the approved feature docs if listed above). If the module is unfamiliar or search would fan out, launch Task \`explore\` before editing; then write a short plan.
+2. Investigate via **code_map_query** first (when the tool is attached), then docs (and the approved feature docs if listed above). Launch Task \`explore\` **only** if the module is still unfamiliar or search would fan out; then write a short plan for hard tasks.
 3. Implement on the CURRENT git branch only (do not checkout/create other branches). Keep the change scoped to this issue.
 4. Leave changes as modified files in the working tree — do NOT \`git commit\` or \`git push\`. The orchestrator commits to GitLab when you are done.
-5. VERIFY before finishing: re-read your diff against the requirements; for non-trivial diffs launch Task \`code-reviewer\`; when behavior changed and tests exist nearby, launch Task \`test-writer\`; run the cheapest relevant check. Report what you verified under \`TESTED:\`.
+5. VERIFY before finishing: re-read your diff against the requirements; launch Task \`code-reviewer\` and/or Task \`test-writer\` **only** when their gates above match; run the cheapest relevant check. Report what you verified under \`TESTED:\`.
 6. When finished successfully, end with EXACTLY this block:
 
 <<<DONE>>>
@@ -527,7 +529,7 @@ ${message.trim()}
 
 ## How to behave (IDE-like)
 1. If they ask a question → answer clearly (Vietnamese if they wrote Vietnamese). Start repo lookup with \`code_map_query\` when that tool is attached. If they pasted \`#id\` / issue link, use the **GitLab task (chỉ đọc)** block above — do not call GitLab yourself.
-2. If they ask to fix / add / change / re-test / seed data / run something → **do it** on the CURRENT branch (do not switch branches). For non-trivial edits: Task \`explore\` before first edit if the path is unclear; Task \`code-reviewer\` after a multi-file / shared-logic diff; Task \`test-writer\` when nearby tests exist.
+2. If they ask to fix / add / change / re-test / seed data / run something → **do it** on the CURRENT branch (do not switch branches). Subagent flow (skip steps that do not apply — do not spawn all three by default): Task \`explore\` only if path still unclear after map/search; Task \`code-reviewer\` only after multi-file / shared-logic / risky diffs; Task \`test-writer\` only when nearby tests exist. Skip subagents for Q&A-only or trivial one-file edits.
 3. Prefer small, correct changes. Stay scoped to this issue unless they explicitly expand scope.
 4. If the request is vague: search the repo/docs first; minor gaps → proceed with the standard interpretation and say so in your reply; only end with NEED_CLARIFICATION when truly blocked (batch ALL questions, numbered, with options + your recommended default).
 5. Do NOT \`git commit\`, \`git push\`, force-push, amend remote commits, or open/merge MRs. Flow Auto Work commits to GitLab via API after you finish.
@@ -597,7 +599,7 @@ ${message.trim()}
 
 ## How to behave (IDE-like)
 1. If they ask a question → answer clearly (Vietnamese if they wrote Vietnamese). Start repo lookup with \`code_map_query\` when that tool is attached. If a **GitLab task (chỉ đọc)** block is present, use it for issue title/description/comments.
-2. If they ask to fix / add / change / re-test / seed data / run something → **do it** on the CURRENT branch (do not switch branches). For non-trivial edits: Task \`explore\` before first edit if the path is unclear; Task \`code-reviewer\` after a multi-file / shared-logic diff; Task \`test-writer\` when nearby tests exist.
+2. If they ask to fix / add / change / re-test / seed data / run something → **do it** on the CURRENT branch (do not switch branches). Subagent flow (skip steps that do not apply — do not spawn all three by default): Task \`explore\` only if path still unclear after map/search; Task \`code-reviewer\` only after multi-file / shared-logic / risky diffs; Task \`test-writer\` only when nearby tests exist. Skip subagents for Q&A-only or trivial one-file edits.
 3. Prefer small, correct changes. Stay scoped to the request.
 4. If the request is vague: search the repo first; minor gaps → proceed with the standard interpretation and say so in your reply; only end with NEED_CLARIFICATION when truly blocked (batch ALL questions, numbered, with options + your recommended default).
 5. Do NOT \`git commit\`, \`git push\`, force-push, amend remote commits, or open/merge MRs. Flow Auto Work commits to GitLab via API after you finish.
