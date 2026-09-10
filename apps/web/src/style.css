@@ -3395,6 +3395,23 @@ a.faw-mseg__btn {
   line-height: 30px !important;
   font-weight: 500;
 }
+.faw-agent-mode-opt {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 2px 0;
+  line-height: 1.25;
+}
+.faw-agent-mode-opt__title {
+  font-weight: 500;
+  font-size: 12px;
+}
+.faw-agent-mode-opt__desc {
+  font-size: 11px;
+  color: var(--app-faint, #8b949e);
+  white-space: normal;
+  max-width: 260px;
+}
 .faw-ba-input-actions .faw-btn {
   height: 32px;
   padding: 0 12px;

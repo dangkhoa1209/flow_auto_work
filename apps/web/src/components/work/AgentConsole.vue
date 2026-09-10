@@ -729,25 +729,32 @@ watch(chatBox, (el, prev) => {
             Enter to send · Shift+Enter for newline
           </span>
           <div class="faw-ba-input-actions">
-            <a-tooltip
-              :title="
-                planFirst
-                  ? 'Plan — explore & write a plan only (no code until Approve Plan)'
-                  : 'Agent — implement / fix in the checkout'
-              "
+            <a-select
+              class="faw-agent-mode-select"
+              size="small"
+              option-label-prop="label"
+              :value="agentRunMode"
+              :disabled="stopBusy"
+              :dropdown-match-select-width="false"
+              @update:value="onAgentRunMode"
             >
-              <a-select
-                class="faw-agent-mode-select"
-                size="small"
-                :value="agentRunMode"
-                :disabled="stopBusy"
-                :dropdown-match-select-width="false"
-                @update:value="onAgentRunMode"
-              >
-                <a-select-option value="agent">Agent</a-select-option>
-                <a-select-option value="plan">Plan</a-select-option>
-              </a-select>
-            </a-tooltip>
+              <a-select-option value="agent" label="Agent">
+                <div class="faw-agent-mode-opt">
+                  <span class="faw-agent-mode-opt__title">Agent</span>
+                  <span class="faw-agent-mode-opt__desc"
+                    >Implement / fix in the checkout</span
+                  >
+                </div>
+              </a-select-option>
+              <a-select-option value="plan" label="Plan">
+                <div class="faw-agent-mode-opt">
+                  <span class="faw-agent-mode-opt__title">Plan</span>
+                  <span class="faw-agent-mode-opt__desc"
+                    >Explore & write a plan only (Approve Plan → code)</span
+                  >
+                </div>
+              </a-select-option>
+            </a-select>
             <a-tooltip
               title="Agent = code/fix. Plan = Cursor plan mode only → Approve Plan → code. Docs-first (Dev Notes) is separate: read → code → update docs."
             >
