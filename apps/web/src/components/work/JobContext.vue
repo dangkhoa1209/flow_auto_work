@@ -145,6 +145,24 @@ const canRevokeJobGoogle = computed(
     ),
 );
 
+/** Docs approve → Plan (agent) when Plan-first is on; else → Code. */
+const docsApproveNextHint = computed(() =>
+  props.planFirst
+    ? "Approve to continue with Plan-first (Cursor plan mode)"
+    : "Approve to run code",
+);
+
+const docsSummaryPreview = computed(
+  () => (props.currentJob?.docsSummary || "").trim() || null,
+);
+const planSummaryPreview = computed(
+  () => (props.currentJob?.planSummary || "").trim() || null,
+);
+const docsPathsPreview = computed(() => {
+  const paths = props.currentJob?.docsPaths;
+  return paths?.length ? paths : null;
+});
+
 function sheetLabel(s: { spreadsheetId: string; url: string }): string {
   try {
     const u = new URL(s.url);
@@ -489,8 +507,34 @@ onUnmounted(() => {
               type="success"
               show-icon
               class="mb-3"
-              message="Docs phase complete — approve to run code"
+              message="Docs-first complete — review analysis, then approve"
             >
+              <template #description>
+                <div class="text-[12px] text-ink-soft space-y-2">
+                  <p class="m-0">
+                    Project docs phase. {{ docsApproveNextHint }}
+                    Full report is also in Chat.
+                  </p>
+                  <div
+                    v-if="docsSummaryPreview"
+                    class="whitespace-pre-wrap rounded-md border border-[var(--app-border)] bg-[var(--app-panel-soft)] px-2.5 py-2 max-h-48 overflow-y-auto text-ink"
+                  >
+                    {{ docsSummaryPreview }}
+                  </div>
+                  <ul
+                    v-if="docsPathsPreview?.length"
+                    class="m-0 pl-4 text-[11px] text-ink-muted"
+                  >
+                    <li v-for="p in docsPathsPreview" :key="p">{{ p }}</li>
+                  </ul>
+                  <p
+                    v-if="!docsSummaryPreview"
+                    class="m-0 text-ink-muted"
+                  >
+                    No summary stored — open Chat for the agent report.
+                  </p>
+                </div>
+              </template>
               <template #action>
                 <a-button
                   size="small"
@@ -507,8 +551,28 @@ onUnmounted(() => {
               type="success"
               show-icon
               class="mb-3"
-              message="Plan ready — approve to run code"
+              message="Plan-first complete — review analysis, then approve"
             >
+              <template #description>
+                <div class="text-[12px] text-ink-soft space-y-2">
+                  <p class="m-0">
+                    Agent plan phase (Cursor plan mode). Approve to run code.
+                    Full report is also in Chat.
+                  </p>
+                  <div
+                    v-if="planSummaryPreview"
+                    class="whitespace-pre-wrap rounded-md border border-[var(--app-border)] bg-[var(--app-panel-soft)] px-2.5 py-2 max-h-56 overflow-y-auto text-ink"
+                  >
+                    {{ planSummaryPreview }}
+                  </div>
+                  <p
+                    v-if="!planSummaryPreview"
+                    class="m-0 text-ink-muted"
+                  >
+                    No summary stored — open Chat for the agent plan.
+                  </p>
+                </div>
+              </template>
               <template #action>
                 <a-button
                   size="small"
@@ -823,27 +887,53 @@ onUnmounted(() => {
                   }
                 "
               />
-              <div class="mt-2 flex items-center gap-1.5">
-                <a-switch
-                  :checked="requireDocsFirst"
-                  size="small"
-                  @update:checked="
-                    (v: boolean) => emit('update:requireDocsFirst', v)
-                  "
-                />
-                <span class="text-[11px] text-ink-muted"
-                  >Docs-first (read docs before coding)</span
-                >
-              </div>
-              <div class="mt-2 flex items-center gap-1.5">
-                <a-switch
-                  :checked="planFirst"
-                  size="small"
-                  @update:checked="(v: boolean) => emit('update:planFirst', v)"
-                />
-                <span class="text-[11px] text-ink-muted"
-                  >Plan-first (Cursor plan mode, then approve)</span
-                >
+              <div
+                class="mt-2 rounded-lg border border-[var(--app-border)] bg-[var(--app-panel-soft)] px-2.5 py-2 space-y-2"
+              >
+                <div class="text-[10px] uppercase tracking-wide text-ink-faint font-medium">
+                  Run gates
+                </div>
+                <div class="flex items-start gap-1.5">
+                  <a-switch
+                    class="mt-0.5"
+                    :checked="requireDocsFirst"
+                    size="small"
+                    @update:checked="
+                      (v: boolean) => emit('update:requireDocsFirst', v)
+                    "
+                  />
+                  <div class="min-w-0">
+                    <div class="text-[11px] text-ink-soft font-medium">
+                      Docs-first
+                      <span class="font-normal text-ink-faint"
+                        >(project)</span
+                      >
+                    </div>
+                    <div class="text-[10px] text-ink-muted leading-snug">
+                      Read/update feature docs in the repo, then approve before
+                      code
+                      <span v-if="planFirst"> (then Plan-first if on)</span>.
+                    </div>
+                  </div>
+                </div>
+                <div class="flex items-start gap-1.5">
+                  <a-switch
+                    class="mt-0.5"
+                    :checked="planFirst"
+                    size="small"
+                    @update:checked="(v: boolean) => emit('update:planFirst', v)"
+                  />
+                  <div class="min-w-0">
+                    <div class="text-[11px] text-ink-soft font-medium">
+                      Plan-first
+                      <span class="font-normal text-ink-faint">(agent)</span>
+                    </div>
+                    <div class="text-[10px] text-ink-muted leading-snug">
+                      Cursor plan mode explores and writes a plan; approve, then
+                      code. Analysis posts to Chat.
+                    </div>
+                  </div>
+                </div>
               </div>
 
               <div

@@ -328,9 +328,11 @@ ${linkedBlock}${sheetsBlock}${figmaBlock}
 5. When the plan is ready, end with EXACTLY this block:
 
 <<<PLAN_READY>>>
-PLAN: Vietnamese — structured plan (goals, files, steps, risks).
+ANALYZED: Vietnamese — what you analyzed (2–5 bullets): issue scope, neo code/files found, docs/rules skimmed, gaps or assumptions. Not only a file list.
+PLAN: Vietnamese — structured plan (mục tiêu, phạm vi, files/neo, rủi ro, bước implement).
 <<<END_PLAN_READY>>>
 
+Both ANALYZED and PLAN are required — Flow shows them in chat for the pair (PM/dev).
 Flow Auto Work will pause for the human to approve, then a later Run will implement in agent mode.
 ${gitlabCommentInstructions(issue)}`;
 }

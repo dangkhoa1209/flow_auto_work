@@ -1,5 +1,5 @@
 /**
- * Feature-docs phase: read docs for PM review, approve, re-run.
+ * Feature-docs phase (project-side Docs-first): read/update docs for PM review, approve, re-run.
  */
 import { loadJob, saveJob } from "../../job-store.js";
 import { jobQueue } from "../../queue.js";
@@ -30,7 +30,7 @@ export async function getJobDocsForReview(jobId: string) {
   };
 }
 
-/** PM approves feature docs → enqueue code phase. */
+/** PM approves feature docs → enqueue Plan (if Plan-first) or Code. */
 export async function approveJobDocs(jobId: string) {
   const job = await requireJobRecord(jobId, "job not found");
   if (job.status !== "awaiting_docs_approval") {

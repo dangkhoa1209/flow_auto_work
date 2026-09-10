@@ -1,5 +1,6 @@
 /**
- * Plan-first phase: agent explores in Cursor plan mode, then PM approves → code.
+ * Plan-first phase (agent-side): Cursor plan mode, then PM approves → code.
+ * Orthogonal to Docs-first (project docs). When both on: Docs → Plan → Code.
  */
 import { loadJob, saveJob } from "../../job-store.js";
 import { jobQueue } from "../../queue.js";

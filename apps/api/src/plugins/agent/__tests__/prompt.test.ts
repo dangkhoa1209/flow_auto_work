@@ -107,7 +107,7 @@ describe("parseAgentOutcome", () => {
 
   it("parses PLAN_READY block", () => {
     const out = parseAgentOutcome(
-      "<<<PLAN_READY>>>\nPLAN: sửa LoginForm.vue\n<<<END_PLAN_READY>>>",
+      "<<<PLAN_READY>>>\nANALYZED: đọc LoginForm\nPLAN: sửa LoginForm.vue\n<<<END_PLAN_READY>>>",
     );
     expect(out.kind).toBe("plan_ready");
     expect(out.summary).toContain("LoginForm");

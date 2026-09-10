@@ -50,6 +50,10 @@ import {
   formatDocsReadyChatBody,
   parseDocsReadyPaths,
 } from "./plugins/docs/analysis.js";
+import {
+  formatPlanReadyChatBody,
+  planReadySummaryText,
+} from "./plugins/agent/planReady.js";
 import type { CompletionActions, IssueJob, JobRecord, JobStatus } from "./types.js";
 import { busyIssueKey, busyIssueKeyForJob, isJobBusy, resolveDevNotes } from "./types.js";
 import { getRuntimeContext } from "./workspace/runtime.js";
@@ -400,7 +404,12 @@ export class JobQueue {
     });
   }
 
-  /** After PM approves feature docs → enqueue code phase. */
+  /**
+   * After PM approves feature docs → next phase.
+   * - Plan-first on → plan phase (Cursor plan mode)
+   * - else → code phase
+   * Docs-first is project-side (feature docs); Plan-first is agent-side.
+   */
   async enqueueCodeAfterDocsApproval(
     jobId: string,
   ): Promise<{ enqueued: boolean; reason?: string; jobId?: string }> {
@@ -420,6 +429,7 @@ export class JobQueue {
       devNotes: resolveDevNotes(job) || undefined,
       requireDocsFirst: job.requireDocsFirst,
       planFirst: job.planFirst,
+      // Skip docs; if planFirst, executeJob still runs plan (forceAgentPhase unset)
       forceCodePhase: true,
     });
   }
@@ -2476,15 +2486,31 @@ export class JobQueue {
           }),
         );
 
-        if (result.summary) {
+        let docsChat = formatDocsReadyChatBody(body, paths);
+        const hasDocsSections =
+          /### Đã phân tích|### Đã cập nhật docs|### Paths/.test(docsChat) ||
+          Boolean(summary?.trim());
+        if (!hasDocsSections) {
+          docsChat = extractChatBodyFromAgentText(result.text ?? "", {
+            summary: body || result.summary,
+          });
+        }
+        if (docsChat && docsChat !== "(no reply)") {
           await addChatMessage({
             jobId: job.id,
             issueIid: job.issue.issueIid,
             role: "agent",
             kind: "qa",
-            body: formatDocsReadyChatBody(body, paths),
+            body: docsChat,
           });
         }
+        appendJobProgress(
+          job.id,
+          "status",
+          summary
+            ? `Docs ready — awaiting approval (${summary.slice(0, 120)}${summary.length > 120 ? "…" : ""})`
+            : "Docs ready — awaiting approval (see Chat)",
+        );
 
         job.status = "awaiting_docs_approval";
         job.error = undefined;
@@ -2501,21 +2527,52 @@ export class JobQueue {
       }
 
       if (runPlanPhase) {
-        const body = result.summary ?? result.text ?? "";
-        job.planSummary = body.slice(0, 8000) || undefined;
+        if (result.kind !== "plan_ready" && result.kind !== "unknown") {
+          logger.warn("Plan phase ended without PLAN_READY", {
+            jobId: job.id,
+            kind: result.kind,
+          });
+        }
+
+        const tagged = (result.summary ?? "").trim();
+        const rawText = (result.text ?? "").trim();
+        const summary =
+          (planReadySummaryText(tagged) ||
+            planReadySummaryText(rawText) ||
+            tagged ||
+            rawText ||
+            "").slice(0, 8000) || undefined;
+        job.planSummary = summary;
         job.planApprovedAt = undefined;
 
-        if (result.summary || result.text) {
+        const formatSource = tagged || rawText;
+        let planChat = formatPlanReadyChatBody(formatSource);
+        const hasPlanSections = /### Đã phân tích|### Kế hoạch/.test(planChat);
+        if (!hasPlanSections && formatSource) {
+          // Formatter only has "PLAN READY:" chrome — prefer prose / summary
+          planChat = extractChatBodyFromAgentText(rawText, {
+            summary: tagged || summary,
+          });
+          if (!planChat || planChat === "(no reply)") {
+            planChat = formatPlanReadyChatBody(formatSource);
+          }
+        }
+        if (planChat && planChat !== "(no reply)") {
           await addChatMessage({
             jobId: job.id,
             issueIid: job.issue.issueIid,
             role: "agent",
             kind: "qa",
-            body: extractChatBodyFromAgentText(result.text, {
-              summary: result.summary,
-            }),
+            body: planChat,
           });
         }
+        appendJobProgress(
+          job.id,
+          "status",
+          summary
+            ? `Plan ready — awaiting approval (${summary.slice(0, 120)}${summary.length > 120 ? "…" : ""})`
+            : "Plan ready — awaiting approval (see Chat)",
+        );
 
         job.status = "awaiting_plan_approval";
         job.error = undefined;

@@ -78,6 +78,10 @@ export type Job = {
   baseBranch?: string;
   requireDocsFirst?: boolean;
   planFirst?: boolean;
+  /** Docs-phase analysis (Vietnamese) — shown while awaiting docs approval */
+  docsSummary?: string;
+  docsPaths?: string[];
+  /** Plan-phase analysis (Vietnamese) — shown while awaiting plan approval */
   planSummary?: string;
   lastQuestion?: string;
   devNotes?: string;
@@ -932,7 +936,7 @@ export const useWorkStore = defineStore("work", () => {
     }
   }
 
-  /** PM approves docs-first phase → enqueue code. */
+  /** PM approves docs-first → Plan (if Plan-first) or Code. */
   async function approveDocs(jobId: string) {
     agentTyping.value = true;
     progressAfterId.value = 0;
