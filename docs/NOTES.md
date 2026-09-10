@@ -127,12 +127,12 @@ Run / follow-up chat (mọi chỗ gọi Cursor để code)
 | Điều kiện | Prompt / phía |
 |-----------|----------------|
 | **Docs-first** (project), chưa duyệt | Docs only — đọc/cập nhật `docs/` feature; báo cáo ANALYZED + SUMMARY ra Chat; chờ Approve |
-| **Plan-first** (agent), chưa duyệt | Cursor `mode: plan` — không sửa file; báo cáo ANALYZED + PLAN ra Chat; chờ Approve |
-| Cả hai bật | Docs → Approve Docs → Plan → Approve Plan → Code |
-| Thường / sau Approve | Code — implement + commit `feat #<iid> …` |
+| **Plan** (composer), chưa duyệt | Cursor `mode: plan` — không sửa file; báo cáo ANALYZED + PLAN ra Chat; chờ Approve |
+| Docs-first + composer Plan | Docs → Approve Docs → Plan → Approve Plan → Code |
+| Composer **Agent** / sau Approve | Code — implement + commit `feat #<iid> …` |
 
-- **Docs-first** = phía **project** (tài liệu feature trong repo).
-- **Plan-first** = phía **agent** (Cursor plan mode).
+- **Docs-first** = phía **project** (switch trong Run gates / Dev Notes).
+- **Plan vs Agent** = phía **composer** (dropdown cạnh Send): **Plan** = chỉ lên plan; **Agent** = code.
 - Khi phase xong, UI hiện summary phân tích trên alert + Chat (không chỉ nút Docs/Plan rồi ẩn).
 
 Clarify (agent hỏi giữa chừng): `NEED_CLARIFICATION` → UI → `buildResumePrompt` trên cùng window.
@@ -146,8 +146,8 @@ Clarify (agent hỏi giữa chừng): `NEED_CLARIFICATION` → UI → `buildResu
 | `queued` / `running` | Đang chờ / đang chạy agent |
 | `draft` | Chưa run, hoặc **Bad Context** đã chặn (bổ sung rồi Run lại) |
 | `awaiting_clarification` | Agent hỏi giữa run — trả lời trên UI |
-| `awaiting_docs_approval` | Docs feature xong — chờ Approve (tiếp Plan nếu Plan-first, không thì Code) |
-| `awaiting_plan_approval` | Plan-first xong — chờ Approve rồi Code |
+| `awaiting_docs_approval` | Docs feature xong — chờ Approve (tiếp Plan nếu composer = Plan, không thì Code) |
+| `awaiting_plan_approval` | Composer Plan xong — chờ Approve rồi Code |
 | `awaiting_handoff` | Code xong — chờ assign/labels |
 | `succeeded` | Đã handoff |
 | `failed` | Lỗi / force stop |
@@ -168,7 +168,7 @@ Clarify (agent hỏi giữa chừng): `NEED_CLARIFICATION` → UI → `buildResu
 
 1. Click task → ensure 1 job + đọc GitLab.  
 2. Dev Notes trên job Mongo.  
-3. Docs-first (project, optional) và/hoặc Plan-first (agent, optional) → Approve từng phase → Code.  
+3. Docs-first (project, optional) và/hoặc composer **Plan** (dropdown cạnh Send) → Approve từng phase → Code.  
 4. Run / Run all (bỏ qua job busy).  
 5. Related/child → modal preview (không mở job).
 

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { DownOutlined } from "@ant-design/icons-vue";
 import ChatMessageBody from "@/components/ChatMessageBody.vue";
 import RepoTerminal from "@/components/work/RepoTerminal.vue";
@@ -41,18 +41,27 @@ const props = withDefaults(
     canResetWindow: boolean;
     agentWindowShort: string | null;
     contextQuality: Job["contextQuality"] | null;
+    /** Agent = code; Plan = Cursor plan mode only */
+    planFirst?: boolean;
     /** Mobile: Chat | Logs tabs instead of split panes */
     mobileTabs?: boolean;
   }>(),
-  { mobileTabs: false },
+  { mobileTabs: false, planFirst: false },
 );
 
 const emit = defineEmits<{
   "update:chatInput": [string];
+  "update:planFirst": [boolean];
   sendChat: ["continue" | "ask"];
   forceStop: [];
   resetWindow: [];
 }>();
+
+const agentRunMode = computed(() => (props.planFirst ? "plan" : "agent"));
+
+function onAgentRunMode(v: string) {
+  emit("update:planFirst", v === "plan");
+}
 
 /** Enter → Send; Shift+Enter → newline (IME composition ignored). */
 function onChatKeydown(e: KeyboardEvent) {
@@ -720,11 +729,34 @@ watch(chatBox, (el, prev) => {
             Enter to send · Shift+Enter for newline
           </span>
           <div class="faw-ba-input-actions">
+            <a-tooltip
+              :title="
+                planFirst
+                  ? 'Plan — explore & write a plan only (no code until Approve Plan)'
+                  : 'Agent — implement / fix in the checkout'
+              "
+            >
+              <a-select
+                class="faw-agent-mode-select"
+                size="small"
+                :value="agentRunMode"
+                :disabled="stopBusy"
+                :dropdown-match-select-width="false"
+                @update:value="onAgentRunMode"
+              >
+                <a-select-option value="agent">Agent</a-select-option>
+                <a-select-option value="plan">Plan</a-select-option>
+              </a-select>
+            </a-tooltip>
             <button
               type="button"
               class="faw-btn faw-btn--run faw-btn--send"
               :disabled="!chatInput.trim() || stopBusy"
-              title="Queue command — agent runs in the background"
+              :title="
+                planFirst
+                  ? 'Queue plan-only run (Cursor plan mode)'
+                  : 'Queue command — agent runs in the background'
+              "
               @click="emit('sendChat', 'continue')"
             >
               Send

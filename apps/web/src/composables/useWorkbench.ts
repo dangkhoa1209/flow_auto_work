@@ -724,7 +724,10 @@ export function useWorkbench() {
             await projectClone.withCloneRetry(() => work.sendAsk(msg));
           } else {
             const res = await projectClone.withCloneRetry(() =>
-              work.createAdhocSession({ message: msg }),
+              work.createAdhocSession({
+                message: msg,
+                planFirst: planFirst.value,
+              }),
             );
             if (!res) return;
           }
@@ -736,7 +739,9 @@ export function useWorkbench() {
           currentJob.value?.status === "awaiting_clarification";
         if (useContinue) {
           const res = await projectClone.withCloneRetry(() =>
-            work.sendContinue(msg),
+            work.sendContinue(msg, {
+              planFirst: mode === "continue" ? planFirst.value : undefined,
+            }),
           );
           if (!res) return;
         } else {

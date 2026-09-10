@@ -852,7 +852,10 @@ export const useWorkStore = defineStore("work", () => {
     ];
   }
 
-  async function sendContinue(message: string) {
+  async function sendContinue(
+    message: string,
+    opts?: { planFirst?: boolean },
+  ) {
     if (!selectedJobId.value) throw new Error("No job selected");
     if (isSelectedJobAgentBusy()) {
       throw new Error("Agent đang bận — đợi xong hoặc Force Stop rồi gửi lại");
@@ -868,11 +871,21 @@ export const useWorkStore = defineStore("work", () => {
         question?: string;
       }>(`/api/jobs/${selectedJobId.value}/continue`, {
         method: "POST",
-        body: JSON.stringify({ message }),
+        body: JSON.stringify({
+          message,
+          planFirst: opts?.planFirst,
+        }),
       });
       if (currentJob.value?.id === selectedJobId.value) {
         // Optimistic: composer locked + thinking until SSE idle
-        currentJob.value = { ...currentJob.value, status: "queued" };
+        currentJob.value = {
+          ...currentJob.value,
+          status: "queued",
+          planFirst:
+            opts?.planFirst !== undefined
+              ? opts.planFirst
+              : currentJob.value.planFirst,
+        };
       }
       await refreshJobChat(selectedJobId.value);
       await loadJobs().catch(() => undefined);
@@ -936,7 +949,7 @@ export const useWorkStore = defineStore("work", () => {
     }
   }
 
-  /** PM approves docs-first → Plan (if Plan-first) or Code. */
+  /** PM approves docs-first → Plan (if composer Plan) or Code. */
   async function approveDocs(jobId: string) {
     agentTyping.value = true;
     progressAfterId.value = 0;
@@ -1044,6 +1057,7 @@ export const useWorkStore = defineStore("work", () => {
     title?: string;
     message?: string;
     labels?: string[];
+    planFirst?: boolean;
   }) {
     const res = await api<{ job: Job; started?: boolean }>("/api/jobs/adhoc", {
       method: "POST",

@@ -116,6 +116,8 @@ export type AdhocJobInput = {
   title?: string;
   message?: string;
   labels?: string[];
+  /** Agent-side: first Send in Plan mode → plan phase only */
+  planFirst?: boolean;
 };
 
 /** Free session / ad-hoc agent (no GitLab issue yet). Title optional when message is set. */
@@ -124,20 +126,28 @@ export async function createAdhocSession(input: AdhocJobInput) {
   const title =
     input.title?.trim() || (message ? titleFromWorkRequest(message) : "");
   if (!title) throw new AppError("title or message required", 400);
+  const planFirst =
+    input.planFirst !== undefined ? Boolean(input.planFirst) : undefined;
   try {
     const job = await createAdhocJob({
       title,
       labels: input.labels,
       source: "ui_adhoc",
     });
+    if (planFirst !== undefined) {
+      job.planFirst = planFirst;
+      await saveJob(job);
+    }
     if (message) {
       // Fire follow-up async so UI can select job + stream progress
-      void jobQueue.followUpChat(job.id, message).catch((err) => {
-        logger.error("Adhoc first message failed", {
-          jobId: job.id,
-          err: err instanceof Error ? err.message : String(err),
+      void jobQueue
+        .followUpChat(job.id, message, { planFirst })
+        .catch((err) => {
+          logger.error("Adhoc first message failed", {
+            jobId: job.id,
+            err: err instanceof Error ? err.message : String(err),
+          });
         });
-      });
     }
     return { job, started: Boolean(message) };
   } catch (err) {

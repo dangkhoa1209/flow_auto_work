@@ -62,7 +62,6 @@ const emit = defineEmits<{
   "update:midTab": [MidTab];
   "update:notesDraft": [string];
   "update:requireDocsFirst": [boolean];
-  "update:planFirst": [boolean];
   openStandards: [];
   openCreateIssue: [];
   openRelated: [opts: { iid: number; title?: string; url?: string }];
@@ -145,10 +144,10 @@ const canRevokeJobGoogle = computed(
     ),
 );
 
-/** Docs approve → Plan (agent) when Plan-first is on; else → Code. */
+/** Docs approve → Plan (composer Plan mode) when on; else → Code. */
 const docsApproveNextHint = computed(() =>
   props.planFirst
-    ? "Approve to continue with Plan-first (Cursor plan mode)"
+    ? "Approve to continue with Plan (Cursor plan mode)"
     : "Approve to run code",
 );
 
@@ -551,7 +550,7 @@ onUnmounted(() => {
               type="success"
               show-icon
               class="mb-3"
-              message="Plan-first complete — review analysis, then approve"
+              message="Plan complete — review analysis, then approve"
             >
               <template #description>
                 <div class="text-[12px] text-ink-soft space-y-2">
@@ -912,25 +911,9 @@ onUnmounted(() => {
                     <div class="text-[10px] text-ink-muted leading-snug">
                       Read/update feature docs in the repo, then approve before
                       code
-                      <span v-if="planFirst"> (then Plan-first if on)</span>.
-                    </div>
-                  </div>
-                </div>
-                <div class="flex items-start gap-1.5">
-                  <a-switch
-                    class="mt-0.5"
-                    :checked="planFirst"
-                    size="small"
-                    @update:checked="(v: boolean) => emit('update:planFirst', v)"
-                  />
-                  <div class="min-w-0">
-                    <div class="text-[11px] text-ink-soft font-medium">
-                      Plan-first
-                      <span class="font-normal text-ink-faint">(agent)</span>
-                    </div>
-                    <div class="text-[10px] text-ink-muted leading-snug">
-                      Cursor plan mode explores and writes a plan; approve, then
-                      code. Analysis posts to Chat.
+                      <span v-if="planFirst">
+                        (then Plan if composer mode is Plan)</span
+                      >.
                     </div>
                   </div>
                 </div>

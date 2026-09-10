@@ -467,6 +467,7 @@ export class JobQueue {
   async followUpChat(
     jobId: string,
     message: string,
+    opts?: { planFirst?: boolean },
   ): Promise<{
     ok: boolean;
     queued?: boolean;
@@ -551,10 +552,40 @@ export class JobQueue {
       jobId,
       level: quality.level,
       cached: Boolean(quality.cached),
+      planFirst: opts?.planFirst,
     });
 
     const budgetError = this.tokenBudgetError(job);
     if (budgetError) throw new Error(budgetError);
+
+    // Composer mode Plan: Cursor plan phase (not coding follow-up)
+    if (opts?.planFirst === true) {
+      job.planFirst = true;
+      job.planApprovedAt = undefined;
+      await saveJob(job);
+      const enq = await this.enqueue(job.issue, {
+        source: "chat_plan",
+        completion: job.completion,
+        devNotes: resolveDevNotes(job) || undefined,
+        requireDocsFirst: job.requireDocsFirst,
+        planFirst: true,
+      });
+      if (!enq.enqueued) {
+        throw new Error(enq.reason ?? "Could not enqueue plan run");
+      }
+      const updated = (await loadJob(job.id)) || job;
+      return {
+        ok: true,
+        queued: true,
+        job: updated,
+        kind: "plan",
+      };
+    }
+
+    if (opts?.planFirst === false) {
+      job.planFirst = false;
+      await saveJob(job);
+    }
 
     const restoreStatus = job.status;
     job.pendingFollowUpMessage = msg;
