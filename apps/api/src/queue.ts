@@ -997,6 +997,27 @@ export class JobQueue {
       });
     }
 
+    // BA parity: paste #id / GitLab issue link in chat → read-only task block
+    let gitlabTaskBlock = "";
+    try {
+      const { prepareWorkGitlabTaskBlock } = await import(
+        "./plugins/gitlab/work-chat-gitlab.js"
+      );
+      const gitlabPrep = await prepareWorkGitlabTaskBlock({
+        texts: [...priorChat.map((m) => m.body || ""), msg],
+        excludeIid: job.issue.issueIid > 0 ? job.issue.issueIid : undefined,
+      });
+      if (gitlabPrep.progressLabel) {
+        appendJobProgress(job.id, "status", gitlabPrep.progressLabel);
+      }
+      gitlabTaskBlock = gitlabPrep.block || "";
+    } catch (err) {
+      logger.warn("GitLab task prep failed on follow-up — continue without", {
+        jobId: job.id,
+        err: String(err),
+      });
+    }
+
     const runFollowUp = async (): Promise<void> => {
       const rt = getRuntimeContext();
       const repoPath = rt?.repoPath?.trim();
@@ -1060,6 +1081,7 @@ export class JobQueue {
           contextQualityBlock,
           googleSheetsBlock: googleSheetsBlock || undefined,
           figmaBlock: figmaBlock || undefined,
+          gitlabTaskBlock: gitlabTaskBlock || undefined,
           conflictResolveBlock: conflictBlock,
         }),
       );

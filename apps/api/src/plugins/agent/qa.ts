@@ -124,6 +124,28 @@ export async function answerTaskQuestion(opts: {
 
   const graphifyBlock = await loadWorkGraphifyBlock(jobId);
 
+  // BA parity: paste #id / GitLab link in Ask chat → read-only task block
+  let gitlabTaskBlock = "";
+  try {
+    const { prepareWorkGitlabTaskBlock } = await import(
+      "../gitlab/work-chat-gitlab.js"
+    );
+    const historyTexts = (opts.history ?? []).map((t) => t.body || "");
+    const gitlabPrep = await prepareWorkGitlabTaskBlock({
+      texts: [...historyTexts, opts.question],
+      excludeIid:
+        opts.issue.issueIid > 0 ? opts.issue.issueIid : undefined,
+    });
+    if (jobId && gitlabPrep.progressLabel) {
+      appendJobProgress(jobId, "status", gitlabPrep.progressLabel);
+    }
+    gitlabTaskBlock = gitlabPrep.block || "";
+  } catch (err) {
+    logger.warn("Q&A GitLab task load failed — continue without", {
+      err: String(err),
+    });
+  }
+
   // Prefer job work commits (id → change) over a long branch git-log.
   const commitsBlock = jobCommitLines.length
     ? jobCommitLines.join("\n")
@@ -132,7 +154,7 @@ export async function answerTaskQuestion(opts: {
   const prompt = `You are in **Q&A / review mode** on the same agent window as this job (NOT a full coding Run).
 
 ## Hard rules for this turn
-1. Answer the human's question using the issue, **job chat history**, diff, and codebase — prefer work-task history on this job over unrelated branch commits.
+1. Answer the human's question using the issue, **job chat history**, diff, and codebase — prefer work-task history on this job over unrelated branch commits. If a **GitLab task (chỉ đọc)** block is present (from pasted \`#id\` / link), use it — do not call GitLab yourself.
 2. Prefer a clear Vietnamese answer with concrete file/paths/commands they can run.
 3. Do **NOT** execute long-running work: no DB mutations that take minutes, no queue workers left running, no seed scripts that hang.
 4. You may briefly grep/read files — then **stop and answer**. Prefer \`code_map_query\` before Grep when that tool is attached.
@@ -148,8 +170,7 @@ Labels: ${opts.issue.labels.join(", ") || "(none)"}
 ## Description
 ${opts.issue.description || "(empty)"}
 
-${linked.promptBlock || ""}
-
+${linked.promptBlock || ""}${gitlabTaskBlock ? `\n${gitlabTaskBlock}\n` : ""}
 ## Current branch / job commits (id → code change)
 Branch: ${diff.branch} (base ${diff.base})
 ${commitsBlock}

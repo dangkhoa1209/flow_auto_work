@@ -148,6 +148,24 @@ describe("extractBaIssueRefs", () => {
   });
 });
 
+describe("loadBaGitlabTaskBlock excludeIids", () => {
+  it("skips primary job iid so /work does not re-fetch it", async () => {
+    const { loadBaGitlabTaskBlock } = await import(
+      "../../gitlab/ba-issue-read.js"
+    );
+    const { refs, block } = await loadBaGitlabTaskBlock({
+      gitlabHost: "https://gitlab.com",
+      gitlabPath: "group/app",
+      token: null,
+      texts: ["xem #10 và #20"],
+      excludeIids: [10],
+    });
+    expect(refs.map((r) => r.iid)).toEqual([20]);
+    expect(block).toContain("#20");
+    expect(block).not.toMatch(/#10\b/);
+  });
+});
+
 describe("formatBaIssueSnapshot", () => {
   it("renders title, description, and comments", () => {
     const body = formatBaIssueSnapshot({

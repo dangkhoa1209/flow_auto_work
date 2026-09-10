@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildAdhocFollowUpPrompt,
+  buildFollowUpPrompt,
   buildWorkPrompt,
   commitMessageForIssue,
   docsCommitMessageForIssue,
@@ -191,5 +193,42 @@ describe("buildWorkPrompt graphify", () => {
     expect(prompt).toMatch(/COMMIT:/);
     expect(prompt).toContain(`feat #${issue.issueIid}`);
     expect(prompt).toMatch(/issue title/);
+  });
+
+  it("nudges Task subagents in hard tasks and execution plan", () => {
+    const prompt = buildWorkPrompt(issue);
+    expect(prompt).toMatch(/Use Task\/subagents/);
+    expect(prompt).toMatch(/Task `explore`/);
+    expect(prompt).toMatch(/Task `code-reviewer`/);
+    expect(prompt).toMatch(/Task `test-writer`/);
+  });
+});
+
+describe("follow-up GitLab task + subagents", () => {
+  it("injects GitLab task block and subagent guidance on linked follow-up", () => {
+    const prompt = buildFollowUpPrompt("xem #55 giúp mình", issue, {
+      gitlabTaskBlock:
+        "## GitLab task (chỉ đọc — hệ thống đã kéo sẵn)\n### #55 — Demo",
+    });
+    expect(prompt).toContain("GitLab task (chỉ đọc");
+    expect(prompt).toContain("#55 — Demo");
+    expect(prompt).toMatch(/Task `explore`/);
+    expect(prompt).toMatch(/do not call GitLab yourself/);
+  });
+
+  it("adhoc follow-up notes pasted GitLab context when block present", () => {
+    const prompt = buildAdhocFollowUpPrompt("phân tích #12", "hotfix", {
+      gitlabTaskBlock:
+        "## GitLab task (chỉ đọc — hệ thống đã kéo sẵn)\n### #12 — Fix",
+    });
+    expect(prompt).toMatch(/already loaded them into \*\*GitLab task/);
+    expect(prompt).toContain("#12 — Fix");
+    expect(prompt).toMatch(/Task `explore`/);
+  });
+
+  it("adhoc without block still mentions paste #id / link", () => {
+    const prompt = buildAdhocFollowUpPrompt("hello", "hotfix");
+    expect(prompt).toMatch(/paste a GitLab \*\*link\*\* or `#id`/);
+    expect(prompt).not.toContain("GitLab task (chỉ đọc — hệ thống đã kéo sẵn)");
   });
 });
