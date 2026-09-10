@@ -386,7 +386,7 @@ export async function ensureProjectGraphifyReady(
   const graphJson = graphifyGraphJsonForSource(source);
   if (await pathExists(graphJson)) return true;
 
-  const timeoutMs = opts?.timeoutMs ?? 15_000;
+  const timeoutMs = opts?.timeoutMs ?? 90_000;
   if (!inFlight.has(source)) {
     inFlight.add(source);
     void (async () => {
@@ -614,7 +614,7 @@ export async function prepareWorkGraphifyContext(opts: {
     return { block: "", queryText: null, status: "disabled" };
   }
   const ok = await ensureProjectGraphifyReady(opts.sourcePath, {
-    timeoutMs: opts.timeoutMs ?? 15_000,
+    timeoutMs: opts.timeoutMs ?? 45_000,
   });
   return {
     block: formatWorkGraphifyPromptBlock({ sourcePath: opts.sourcePath }),

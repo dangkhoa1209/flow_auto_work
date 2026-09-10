@@ -486,7 +486,7 @@ export async function runBaWorkflowStep(opts: {
     await pullBaProjectLatest(project);
     session.check();
 
-    await ensureProjectGraphifyReady(project.localPath, { timeoutMs: 15_000 });
+    await ensureProjectGraphifyReady(project.localPath, { timeoutMs: 90_000 });
     session.check();
     const graphifyQuery = await queryProjectGraphify(
       project.localPath,
