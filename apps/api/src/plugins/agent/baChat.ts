@@ -569,7 +569,7 @@ export async function runBaChatAgent(opts: {
       step: "read",
       label: "Đang chuẩn bị code map (graphify)…",
     });
-    await ensureProjectGraphifyReady(project.localPath, { timeoutMs: 90_000 });
+    await ensureProjectGraphifyReady(project.localPath, { timeoutMs: 15_000 });
     session.check();
     const graphifyQuery = await queryProjectGraphify(
       project.localPath,
