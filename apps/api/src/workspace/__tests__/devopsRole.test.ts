@@ -2,8 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   canAccessBa,
   canAccessDevops,
+  canAccessProjectChat,
+  canAccessQc,
   canConfigureDevopsScripts,
+  isBaAudience,
   isDevopsAudience,
+  isQcAudience,
   normalizeUserRoles,
   primaryHomePath,
 } from "../types.js";
@@ -31,10 +35,22 @@ describe("devops role helpers", () => {
     expect(canConfigureDevopsScripts(["devops", "dev"])).toBe(true);
   });
 
-  it("lets devops open project chat", () => {
+  it("splits BA and QC project chat surfaces", () => {
     expect(canAccessBa(["devops"])).toBe(true);
     expect(canAccessBa(["ba"])).toBe(true);
-    expect(canAccessBa(["qc"])).toBe(true);
+    expect(canAccessBa(["pd"])).toBe(true);
+    expect(canAccessBa(["qc"])).toBe(false);
+    expect(isBaAudience(["qc"])).toBe(false);
+    expect(isBaAudience(["ba"])).toBe(true);
+
+    expect(canAccessQc(["qc"])).toBe(true);
+    expect(canAccessQc(["devops"])).toBe(true);
+    expect(canAccessQc(["ba"])).toBe(false);
+    expect(isQcAudience(["qc"])).toBe(true);
+    expect(isQcAudience(["ba"])).toBe(false);
+
+    expect(canAccessProjectChat(["qc"])).toBe(true);
+    expect(canAccessProjectChat(["ba"])).toBe(true);
   });
 
   it("sends devops-only users to /devops", () => {
@@ -42,5 +58,11 @@ describe("devops role helpers", () => {
     expect(isDevopsAudience(["devops", "dev"])).toBe(false);
     expect(primaryHomePath(["devops"])).toBe("/devops");
     expect(primaryHomePath(["devops", "dev"])).toBe("/work");
+  });
+
+  it("sends qc-only users to /qc and ba/pd to /ba", () => {
+    expect(primaryHomePath(["qc"])).toBe("/qc");
+    expect(primaryHomePath(["ba"])).toBe("/ba");
+    expect(primaryHomePath(["pd"])).toBe("/ba");
   });
 });

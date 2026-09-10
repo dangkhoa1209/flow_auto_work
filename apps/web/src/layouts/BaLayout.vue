@@ -7,6 +7,7 @@ import AppTopbarRight from "@/components/layout/AppTopbarRight.vue";
 import AppSwitcher from "@/components/layout/AppSwitcher.vue";
 import { useSessionStore } from "@/stores/session";
 import { useBaChatStore } from "@/stores/baChat";
+import { useProjectChatBase } from "@/composables/useProjectChatBase";
 import BaProjectSelect from "@/components/ba/BaProjectSelect.vue";
 import BaGitPatModal from "@/components/ba/BaGitPatModal.vue";
 import BaSyncDbControl from "@/components/ba/BaSyncDbControl.vue";
@@ -16,6 +17,7 @@ const router = useRouter();
 const route = useRoute();
 const session = useSessionStore();
 const ba = useBaChatStore();
+const { basePath, routeName } = useProjectChatBase();
 const sideOpen = ref(false);
 
 const statusDot = computed(() => (ba.streaming ? "wip" : "idle"));
@@ -28,9 +30,9 @@ const statusText = computed(() =>
 );
 
 const navActive = computed(() => {
-  if (route.path.startsWith("/ba/settings")) return "settings";
-  if (route.name === "ba-workflow") return "workflow";
-  if (route.name === "ba-tasks") return "tasks";
+  if (route.path.startsWith(`${basePath.value}/settings`)) return "settings";
+  if (route.name === routeName("workflow")) return "workflow";
+  if (route.name === routeName("tasks")) return "tasks";
   return "chat";
 });
 
@@ -44,14 +46,14 @@ const workflowTabLabel = computed(() =>
 const tasksTabLabel = computed(() => ba.featureLabel("tasks", "Tasks"));
 
 watch(
-  () => [ba.featuresLoaded, route.name] as const,
+  () => [ba.featuresLoaded, route.name, basePath.value] as const,
   ([loaded, name]) => {
     if (!loaded) return;
     if (
-      (name === "ba-workflow" && !showWorkflowTab.value) ||
-      (name === "ba-tasks" && !showTasksTab.value)
+      (name === routeName("workflow") && !showWorkflowTab.value) ||
+      (name === routeName("tasks") && !showTasksTab.value)
     ) {
-      void router.replace({ name: "ba-chat" });
+      void router.replace({ name: routeName("chat") });
     }
   },
   { immediate: true },
@@ -94,7 +96,7 @@ onMounted(() => {
         <MenuOutlined />
       </button>
 
-      <RouterLink to="/ba" class="faw-brand" title="Project Chat">
+      <RouterLink :to="basePath" class="faw-brand" title="Project Chat">
         <img
           class="faw-brand__logo faw-brand__logo--full"
           src="/logo.svg"
@@ -117,7 +119,7 @@ onMounted(() => {
 
       <nav v-if="navActive !== 'settings'" class="faw-seg hidden lg:flex">
         <RouterLink
-          to="/ba"
+          :to="basePath"
           class="faw-seg__btn"
           :class="{ active: navActive === 'chat' }"
         >
@@ -125,7 +127,7 @@ onMounted(() => {
         </RouterLink>
         <RouterLink
           v-if="showWorkflowTab"
-          to="/ba/workflow"
+          :to="`${basePath}/workflow`"
           class="faw-seg__btn"
           :class="{ active: navActive === 'workflow' }"
         >
@@ -133,7 +135,7 @@ onMounted(() => {
         </RouterLink>
         <RouterLink
           v-if="showTasksTab"
-          to="/ba/tasks"
+          :to="`${basePath}/tasks`"
           class="faw-seg__btn"
           :class="{ active: navActive === 'tasks' }"
         >
@@ -153,7 +155,7 @@ onMounted(() => {
       <div class="faw-topbar__spacer hidden lg:block" />
 
       <!-- One instance: mobile CSS already hides desktop chrome + settings -->
-      <AppTopbarRight settings-to="/ba/settings/gitlab">
+      <AppTopbarRight :settings-to="`${basePath}/settings/gitlab`">
         <template #status>
           <span class="faw-idle faw-ba-idle">
             <span class="faw-idle__dot" :class="statusDot" />
@@ -172,10 +174,10 @@ onMounted(() => {
     <nav
       v-if="navActive !== 'settings'"
       class="faw-mseg lg:hidden"
-      aria-label="BA sections"
+      aria-label="Project chat sections"
     >
       <RouterLink
-        to="/ba"
+        :to="basePath"
         class="faw-mseg__btn"
         :class="{ active: navActive === 'chat' }"
       >
@@ -183,7 +185,7 @@ onMounted(() => {
       </RouterLink>
       <RouterLink
         v-if="showWorkflowTab"
-        to="/ba/workflow"
+        :to="`${basePath}/workflow`"
         class="faw-mseg__btn"
         :class="{ active: navActive === 'workflow' }"
       >
@@ -191,7 +193,7 @@ onMounted(() => {
       </RouterLink>
       <RouterLink
         v-if="showTasksTab"
-        to="/ba/tasks"
+        :to="`${basePath}/tasks`"
         class="faw-mseg__btn"
         :class="{ active: navActive === 'tasks' }"
       >

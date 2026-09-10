@@ -116,13 +116,22 @@ export const useSessionStore = defineStore("session", () => {
 
   const isAdmin = computed(() => roles.value.includes("admin"));
 
-/** pd / ba / qc only — primary home is Project chat. */
+  /** pd / ba only — primary home is /ba Project chat. */
   const isBaAudience = computed(() => {
     const r = roles.value;
     if (r.includes("admin")) return false;
     if (r.includes("dev")) return false;
     if (r.includes("devops")) return false;
-    return r.includes("ba") || r.includes("pd") || r.includes("qc");
+    return r.includes("ba") || r.includes("pd");
+  });
+
+  /** qc only — primary home is /qc Project chat. */
+  const isQcAudience = computed(() => {
+    const r = roles.value;
+    if (r.includes("admin")) return false;
+    if (r.includes("dev")) return false;
+    if (r.includes("devops")) return false;
+    return r.includes("qc");
   });
 
   const canAccessWork = computed(() =>
@@ -132,6 +141,12 @@ export const useSessionStore = defineStore("session", () => {
   const canAccessBa = computed(
     () =>
       isBaAudience.value ||
+      hasAnyRole(roles.value, "admin", "dev", "devops"),
+  );
+
+  const canAccessQc = computed(
+    () =>
+      isQcAudience.value ||
       hasAnyRole(roles.value, "admin", "dev", "devops"),
   );
 
@@ -156,8 +171,10 @@ export const useSessionStore = defineStore("session", () => {
     resolveHomeRoute({
       isAdmin: isAdmin.value,
       isDevopsAudience: isDevopsAudience.value,
+      isQcAudience: isQcAudience.value,
       canAccessWork: canAccessWork.value,
       canAccessBa: canAccessBa.value,
+      canAccessQc: canAccessQc.value,
       canAccessDevops: canAccessDevops.value,
     }),
   );
@@ -384,8 +401,10 @@ export const useSessionStore = defineStore("session", () => {
     isLoggedIn,
     isAdmin,
     isBaAudience,
+    isQcAudience,
     canAccessWork,
     canAccessBa,
+    canAccessQc,
     canAccessDevops,
     canConfigureDevopsScripts,
     isDevopsAudience,

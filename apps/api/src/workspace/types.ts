@@ -233,20 +233,37 @@ export function userHasRole(
   return normalizeUserRoles(u?.roles).includes(role);
 }
 
-/** Project chat audience: pd / ba / qc (not dev or devops — those have their own home). */
-export function isBaAudience(
+function audienceRoles(
   roles?: UserRole[] | null | Pick<WorkspaceUser, "roles">,
-): boolean {
+): UserRole[] {
   const list = Array.isArray(roles)
     ? roles
     : normalizeUserRoles(
         (roles as Pick<WorkspaceUser, "roles"> | null | undefined)?.roles,
       );
-  const r = normalizeUserRoles(list as UserRole[]);
+  return normalizeUserRoles(list as UserRole[]);
+}
+
+/** BA Project chat audience: pd / ba (not qc — QC has /qc; not dev/devops/admin). */
+export function isBaAudience(
+  roles?: UserRole[] | null | Pick<WorkspaceUser, "roles">,
+): boolean {
+  const r = audienceRoles(roles);
   if (r.includes("admin")) return false;
   if (r.includes("dev")) return false;
   if (r.includes("devops")) return false;
-  return r.includes("ba") || r.includes("pd") || r.includes("qc");
+  return r.includes("ba") || r.includes("pd");
+}
+
+/** QC Project chat audience: qc only (not ba/pd — those use /ba; not dev/devops/admin). */
+export function isQcAudience(
+  roles?: UserRole[] | null | Pick<WorkspaceUser, "roles">,
+): boolean {
+  const r = audienceRoles(roles);
+  if (r.includes("admin")) return false;
+  if (r.includes("dev")) return false;
+  if (r.includes("devops")) return false;
+  return r.includes("qc");
 }
 
 export function isAdminRole(roles?: UserRole[] | null): boolean {
@@ -273,7 +290,7 @@ export function canAccessWork(roles?: UserRole[] | null): boolean {
   return r.includes("admin") || r.includes("dev");
 }
 
-/** Project chat UI/API: ba audience, dev, devops, or admin. */
+/** BA Project chat UI (/ba): ba/pd audience, dev, devops, or admin. */
 export function canAccessBa(roles?: UserRole[] | null): boolean {
   const r = normalizeUserRoles(roles);
   return (
@@ -282,6 +299,25 @@ export function canAccessBa(roles?: UserRole[] | null): boolean {
     isBaAudience(r) ||
     r.includes("devops")
   );
+}
+
+/** QC Project chat UI (/qc): qc audience, dev, devops, or admin. */
+export function canAccessQc(roles?: UserRole[] | null): boolean {
+  const r = normalizeUserRoles(roles);
+  return (
+    isAdminRole(r) ||
+    canAccessWork(r) ||
+    isQcAudience(r) ||
+    r.includes("devops")
+  );
+}
+
+/**
+ * Shared Project chat API (/api/ba): BA or QC surfaces.
+ * QC UI reuses BA APIs until dedicated QC tools land.
+ */
+export function canAccessProjectChat(roles?: UserRole[] | null): boolean {
+  return canAccessBa(roles) || canAccessQc(roles);
 }
 
 /**
@@ -307,6 +343,7 @@ export function primaryHomePath(roles?: UserRole[] | null): string {
   if (r.includes("admin")) return "/admin";
   if (r.includes("dev")) return "/work";
   if (r.includes("devops")) return "/devops";
+  if (isQcAudience(r)) return "/qc";
   if (isBaAudience(r)) return "/ba";
   return "/work";
 }

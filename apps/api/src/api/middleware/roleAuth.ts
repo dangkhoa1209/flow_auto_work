@@ -2,9 +2,8 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import type { NextFunction, Request, Response } from "express";
 import { getUserByUsername } from "../../workspace/store.js";
 import {
-  canAccessBa,
+  canAccessProjectChat,
   isAdminRole,
-  isBaAudience,
   normalizeUserRoles,
   type UserRole,
 } from "../../workspace/types.js";
@@ -78,14 +77,15 @@ export const requireAdmin = asyncHandler(
 );
 
 /**
- * BA Chat gate: ba | pd | qc | dev | devops | admin.
+ * Project chat API gate (/api/ba): ba | pd | qc | dev | devops | admin.
+ * QC frontend (/qc) reuses these routes until dedicated QC APIs exist.
  */
 export const requireBa = asyncHandler(
   async (req: Request, _res: Response, next: NextFunction) => {
     const { username, roles } = await resolveBearerUser(req);
-    if (!canAccessBa(roles)) {
+    if (!canAccessProjectChat(roles)) {
       throw new AppError(
-        "BA Chat role required (ba, pd, qc, dev, devops, or admin)",
+        "Project chat role required (ba, pd, qc, dev, devops, or admin)",
         403,
         "ba_forbidden",
       );
