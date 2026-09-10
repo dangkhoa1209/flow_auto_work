@@ -81,28 +81,38 @@ export function planReadySectionsLen(summaryBody: string): number {
   return (analyzed?.length || 0) + (plan?.length || 0);
 }
 
+/** Labeled ANALYZED+PLAN long enough to prefer over unlabeled createPlan. */
+const LABELED_PLAN_MIN = 100;
+
 /**
  * Pick the richest plan source: tagged PLAN_READY body, raw agent text,
  * Process stream, or Cursor `createPlan` tool body.
- * Thin PLAN/ANALYZED labels must not beat a much longer plain plan.
+ * Substantial labeled PLAN_READY (VI) wins over a longer unlabeled createPlan
+ * (Cursor often writes createPlan in English). Thin one-liners still lose.
  */
 export function pickPlanReadySource(
   ...candidates: Array<string | undefined | null>
 ): string {
-  let best = "";
-  let bestScore = 0;
+  let bestLabeled = "";
+  let bestLabeledScore = 0;
+  let bestAny = "";
+  let bestAnyScore = 0;
   for (const c of candidates) {
     const t = (c || "").trim();
     if (!t) continue;
     const sections = planReadySectionsLen(t);
+    if (sections >= LABELED_PLAN_MIN && sections > bestLabeledScore) {
+      bestLabeled = t;
+      bestLabeledScore = sections;
+    }
     // Rich labeled sections win on section length; thin labels fall back to full text
     const scored = sections >= 280 ? sections : Math.max(sections, t.length);
-    if (scored > bestScore) {
-      best = t;
-      bestScore = scored;
+    if (scored > bestAnyScore) {
+      bestAny = t;
+      bestAnyScore = scored;
     }
   }
-  return best;
+  return bestLabeled || bestAny;
 }
 
 /**
@@ -124,8 +134,9 @@ export function formatPlanReadyChatBody(
 
   const prose = trimPlanFluff(opts?.prose || "");
   const sectionLen = (analyzed?.length || 0) + (plan?.length || 0);
-  // Thin PLAN_READY marker but long stream/createPlan prose → prefer prose body
-  if (prose && prose.length > sectionLen + 40 && sectionLen < 400) {
+  // Only swap in createPlan/stream prose when labeled PLAN_READY is thin
+  // (otherwise English createPlan would hide a solid Vietnamese PLAN block)
+  if (prose && prose.length > sectionLen + 40 && sectionLen < LABELED_PLAN_MIN) {
     const proseAnalyzed = planReadySection(prose, "ANALYZED");
     const prosePlan = planReadySection(prose, "PLAN");
     if (proseAnalyzed || prosePlan) {

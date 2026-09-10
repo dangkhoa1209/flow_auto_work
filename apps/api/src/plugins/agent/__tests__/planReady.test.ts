@@ -59,6 +59,28 @@ describe("formatPlanReadyChatBody", () => {
     expect(body).not.toMatch(/Đang xác nhận cách load ca$/m);
   });
 
+  it("keeps substantial Vietnamese PLAN_READY over longer English createPlan", () => {
+    const englishCreatePlan = [
+      "## Overview",
+      "Fix how shifts are loaded when recalculating used leave and attach off_hours on approval.",
+      "",
+      "## Scope",
+      "- AttendanceService.loadShiftWhenRecalc",
+      "- Approval flow flag off_hours",
+      "",
+      "## Steps",
+      "1. Read the service",
+      "2. Attach the flag",
+      "3. Add regression tests covering both paths in detail with more English padding",
+    ].join("\n");
+    expect(pickPlanReadySource(sample, englishCreatePlan)).toBe(sample.trim());
+    const body = formatPlanReadyChatBody(sample, { prose: englishCreatePlan });
+    expect(body).toContain("nghỉ trưa");
+    expect(body).toContain("Trừ giờ nghỉ trưa");
+    expect(body).not.toContain("## Overview");
+    expect(body).not.toContain("Fix how shifts are loaded");
+  });
+
   it("does not let thin PLAN label inside a long stream beat a full plan", () => {
     const stream = [
       "Đang đọc AttendanceService…",
