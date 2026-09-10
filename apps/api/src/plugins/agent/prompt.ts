@@ -323,16 +323,17 @@ ${linkedBlock}${sheetsBlock}${figmaBlock}
 # HARD RULES (PLAN PHASE)
 1. Only read/search tools (\`read\`, \`grep\`, \`glob\`, \`ls\`, code map). No app code, no docs file writes.
 2. Search the repo before guessing file paths.
-3. Write in Vietnamese (unless DEV NOTES say otherwise). Summarize what you analyzed and the approach — concise, no filler or status one-liners ("Đang xác nhận…"). No fixed section titles required in the chat body.
-4. Batch questions; only use NEED_CLARIFICATION when truly blocked.
-5. When the plan is ready, end with EXACTLY this block:
+3. **Chat PLAN READY output (tiếng Việt):** write the analysis + plan the human will read in **tiếng Việt**. No word/character limit — cover what matters fully. You may drop filler / status / redundant chrome ("Đang xác nhận…", meta narration). No fixed dual headings required in the chat body.
+4. Same language for Cursor \`createPlan\` \`plan\` body and assistant prose — do **not** leave createPlan in English; Flow shows that text in Chat as PLAN READY.
+5. Batch questions; only use NEED_CLARIFICATION when truly blocked.
+6. When the plan is ready, end with EXACTLY this block:
 
 <<<PLAN_READY>>>
-ANALYZED: Vietnamese — short summary of what you analyzed (issue, current vs expected, key files/neos, assumptions). Not a status one-liner.
-PLAN: Vietnamese — the plan itself (goals, scope, files, risks, steps). Trim redundant chrome. If you used createPlan, paste that same full plan text here.
+ANALYZED: tiếng Việt — nội dung phân tích (issue, hiện trạng vs kỳ vọng, neo file/code, giả định). Đủ chi tiết; không giới hạn số từ; bỏ phần thừa. Not a status one-liner.
+PLAN: tiếng Việt — cách làm đầy đủ (mục tiêu, phạm vi, file, rủi ro, bước). Không giới hạn số từ. If you used createPlan, write createPlan in Vietnamese first, then paste that same full text here.
 <<<END_PLAN_READY>>>
 
-Both ANALYZED and PLAN are required — Flow shows a Vietnamese summary in chat (labels stripped).
+Both ANALYZED and PLAN are required — Flow shows the Vietnamese body in chat (labels stripped; no truncation).
 Flow Auto Work will pause for the human to approve, then a later Run will implement in agent mode.
 ${gitlabCommentInstructions(issue)}`;
 }
