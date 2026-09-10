@@ -30,7 +30,11 @@ import {
 import { runVerifyCommand } from "./plugins/verify/run.js";
 import { answerTaskQuestion } from "./plugins/agent/qa.js";
 import { generateTestcasesForIssue } from "./plugins/agent/testcases.js";
-import { appendJobProgress, getJobTokenUsage } from "./plugins/agent/progress.js";
+import {
+  appendJobProgress,
+  getJobProgress,
+  getJobTokenUsage,
+} from "./plugins/agent/progress.js";
 import { cancelDiffApproval } from "./plugins/review/diff-wait.js";
 import { addChatMessage, listChatMessages } from "./models/chat.js";
 import { publishRealtime } from "./plugins/realtime/hub.js";
@@ -50,6 +54,7 @@ import {
 } from "./plugins/docs/analysis.js";
 import {
   formatPlanReadyChatBody,
+  pickPlanReadySource,
   planReadySummaryText,
 } from "./plugins/agent/planReady.js";
 import type { CompletionActions, IssueJob, JobRecord, JobStatus } from "./types.js";
@@ -2509,25 +2514,40 @@ export class JobQueue {
 
         const tagged = (result.summary ?? "").trim();
         const rawText = (result.text ?? "").trim();
+        // Thinking/assistant lived in Process during stream — harvest if result is thin
+        const fromProgress = getJobProgress(job.id)
+          .lines.filter(
+            (l) =>
+              l.kind === "assistant" ||
+              l.kind === "thinking" ||
+              l.kind === "task",
+          )
+          .map((l) => l.text)
+          .join("\n\n")
+          .trim();
+        const formatSource = pickPlanReadySource(tagged, rawText, fromProgress);
+        const prose = extractChatBodyFromAgentText(rawText || fromProgress, {
+          summary: tagged,
+        });
         const summary =
-          (planReadySummaryText(tagged) ||
-            planReadySummaryText(rawText) ||
-            tagged ||
-            rawText ||
+          (planReadySummaryText(formatSource) ||
+            (prose && prose !== "(no reply)" ? prose : "") ||
+            formatSource ||
             "").slice(0, 8000) || undefined;
         job.planSummary = summary;
         job.planApprovedAt = undefined;
 
-        const formatSource = tagged || rawText;
-        let planChat = formatPlanReadyChatBody(formatSource);
+        let planChat = formatPlanReadyChatBody(formatSource, {
+          prose: prose && prose !== "(no reply)" ? prose : undefined,
+        });
         const hasPlanSections = /### Đã phân tích|### Kế hoạch/.test(planChat);
         if (!hasPlanSections && formatSource) {
           // Formatter only has "PLAN READY:" chrome — prefer prose / summary
-          planChat = extractChatBodyFromAgentText(rawText, {
-            summary: tagged || summary,
-          });
-          if (!planChat || planChat === "(no reply)") {
-            planChat = formatPlanReadyChatBody(formatSource);
+          planChat =
+            (prose && prose !== "(no reply)" ? prose : "") ||
+            formatPlanReadyChatBody(formatSource);
+          if (!planChat.startsWith("PLAN READY:")) {
+            planChat = formatPlanReadyChatBody(planChat || formatSource);
           }
         }
         if (planChat && planChat !== "(no reply)") {
@@ -2539,12 +2559,11 @@ export class JobQueue {
             body: planChat,
           });
         }
+        // Keep Process short — full plan is in Chat as PLAN READY
         appendJobProgress(
           job.id,
           "status",
-          summary
-            ? `Plan ready — awaiting approval (${summary.slice(0, 120)}${summary.length > 120 ? "…" : ""})`
-            : "Plan ready — awaiting approval (see Chat)",
+          "Plan ready — awaiting approval (see Chat)",
         );
 
         job.status = "awaiting_plan_approval";

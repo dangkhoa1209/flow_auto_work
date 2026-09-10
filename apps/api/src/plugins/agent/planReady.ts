@@ -59,15 +59,56 @@ export function planReadySummaryText(summaryBody: string): string {
   return stripped || summaryBody.trim();
 }
 
-/** Chat message after plan phase — analysis + plan for the pair. */
-export function formatPlanReadyChatBody(summaryBody: string): string {
+/** Combined length of ANALYZED + PLAN sections (0 if none). */
+export function planReadySectionsLen(summaryBody: string): number {
   const analyzed = planReadySection(summaryBody, "ANALYZED");
-  const plan =
+  const plan = planReadySection(summaryBody, "PLAN");
+  return (analyzed?.length || 0) + (plan?.length || 0);
+}
+
+/**
+ * Pick the richest plan source: tagged PLAN_READY body, raw agent text, or
+ * Process stream (thinking/assistant) — so Chat is not stuck on a one-liner
+ * while the real plan only lived in clipped Process logs.
+ */
+export function pickPlanReadySource(
+  ...candidates: Array<string | undefined | null>
+): string {
+  let best = "";
+  for (const c of candidates) {
+    const t = (c || "").trim();
+    if (!t) continue;
+    const scored = planReadySectionsLen(t) || t.length;
+    const bestScored = planReadySectionsLen(best) || best.length;
+    if (scored > bestScored) best = t;
+  }
+  return best;
+}
+
+/** Chat message after plan phase — analysis + plan for the pair. */
+export function formatPlanReadyChatBody(
+  summaryBody: string,
+  opts?: { prose?: string },
+): string {
+  const analyzed = planReadySection(summaryBody, "ANALYZED");
+  let plan =
     planReadySection(summaryBody, "PLAN") ||
     summaryBody
       .replace(/^ANALYZED\s*:?\s*[\s\S]*?(?=^PLAN\s*:|$)/im, "")
       .replace(/^PLAN\s*:\s*/im, "")
       .trim();
+
+  const prose = (opts?.prose || "").trim();
+  const sectionLen = (analyzed?.length || 0) + (plan?.length || 0);
+  // Thin PLAN_READY marker but long stream/prose → prefer prose under Kế hoạch
+  if (prose && prose.length > sectionLen + 40 && sectionLen < 280) {
+    const proseAnalyzed = planReadySection(prose, "ANALYZED");
+    const prosePlan = planReadySection(prose, "PLAN");
+    if (proseAnalyzed || prosePlan) {
+      return formatPlanReadyChatBody(prose);
+    }
+    plan = prose;
+  }
 
   const parts: string[] = ["PLAN READY:"];
   if (analyzed) {
@@ -77,7 +118,10 @@ export function formatPlanReadyChatBody(summaryBody: string): string {
     parts.push("", "### Kế hoạch", plan);
   }
   if (!analyzed && !plan) {
-    const fallback = planReadySummaryText(summaryBody) || summaryBody.slice(0, 2000);
+    const fallback =
+      planReadySummaryText(summaryBody) ||
+      prose.slice(0, 8000) ||
+      summaryBody.slice(0, 2000);
     if (fallback) parts.push("", fallback);
   }
   return parts.join("\n").trim();
