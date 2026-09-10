@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   compactGraphifyQueryOutput,
   formatWorkGraphifyPromptBlock,
+  isGraphifyUpdateProcessArgs,
 } from "../graphify.js";
 
 describe("formatWorkGraphifyPromptBlock", () => {
@@ -15,6 +16,30 @@ describe("formatWorkGraphifyPromptBlock", () => {
     expect(block).toMatch(/graphify-out/);
     expect(block).not.toMatch(/INTENT = case 3/);
     expect(block).not.toMatch(/Likely files/);
+  });
+});
+
+describe("isGraphifyUpdateProcessArgs", () => {
+  it("detects update CLI and workers, ignores query-only", () => {
+    expect(
+      isGraphifyUpdateProcessArgs(
+        "/root/.local/bin/graphify update /home/www/proj/source",
+      ),
+    ).toBe(true);
+    expect(
+      isGraphifyUpdateProcessArgs(
+        "/root/.local/share/pipx/venvs/graphifyy/bin/python /root/.local/bin/graphify update /x",
+      ),
+    ).toBe(true);
+    expect(
+      isGraphifyUpdateProcessArgs(
+        "graphify query --graph /tmp/graph.json foo",
+      ),
+    ).toBe(false);
+    expect(isGraphifyUpdateProcessArgs("ps -eo args=")).toBe(false);
+    expect(isGraphifyUpdateProcessArgs("node apps/api/dist/server.js")).toBe(
+      false,
+    );
   });
 });
 

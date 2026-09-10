@@ -7,6 +7,8 @@ import { logger } from "../logger.js";
 
 const execFileAsync = promisify(execFile);
 const inFlight = new Set<string>();
+/** In-process gate so two projects in the same API worker do not race-start updates. */
+let hostUpdateClaimed = false;
 
 /** Stamp in graphify-out — skip rebuild when HEAD + dirty tree unchanged. */
 const STAMP_NAME = ".flow-graphify-stamp";
@@ -156,6 +158,39 @@ async function writeStamp(outDir: string, stamp: string): Promise<void> {
   await writeFile(stampPath(outDir), `${stamp}\n`, "utf8");
 }
 
+/**
+ * True when a process args line looks like a graphify rebuild (not query/path/explain).
+ */
+export function isGraphifyUpdateProcessArgs(argsLine: string): boolean {
+  const s = argsLine.trim();
+  if (!s || !/graphify/i.test(s)) return false;
+  if (/\b(ps|pgrep)\b/.test(s)) return false;
+  // Read-only CLI — cheap; do not treat as a blocking rebuild.
+  if (/\b(query|path|explain)\b/.test(s) && !/\bupdate\b/.test(s)) {
+    return false;
+  }
+  return true;
+}
+
+/**
+ * True when another graphify rebuild (or its workers) is already on the host.
+ * Lightweight `query` / `path` / `explain` alone do not block a new update.
+ */
+export async function isHostGraphifyUpdateBusy(): Promise<boolean> {
+  try {
+    const { stdout } = await execFileAsync("ps", ["-eo", "args="], {
+      encoding: "utf8",
+      maxBuffer: 5 * 1024 * 1024,
+    });
+    for (const line of stdout.split("\n")) {
+      if (isGraphifyUpdateProcessArgs(line)) return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 async function runProjectGraphifyUpdate(
   source: string,
   reason: string,
@@ -187,47 +222,69 @@ async function runProjectGraphifyUpdate(
     }
   }
 
-  const args = force
-    ? ["update", source, "--force"]
-    : ["update", source];
-  logger.info("graphify update starting", {
-    source,
-    outDir,
-    reason,
-    bin,
-    mode: force ? "full" : "incremental",
-  });
-  const { code, stdout, stderr } = await runSpawn(
-    bin,
-    args,
-    { ...process.env, GRAPHIFY_OUT: outDir },
-    path.dirname(outDir),
-    force ? 5 * 60_000 : 3 * 60_000,
-  );
-  if (code === 0) {
-    if (currentStamp) {
-      await writeStamp(outDir, currentStamp).catch(() => undefined);
-    } else {
-      const after = await sourceChangeStamp(source);
-      if (after) await writeStamp(outDir, after).catch(() => undefined);
+  // Multi-user hosts: one rebuild at a time. Work/BA continues with existing
+  // graph (or Grep) instead of stacking CPU-heavy updates.
+  if (hostUpdateClaimed) {
+    logger.info(
+      "graphify skip — another graphify already running (work continues)",
+      { source, reason, hasGraph },
+    );
+    return hasGraph;
+  }
+  hostUpdateClaimed = true;
+  try {
+    if (await isHostGraphifyUpdateBusy()) {
+      logger.info(
+        "graphify skip — another graphify already running (work continues)",
+        { source, reason, hasGraph },
+      );
+      return hasGraph;
     }
-    logger.info("graphify update ready", {
+
+    const args = force
+      ? ["update", source, "--force"]
+      : ["update", source];
+    logger.info("graphify update starting", {
       source,
       outDir,
       reason,
+      bin,
       mode: force ? "full" : "incremental",
-      detail: stdout.trim().slice(-400),
     });
-    return true;
+    const { code, stdout, stderr } = await runSpawn(
+      bin,
+      args,
+      { ...process.env, GRAPHIFY_OUT: outDir },
+      path.dirname(outDir),
+      force ? 5 * 60_000 : 3 * 60_000,
+    );
+    if (code === 0) {
+      if (currentStamp) {
+        await writeStamp(outDir, currentStamp).catch(() => undefined);
+      } else {
+        const after = await sourceChangeStamp(source);
+        if (after) await writeStamp(outDir, after).catch(() => undefined);
+      }
+      logger.info("graphify update ready", {
+        source,
+        outDir,
+        reason,
+        mode: force ? "full" : "incremental",
+        detail: stdout.trim().slice(-400),
+      });
+      return true;
+    }
+    logger.warn("graphify update failed", {
+      source,
+      outDir,
+      reason,
+      code,
+      stderr: stderr.trim().slice(-800),
+    });
+    return false;
+  } finally {
+    hostUpdateClaimed = false;
   }
-  logger.warn("graphify update failed", {
-    source,
-    outDir,
-    reason,
-    code,
-    stderr: stderr.trim().slice(-800),
-  });
-  return false;
 }
 
 /**
@@ -278,6 +335,8 @@ export async function ensureProjectGraphifyReady(
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     if (await pathExists(graphJson)) return true;
+    // Update finished/skipped without a graph — do not block the work task.
+    if (!inFlight.has(source)) break;
     await new Promise((r) => setTimeout(r, 500));
   }
   return await pathExists(graphJson);
