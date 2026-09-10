@@ -21,6 +21,7 @@ export function buildBaDbCustomTools(
         description:
           `Read-only MongoDB queries against the LOCKED database "${cfg.database}" on ${cfg.host} only. ` +
           `You cannot switch DB / pass database|db in JSON. Tenant codes are filters inside this DB, not other databases. ` +
+          `If the user named a specific id/code (e.g. staff NV A) and filter returns 0 — report not found; do not substitute another entity. ` +
           `JSON: {"op":"listCollections"} | {"op":"find","collection":"…","filter":{},"limit":20} | ` +
           `{"op":"aggregate","collection":"…","pipeline":[…]} | {"op":"count","collection":"…","filter":{}}. ` +
           `No $out/$merge/writes. Never invent credentials — use this tool only.`,
@@ -54,6 +55,7 @@ export function buildBaDbCustomTools(
       description:
         `Read-only SQL against the LOCKED database "${cfg.database}" (${cfg.dialect}@${cfg.host}) only. ` +
         `No USE / no otherdb.table. Tenant codes = WHERE filters in this DB. ` +
+        `If the user named a specific id/code (e.g. staff NV A) and query returns 0 — report not found; do not substitute another entity. ` +
         `Only SELECT / WITH / SHOW / DESCRIBE / EXPLAIN. Never invent credentials — use this tool only.`,
       inputSchema: {
         type: "object",

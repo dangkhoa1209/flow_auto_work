@@ -395,6 +395,7 @@ function buildBaPrompt(opts: {
 - **Chỉ một database:** \`${opts.dbAccess.database || "?"}\` (admin setup). Tool luôn gắn đúng DB này.
 - **Cấm tuyệt đối:** chuyển/truy cập DB Mongo khác (kể cả tên tenant kiểu YKKSUB nếu đó là DB khác), \`use\` DB khác, shell \`mongosh\`, credential \`.env\`, tự nối URI.
 - Nếu người dùng nói tenant/mã công ty (vd. YKKSUB): **lọc trong cùng DB đã setup** (field tenant/company/org trong collection) — không được hiểu là đổi sang database khác. Không tìm thấy field lọc → nói rõ, hỏi BA/admin; không tự nhảy DB.
+- **Đúng entity:** user chỉ mã NV / id / tên cụ thể → query **đúng mã đó**. 0 kết quả → nói **không tìm thấy đúng entity đó** và dừng; **cấm** đổi sang NV/id khác rồi trả lời như thành công. Có thể liệt kê vài bản ghi gần giống **chỉ như ứng viên** để họ chọn.
 - Khi cần dữ liệu: **chỉ** tool \`query_readonly_mongo\` với JSON:
   - \`{"op":"listCollections"}\`
   - \`{"op":"find","collection":"…","filter":{}}\`
@@ -407,6 +408,7 @@ function buildBaPrompt(opts: {
 - **Chỉ một database:** \`${opts.dbAccess.database || "?"}\` (${opts.dbAccess.dialect || "sql"}). Connection đã gắn DB này.
 - **Cấm tuyệt đối:** \`USE\` DB khác, query \`otherdb.table\`, shell \`mysql\`/\`psql\`, credential \`.env\`.
 - Tenant/mã công ty trong câu hỏi → lọc bằng cột trong **cùng** DB đã setup, không đổi database.
+- **Đúng entity:** user chỉ mã NV / id / tên cụ thể → query **đúng mã đó**. 0 kết quả → nói **không tìm thấy đúng entity đó** và dừng; **cấm** đổi sang NV/id khác rồi trả lời như thành công. Có thể liệt kê vài bản ghi gần giống **chỉ như ứng viên** để họ chọn.
 - Khi cần dữ liệu: **chỉ** tool \`query_readonly_sql\` (SELECT / WITH / SHOW / DESCRIBE / EXPLAIN).
 - Tool đã được hệ thống gắn sẵn (admin đã bật DB) — **gọi ngay**, không chờ phê duyệt / không nói "tool bị chặn" nếu chưa thử gọi.
 - **Cấm:** INSERT/UPDATE/DELETE/DDL, dump, migrate.

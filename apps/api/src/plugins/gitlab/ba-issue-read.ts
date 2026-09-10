@@ -177,9 +177,16 @@ export async function loadBaGitlabTaskBlock(opts: {
   gitlabPath: string;
   token: string | null;
   texts: string[];
+  /** Skip these iids (e.g. primary /work job issue already in the prompt). */
+  excludeIids?: number[];
 }): Promise<{ refs: BaIssueRef[]; block: string }> {
   const combined = opts.texts.filter(Boolean).join("\n");
-  const refs = extractBaIssueRefs(combined, opts.gitlabPath);
+  const exclude = new Set(
+    (opts.excludeIids ?? []).filter((n) => Number.isFinite(n) && n > 0),
+  );
+  const refs = extractBaIssueRefs(combined, opts.gitlabPath).filter(
+    (r) => !exclude.has(r.iid),
+  );
   if (!refs.length) return { refs, block: "" };
   if (!opts.token?.trim()) {
     return {

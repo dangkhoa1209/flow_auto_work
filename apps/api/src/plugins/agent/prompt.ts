@@ -153,6 +153,20 @@ ${lines.join("\n\n")}
 }
 
 /**
+ * Hard rule: named entities in DB/seed/verify must stay exact.
+ * Stops the common failure “look up NV A → miss → continue with NV B”.
+ */
+export function dataEntityFidelityBlock(): string {
+  return `# DATA / ENTITY FIDELITY (DB, seed, verify) — HARD
+When the human names a **specific** entity (mã NV / staff code / id / name / order / contract / …):
+1. Query / filter / seed / verify **that exact identifier only** — do not broaden to a “similar” row.
+2. If **0 rows** (or create/seed of that exact entity fails): **STOP**. Say clearly you could not find **exactly** the code/name they named (or why create failed). Do **not** pick another person/row and continue as if success.
+3. Optional: list other rows **only as candidates** for the human to choose — never treat them as the target, never seed/mutate/report results under the wrong identity.
+4. Do **not** “helpfully” switch NV A → NV B, use LIKE/\`%\` to land on someone else, or verify on a substitute. Entity identity is **never** a SAFE ASSUMPTION (same tier as irreversible data / money / permissions).
+`;
+}
+
+/**
  * Shared “how to load project conventions” — AGENTS.md first, then rules/skills/docs
  * that exist in the checkout (not hard-coded to one product).
  */
@@ -412,7 +426,7 @@ Ignore image/file attachments — only use text. Do not try to download or open 
 Real tickets are often incomplete. When something is unclear or missing:
 1. **SELF-RESOLVE first.** Call \`code_map_query\` when that tool is attached, then search the repo, feature docs, and the linked issues/comments above. Most "missing" info (file paths, existing patterns, field names, similar screens) is discoverable in the codebase — never ask the human for something the code can answer.
 2. **SAFE ASSUMPTION.** If the gap is minor and one interpretation is clearly standard for this codebase (naming, placement, UI copy, default sort/validation style), proceed — but record it and report it under \`ASSUMPTIONS:\` in the DONE block.
-   NEVER assume on: deleting/migrating data, permissions/security, money or regulated formulas, external API contracts, or anything irreversible → those go to tier 3.
+   NEVER assume on: deleting/migrating data, permissions/security, money or regulated formulas, external API contracts, **which person/row/entity** to use when the named one is missing, or anything irreversible → those go to tier 3.
 3. **ASK (last resort).** Only when the gap genuinely blocks a correct implementation. The human answers in the **Flow Auto Work UI**. End your reply with EXACTLY this block (nothing after it):
 
 <<<NEED_CLARIFICATION>>>
@@ -426,19 +440,26 @@ Question quality rules (strict):
 - Say briefly what you already checked (files/docs/keywords searched) so the human doesn't repeat known info.
 - Do NOT ask about things you can decide via tier 1/2.
 
-# HARD / LARGE TASKS
-If the task spans multiple modules, touches shared logic, or is risky:
-- Write a short bullet plan BEFORE editing; follow it in small verifiable steps.
-- Prefer the Task/subagent tools when helpful: \`explore\` (find files/patterns), \`code-reviewer\` (review your diff), \`test-writer\` (focused tests). You keep ownership of the final DONE.
-- If mid-way you find the requirement contradicts codebase reality (screen/field/API named in the ticket doesn't exist or behaves differently), STOP and use NEED_CLARIFICATION **with evidence** (file + what you found) instead of forcing a wrong change.
-- Do not silently drop scope; anything skipped goes under \`RISKS:\` in the DONE block.
+${dataEntityFidelityBlock()}
+# TASK / SUBAGENT FLOW (coding Run)
+Use Task/subagents as a **complete pipeline only when each gate matches**. Do **not** spawn all three by default; do **not** use for Q&A-only or trivial one-line / already-known single-file edits.
+
+Flow — skip any step that does not apply:
+1. \`explore\` — **only if** after code_map_query / a quick search the path/module is still unclear or search would fan out across many files. Skip when the target file is already known.
+2. Implement yourself (parent owns the diff). For multi-module / shared / risky work: write a short bullet plan BEFORE editing; follow it in small verifiable steps.
+3. \`code-reviewer\` — **only if** the diff is non-trivial (multi-file, shared logic, auth/money/data). Skip for small scoped edits you already re-read carefully.
+4. \`test-writer\` — **only if** behavior changed **and** a nearby test harness exists. Skip when no tests nearby or the change is docs/copy-only.
+5. You keep ownership of DONE / VERIFY; subagents help one step each — they do not replace your final check.
+
+If mid-way you find the requirement contradicts codebase reality (screen/field/API named in the ticket doesn't exist or behaves differently), STOP and use NEED_CLARIFICATION **with evidence** (file + what you found) instead of forcing a wrong change.
+Do not silently drop scope; anything skipped goes under \`RISKS:\` in the DONE block.
 
 # EXECUTION PLAN
 1. Analyze the requirements but execute them EXACTLY as demanded in UI CHAT REQUESTS and DEV NOTES when present (those override conflicting business wording). Latest Human chat messages win for this run.
-2. Investigate via **code_map_query** first (when the tool is attached), then docs (and the approved feature docs if listed above), then write a short plan.
+2. Investigate via **code_map_query** first (when the tool is attached), then docs (and the approved feature docs if listed above). Launch Task \`explore\` **only** if the module is still unfamiliar or search would fan out; then write a short plan for hard tasks.
 3. Implement on the CURRENT git branch only (do not checkout/create other branches). Keep the change scoped to this issue.
 4. Leave changes as modified files in the working tree — do NOT \`git commit\` or \`git push\`. The orchestrator commits to GitLab when you are done.
-5. VERIFY before finishing: re-read your diff against the requirements; run the cheapest relevant check (lint/typecheck/build of touched files, or targeted test) when the repo supports it. Report what you verified under \`TESTED:\`.
+5. VERIFY before finishing: re-read your diff against the requirements; launch Task \`code-reviewer\` and/or Task \`test-writer\` **only** when their gates above match; run the cheapest relevant check. Report what you verified under \`TESTED:\`.
 6. When finished successfully, end with EXACTLY this block:
 
 <<<DONE>>>
@@ -485,6 +506,8 @@ export function buildFollowUpPrompt(
     contextQualityBlock?: string;
     googleSheetsBlock?: string;
     figmaBlock?: string;
+    /** Extra GitLab issues from pasted #id / link in chat (not the primary job). */
+    gitlabTaskBlock?: string;
     graphifyBlock?: string;
     conflictResolveBlock?: string;
   },
@@ -506,6 +529,9 @@ ${history}
   const figmaBlock = opts?.figmaBlock?.trim()
     ? `\n${opts.figmaBlock.trim()}\n\n`
     : "";
+  const gitlabTaskBlock = opts?.gitlabTaskBlock?.trim()
+    ? `\n${opts.gitlabTaskBlock.trim()}\n\n`
+    : "";
   const conflictBlock = opts?.conflictResolveBlock?.trim()
     ? `${opts.conflictResolveBlock.trim()}\n\n`
     : "";
@@ -513,12 +539,12 @@ ${history}
   return `You are working on GitLab issue #${issue.issueIid} ("${issue.title}") in a Cursor agent window.
 This may be a **new** window — use prior chat + the repo (inspect if needed). Do not assume old tool state is still loaded.
 Prefer \`AGENTS.md\` (then \`.cursor/rules\` / project docs) when you need conventions for **this** checkout.
-${opts?.graphifyBlock ? `${opts.graphifyBlock}\n` : ""}${conflictBlock}${qualityBlock}${sheetsBlock}${figmaBlock}${historyBlock}## Human follow-up (this turn)
+${opts?.graphifyBlock ? `${opts.graphifyBlock}\n` : ""}${conflictBlock}${qualityBlock}${sheetsBlock}${figmaBlock}${gitlabTaskBlock}${historyBlock}## Human follow-up (this turn)
 ${message.trim()}
 
 ## How to behave (IDE-like)
-1. If they ask a question → answer clearly (Vietnamese if they wrote Vietnamese). Start repo lookup with \`code_map_query\` when that tool is attached.
-2. If they ask to fix / add / change / re-test / seed data / run something → **do it** on the CURRENT branch (do not switch branches).
+1. If they ask a question → answer clearly (Vietnamese if they wrote Vietnamese). Start repo lookup with \`code_map_query\` when that tool is attached. If they pasted \`#id\` / issue link, use the **GitLab task (chỉ đọc)** block above — do not call GitLab yourself.
+2. If they ask to fix / add / change / re-test / seed data / run something → **do it** on the CURRENT branch (do not switch branches). Subagent flow (skip steps that do not apply — do not spawn all three by default): Task \`explore\` only if path still unclear after map/search; Task \`code-reviewer\` only after multi-file / shared-logic / risky diffs; Task \`test-writer\` only when nearby tests exist. Skip subagents for Q&A-only or trivial one-file edits. **Data fidelity:** if they named a specific NV/id/code and DB returns 0 — STOP and report not found; do **not** switch to another person/row.
 3. Prefer small, correct changes. Stay scoped to this issue unless they explicitly expand scope.
 4. If the request is vague: search the repo/docs first; minor gaps → proceed with the standard interpretation and say so in your reply; only end with NEED_CLARIFICATION when truly blocked (batch ALL questions, numbered, with options + your recommended default).
 5. Do NOT \`git commit\`, \`git push\`, force-push, amend remote commits, or open/merge MRs. Flow Auto Work commits to GitLab via API after you finish.
@@ -534,7 +560,7 @@ ${message.trim()}
 ${commitLabelInstructions({ issueIid: issueCommitIid(issue) })}${gitlabCommentInstructions(issue)}<<<NEED_CLARIFICATION>>> / <<<DONE>>> blocks same as usual when applicable.`;
 }
 
-/** Free session (hotfix / adhoc) — no GitLab issue yet. */
+/** Free session (hotfix / adhoc) — no GitLab issue linked to the job yet. */
 export function buildAdhocFollowUpPrompt(
   message: string,
   sessionTitle: string,
@@ -543,6 +569,8 @@ export function buildAdhocFollowUpPrompt(
     contextQualityBlock?: string;
     googleSheetsBlock?: string;
     figmaBlock?: string;
+    /** GitLab issues from pasted #id / link in chat (BA parity). */
+    gitlabTaskBlock?: string;
     graphifyBlock?: string;
     conflictResolveBlock?: string;
   },
@@ -565,20 +593,28 @@ ${history}
   const figmaBlock = opts?.figmaBlock?.trim()
     ? `\n${opts.figmaBlock.trim()}\n\n`
     : "";
+  const gitlabTaskBlock = opts?.gitlabTaskBlock?.trim()
+    ? `\n${opts.gitlabTaskBlock.trim()}\n\n`
+    : "";
   const conflictBlock = opts?.conflictResolveBlock?.trim()
     ? `${opts.conflictResolveBlock.trim()}\n\n`
     : "";
+  const hasGitlabFromChat = Boolean(opts?.gitlabTaskBlock?.trim());
 
   return `You are in a **free Cursor agent session** (hotfix / ad-hoc) titled "${title}".
-There is **no GitLab issue yet** — a human may create one later from your summary.
+${
+  hasGitlabFromChat
+    ? `This session is **not** bound to a single GitLab issue job — but the human pasted \`#id\` / issue link(s); the system already loaded them into **GitLab task (chỉ đọc)** below. Use that block; **do not** call GitLab yourself.`
+    : `There is **no GitLab issue yet** — a human may create one later from your summary. If they want task context, they can paste a GitLab **link** or \`#id\` / \`issue 123\` (same as BA chat) and the system will load it.`
+}
 This may be a **new** window — use prior chat + the repo (inspect if needed).
 Prefer \`AGENTS.md\` (then \`.cursor/rules\` / project docs) when you need conventions for **this** checkout.
-${opts?.graphifyBlock ? `${opts.graphifyBlock}\n` : ""}${conflictBlock}${qualityBlock}${sheetsBlock}${figmaBlock}${historyBlock}## Human request (this turn)
+${opts?.graphifyBlock ? `${opts.graphifyBlock}\n` : ""}${conflictBlock}${qualityBlock}${sheetsBlock}${figmaBlock}${gitlabTaskBlock}${historyBlock}## Human request (this turn)
 ${message.trim()}
 
 ## How to behave (IDE-like)
-1. If they ask a question → answer clearly (Vietnamese if they wrote Vietnamese). Start repo lookup with \`code_map_query\` when that tool is attached.
-2. If they ask to fix / add / change / re-test / seed data / run something → **do it** on the CURRENT branch (do not switch branches).
+1. If they ask a question → answer clearly (Vietnamese if they wrote Vietnamese). Start repo lookup with \`code_map_query\` when that tool is attached. If a **GitLab task (chỉ đọc)** block is present, use it for issue title/description/comments.
+2. If they ask to fix / add / change / re-test / seed data / run something → **do it** on the CURRENT branch (do not switch branches). Subagent flow (skip steps that do not apply — do not spawn all three by default): Task \`explore\` only if path still unclear after map/search; Task \`code-reviewer\` only after multi-file / shared-logic / risky diffs; Task \`test-writer\` only when nearby tests exist. Skip subagents for Q&A-only or trivial one-file edits. **Data fidelity:** if they named a specific NV/id/code and DB returns 0 — STOP and report not found; do **not** switch to another person/row.
 3. Prefer small, correct changes. Stay scoped to the request.
 4. If the request is vague: search the repo first; minor gaps → proceed with the standard interpretation and say so in your reply; only end with NEED_CLARIFICATION when truly blocked (batch ALL questions, numbered, with options + your recommended default).
 5. Do NOT \`git commit\`, \`git push\`, force-push, amend remote commits, or open/merge MRs. Flow Auto Work commits to GitLab via API after you finish.

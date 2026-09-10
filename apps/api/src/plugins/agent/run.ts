@@ -836,6 +836,7 @@ export async function continueAgentWindow(
     contextQualityBlock?: string;
     googleSheetsBlock?: string;
     figmaBlock?: string;
+    gitlabTaskBlock?: string;
     conflictResolveBlock?: string;
   },
 ): Promise<AgentRunResult> {
@@ -855,6 +856,7 @@ export async function continueAgentWindow(
         contextQualityBlock: opts?.contextQualityBlock,
         googleSheetsBlock: opts?.googleSheetsBlock,
         figmaBlock: opts?.figmaBlock,
+        gitlabTaskBlock: opts?.gitlabTaskBlock,
         graphifyBlock,
         conflictResolveBlock: opts?.conflictResolveBlock,
       })
@@ -863,6 +865,7 @@ export async function continueAgentWindow(
         contextQualityBlock: opts?.contextQualityBlock,
         googleSheetsBlock: opts?.googleSheetsBlock,
         figmaBlock: opts?.figmaBlock,
+        gitlabTaskBlock: opts?.gitlabTaskBlock,
         graphifyBlock,
         conflictResolveBlock: opts?.conflictResolveBlock,
       });
