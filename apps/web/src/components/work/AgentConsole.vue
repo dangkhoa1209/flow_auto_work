@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
-import { DownOutlined } from "@ant-design/icons-vue";
+import { DownOutlined, ExclamationCircleOutlined } from "@ant-design/icons-vue";
 import ChatMessageBody from "@/components/ChatMessageBody.vue";
 import RepoTerminal from "@/components/work/RepoTerminal.vue";
 import { useAutoScroll } from "@/composables/useAutoScroll";
@@ -747,6 +747,13 @@ watch(chatBox, (el, prev) => {
                 <a-select-option value="agent">Agent</a-select-option>
                 <a-select-option value="plan">Plan</a-select-option>
               </a-select>
+            </a-tooltip>
+            <a-tooltip
+              title="Agent = code/fix. Plan = Cursor plan mode only → Approve Plan → code. Docs-first (Dev Notes) is separate: read → code → update docs."
+            >
+              <ExclamationCircleOutlined
+                class="text-[var(--app-faint)] text-[12px] cursor-help shrink-0"
+              />
             </a-tooltip>
             <button
               type="button"

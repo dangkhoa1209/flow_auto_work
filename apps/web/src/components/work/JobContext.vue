@@ -2,7 +2,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { RouterLink } from "vue-router";
 import { message } from "ant-design-vue";
-import { CopyOutlined } from "@ant-design/icons-vue";
+import { CopyOutlined, ExclamationCircleOutlined } from "@ant-design/icons-vue";
 import ChatMessageBody from "@/components/ChatMessageBody.vue";
 import IssueIidLink from "@/components/IssueIidLink.vue";
 import GitlabLabelChip from "@/components/GitlabLabelChip.vue";
@@ -144,11 +144,11 @@ const canRevokeJobGoogle = computed(
     ),
 );
 
-/** Docs approve → Plan (composer Plan mode) when on; else → Code. */
+/** Legacy docs pause — Run continues (Docs-first no longer needs Approve). */
 const docsApproveNextHint = computed(() =>
   props.planFirst
-    ? "Approve to continue with Plan (Cursor plan mode)"
-    : "Approve to run code",
+    ? "Press Run to continue (Plan next if composer is Plan)"
+    : "Press Run to continue with code",
 );
 
 const docsSummaryPreview = computed(
@@ -503,15 +503,15 @@ onUnmounted(() => {
 
             <a-alert
               v-if="awaitingDocsApproval"
-              type="success"
+              type="info"
               show-icon
               class="mb-3"
-              message="Docs-first complete — review analysis, then approve"
+              message="Legacy Docs pause — press Run to continue"
             >
               <template #description>
                 <div class="text-[12px] text-ink-soft space-y-2">
                   <p class="m-0">
-                    Project docs phase. {{ docsApproveNextHint }}
+                    Docs-first no longer waits for Approve. {{ docsApproveNextHint }}.
                     Full report is also in Chat.
                   </p>
                   <div
@@ -533,15 +533,6 @@ onUnmounted(() => {
                     No summary stored — open Chat for the agent report.
                   </p>
                 </div>
-              </template>
-              <template #action>
-                <a-button
-                  size="small"
-                  type="primary"
-                  :loading="approveDocsBusy"
-                  @click="emit('approveDocs')"
-                  >Approve Docs</a-button
-                >
               </template>
             </a-alert>
 
@@ -902,17 +893,23 @@ onUnmounted(() => {
                     "
                   />
                   <div class="min-w-0">
-                    <div class="text-[11px] text-ink-soft font-medium">
+                    <div class="text-[11px] text-ink-soft font-medium flex items-center gap-1">
                       Docs-first
                       <span class="font-normal text-ink-faint"
                         >(project)</span
                       >
+                      <a-tooltip
+                        title="On: agent reports existing feature docs, reads them, codes, then updates or creates docs. No Approve Docs step. Plan (composer) still needs Approve Plan."
+                      >
+                        <ExclamationCircleOutlined
+                          class="text-ink-faint text-[11px] cursor-help"
+                        />
+                      </a-tooltip>
                     </div>
                     <div class="text-[10px] text-ink-muted leading-snug">
-                      Read/update feature docs in the repo, then approve before
-                      code
+                      Read → code → update/create feature docs (no approve)
                       <span v-if="planFirst">
-                        (then Plan if composer mode is Plan)</span
+                        · after Approve Plan if composer is Plan</span
                       >.
                     </div>
                   </div>
@@ -1092,16 +1089,6 @@ onUnmounted(() => {
           ▶ Run
         </button>
       </a-tooltip>
-      <button
-        v-if="awaitingDocsApproval"
-        type="button"
-        class="faw-btn faw-btn--run"
-        :class="mobileTouch ? '!min-h-[44px]' : ''"
-        :disabled="approveDocsBusy"
-        @click="emit('approveDocs')"
-      >
-        Approve Docs
-      </button>
       <button
         v-if="awaitingPlanApproval"
         type="button"

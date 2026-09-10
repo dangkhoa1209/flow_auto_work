@@ -1,6 +1,6 @@
 /**
  * Plan-first phase (agent-side): Cursor plan mode, then PM approves → code.
- * Orthogonal to Docs-first (project docs). When both on: Docs → Plan → Code.
+ * Orthogonal to Docs-first (project docs, inline in code after Approve Plan).
  */
 import { loadJob, saveJob } from "../../job-store.js";
 import { jobQueue } from "../../queue.js";
@@ -44,7 +44,7 @@ export async function rerunJobPlan(jobId: string) {
     devNotes: resolveDevNotes(job) || undefined,
     requireDocsFirst: job.requireDocsFirst,
     planFirst: true,
-    forceCodePhase: Boolean(job.docsApprovedAt),
+    forceCodePhase: true,
     forceAgentPhase: false,
   });
   if (!result.enqueued) {

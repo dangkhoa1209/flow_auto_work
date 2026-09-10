@@ -126,15 +126,16 @@ Run / follow-up chat (mọi chỗ gọi Cursor để code)
 
 | Điều kiện | Prompt / phía |
 |-----------|----------------|
-| **Docs-first** (project), chưa duyệt | Docs only — đọc/cập nhật `docs/` feature; báo cáo ANALYZED + SUMMARY ra Chat; chờ Approve |
+| **Docs-first** (project) | Trong phase **code**: báo docs có → đọc → code → update/create docs (không Approve). DONE có `DOCS:` |
 | **Plan** (composer), chưa duyệt | Cursor `mode: plan` — không sửa file; báo cáo ANALYZED + PLAN ra Chat; chờ Approve |
-| Docs-first + composer Plan | Docs → Approve Docs → Plan → Approve Plan → Code |
-| Composer **Agent** / sau Approve | Code — implement + commit `feat #<iid> …` |
+| Docs-first + composer Plan | Plan → Approve Plan → Code (Docs-first chạy trong Code) |
+| Composer **Agent** / sau Approve Plan | Code — implement (+ Docs-first nếu bật) + commit `feat #<iid> …` |
 
-- **Docs-first** = phía **project** (switch trong Run gates / Dev Notes).
+- **Docs-first** = phía **project** (switch trong Run gates / Dev Notes) — không pause Approve.
 - **Plan vs Agent** = phía **composer** (dropdown cạnh Send): **Plan** = chỉ lên plan; **Agent** = code.
 - **Approve Plan** → enqueue code ngay **và** tự chuyển dropdown về **Agent** (`planFirst = false`).
-- Khi phase xong, UI hiện summary phân tích trên alert + Chat (không chỉ nút Docs/Plan rồi ẩn).
+- Job legacy `awaiting_docs_approval`: bấm **Run** để tiếp tục (không còn nút Approve Docs).
+- Khi Plan xong, UI hiện summary phân tích trên alert + Chat.
 
 Clarify (agent hỏi giữa chừng): `NEED_CLARIFICATION` → UI → `buildResumePrompt` trên cùng window.
 
@@ -147,7 +148,7 @@ Clarify (agent hỏi giữa chừng): `NEED_CLARIFICATION` → UI → `buildResu
 | `queued` / `running` | Đang chờ / đang chạy agent |
 | `draft` | Chưa run, hoặc **Bad Context** đã chặn (bổ sung rồi Run lại) |
 | `awaiting_clarification` | Agent hỏi giữa run — trả lời trên UI |
-| `awaiting_docs_approval` | Docs feature xong — chờ Approve (tiếp Plan nếu composer = Plan, không thì Code) |
+| `awaiting_docs_approval` | Legacy — Docs pause cũ; bấm Run để tiếp tục (Docs-first không còn Approve) |
 | `awaiting_plan_approval` | Composer Plan xong — chờ Approve rồi Code |
 | `awaiting_handoff` | Code xong — chờ assign/labels |
 | `succeeded` | Đã handoff |
@@ -169,7 +170,7 @@ Clarify (agent hỏi giữa chừng): `NEED_CLARIFICATION` → UI → `buildResu
 
 1. Click task → ensure 1 job + đọc GitLab.  
 2. Dev Notes trên job Mongo.  
-3. Docs-first (project, optional) và/hoặc composer **Plan** (dropdown cạnh Send) → Approve từng phase → Code.  
+3. Docs-first (project, optional — read→code→update docs) và/hoặc composer **Plan** (dropdown cạnh Send) → Approve Plan nếu Plan → Code.  
 4. Run / Run all (bỏ qua job busy).  
 5. Related/child → modal preview (không mở job).
 

@@ -432,15 +432,6 @@ function confirmMergeFromMenu() {
         </a-popconfirm>
       </div>
       <button
-        v-if="wb.awaitingDocsApproval"
-        type="button"
-        class="faw-m-btn faw-m-btn--docs touch-manipulation"
-        :disabled="wb.approveDocsBusy"
-        @click="wb.approveDocs()"
-      >
-        {{ wb.approveDocsBusy ? "…" : "Docs" }}
-      </button>
-      <button
         v-if="wb.awaitingPlanApproval"
         type="button"
         class="faw-m-btn faw-m-btn--docs touch-manipulation"

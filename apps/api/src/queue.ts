@@ -36,7 +36,6 @@ import { addChatMessage, listChatMessages } from "./models/chat.js";
 import { publishRealtime } from "./plugins/realtime/hub.js";
 import {
   commitMessageForIssue,
-  docsCommitMessageForIssue,
   extractChatBodyFromAgentText,
   formatChatContextForRun,
 } from "./plugins/agent/prompt.js";
@@ -47,7 +46,6 @@ import {
 } from "./plugins/agent/context-quality.js";
 import {
   docsReadySummaryText,
-  formatDocsReadyChatBody,
   parseDocsReadyPaths,
 } from "./plugins/docs/analysis.js";
 import {
@@ -2275,10 +2273,12 @@ export class JobQueue {
       return;
     }
     const notes = resolveDevNotes(job);
-    const runDocsPhase =
-      Boolean(job.requireDocsFirst) && !opts?.forceCodePhase;
+    // Docs-first is inline in the code phase (read → code → update/create).
+    // No separate docs pause / Approve Docs. Legacy awaiting_docs_approval → Run continues.
     const runPlanPhase =
-      !runDocsPhase && Boolean(job.planFirst) && !opts?.forceAgentPhase;
+      Boolean(job.planFirst) && !opts?.forceAgentPhase;
+    const docsFirstInline =
+      Boolean(job.requireDocsFirst) && !runPlanPhase;
 
     // Context-quality gate BEFORE Cursor / git / processing label
     let chatRows: Awaited<ReturnType<typeof listChatMessages>> = [];
@@ -2449,7 +2449,8 @@ export class JobQueue {
 
       logger.info("executeJob calling Cursor agent", {
         jobId: job.id,
-        phase: runDocsPhase ? "docs" : runPlanPhase ? "plan" : "code",
+        phase: runPlanPhase ? "plan" : "code",
+        docsFirst: docsFirstInline,
         existingAgentId: job.agentId ? `${job.agentId.slice(0, 8)}…` : null,
         branch: job.branch,
       });
@@ -2467,9 +2468,15 @@ export class JobQueue {
             0,
             config.MAX_CLARIFY_ROUNDS - (job.clarifyRound ?? 0),
           ),
-          phase: runDocsPhase ? "docs" : runPlanPhase ? "plan" : "code",
-          approvedDocsPaths:
-            !runDocsPhase && job.docsApprovedAt
+          phase: runPlanPhase ? "plan" : "code",
+          docsFirst: docsFirstInline,
+          approvedDocsPaths: docsFirstInline
+            ? job.docsPaths?.length
+              ? job.docsPaths
+              : job.docsPath
+                ? [job.docsPath]
+                : undefined
+            : job.docsApprovedAt
               ? job.docsPaths?.length
                 ? job.docsPaths
                 : job.docsPath
@@ -2489,73 +2496,6 @@ export class JobQueue {
 
       if (result.kind === "need_clarification") {
         await this.pauseForChatClarification(job, result);
-        return;
-      }
-
-      if (runDocsPhase) {
-        if (result.kind !== "docs_ready" && result.kind !== "unknown") {
-          // unexpected DONE during docs phase — still try to harvest docs
-          logger.warn("Docs phase ended without DOCS_READY", {
-            jobId: job.id,
-            kind: result.kind,
-          });
-        }
-
-        const body = result.summary ?? "";
-        const paths = parseDocsReadyPaths(body);
-        const summary = docsReadySummaryText(body) || body.slice(0, 500);
-        job.docsSummary = summary || undefined;
-        if (paths.length) {
-          job.docsPaths = paths;
-          job.docsPath = paths[0];
-        }
-
-        await this.finalizeOrDeferCommit(
-          job,
-          repoPath,
-          headBefore,
-          docsCommitMessageForIssue(job.issue, {
-            whatDone: summary || result.summary,
-          }),
-        );
-
-        let docsChat = formatDocsReadyChatBody(body, paths);
-        const hasDocsSections =
-          /### Đã phân tích|### Đã cập nhật docs|### Paths/.test(docsChat) ||
-          Boolean(summary?.trim());
-        if (!hasDocsSections) {
-          docsChat = extractChatBodyFromAgentText(result.text ?? "", {
-            summary: body || result.summary,
-          });
-        }
-        if (docsChat && docsChat !== "(no reply)") {
-          await addChatMessage({
-            jobId: job.id,
-            issueIid: job.issue.issueIid,
-            role: "agent",
-            kind: "qa",
-            body: docsChat,
-          });
-        }
-        appendJobProgress(
-          job.id,
-          "status",
-          summary
-            ? `Docs ready — awaiting approval (${summary.slice(0, 120)}${summary.length > 120 ? "…" : ""})`
-            : "Docs ready — awaiting approval (see Chat)",
-        );
-
-        job.status = "awaiting_docs_approval";
-        job.error = undefined;
-        // Clear prior approval so PM must re-approve this docs pass
-        job.docsApprovedAt = undefined;
-        await saveJob(job);
-
-        logger.info("Job awaiting docs approval", {
-          jobId: job.id,
-          docsPaths: job.docsPaths,
-          runCount: job.runCount,
-        });
         return;
       }
 
@@ -2627,6 +2567,16 @@ export class JobQueue {
 
       if (result.summary) {
         job.summary = result.summary;
+      }
+      if (docsFirstInline) {
+        const harvestFrom = `${result.summary ?? ""}\n${result.text ?? ""}`;
+        const paths = parseDocsReadyPaths(harvestFrom);
+        if (paths.length) {
+          job.docsPaths = paths;
+          job.docsPath = paths[0];
+        }
+        const docsBit = docsReadySummaryText(harvestFrom);
+        if (docsBit) job.docsSummary = docsBit.slice(0, 2000);
       }
       {
         const chatBody = extractChatBodyFromAgentText(result.text, {
