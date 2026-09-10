@@ -101,18 +101,29 @@ async function mergeBranch() {
   busy.value = true;
   try {
     const res = await api<{
-      merge?: { aiResolved?: boolean; target?: string; wipWarning?: string };
+      merge?: {
+        aiResolved?: boolean;
+        source?: string;
+        target?: string;
+        wipWarning?: string;
+      };
     }>(`/api/jobs/${selectedId.value}/merge`, {
       method: "POST",
       body: JSON.stringify({}),
     });
     const m = res?.merge;
+    const mergeBranches =
+      m?.source && m?.target
+        ? `${m.source} → ${m.target}`
+        : m?.target || m?.source || "";
     if (m?.aiResolved) {
       message.success(
-        `Merge OK → ${m.target || "base"} — AI đã tự resolve conflict`,
+        mergeBranches
+          ? `Merged ${mergeBranches} — AI đã tự resolve conflict`
+          : "Merge OK — AI đã tự resolve conflict",
       );
     } else {
-      message.success("Merge OK");
+      message.success(mergeBranches ? `Merged ${mergeBranches}` : "Merge OK");
     }
     if (m?.wipWarning) message.warning(m.wipWarning, 8);
     await work.loadJobs();

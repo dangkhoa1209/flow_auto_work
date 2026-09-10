@@ -402,7 +402,9 @@ export async function tryFinalizePendingConflict(
     source: source || undefined,
     target: target || undefined,
     message:
-      `Conflict finalized via Chat` +
+      (source && target
+        ? `Conflict finalized via Chat: ${source} → ${target}`
+        : `Conflict finalized via Chat`) +
       (commitSha ? ` (${commitSha.slice(0, 8)})` : "") +
       (wipWarning ? ` · ${wipWarning}` : ""),
   });
@@ -552,9 +554,9 @@ export async function syncJobBranchWithBase(
 
     const status = result.alreadyUpToDate ? "up_to_date" : "ok";
     const message = result.alreadyUpToDate
-      ? `Already up to date with ${target}`
+      ? `${source} already up to date with ${target}`
       : result.aiResolved
-        ? `Pulled ${target} — AI resolved conflicts`
+        ? `Pulled ${target} into ${source} — AI resolved conflicts`
         : `Pulled ${target} into ${source}`;
     pushMergeOpHistory(job, {
       kind: "sync-base",
@@ -873,8 +875,8 @@ export async function mergeJobBranch(
         target,
         message:
           (merged.alreadyMerged
-            ? `Already merged → ${target} (MR !${existingMr.iid})`
-            : `Merged → ${target} via MR !${existingMr.iid}`) +
+            ? `Already merged ${source} → ${target} (MR !${existingMr.iid})`
+            : `Merged ${source} → ${target} via MR !${existingMr.iid}`) +
           (aiResolved ? " — AI resolved conflicts" : "") +
           (syncError ? ` · local sync warning: ${syncError}` : ""),
       });
@@ -1037,8 +1039,8 @@ export async function mergeJobBranch(
         target,
         message:
           (alreadyUpToDate
-            ? `Already up to date → ${target}`
-            : `Merged ${source} → ${target} (local)`) +
+            ? `${source} already up to date with ${target}`
+            : `Merged ${source} → ${target}`) +
           (aiResolved ? " — AI resolved conflicts" : "") +
           (wipWarning ? ` · ${wipWarning}` : ""),
       });

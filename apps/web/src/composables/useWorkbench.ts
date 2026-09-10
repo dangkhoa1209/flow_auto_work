@@ -866,6 +866,7 @@ export function useWorkbench() {
         api<{
           merge?: {
             aiResolved?: boolean;
+            source?: string;
             target?: string;
             wipWarning?: string;
             needsChatResolve?: boolean;
@@ -878,6 +879,10 @@ export function useWorkbench() {
       );
       if (!res) return;
       const m = res?.merge;
+      const mergeBranches =
+        m?.source && m?.target
+          ? `${m.source} → ${m.target}`
+          : m?.target || m?.source || "";
       if (m?.needsChatResolve) {
         message.warning(
           `Merge conflict left open — use Chat Send to resolve` +
@@ -889,10 +894,14 @@ export function useWorkbench() {
         mobilePane.value = "chat";
       } else if (m?.aiResolved) {
         message.success(
-          `Merge OK → ${m.target || "base"} — AI resolved conflicts`,
+          mergeBranches
+            ? `Merged ${mergeBranches} — AI resolved conflicts`
+            : "Merge OK — AI resolved conflicts",
         );
       } else {
-        message.success("Merge OK");
+        message.success(
+          mergeBranches ? `Merged ${mergeBranches}` : "Merge OK",
+        );
       }
       if (m?.wipWarning) message.warning(m.wipWarning, 8);
       await work.loadJobs();
@@ -1024,6 +1033,7 @@ export function useWorkbench() {
       const res = await projectClone.withCloneRetry(() =>
         api<{
           sync?: {
+            source?: string;
             target?: string;
             aiResolved?: boolean;
             alreadyUpToDate?: boolean;
@@ -1038,6 +1048,8 @@ export function useWorkbench() {
       );
       if (!res) return;
       const s = res?.sync;
+      const workBr = s?.source?.trim() || "";
+      const baseBr = s?.target?.trim() || "";
       if (s?.needsChatResolve) {
         message.warning(
           `Conflict left open — use Chat Send to resolve` +
@@ -1049,14 +1061,22 @@ export function useWorkbench() {
         mobilePane.value = "chat";
       } else if (s?.alreadyUpToDate) {
         message.info(
-          `Already up to date with ${s?.target || "base"} — nothing to pull`,
+          workBr && baseBr
+            ? `${workBr} already up to date with ${baseBr} — nothing to pull`
+            : `Already up to date with ${baseBr || "base"} — nothing to pull`,
         );
       } else if (s?.aiResolved) {
         message.success(
-          `Pulled ${s?.target || "base"} — AI resolved conflicts`,
+          workBr && baseBr
+            ? `Pulled ${baseBr} into ${workBr} — AI resolved conflicts`
+            : `Pulled ${baseBr || "base"} — AI resolved conflicts`,
         );
       } else {
-        message.success(`Pulled ${s?.target || "base"} into job branch`);
+        message.success(
+          workBr && baseBr
+            ? `Pulled ${baseBr} into ${workBr}`
+            : `Pulled ${baseBr || "base"} into job branch`,
+        );
       }
       if (s?.wipWarning) message.warning(s.wipWarning, 8);
       await work.loadJobs();
