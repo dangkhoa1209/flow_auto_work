@@ -899,6 +899,10 @@ export function useWorkbench() {
       if (selectedJobId.value) await work.selectJob(selectedJobId.value);
     } catch (e) {
       message.error(e instanceof Error ? e.message : String(e));
+      await work.loadJobs().catch(() => undefined);
+      if (selectedJobId.value) {
+        await work.selectJob(selectedJobId.value).catch(() => undefined);
+      }
     } finally {
       mergeBusy.value = false;
     }
@@ -1063,6 +1067,10 @@ export function useWorkbench() {
         await openSyncBasePicker();
       } else {
         message.error(msg);
+        await work.loadJobs().catch(() => undefined);
+        if (selectedJobId.value) {
+          await work.selectJob(selectedJobId.value).catch(() => undefined);
+        }
       }
     } finally {
       syncBaseBusy.value = false;

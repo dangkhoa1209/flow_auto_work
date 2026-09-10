@@ -27,6 +27,16 @@ describe("redactGitCredentials", () => {
     expect(out).toContain("oauth2:***@");
     expect(out).not.toContain("glpat-abc");
   });
+
+  it("redacts Bearer and sk- tokens", () => {
+    const out = redactGitCredentials(
+      "Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.abc.def sk-abcdefghijklmnopqrstuvwxyz12",
+    );
+    expect(out).toContain("Bearer ***");
+    expect(out).toContain("sk-***");
+    expect(out).not.toContain("eyJhbGci");
+    expect(out).not.toContain("abcdefghijklmnopqrstuvwxyz");
+  });
 });
 
 describe("safeErrorMessage / redactGitError", () => {

@@ -13,6 +13,8 @@ import {
   contextQualityLabel,
   contextQualityColor,
 } from "@/utils/status";
+import { formatChatTime } from "@/utils/formatChatTime";
+import { redactSecrets } from "@/utils/redactSecrets";
 import type { Job, TaskDetail } from "@/stores/work";
 import type { MidTab } from "@/composables/useWorkbench";
 
@@ -437,6 +439,29 @@ onMounted(() => {
 onUnmounted(() => {
   window.removeEventListener("message", onGoogleOAuthMessage);
 });
+
+const mergeOpHistory = computed(() => props.currentJob?.mergeOpHistory ?? []);
+
+function mergeOpKindLabel(kind: string): string {
+  if (kind === "sync-base") return "Sync base";
+  if (kind === "merge") return "Merge";
+  return kind || "—";
+}
+
+function mergeOpStatusLabel(status: string): string {
+  if (status === "ok") return "OK";
+  if (status === "up_to_date") return "Up to date";
+  if (status === "conflict") return "Conflict";
+  if (status === "error") return "Error";
+  return status || "—";
+}
+
+function mergeOpStatusClass(status: string): string {
+  if (status === "ok" || status === "up_to_date") return "text-emerald-600";
+  if (status === "conflict") return "text-amber-600";
+  if (status === "error") return "text-red-600";
+  return "text-ink-muted";
+}
 </script>
 
 <template>
@@ -1006,6 +1031,59 @@ onUnmounted(() => {
                       >
                     </span>
                   </label>
+                </div>
+              </div>
+
+              <div
+                v-if="currentJob"
+                class="mt-4 rounded-lg border border-[var(--app-border)] bg-[var(--app-panel-soft)] px-3 py-2.5"
+              >
+                <div class="text-[12px] text-ink-soft font-medium">
+                  Sync base / Merge — lịch sử
+                </div>
+                <div class="text-[11px] text-ink-muted mt-0.5 mb-2">
+                  Thời gian · trạng thái · thông báo (đã ẩn token / key).
+                </div>
+                <ul
+                  v-if="mergeOpHistory.length"
+                  class="m-0 p-0 list-none space-y-2 max-h-64 overflow-y-auto"
+                >
+                  <li
+                    v-for="(h, i) in mergeOpHistory"
+                    :key="`${h.at}-${h.kind}-${i}`"
+                    class="rounded-md border border-[var(--app-border)] bg-surface px-2.5 py-2"
+                  >
+                    <div
+                      class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-[11px]"
+                    >
+                      <span class="text-ink-faint tabular-nums shrink-0">{{
+                        formatChatTime(h.at)
+                      }}</span>
+                      <span class="font-medium text-ink-soft">{{
+                        mergeOpKindLabel(h.kind)
+                      }}</span>
+                      <span
+                        class="font-medium"
+                        :class="mergeOpStatusClass(h.status)"
+                        >{{ mergeOpStatusLabel(h.status) }}</span
+                      >
+                      <span
+                        v-if="h.source || h.target"
+                        class="text-ink-faint truncate min-w-0"
+                      >
+                        {{ h.source || "?" }} → {{ h.target || "?" }}
+                      </span>
+                    </div>
+                    <div
+                      v-if="h.message"
+                      class="mt-1 text-[12px] text-ink-soft whitespace-pre-wrap break-words"
+                    >
+                      {{ redactSecrets(h.message) }}
+                    </div>
+                  </li>
+                </ul>
+                <div v-else class="text-[11px] text-ink-faint">
+                  Chưa có lần Sync base / Merge nào trên job này.
                 </div>
               </div>
             </div>

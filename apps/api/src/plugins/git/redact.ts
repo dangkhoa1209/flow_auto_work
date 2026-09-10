@@ -10,7 +10,9 @@ export function redactGitCredentials(text: string): string {
     .replace(/(https?:\/\/)([^/\s:@]+):([^@/\s]+)@/gi, "$1$2:***@")
     .replace(/\bgithub_pat_[A-Za-z0-9_]+/g, "github_pat_***")
     .replace(/\bghp_[A-Za-z0-9_]+/g, "ghp_***")
-    .replace(/\bglpat-[A-Za-z0-9_-]+/g, "glpat-***");
+    .replace(/\bglpat-[A-Za-z0-9_-]+/g, "glpat-***")
+    .replace(/\bBearer\s+[A-Za-z0-9._~+/=-]+/gi, "Bearer ***")
+    .replace(/\bsk-[A-Za-z0-9]{20,}/g, "sk-***");
 }
 
 /** Safe string for job.error / chat — never leave PAT in UI. */

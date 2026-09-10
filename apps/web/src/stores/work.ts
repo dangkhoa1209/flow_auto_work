@@ -113,6 +113,15 @@ export type Job = {
     files?: string[];
     startedAt?: string;
   };
+  /** Sync base / Merge attempts (newest first); messages already redacted */
+  mergeOpHistory?: Array<{
+    kind: "sync-base" | "merge" | string;
+    status: "ok" | "up_to_date" | "conflict" | "error" | string;
+    at: string;
+    message: string;
+    source?: string;
+    target?: string;
+  }>;
 };
 
 export function isAdhocJob(job: Job | null | undefined): boolean {
