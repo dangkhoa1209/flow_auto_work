@@ -67,20 +67,25 @@ export function planReadySectionsLen(summaryBody: string): number {
 }
 
 /**
- * Pick the richest plan source: tagged PLAN_READY body, raw agent text, or
- * Process stream (thinking/assistant) — so Chat is not stuck on a one-liner
- * while the real plan only lived in clipped Process logs.
+ * Pick the richest plan source: tagged PLAN_READY body, raw agent text,
+ * Process stream, or Cursor `createPlan` tool body.
+ * Thin PLAN/ANALYZED labels must not beat a much longer plain plan.
  */
 export function pickPlanReadySource(
   ...candidates: Array<string | undefined | null>
 ): string {
   let best = "";
+  let bestScore = 0;
   for (const c of candidates) {
     const t = (c || "").trim();
     if (!t) continue;
-    const scored = planReadySectionsLen(t) || t.length;
-    const bestScored = planReadySectionsLen(best) || best.length;
-    if (scored > bestScored) best = t;
+    const sections = planReadySectionsLen(t);
+    // Rich labeled sections win on section length; thin labels fall back to full text
+    const scored = sections >= 280 ? sections : Math.max(sections, t.length);
+    if (scored > bestScore) {
+      best = t;
+      bestScore = scored;
+    }
   }
   return best;
 }
@@ -100,12 +105,15 @@ export function formatPlanReadyChatBody(
 
   const prose = (opts?.prose || "").trim();
   const sectionLen = (analyzed?.length || 0) + (plan?.length || 0);
-  // Thin PLAN_READY marker but long stream/prose → prefer prose under Kế hoạch
-  if (prose && prose.length > sectionLen + 40 && sectionLen < 280) {
+  // Thin PLAN_READY marker but long stream/createPlan prose → prefer prose under Kế hoạch
+  if (prose && prose.length > sectionLen + 40 && sectionLen < 400) {
     const proseAnalyzed = planReadySection(prose, "ANALYZED");
     const prosePlan = planReadySection(prose, "PLAN");
     if (proseAnalyzed || prosePlan) {
-      return formatPlanReadyChatBody(prose);
+      // Only recurse into labeled prose when it is actually richer
+      if (planReadySectionsLen(prose) > sectionLen + 40) {
+        return formatPlanReadyChatBody(prose);
+      }
     }
     plan = prose;
   }

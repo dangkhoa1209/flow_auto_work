@@ -32,6 +32,7 @@ import { answerTaskQuestion } from "./plugins/agent/qa.js";
 import { generateTestcasesForIssue } from "./plugins/agent/testcases.js";
 import {
   appendJobProgress,
+  getJobCapturedPlan,
   getJobProgress,
   getJobTokenUsage,
 } from "./plugins/agent/progress.js";
@@ -2514,6 +2515,8 @@ export class JobQueue {
 
         const tagged = (result.summary ?? "").trim();
         const rawText = (result.text ?? "").trim();
+        // Cursor plan mode: full body is in createPlan tool args (not PLAN_READY one-liner)
+        const fromCreatePlan = getJobCapturedPlan(job.id) || "";
         // Thinking/assistant lived in Process during stream — harvest if result is thin
         const fromProgress = getJobProgress(job.id)
           .lines.filter(
@@ -2525,10 +2528,18 @@ export class JobQueue {
           .map((l) => l.text)
           .join("\n\n")
           .trim();
-        const formatSource = pickPlanReadySource(tagged, rawText, fromProgress);
-        const prose = extractChatBodyFromAgentText(rawText || fromProgress, {
-          summary: tagged,
-        });
+        const formatSource = pickPlanReadySource(
+          tagged,
+          rawText,
+          fromProgress,
+          fromCreatePlan,
+        );
+        const prose = extractChatBodyFromAgentText(
+          rawText || fromCreatePlan || fromProgress,
+          {
+            summary: tagged,
+          },
+        );
         const summary =
           (planReadySummaryText(formatSource) ||
             (prose && prose !== "(no reply)" ? prose : "") ||

@@ -551,7 +551,7 @@ onUnmounted(() => {
                   </p>
                   <div
                     v-if="planSummaryPreview"
-                    class="whitespace-pre-wrap rounded-md border border-[var(--app-border)] bg-[var(--app-panel-soft)] px-2.5 py-2 max-h-56 overflow-y-auto text-ink"
+                    class="whitespace-pre-wrap rounded-md border border-[var(--app-border)] bg-[var(--app-panel-soft)] px-2.5 py-2 max-h-[min(70vh,28rem)] overflow-y-auto text-ink"
                   >
                     {{ planSummaryPreview }}
                   </div>

@@ -329,7 +329,7 @@ ${linkedBlock}${sheetsBlock}${figmaBlock}
 
 <<<PLAN_READY>>>
 ANALYZED: Vietnamese — what you analyzed (2–5 bullets): issue scope, neo code/files found, docs/rules skimmed, gaps or assumptions. Not only a file list.
-PLAN: Vietnamese — structured plan (mục tiêu, phạm vi, files/neo, rủi ro, bước implement).
+PLAN: Vietnamese — the **full** structured plan (mục tiêu, phạm vi, files/neo, rủi ro, bước implement). Do NOT put a one-line status like "Đang xác nhận…". If you used createPlan, paste that same full plan text here.
 <<<END_PLAN_READY>>>
 
 Both ANALYZED and PLAN are required — Flow shows them in chat for the pair (PM/dev).

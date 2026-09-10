@@ -45,6 +45,8 @@ export const PROGRESS_PUBLISH_MS = 80;
 
 const buffers = new Map<string, ProgressLine[]>();
 const tokenByJob = new Map<string, JobTokenSnapshot>();
+/** Full Cursor plan-mode body from `createPlan` tool (not the clipped tool label). */
+const capturedPlanByJob = new Map<string, string>();
 const pendingPublish = new Map<string, ReturnType<typeof setTimeout>>();
 let seq = 0;
 
@@ -107,6 +109,63 @@ function joinAtBoundary(prev: string, next: string): string {
 export function clearJobProgress(jobId: string): void {
   cancelPendingPublish(jobId);
   buffers.set(jobId, []);
+  capturedPlanByJob.delete(jobId);
+}
+
+/** Full plan text from Cursor `createPlan` (if any) for this job run. */
+export function getJobCapturedPlan(jobId: string): string | undefined {
+  const t = capturedPlanByJob.get(jobId)?.trim();
+  return t || undefined;
+}
+
+/**
+ * Cursor plan mode writes the real plan into tool `createPlan` args.plan.
+ * Process tool lines only keep a short hint — stash the full body for Chat.
+ */
+export function captureCreatePlanFromTool(
+  jobId: string | undefined,
+  name: string,
+  args: unknown,
+  opts?: { mirrorToProcess?: boolean },
+): string | undefined {
+  if (!jobId) return undefined;
+  const a = asRecord(args);
+  const display = resolveToolName(name, a);
+  const isCreatePlan =
+    /^createPlan$/i.test(name) ||
+    /^createPlan$/i.test(display) ||
+    /^create_plan$/i.test(name) ||
+    /^create_plan$/i.test(display);
+  if (!isCreatePlan) return undefined;
+  const inner = a ? innerToolArgs(a) : null;
+  const raw =
+    (typeof inner?.plan === "string" && inner.plan) ||
+    (typeof a?.plan === "string" && a.plan) ||
+    "";
+  const text = raw.trim();
+  if (!text) return undefined;
+  const prev = capturedPlanByJob.get(jobId) || "";
+  if (text.length <= prev.length) return prev;
+  capturedPlanByJob.set(jobId, text);
+  if (opts?.mirrorToProcess !== false) {
+    // Show full plan in Process while building (assistant coalesces).
+    appendJobProgress(jobId, "assistant", text);
+  }
+  return text;
+}
+
+function tryCaptureCreatePlanFromToolCall(toolCall: unknown): {
+  name: string;
+  args: unknown;
+} | null {
+  if (!toolCall || typeof toolCall !== "object") return null;
+  const tc = toolCall as { type?: string; name?: string; args?: unknown };
+  const name =
+    (typeof tc.type === "string" && tc.type) ||
+    (typeof tc.name === "string" && tc.name) ||
+    "";
+  if (!name) return null;
+  return { name, args: tc.args };
 }
 
 export function appendJobProgress(
@@ -330,6 +389,21 @@ function summarizeToolArgs(name: string, args: unknown): string {
   }
   const display = resolveToolName(name, a);
   const inner = a ? innerToolArgs(a) : null;
+  if (
+    /^createPlan$/i.test(name) ||
+    /^createPlan$/i.test(display) ||
+    /^create_plan$/i.test(display)
+  ) {
+    const plan =
+      (typeof inner?.plan === "string" && inner.plan.trim()) ||
+      (typeof a?.plan === "string" && a.plan.trim()) ||
+      "";
+    if (plan) {
+      const first = plan.split(/\r?\n/).find((l) => l.trim()) || plan;
+      return `createPlan: ${clipHint(first.trim(), 100)}`;
+    }
+    return "createPlan";
+  }
   const hint = hintFromArgs(inner) || hintFromArgs(a);
   if (!hint) return display;
   const max = display === "Shell" || name === "Shell" ? 160 : 120;
@@ -398,6 +472,22 @@ export function workRunOnDelta(
     // Only nest here — otherwise Process would duplicate the Task line.
     if (update.type === "tool-call-delta" && update.taskUpdate) {
       appendSubagentDelta(jobId, update.callId, update.taskUpdate);
+      return;
+    }
+    // Plan mode: full plan lives in createPlan args (stream tool lines are clipped).
+    if (
+      update.type === "tool-call-started" ||
+      update.type === "tool-call-completed" ||
+      update.type === "partial-tool-call"
+    ) {
+      const tc = tryCaptureCreatePlanFromToolCall(
+        (update as { toolCall?: unknown }).toolCall,
+      );
+      if (tc) {
+        captureCreatePlanFromTool(jobId, tc.name, tc.args, {
+          mirrorToProcess: update.type !== "partial-tool-call",
+        });
+      }
     }
   };
 }
@@ -488,6 +578,7 @@ export function appendSdkMessage(
       if (texts) appendJobProgress(jobId, "assistant", texts);
       for (const b of message.message.content) {
         if (b.type === "tool_use") {
+          captureCreatePlanFromTool(jobId, b.name, b.input);
           appendJobProgress(
             jobId,
             "tool",
@@ -498,6 +589,10 @@ export function appendSdkMessage(
       break;
     }
     case "tool_call": {
+      captureCreatePlanFromTool(jobId, message.name, message.args, {
+        // Prefer completed/full args; running may be empty/partial
+        mirrorToProcess: message.status !== "running",
+      });
       const label = summarizeToolArgs(message.name, message.args);
       const suffix =
         message.status === "running"
