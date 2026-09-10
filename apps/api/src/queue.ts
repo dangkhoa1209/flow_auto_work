@@ -2540,12 +2540,13 @@ export class JobQueue {
             summary: tagged,
           },
         );
+        // Full plan body — no word/char cap (Chat + Approve Plan preview)
         const summary =
-          (planReadySummaryText(formatSource) ||
-            (prose && prose !== "(no reply)" ? prose : "") ||
-            formatSource ||
-            "").slice(0, 8000) || undefined;
-        job.planSummary = summary;
+          planReadySummaryText(formatSource) ||
+          (prose && prose !== "(no reply)" ? prose : "") ||
+          formatSource ||
+          undefined;
+        job.planSummary = summary || undefined;
         job.planApprovedAt = undefined;
 
         let planChat = formatPlanReadyChatBody(formatSource, {

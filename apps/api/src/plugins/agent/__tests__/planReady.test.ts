@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   formatPlanReadyChatBody,
+  looksVietnamese,
   pickPlanReadySource,
   planReadySection,
   planReadySectionsLen,
@@ -35,6 +36,14 @@ describe("formatPlanReadyChatBody", () => {
     expect(body).not.toContain("### Cách giải quyết");
     expect(body).not.toContain("### Đã phân tích");
     expect(body).not.toContain("### Kế hoạch");
+  });
+
+  it("does not truncate long Vietnamese plan bodies", () => {
+    const longPlan = `ANALYZED:\n${"Phân tích chi tiết vấn đề nghỉ trưa và phép bù. ".repeat(40)}\n\nPLAN:\n${"Bước sửa AttendanceService và duyệt phiếu gắn off_hours. ".repeat(40)}`;
+    const body = formatPlanReadyChatBody(longPlan);
+    expect(body.length).toBeGreaterThan(2000);
+    expect(body).toContain("nghỉ trưa");
+    expect(body).toContain("off_hours");
   });
 
   it("prefers long createPlan body over thin PLAN_READY one-liner", () => {
@@ -81,6 +90,23 @@ describe("formatPlanReadyChatBody", () => {
     expect(body).not.toContain("Fix how shifts are loaded");
   });
 
+  it("does not swap English createPlan over shorter Vietnamese labeled body", () => {
+    const vi = `ANALYZED:\nIssue liên quan load ca khi recalc used và duyệt phiếu off_hours.\n\nPLAN:\nSửa AttendanceService rồi gắn flag khi duyệt.`;
+    const english = [
+      "## Overview",
+      "This is a much longer English createPlan body with many steps and details",
+      "covering recalculation of used leave hours and approval flags.",
+      "It intentionally exceeds the Vietnamese labeled sections in length.",
+    ].join("\n");
+    expect(looksVietnamese(vi)).toBe(true);
+    expect(looksVietnamese(english)).toBe(false);
+    const body = formatPlanReadyChatBody(vi, { prose: english });
+    expect(body).toContain("recalc used");
+    expect(body).toContain("AttendanceService");
+    expect(body).not.toContain("## Overview");
+    expect(body).not.toContain("intentionally exceeds");
+  });
+
   it("does not let thin PLAN label inside a long stream beat a full plan", () => {
     const stream = [
       "Đang đọc AttendanceService…",
@@ -123,5 +149,17 @@ describe("pickPlanReadySource", () => {
     expect(pickPlanReadySource("short", "much longer plain plan text here")).toBe(
       "much longer plain plan text here",
     );
+  });
+
+  it("prefers Vietnamese plain body over longer English createPlan", () => {
+    const vi =
+      "Phân tích: cần sửa load ca khi recalc used và gắn off_hours khi duyệt phiếu nghỉ. Cách làm: đọc AttendanceService, chỉnh công thức, thêm test.";
+    const en = [
+      "## Overview",
+      "Fix shift loading when recalculating used leave and attach off_hours on approval.",
+      "This English plan is intentionally longer with more padding words than the Vietnamese text.",
+      "Steps include reading the service, changing the formula, and adding regression coverage.",
+    ].join("\n");
+    expect(pickPlanReadySource(en, vi)).toBe(vi);
   });
 });

@@ -44,7 +44,7 @@ export function planReadySection(
   return out.join("\n").trim();
 }
 
-/** Drop thin status one-liners / empty chrome from a plan chunk. */
+/** Drop thin status one-liners / empty chrome from a plan chunk (no length cap). */
 function trimPlanFluff(text: string): string {
   const t = text.trim();
   if (!t) return "";
@@ -61,7 +61,20 @@ function trimPlanFluff(text: string): string {
   return meaningful.join("\n").replace(/^\n+|\n+$/g, "").replace(/\n{3,}/g, "\n\n");
 }
 
-/** Short VI summary for job.planSummary (prefers ANALYZED + PLAN, no rigid headings). */
+/** Rough signal: Vietnamese diacritics (for preferring VI over English createPlan). */
+export function looksVietnamese(text: string): boolean {
+  const t = (text || "").trim();
+  if (!t) return false;
+  const marks = t.match(
+    /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđĐ]/g,
+  );
+  const n = marks?.length || 0;
+  if (n >= 8) return true;
+  if (n >= 3 && n / t.length >= 0.015) return true;
+  return false;
+}
+
+/** Full VI body for job.planSummary (ANALYZED + PLAN; no rigid headings; no truncation). */
 export function planReadySummaryText(summaryBody: string): string {
   const analyzed = trimPlanFluff(planReadySection(summaryBody, "ANALYZED"));
   const plan = trimPlanFluff(planReadySection(summaryBody, "PLAN"));
@@ -89,6 +102,7 @@ const LABELED_PLAN_MIN = 100;
  * Process stream, or Cursor `createPlan` tool body.
  * Substantial labeled PLAN_READY (VI) wins over a longer unlabeled createPlan
  * (Cursor often writes createPlan in English). Thin one-liners still lose.
+ * Prefer Vietnamese-looking candidates over English when scores are close.
  */
 export function pickPlanReadySource(
   ...candidates: Array<string | undefined | null>
@@ -97,6 +111,8 @@ export function pickPlanReadySource(
   let bestLabeledScore = 0;
   let bestAny = "";
   let bestAnyScore = 0;
+  let bestVi = "";
+  let bestViScore = 0;
   for (const c of candidates) {
     const t = (c || "").trim();
     if (!t) continue;
@@ -111,13 +127,23 @@ export function pickPlanReadySource(
       bestAny = t;
       bestAnyScore = scored;
     }
+    if (looksVietnamese(t) && scored > bestViScore) {
+      bestVi = t;
+      bestViScore = scored;
+    }
   }
-  return bestLabeled || bestAny;
+  if (bestLabeled) return bestLabeled;
+  // Prefer VI body over a longer English createPlan when VI has real content
+  if (bestVi && bestViScore >= 80 && !looksVietnamese(bestAny)) {
+    return bestVi;
+  }
+  return bestAny;
 }
 
 /**
- * Chat message after plan phase — Vietnamese summary of analysis + plan.
- * No fixed dual headings; machine tags ANALYZED/PLAN are stripped for display.
+ * Chat message after plan phase — full Vietnamese analysis + plan.
+ * No word limit; no fixed dual headings; ANALYZED/PLAN labels stripped.
+ * Only drop fluff (status one-liners); never truncate substantive body.
  */
 export function formatPlanReadyChatBody(
   summaryBody: string,
@@ -134,9 +160,15 @@ export function formatPlanReadyChatBody(
 
   const prose = trimPlanFluff(opts?.prose || "");
   const sectionLen = (analyzed?.length || 0) + (plan?.length || 0);
-  // Only swap in createPlan/stream prose when labeled PLAN_READY is thin
-  // (otherwise English createPlan would hide a solid Vietnamese PLAN block)
-  if (prose && prose.length > sectionLen + 40 && sectionLen < LABELED_PLAN_MIN) {
+  const labeledVi = looksVietnamese([analyzed, plan].filter(Boolean).join("\n"));
+  // Only swap in createPlan/stream prose when labeled PLAN_READY is thin.
+  // Never replace Vietnamese labeled body with a longer English createPlan.
+  if (
+    prose &&
+    prose.length > sectionLen + 40 &&
+    sectionLen < LABELED_PLAN_MIN &&
+    !(labeledVi && !looksVietnamese(prose))
+  ) {
     const proseAnalyzed = planReadySection(prose, "ANALYZED");
     const prosePlan = planReadySection(prose, "PLAN");
     if (proseAnalyzed || prosePlan) {
@@ -154,8 +186,8 @@ export function formatPlanReadyChatBody(
   } else {
     const fallback =
       planReadySummaryText(summaryBody) ||
-      prose.slice(0, 8000) ||
-      trimPlanFluff(summaryBody).slice(0, 2000);
+      prose ||
+      trimPlanFluff(summaryBody);
     if (fallback) parts.push("", fallback);
   }
   return parts.join("\n").trim();
