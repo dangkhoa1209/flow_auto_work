@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
   formatPlanReadyChatBody,
+  isMostlyPlanProcessNarration,
+  isPlanProcessNarration,
   looksVietnamese,
   pickPlanReadySource,
   planReadySection,
   planReadySectionsLen,
   planReadySummaryText,
+  stripPlanProcessNarration,
 } from "../planReady.js";
 
 const sample = `ANALYZED:
@@ -122,6 +125,57 @@ describe("formatPlanReadyChatBody", () => {
     ].join("\n");
     expect(pickPlanReadySource("PLAN: ngắn", stream, createPlan)).toBe(
       createPlan,
+    );
+  });
+
+  it("does not show English thinking dump as PLAN READY", () => {
+    const thinkingDump = [
+      "Planning work for GitLab issue #14972. The bug causes the compensatory leave calculation to incorrectly include lunch break time.",
+      "Starting the plan by reading AGENTS.md and mapping the codebase to locate the compensatory leave calculation logic.",
+      "Đang đọc AGENTS.md và tìm neo kỹ thuật liên quan issue #14972.",
+      "I will query the code map for the compensatory leave feature, review the relevant skills and documentation, and search for the required keywords.",
+      "The code map search returned off-target results.",
+      "Reading docs/README.md and timekeeping documentation for compensatory leave. Searching for specific keywords.",
+      "Code map lệch — chuyển sang docs timekeeping và tìm neo keyword trong repo.",
+      "Documentation points toward specific guidance.",
+    ].join("\n\n");
+    const viPlan = `ANALYZED:
+Bug phép bù đang cộng giờ nghỉ trưa khi cả ca.
+Neo: AttendanceService / công thức used.
+
+PLAN:
+Trừ lunch break khi tính phép bù cả ca; thêm test regression.`;
+    expect(isMostlyPlanProcessNarration(thinkingDump)).toBe(true);
+    expect(pickPlanReadySource(thinkingDump, viPlan)).toBe(viPlan.trim());
+    const body = formatPlanReadyChatBody(thinkingDump, { prose: thinkingDump });
+    expect(body).not.toContain("Starting the plan by reading");
+    expect(body).not.toContain("I will query the code map");
+    // Prefer createPlan over thinking when no VI labeled body
+    const enCreate = [
+      "## Overview",
+      "Exclude lunch break from compensatory leave when full shift.",
+      "## Steps",
+      "1. Find used-leave formula",
+      "2. Subtract lunch minutes",
+      "3. Add regression test",
+    ].join("\n");
+    expect(pickPlanReadySource(thinkingDump, enCreate)).toBe(enCreate);
+  });
+});
+
+describe("stripPlanProcessNarration", () => {
+  it("drops status paragraphs and keeps plan body", () => {
+    const mixed = [
+      "Starting the plan by reading AGENTS.md.",
+      "## Mục tiêu",
+      "Sửa công thức phép bù trừ giờ nghỉ trưa.",
+    ].join("\n\n");
+    const out = stripPlanProcessNarration(mixed);
+    expect(out).toContain("Mục tiêu");
+    expect(out).toContain("phép bù");
+    expect(out).not.toContain("Starting the plan");
+    expect(isPlanProcessNarration("Planning work for GitLab issue #1.")).toBe(
+      true,
     );
   });
 });

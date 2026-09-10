@@ -2517,25 +2517,21 @@ export class JobQueue {
         const rawText = (result.text ?? "").trim();
         // Cursor plan mode: full body is in createPlan tool args (not PLAN_READY one-liner)
         const fromCreatePlan = getJobCapturedPlan(job.id) || "";
-        // Thinking/assistant lived in Process during stream — harvest if result is thin
+        // Harvest Process assistant/task only — skip thinking (English status narration)
         const fromProgress = getJobProgress(job.id)
-          .lines.filter(
-            (l) =>
-              l.kind === "assistant" ||
-              l.kind === "thinking" ||
-              l.kind === "task",
-          )
+          .lines.filter((l) => l.kind === "assistant" || l.kind === "task")
           .map((l) => l.text)
           .join("\n\n")
           .trim();
+        // Prefer tagged VI + createPlan over raw stream / thinking dump
         const formatSource = pickPlanReadySource(
           tagged,
+          fromCreatePlan,
           rawText,
           fromProgress,
-          fromCreatePlan,
         );
         const prose = extractChatBodyFromAgentText(
-          rawText || fromCreatePlan || fromProgress,
+          fromCreatePlan || rawText || fromProgress,
           {
             summary: tagged,
           },

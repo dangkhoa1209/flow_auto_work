@@ -306,6 +306,7 @@ export function buildPlanPhasePrompt(
   return `# MISSION — PLAN PHASE ONLY (NO CODE CHANGES)
 You are planning work for GitLab issue #${issue.issueIid} on the **current project checkout**.
 This run is Cursor **plan mode**: read/search the repo, then produce an implementation plan.
+**Output language: tiếng Việt** for createPlan + PLAN_READY (Chat). Do not write the plan in English.
 Do NOT edit, write, delete, or run shell that mutates files. Do NOT commit or push.
 
 ${projectConventionsBlock()}
@@ -323,17 +324,18 @@ ${linkedBlock}${sheetsBlock}${figmaBlock}
 # HARD RULES (PLAN PHASE)
 1. Only read/search tools (\`read\`, \`grep\`, \`glob\`, \`ls\`, code map). No app code, no docs file writes.
 2. Search the repo before guessing file paths.
-3. **Chat PLAN READY output (tiếng Việt):** write the analysis + plan the human will read in **tiếng Việt**. No word/character limit — cover what matters fully. You may drop filler / status / redundant chrome ("Đang xác nhận…", meta narration). No fixed dual headings required in the chat body.
-4. Same language for Cursor \`createPlan\` \`plan\` body and assistant prose — do **not** leave createPlan in English; Flow shows that text in Chat as PLAN READY.
-5. Batch questions; only use NEED_CLARIFICATION when truly blocked.
-6. When the plan is ready, end with EXACTLY this block:
+3. **Chat PLAN READY = tiếng Việt only.** Flow shows this in Chat for the PM. Write the real analysis + solution in Vietnamese (no word limit). Drop filler / status / meta ("Đang đọc…", "Planning work…", "Starting the plan…", "I will query…").
+4. Cursor \`createPlan\` \`plan\` **must be tiếng Việt** (same content you put in PLAN). Do **not** leave createPlan in English — English createPlan is rejected by Flow in favor of the Vietnamese PLAN_READY body.
+5. Do **not** paste thinking / process narration into PLAN_READY. Status lines belong in Process only; Chat needs the finished plan.
+6. Batch questions; only use NEED_CLARIFICATION when truly blocked.
+7. When the plan is ready, end with EXACTLY this block:
 
 <<<PLAN_READY>>>
-ANALYZED: tiếng Việt — nội dung phân tích (issue, hiện trạng vs kỳ vọng, neo file/code, giả định). Đủ chi tiết; không giới hạn số từ; bỏ phần thừa. Not a status one-liner.
-PLAN: tiếng Việt — cách làm đầy đủ (mục tiêu, phạm vi, file, rủi ro, bước). Không giới hạn số từ. If you used createPlan, write createPlan in Vietnamese first, then paste that same full text here.
+ANALYZED: tiếng Việt — nội dung phân tích (issue, hiện trạng vs kỳ vọng, neo file/code, giả định). Đủ chi tiết; không giới hạn số từ; bỏ phần thừa. Not a status one-liner. Not English.
+PLAN: tiếng Việt — cách làm đầy đủ (mục tiêu, phạm vi, file, rủi ro, bước). Không giới hạn số từ. Write createPlan in Vietnamese first, then paste that same full text here.
 <<<END_PLAN_READY>>>
 
-Both ANALYZED and PLAN are required — Flow shows the Vietnamese body in chat (labels stripped; no truncation).
+Both ANALYZED and PLAN are required — Flow shows the Vietnamese body in chat (labels stripped; no truncation). English-only / thinking dumps are not acceptable.
 Flow Auto Work will pause for the human to approve, then a later Run will implement in agent mode.
 ${gitlabCommentInstructions(issue)}`;
 }
