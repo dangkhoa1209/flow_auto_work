@@ -29,9 +29,9 @@ describe("formatPlanReadyChatBody", () => {
   it("shows analysis + plan for the pair", () => {
     const body = formatPlanReadyChatBody(sample);
     expect(body).toContain("PLAN READY:");
-    expect(body).toContain("### Đã phân tích");
+    expect(body).toContain("### Tóm tắt vấn đề");
     expect(body).toContain("nghỉ trưa");
-    expect(body).toContain("### Kế hoạch");
+    expect(body).toContain("### Cách giải quyết");
     expect(body).toContain("Trừ giờ nghỉ trưa");
   });
 
@@ -53,7 +53,7 @@ describe("formatPlanReadyChatBody", () => {
     expect(pickPlanReadySource(thin, createPlan)).toBe(createPlan);
     const body = formatPlanReadyChatBody(thin, { prose: createPlan });
     expect(body).toContain("AttendanceService");
-    expect(body).toContain("### Kế hoạch");
+    expect(body).toContain("### Cách giải quyết");
     expect(body).not.toMatch(/Đang xác nhận cách load ca$/m);
   });
 
@@ -79,8 +79,8 @@ describe("formatPlanReadyChatBody", () => {
 describe("planReadySummaryText", () => {
   it("keeps analysis and plan", () => {
     const text = planReadySummaryText(sample);
-    expect(text).toContain("Đã phân tích");
-    expect(text).toContain("Kế hoạch");
+    expect(text).toContain("Tóm tắt vấn đề");
+    expect(text).toContain("Cách giải quyết");
   });
 });
 

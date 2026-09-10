@@ -2551,7 +2551,10 @@ export class JobQueue {
         let planChat = formatPlanReadyChatBody(formatSource, {
           prose: prose && prose !== "(no reply)" ? prose : undefined,
         });
-        const hasPlanSections = /### Đã phân tích|### Kế hoạch/.test(planChat);
+        const hasPlanSections =
+          /### Tóm tắt vấn đề|### Cách giải quyết|### Đã phân tích|### Kế hoạch/.test(
+            planChat,
+          );
         if (!hasPlanSections && formatSource) {
           // Formatter only has "PLAN READY:" chrome — prefer prose / summary
           planChat =

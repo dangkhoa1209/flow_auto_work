@@ -49,7 +49,10 @@ export function planReadySummaryText(summaryBody: string): string {
   const analyzed = planReadySection(summaryBody, "ANALYZED");
   const plan = planReadySection(summaryBody, "PLAN");
   if (analyzed || plan) {
-    return [analyzed && `Đã phân tích:\n${analyzed}`, plan && `Kế hoạch:\n${plan}`]
+    return [
+      analyzed && `Tóm tắt vấn đề:\n${analyzed}`,
+      plan && `Cách giải quyết:\n${plan}`,
+    ]
       .filter(Boolean)
       .join("\n\n");
   }
@@ -105,7 +108,7 @@ export function formatPlanReadyChatBody(
 
   const prose = (opts?.prose || "").trim();
   const sectionLen = (analyzed?.length || 0) + (plan?.length || 0);
-  // Thin PLAN_READY marker but long stream/createPlan prose → prefer prose under Kế hoạch
+  // Thin PLAN_READY marker but long stream/createPlan prose → prefer prose under Cách giải quyết
   if (prose && prose.length > sectionLen + 40 && sectionLen < 400) {
     const proseAnalyzed = planReadySection(prose, "ANALYZED");
     const prosePlan = planReadySection(prose, "PLAN");
@@ -120,10 +123,10 @@ export function formatPlanReadyChatBody(
 
   const parts: string[] = ["PLAN READY:"];
   if (analyzed) {
-    parts.push("", "### Đã phân tích", analyzed);
+    parts.push("", "### Tóm tắt vấn đề", analyzed);
   }
   if (plan) {
-    parts.push("", "### Kế hoạch", plan);
+    parts.push("", "### Cách giải quyết", plan);
   }
   if (!analyzed && !plan) {
     const fallback =
