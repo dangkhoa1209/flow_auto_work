@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   compactGraphifyQueryOutput,
+  cpuUsagePercentFromProcStatSamples,
   formatWorkGraphifyPromptBlock,
   isGraphifyUpdateProcessArgs,
+  parseProcStatCpuLine,
 } from "../graphify.js";
 
 describe("formatWorkGraphifyPromptBlock", () => {
@@ -40,6 +42,29 @@ describe("isGraphifyUpdateProcessArgs", () => {
     expect(isGraphifyUpdateProcessArgs("node apps/api/dist/server.js")).toBe(
       false,
     );
+  });
+});
+
+describe("host CPU skip helpers", () => {
+  it("parses aggregate cpu line and computes busy percent", () => {
+    const a = parseProcStatCpuLine(
+      "cpu  100 0 100 800 0 0 0 0\ncpu0 50 0 50 400 0 0 0 0\n",
+    );
+    const b = parseProcStatCpuLine(
+      "cpu  150 0 150 850 0 0 0 0\ncpu0 75 0 75 425 0 0 0 0\n",
+    );
+    expect(a).toEqual({ idle: 800, total: 1000 });
+    expect(b).toEqual({ idle: 850, total: 1150 });
+    // totalΔ=150, idleΔ=50 → busy = (1 - 50/150)*100 ≈ 66.67
+    expect(cpuUsagePercentFromProcStatSamples(a!, b!)).toBeCloseTo(
+      66.666,
+      2,
+    );
+  });
+
+  it("returns null when total did not advance", () => {
+    const sample = { idle: 100, total: 200 };
+    expect(cpuUsagePercentFromProcStatSamples(sample, sample)).toBeNull();
   });
 });
 

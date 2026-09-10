@@ -191,6 +191,59 @@ export async function isHostGraphifyUpdateBusy(): Promise<boolean> {
   }
 }
 
+/** Skip spawning graphify update when aggregate host CPU busy exceeds this %. */
+const DEFAULT_CPU_SKIP_PERCENT = 50;
+
+export function graphifyCpuSkipThresholdPercent(): number {
+  const raw = (process.env.GRAPHIFY_SKIP_CPU_PERCENT || "").trim();
+  if (!raw) return DEFAULT_CPU_SKIP_PERCENT;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0 || n > 100) return DEFAULT_CPU_SKIP_PERCENT;
+  return n;
+}
+
+export function parseProcStatCpuLine(
+  raw: string,
+): { idle: number; total: number } | null {
+  const line = raw.split("\n").find((l) => l.startsWith("cpu "));
+  if (!line) return null;
+  const parts = line.trim().split(/\s+/).slice(1).map(Number);
+  if (parts.length < 4 || parts.some((n) => !Number.isFinite(n))) return null;
+  // idle + iowait — matches common “%idle” accounting for host busy %.
+  const idle = parts[3]! + (parts[4] ?? 0);
+  const total = parts.reduce((a, b) => a + b, 0);
+  return { idle, total };
+}
+
+export function cpuUsagePercentFromProcStatSamples(
+  first: { idle: number; total: number },
+  second: { idle: number; total: number },
+): number | null {
+  const idleDelta = second.idle - first.idle;
+  const totalDelta = second.total - first.total;
+  if (totalDelta <= 0) return null;
+  const busy = (1 - idleDelta / totalDelta) * 100;
+  if (!Number.isFinite(busy)) return null;
+  return Math.max(0, Math.min(100, busy));
+}
+
+/**
+ * Aggregate host CPU busy % from two /proc/stat samples (~200ms apart).
+ * Returns null when unavailable (non-Linux / read error) — callers fail open.
+ */
+export async function getHostCpuUsagePercent(): Promise<number | null> {
+  try {
+    const first = parseProcStatCpuLine(await readFile("/proc/stat", "utf8"));
+    if (!first) return null;
+    await new Promise((r) => setTimeout(r, 200));
+    const second = parseProcStatCpuLine(await readFile("/proc/stat", "utf8"));
+    if (!second) return null;
+    return cpuUsagePercentFromProcStatSamples(first, second);
+  } catch {
+    return null;
+  }
+}
+
 async function runProjectGraphifyUpdate(
   source: string,
   reason: string,
@@ -222,8 +275,21 @@ async function runProjectGraphifyUpdate(
     }
   }
 
-  // Multi-user hosts: one rebuild at a time. Work/BA continues with existing
-  // graph (or Grep) instead of stacking CPU-heavy updates.
+  // Multi-user hosts: skip when the box is already hot, or another rebuild is
+  // in flight. Work/BA continues with existing graph (or Grep).
+  const cpuThreshold = graphifyCpuSkipThresholdPercent();
+  const cpuPercent = await getHostCpuUsagePercent();
+  if (cpuPercent != null && cpuPercent > cpuThreshold) {
+    logger.info("graphify skip — host CPU too high (work continues)", {
+      source,
+      reason,
+      hasGraph,
+      cpuPercent: Math.round(cpuPercent),
+      threshold: cpuThreshold,
+    });
+    return hasGraph;
+  }
+
   if (hostUpdateClaimed) {
     logger.info(
       "graphify skip — another graphify already running (work continues)",
