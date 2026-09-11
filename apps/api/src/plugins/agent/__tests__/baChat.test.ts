@@ -9,6 +9,7 @@ import {
   baPresentationRules,
   baReadOnlyWorkspaceRules,
   baSpecFormatInstructions,
+  buildBaAnalysisModePrompt,
   buildBaNormalChatPrompt,
   buildBaPrompt,
 } from "../baChat.js";
@@ -42,9 +43,10 @@ describe("buildBaNormalChatPrompt", () => {
     expect(prompt).toMatch(/taskCreate/);
     expect(prompt).not.toMatch(/Chế độ: Hỏi đáp sản phẩm/);
     expect(prompt).not.toMatch(/trợ lý sản phẩm cho BA \/ PD \/ QC/);
+    expect(prompt).not.toMatch(/BA Mode đang BẬT/);
   });
 
-  it("keeps BA-mode composed prompt when analysisMode is on", () => {
+  it("uses the FAW BA-mode template when analysisMode is on", () => {
     const prompt = buildBaPrompt({
       displayName: "Demo",
       gitlabPath: "group/app",
@@ -55,9 +57,20 @@ describe("buildBaNormalChatPrompt", () => {
       analysisMode: true,
       dbAccess: { allowed: false },
     });
-    expect(prompt).toMatch(/trợ lý sản phẩm cho BA \/ PD \/ QC/);
-    expect(prompt).toMatch(/Chế độ: BA mode/);
-    expect(prompt).toMatch(/INTENT TRIAGE & SANITY CHECK/);
+    expect(prompt).toMatch(/trợ lý FAW/);
+    expect(prompt).toMatch(/BA Mode đang BẬT/);
+    expect(prompt).toMatch(/PHÂN LOẠI Ý ĐỊNH \(INTENT TRIAGE\)/);
+    expect(prompt).toMatch(/Format Spec BA/);
+    expect(prompt).toMatch(/3\.1\. Màn hình/);
+    expect(prompt).toMatch(/3\.2\. Logic xử lý/);
+    expect(prompt).toMatch(/3\.3\. Popup/);
+    expect(prompt).toMatch(/4\. Câu hỏi cần xác nhận/);
+    expect(prompt).toMatch(/taskCreate/);
+    expect(prompt).toMatch(/BỎ HẲN Mục 4/);
+    expect(prompt).toMatch(/Câu hỏi của người dùng/);
+    expect(prompt).not.toMatch(/trợ lý sản phẩm cho BA \/ PD \/ QC/);
+    expect(prompt).not.toMatch(/INTENT TRIAGE & SANITY CHECK/);
+    expect(prompt).not.toMatch(/Chế độ: BA mode \(BẬT\)/);
   });
 
   it("injects project blocks into the normal-chat template", () => {
@@ -77,6 +90,26 @@ describe("buildBaNormalChatPrompt", () => {
     expect(prompt).toMatch(/Graphify map/);
     expect(prompt).toMatch(/GitLab task \(chỉ đọc\)/);
     expect(prompt).toMatch(/chi tiết cột A/);
+  });
+
+  it("injects project blocks into the BA-mode template", () => {
+    const prompt = buildBaAnalysisModePrompt({
+      displayName: "Demo",
+      gitlabPath: "group/app",
+      mainBranch: "develop",
+      historyBlock: "### Human\nok",
+      gitlabTaskBlock: "## GitLab task (chỉ đọc)\n#1",
+      question: "phân tích cột A",
+      dbBlock: "## 3b. Database (CẤM)",
+      graphifyBlock: "## Graphify map\nmap-here",
+    });
+    expect(prompt).toMatch(/BA Mode đang BẬT/);
+    expect(prompt).toMatch(/Branch \(Read-only\):\*\* develop/);
+    expect(prompt).toMatch(/Nhánh hiện tại là \*\*develop\*\*/);
+    expect(prompt).toMatch(/Database \(CẤM\)/);
+    expect(prompt).toMatch(/Graphify map/);
+    expect(prompt).toMatch(/GitLab task \(chỉ đọc\)/);
+    expect(prompt).toMatch(/phân tích cột A/);
   });
 });
 
