@@ -462,6 +462,53 @@ function mergeOpStatusClass(status: string): string {
   if (status === "error") return "text-red-600";
   return "text-ink-muted";
 }
+
+type MergeOpHistoryRow = NonNullable<Job["mergeOpHistory"]>[number];
+
+const mergeOpDetailOpen = ref(false);
+const mergeOpDetailRow = ref<MergeOpHistoryRow | null>(null);
+
+function mergeOpHasDetail(h: MergeOpHistoryRow): boolean {
+  return Boolean(
+    h.detail?.trim() ||
+      h.aiResolved ||
+      (h.status === "conflict" && (h.message || "").trim()),
+  );
+}
+
+function openMergeOpDetail(h: MergeOpHistoryRow) {
+  mergeOpDetailRow.value = h;
+  mergeOpDetailOpen.value = true;
+}
+
+const mergeOpDetailBody = computed(() => {
+  const h = mergeOpDetailRow.value;
+  if (!h) return "";
+  const detail = h.detail?.trim();
+  if (detail) return redactSecrets(detail);
+  if (h.aiResolved) {
+    return (
+      redactSecrets(h.message || "") ||
+      "AI resolved conflicts, but no per-file summary was stored for this attempt."
+    );
+  }
+  if (h.status === "conflict") {
+    return (
+      redactSecrets(h.message || "") ||
+      "Conflict left open for Chat — no AI notes stored."
+    );
+  }
+  return redactSecrets(h.message || "");
+});
+
+const mergeOpDetailTitle = computed(() => {
+  const h = mergeOpDetailRow.value;
+  if (!h) return "Merge / Sync detail";
+  const kind = mergeOpKindLabel(h.kind);
+  if (h.aiResolved) return `${kind} — AI resolve detail`;
+  if (h.status === "conflict") return `${kind} — conflict notes`;
+  return `${kind} — detail`;
+});
 </script>
 
 <template>
@@ -1039,14 +1086,11 @@ function mergeOpStatusClass(status: string): string {
                 class="mt-4 rounded-lg border border-[var(--app-border)] bg-[var(--app-panel-soft)] px-3 py-2.5"
               >
                 <div class="text-[12px] text-ink-soft font-medium">
-                  Sync base / Merge — lịch sử
-                </div>
-                <div class="text-[11px] text-ink-muted mt-0.5 mb-2">
-                  Thời gian · trạng thái · thông báo (đã ẩn token / key).
+                  Sync base / Merge - History
                 </div>
                 <ul
                   v-if="mergeOpHistory.length"
-                  class="m-0 p-0 list-none space-y-2 max-h-64 overflow-y-auto"
+                  class="m-0 mt-2 p-0 list-none space-y-2 max-h-64 overflow-y-auto"
                 >
                   <li
                     v-for="(h, i) in mergeOpHistory"
@@ -1068,6 +1112,11 @@ function mergeOpStatusClass(status: string): string {
                         >{{ mergeOpStatusLabel(h.status) }}</span
                       >
                       <span
+                        v-if="h.aiResolved"
+                        class="text-sky-700 font-medium"
+                        >AI resolved</span
+                      >
+                      <span
                         v-if="h.source || h.target"
                         class="text-ink-faint truncate min-w-0"
                       >
@@ -1080,10 +1129,19 @@ function mergeOpStatusClass(status: string): string {
                     >
                       {{ redactSecrets(h.message) }}
                     </div>
+                    <div v-if="mergeOpHasDetail(h)" class="mt-1.5">
+                      <button
+                        type="button"
+                        class="text-[11px] font-medium text-sky-600 hover:underline"
+                        @click="openMergeOpDetail(h)"
+                      >
+                        View detail
+                      </button>
+                    </div>
                   </li>
                 </ul>
-                <div v-else class="text-[11px] text-ink-faint">
-                  Chưa có lần Sync base / Merge nào trên job này.
+                <div v-else class="text-[11px] text-ink-faint mt-2">
+                  No Sync base / Merge attempts on this job yet.
                 </div>
               </div>
             </div>
@@ -1279,6 +1337,41 @@ function mergeOpStatusClass(status: string): string {
         </a-tooltip>
       </a-popconfirm>
     </div>
+
+    <a-modal
+      v-model:open="mergeOpDetailOpen"
+      :title="mergeOpDetailTitle"
+      :footer="null"
+      destroy-on-close
+      width="640px"
+    >
+      <div
+        v-if="mergeOpDetailRow"
+        class="space-y-2 text-[12px] text-ink-soft"
+      >
+        <div class="flex flex-wrap gap-x-2 gap-y-0.5 text-[11px] text-ink-faint">
+          <span class="tabular-nums">{{
+            formatChatTime(mergeOpDetailRow.at)
+          }}</span>
+          <span>{{ mergeOpKindLabel(mergeOpDetailRow.kind) }}</span>
+          <span :class="mergeOpStatusClass(mergeOpDetailRow.status)">{{
+            mergeOpStatusLabel(mergeOpDetailRow.status)
+          }}</span>
+          <span
+            v-if="mergeOpDetailRow.source || mergeOpDetailRow.target"
+            class="truncate"
+          >
+            {{ mergeOpDetailRow.source || "?" }} →
+            {{ mergeOpDetailRow.target || "?" }}
+          </span>
+        </div>
+        <div
+          class="rounded-md border border-[var(--app-border)] bg-[var(--app-panel-soft)] px-3 py-2.5 whitespace-pre-wrap break-words text-ink max-h-[60vh] overflow-y-auto"
+        >
+          {{ mergeOpDetailBody }}
+        </div>
+      </div>
+    </a-modal>
 
     <a-modal
       v-model:open="googleAuthModalOpen"

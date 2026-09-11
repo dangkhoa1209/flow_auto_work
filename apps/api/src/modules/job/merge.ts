@@ -17,11 +17,13 @@ type MergeOpHistoryEntry = NonNullable<JobRecord["mergeOpHistory"]>[number];
 /** Append Sync base / Merge outcome for /work Issue tab (redact secrets). */
 export function pushMergeOpHistory(
   job: JobRecord,
-  entry: Omit<MergeOpHistoryEntry, "at" | "message"> & {
+  entry: Omit<MergeOpHistoryEntry, "at" | "message" | "detail"> & {
     message: string;
     at?: string;
+    detail?: string;
   },
 ): void {
+  const detailRaw = String(entry.detail || "").trim();
   const row: MergeOpHistoryEntry = {
     kind: entry.kind,
     status: entry.status,
@@ -32,6 +34,12 @@ export function pushMergeOpHistory(
     ),
     ...(entry.source ? { source: entry.source } : {}),
     ...(entry.target ? { target: entry.target } : {}),
+    ...(entry.aiResolved ? { aiResolved: true } : {}),
+    ...(detailRaw
+      ? {
+          detail: redactGitCredentials(detailRaw).slice(0, 8000),
+        }
+      : {}),
   };
   job.mergeOpHistory = [row, ...(job.mergeOpHistory ?? [])].slice(
     0,
@@ -299,6 +307,7 @@ async function markJobNeedsChatConflictResolve(
       `Conflict — use Chat Send to resolve` +
       (fileHint ? `: ${fileHint}${pending.files.length > 8 ? "…" : ""}` : "") +
       (summary.trim() ? ` — ${summary.trim().slice(0, 400)}` : ""),
+    detail: summary.trim() || undefined,
   });
   await saveJob(job);
   const fileList = pending.files.map((f) => `- ${f}`).join("\n");
@@ -563,9 +572,14 @@ export async function syncJobBranchWithBase(
       status,
       source,
       target,
+      aiResolved: result.aiResolved || undefined,
       message:
         message +
         (result.wipWarning ? ` · ${result.wipWarning}` : ""),
+      detail:
+        result.aiResolved && result.summary.trim()
+          ? result.summary
+          : undefined,
     });
     await saveJob(job);
 
@@ -679,6 +693,7 @@ export async function mergeJobBranch(
     // Prefer accepting an already-open MR — never create one here (use Create MR).
     if (existingMr) {
       let aiResolved = false;
+      let aiConflictResolved = false;
       let aiSummary: string | undefined;
       const { appendJobProgress } = await import(
         "../../plugins/agent/progress.js"
@@ -735,6 +750,7 @@ export async function mergeJobBranch(
           };
         }
         aiResolved = aiResolved || fix.aiResolved || !fix.alreadyUpToDate;
+        if (fix.aiResolved) aiConflictResolved = true;
         aiSummary = fix.summary;
         appendJobProgress(
           job.id,
@@ -873,12 +889,15 @@ export async function mergeJobBranch(
         status: "ok",
         source,
         target,
+        aiResolved: aiConflictResolved || undefined,
         message:
           (merged.alreadyMerged
             ? `Already merged ${source} → ${target} (MR !${existingMr.iid})`
             : `Merged ${source} → ${target} via MR !${existingMr.iid}`) +
-          (aiResolved ? " — AI resolved conflicts" : "") +
+          (aiConflictResolved ? " — AI resolved conflicts" : "") +
           (syncError ? ` · local sync warning: ${syncError}` : ""),
+        detail:
+          aiConflictResolved && aiSummary?.trim() ? aiSummary : undefined,
       });
       await saveJob(job);
 
@@ -1037,12 +1056,15 @@ export async function mergeJobBranch(
         status: alreadyUpToDate ? "up_to_date" : "ok",
         source,
         target,
+        aiResolved: aiResolved || undefined,
         message:
           (alreadyUpToDate
             ? `${source} already up to date with ${target}`
             : `Merged ${source} → ${target}`) +
           (aiResolved ? " — AI resolved conflicts" : "") +
           (wipWarning ? ` · ${wipWarning}` : ""),
+        detail:
+          aiResolved && aiSummary?.trim() ? aiSummary : undefined,
       });
       await saveJob(job);
 

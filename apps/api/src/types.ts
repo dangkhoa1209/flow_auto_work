@@ -269,6 +269,13 @@ export type JobRecord = {
     message: string;
     source?: string;
     target?: string;
+    /** True when Cursor agent cleared conflict markers during this attempt */
+    aiResolved?: boolean;
+    /**
+     * How AI handled conflicts (agent summary), redacted. Shown via View detail.
+     * Also set when AI attempted but left conflicts for Chat.
+     */
+    detail?: string;
   }>;
   createdAt: string;
   updatedAt: string;
