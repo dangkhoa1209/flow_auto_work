@@ -17,7 +17,7 @@ const queuePopOpen = ref(false);
 
 const tabs = computed(() => {
   const all: Array<{ key: DevopsTab; label: string }> = [
-    { key: "build", label: "Build" },
+    { key: "build", label: "Devops" },
     { key: "history", label: "History" },
   ];
   if (session.canConfigureDevopsScripts) {
@@ -87,7 +87,7 @@ async function onCancelQueued(id: string) {
       <RouterLink
         to="/devops"
         class="faw-brand"
-        title="Flow Auto WorkBench — Build"
+        title="Flow Auto WorkBench — Devops"
       >
         <img
           class="faw-brand__logo faw-brand__logo--full"
@@ -195,7 +195,7 @@ async function onCancelQueued(id: string) {
     <nav
       v-if="!inSettings"
       class="faw-mseg lg:hidden"
-      aria-label="Build sections"
+      aria-label="Devops sections"
       role="tablist"
     >
       <button

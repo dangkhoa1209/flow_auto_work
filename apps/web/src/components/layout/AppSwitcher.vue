@@ -9,7 +9,7 @@ const session = useSessionStore();
 const links = computed(() => {
   const out: Array<{ to: string; label: string; prefix: string }> = [];
   if (session.canAccessWork) {
-    out.push({ to: "/work", label: "Work", prefix: "/work" });
+    out.push({ to: "/dev", label: "Dev", prefix: "/dev" });
   }
   if (session.canAccessBa) {
     out.push({
@@ -26,7 +26,7 @@ const links = computed(() => {
     });
   }
   if (session.canAccessDevops) {
-    out.push({ to: "/devops", label: "Build", prefix: "/devops" });
+    out.push({ to: "/devops", label: "Devops", prefix: "/devops" });
   }
   return out;
 });
@@ -34,12 +34,14 @@ const links = computed(() => {
 const show = computed(() => links.value.length > 1);
 
 function isActive(prefix: string): boolean {
-  if (prefix === "/work") {
+  if (prefix === "/dev") {
+    const p = route.path;
     return (
-      route.path.startsWith("/work") ||
-      route.path.startsWith("/handoff") ||
-      route.path.startsWith("/stats") ||
-      (route.path.startsWith("/settings") && session.canAccessWork)
+      p === "/dev" ||
+      p.startsWith("/dev/") ||
+      p.startsWith("/handoff") ||
+      p.startsWith("/stats") ||
+      (p.startsWith("/settings") && session.canAccessWork)
     );
   }
   return route.path.startsWith(prefix);

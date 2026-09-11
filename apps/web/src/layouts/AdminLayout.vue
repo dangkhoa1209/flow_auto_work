@@ -75,7 +75,7 @@ function isTabActive(tab: (typeof tabs)[0]): boolean {
             to="/devops"
             class="faw-btn"
           >
-            Build
+            Devops
           </RouterLink>
         </template>
       </AppTopbarRight>

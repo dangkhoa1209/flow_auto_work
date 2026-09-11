@@ -89,11 +89,12 @@ const tabs = computed(() => {
   }
   if (session.canAccessWork) {
     items.push({
-      to: "/work",
-      label: "Work",
+      to: "/dev",
+      label: "Dev",
       icon: ThunderboltOutlined,
       match: (p) =>
-        p.startsWith("/work") ||
+        p === "/dev" ||
+        p.startsWith("/dev/") ||
         p.startsWith("/handoff") ||
         p.startsWith("/stats"),
     });
@@ -117,7 +118,7 @@ const tabs = computed(() => {
   if (session.canAccessDevops) {
     items.push({
       to: "/devops",
-      label: "Build",
+      label: "Devops",
       icon: BuildOutlined,
       match: (p) =>
         p.startsWith("/devops") && !p.startsWith("/devops/settings"),

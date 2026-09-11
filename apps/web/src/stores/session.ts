@@ -159,7 +159,7 @@ export const useSessionStore = defineStore("session", () => {
     hasAnyRole(roles.value, "admin", "devops"),
   );
 
-  /** devops role, not dev (dev → /work). */
+  /** devops role, not dev (dev → /dev). */
   const isDevopsAudience = computed(() => {
     const r = roles.value;
     if (r.includes("admin")) return false;

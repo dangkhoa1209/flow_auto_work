@@ -193,14 +193,18 @@ const router = createRouter({
       ],
     },
     {
+      path: "/work",
+      redirect: "/dev",
+    },
+    {
       path: "/",
       component: () => import("@/layouts/AppLayout.vue"),
       meta: { requiresDev: true },
       children: [
-        { path: "", redirect: "/work" },
+        { path: "", redirect: "/dev" },
         {
-          path: "work",
-          name: "work",
+          path: "dev",
+          name: "dev",
           component: () => import("@/views/WorkView.vue"),
         },
         {

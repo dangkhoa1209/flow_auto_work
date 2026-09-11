@@ -23,7 +23,7 @@ Notable:
 
 Paths under `project/` are customer checkouts. Load that tree’s `.cursor/rules` and `AGENTS.md` when working there; do not assume WorkBench app rules alone.
 
-## Roles (Build / Devops)
+## Roles (Dev / Devops)
 
 - Console access: `admin` | `devops` | `dev`
 - Script config (create/edit/delete/toggle): `devops` | `admin` only

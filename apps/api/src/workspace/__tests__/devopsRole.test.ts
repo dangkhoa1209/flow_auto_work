@@ -57,7 +57,7 @@ describe("devops role helpers", () => {
     expect(isDevopsAudience(["devops"])).toBe(true);
     expect(isDevopsAudience(["devops", "dev"])).toBe(false);
     expect(primaryHomePath(["devops"])).toBe("/devops");
-    expect(primaryHomePath(["devops", "dev"])).toBe("/work");
+    expect(primaryHomePath(["devops", "dev"])).toBe("/dev");
   });
 
   it("sends qc-only users to /qc and ba/pd to /ba", () => {
