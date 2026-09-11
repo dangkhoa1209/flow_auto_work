@@ -3,6 +3,7 @@ import {
   shortCommitSubject as sharedShortCommitSubject,
 } from "@flow/shared";
 import type { IssueJob } from "../../types.js";
+import { extractGitlabCommentBodies } from "../gitlab/agent-comment.js";
 import { stripMediaAndAttachments } from "../gitlab/linked-context.js";
 
 /** Re-export for tests / callers that still import from prompt. */
@@ -99,7 +100,7 @@ Rules:
 - Do **not** use GITLAB_COMMENT for routine “done coding” status — Flow does not auto-comment after Run, Create MR, or Merge.
 - You may use **multiple** GITLAB_COMMENT blocks in one reply.
 - You may combine with <<<DONE>>> / <<<NEED_CLARIFICATION>>> (comment blocks can appear before DONE).
-- If you already asked the team on GitLab via GITLAB_COMMENT, prefer ending with <<<DONE>>> (short note). Only use NEED_CLARIFICATION when you need an answer **in the Flow UI** to continue coding this turn.
+- **Chat body is required:** Flow **strips** GITLAB_COMMENT from the /dev chat. Put the **full substance** the human needs to read (keys, lists, findings, the same comment text or a clear mirror) in the readable prose **above** machine tags — never leave only a one-line “đã cmt / Flow sẽ post”. End with <<<DONE>>> (1 câu status). Only use NEED_CLARIFICATION when you need an answer **in the Flow UI** to continue coding this turn.
 - Do not put secrets, tokens, or .env contents in the comment.
 - Issue URL: ${issue.url || `(#${issue.issueIid})`}
 
@@ -579,6 +580,7 @@ ${message.trim()}
 
 ## Chat reply style (UI is a narrow chat panel — keep it readable)
 - Put the **full answer the human asked for in the readable body** (above any machine tags). Flow shows that body in chat — NOT the DONE line alone.
+- If you use GITLAB_COMMENT, still put the same substance (or a clear mirror) in the readable body — Flow strips the comment block from chat.
 - When they ask to **phân tích / analyze / review / giải thích / plan**: write a structured analysis in Vietnamese (mục tiêu, phạm vi, neo code/API, rủi ro, đề xuất bước tiếp). Prefer bullets; skip giant Markdown tables.
 - When they ask a short status / yes-no: **1–2 câu** + vài bullet là đủ.
 - Không hiện thẻ máy kiểu \`<<<DONE>>>\` trong phần người đọc; DONE chỉ ở cuối, **1 câu status** (vd. "Đã phân tích #…; chưa code.").
@@ -701,15 +703,18 @@ export function parseAgentOutcome(text: string): {
  * Prefer the prose BEFORE machine tags (DONE / NEED_CLARIFICATION / …) —
  * that is where analysis / answers live. Fall back to summary/question only
  * when the prose is empty (legacy one-liner DONE-only replies).
+ * If the agent dumped everything into GITLAB_COMMENT (thin chat prose),
+ * surface that comment body so /dev is not a one-liner status.
  */
 export function extractChatBodyFromAgentText(
   text: string,
   opts?: { summary?: string; question?: string; maxChars?: number },
 ): string {
   const max = opts?.maxChars ?? 12_000;
+  const commentBodies = extractGitlabCommentBodies(text || "");
   let body = (text || "")
     .replace(
-      /<<<GITLAB_COMMENT>>>\s*[\s\S]*?\s*<<<END_GITLAB_COMMENT>>>/gi,
+      /<<<(?:GITLAB_COMMENT|ISSUE_COMMENT)>>>\s*[\s\S]*?\s*<<<END_(?:GITLAB_COMMENT|ISSUE_COMMENT)>>>/gi,
       "",
     )
     .replace(
@@ -730,10 +735,27 @@ export function extractChatBodyFromAgentText(
   const summary = opts?.summary?.trim() || "";
   const question = opts?.question?.trim() || "";
 
-  // Prefer full prose when it is substantially more than the short DONE line
-  if (body.length >= 80 || (body && body.length > summary.length + 20)) {
+  // Prefer full prose when it is substantially more than the short DONE line.
+  // Thin status + GITLAB_COMMENT does not count as rich (Flow strips the block).
+  const proseIsRich =
+    body.length >= 80 ||
+    (Boolean(body) &&
+      body.length > summary.length + 20 &&
+      commentBodies.length === 0);
+  if (proseIsRich) {
     return body.slice(0, max);
   }
+
+  // Thin prose + GITLAB_COMMENT → show what was posted so chat is not empty
+  if (commentBodies.length) {
+    const preview = commentBodies.join("\n\n---\n\n").trim();
+    const header = "Đã soạn comment lên GitLab:";
+    const withComment = body
+      ? `${body}\n\n${header}\n\n${preview}`
+      : `${header}\n\n${preview}`;
+    return withComment.slice(0, max);
+  }
+
   if (summary) return summary.slice(0, max);
   if (question) return question.slice(0, max);
   if (body) return body.slice(0, max);

@@ -2,10 +2,7 @@ import { Agent, CursorAgentError } from "@cursor/sdk";
 import { setMaxListeners } from "node:events";
 import { getReviewDiff } from "../git/diff.js";
 import { collectLinkedIssueContext } from "../gitlab/linked-context.js";
-import {
-  postAgentGitlabComments,
-  stripGitlabCommentBlocks,
-} from "../gitlab/agent-comment.js";
+import { postAgentGitlabComments } from "../gitlab/agent-comment.js";
 import { logger } from "../../logger.js";
 import type { IssueJob } from "../../types.js";
 import {
@@ -32,7 +29,10 @@ import {
   workAgentLocal,
 } from "./run.js";
 import { persistCursorUsage } from "../cursor/recordUsage.js";
-import { gitlabCommentInstructions } from "./prompt.js";
+import {
+  extractChatBodyFromAgentText,
+  gitlabCommentInstructions,
+} from "./prompt.js";
 import { addChatMessage } from "../../models/chat.js";
 setMaxListeners(50);
 
@@ -363,7 +363,7 @@ ${opts.question}`;
         }
 
         return {
-          answer: stripGitlabCommentBlocks(text) || text,
+          answer: extractChatBodyFromAgentText(text),
           agentId: disposed.agentId,
           usage,
           resumed,
