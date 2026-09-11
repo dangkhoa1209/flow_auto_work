@@ -280,6 +280,7 @@ YC từ PD/khách thường **đủ để chạy tiếp** dù còn vài điểm 
 - Tổng hợp **một** GitLab issue cho **toàn bộ** YC (không chia nhiều task). Đây là "Kết quả phân tích" — trọng tâm mà BA sẽ tiếp tục chỉnh qua chat.
 - Title ngắn, rõ (tên chức năng + hành động) — **không** nhồi format spec vào title.
 - Description markdown theo đúng đầu mục BA: \`1. Yêu cầu khách hàng\` / \`2. Yêu cầu/Đề xuất từ PD\` (nếu có) / \`3. Nội dung phân tích\` (kèm 3.1–3.3 khi là spec màn hình). **Không** đưa mục 4 lên issue.
+- **CẤM** description chỉ meta ngắn ("Đã tổng hợp…", "Tóm tắt…") — phải đủ nội dung phân tích đã viết ở các bước trước.
 - \`acceptanceCriteria\` luôn \`[]\` (schema giữ field).
 - \`devNotes\`: ghi chú kỹ thuật NGẮN cho Dev (gợi ý vùng chức năng liên quan, ràng buộc kỹ thuật) — đây là chỗ DUY NHẤT được phép nói kỹ thuật. Không có gì đáng ghi thì để chuỗi rỗng.
 - **Không** gán label — để BA chọn sau.

@@ -56,6 +56,10 @@ import {
 import {
   runBaThreadIssueDraft,
   normalizeIssueDraftForForm,
+  findLatestBaAnalysisMessage,
+  enrichIssueDraftWithLatestAnalysis,
+  isThinIssueDescription,
+  stripOpenQuestionsFromIssueDescription,
 } from "../../plugins/agent/baThreadIssue.js";
 import { cancelActiveAgentRun, hasActiveAgentRun } from "../../plugins/agent/run.js";
 import { baCancelKey } from "../../plugins/agent/baChat.js";
@@ -739,9 +743,17 @@ export async function baDraftIssueFromThread(userId: string, threadId: string) {
       threadId,
       version: requestVersion,
     });
+    let draft = normalizeIssueDraftForForm(cached!.draft);
+    if (isThinIssueDescription(draft.description)) {
+      const latestAnalysis =
+        findLatestBaAnalysisMessage(messages)?.content || "";
+      draft = normalizeIssueDraftForForm(
+        enrichIssueDraftWithLatestAnalysis(draft, latestAnalysis),
+      );
+    }
     return {
       status: "ready" as const,
-      draft: normalizeIssueDraftForForm(cached!.draft),
+      draft,
       threadId,
       baProjectId: thread.baProjectId,
       cached: true,
@@ -944,12 +956,42 @@ export function getChatTaskCreatePostProcess(
     const created = parseTaskCreateFromChat(answer);
     if (!created) return null;
 
+    let description = created.description || "";
+    if (isThinIssueDescription(description)) {
+      const messages = await listBaMessages(threadId);
+      const fromChat =
+        findLatestBaAnalysisMessage(messages)?.content || "";
+      const enriched = enrichIssueDraftWithLatestAnalysis(
+        {
+          title: created.title,
+          description,
+          labels: created.labels || [],
+          acceptanceCriteria: created.acceptanceCriteria || [],
+        },
+        fromChat,
+      );
+      if (isThinIssueDescription(enriched.description)) {
+        // Cùng lượt chat: agent có thể viết spec đầy đủ ngoài JSON.
+        const fromAnswer = enrichIssueDraftWithLatestAnalysis(
+          enriched,
+          stripTaskCreateBlock(answer),
+        );
+        description = stripOpenQuestionsFromIssueDescription(
+          fromAnswer.description,
+        );
+      } else {
+        description = enriched.description;
+      }
+    } else {
+      description = stripOpenQuestionsFromIssueDescription(description);
+    }
+
     const draft = await createBaTaskDraft({
       userId: uid,
       baProjectId,
       threadId,
       title: created.title,
-      description: created.description,
+      description,
       labels: created.labels,
       acceptanceCriteria: created.acceptanceCriteria,
       devNotes: created.devNotes,

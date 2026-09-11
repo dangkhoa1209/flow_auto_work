@@ -66,7 +66,9 @@ export function baGitlabBoundaryInstructions(): string {
 export function baLocalTaskCreateInstructions(): string {
   return `## Tạo task nội bộ Flow (khi user yêu cầu)
 Khi user nhờ **tạo task / tạo ticket / lưu task / lên task** (không yêu cầu publish GitLab):
-1. Soạn **title** ngắn + **description** (đã phân tích thì dùng mục 1–3, **bỏ mục 4**).
+1. Soạn **title** ngắn + **description** markdown **đủ nội dung đã phân tích**.
+   - Đã có mục 1–3 trong chat → đưa **gần nguyên văn** mục 1–3 vào \`description\` (**bỏ mục 4**). Giữ đầu mục + logic/cột/điều kiện đã chốt.
+   - **CẤM** description chỉ là meta kiểu "Đã tổng hợp…", "Không đưa case X…", "Tóm tắt hội thoại…" — thiếu nội dung phân tích.
 2. **Cuối câu trả lời** xuất đúng **1** block JSON (bắt buộc để hệ thống lưu tab Tasks):
 \`\`\`json
 {"taskCreate":{"title":"…","description":"…","labels":[],"acceptanceCriteria":[],"devNotes":""}}
