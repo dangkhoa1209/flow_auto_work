@@ -1,35 +1,38 @@
 import { describe, expect, it } from "vitest";
 import {
   buildThreadIssuePrompt,
+  enrichIssueDraftWithLatestAnalysis,
   findLatestBaAnalysisMessage,
+  isThinIssueDescription,
   normalizeIssueDraftForForm,
   parseIssueDraftFromAgent,
+  pickBestIssueAgentText,
   stripOpenQuestionsFromIssueDescription,
 } from "../baThreadIssue.js";
 
 describe("buildThreadIssuePrompt", () => {
-  it("suggests spec format and excludes open questions from task", () => {
+  it("uses the Create issue BA draft prompt and excludes open questions", () => {
     const prompt = buildThreadIssuePrompt({
       displayName: "Demo",
       gitlabPath: "group/app",
       threadBlock: "### Human\nphân tích export excel",
       gitlabTaskBlock: "",
     });
-    expect(prompt).toMatch(/gợi ý.*format spec/i);
-    expect(prompt).toMatch(/đầu vào/);
-    expect(prompt).toMatch(/phân tích BA/);
-    expect(prompt).toMatch(/Tối thiểu: mục 1/);
-    expect(prompt).toMatch(/KHÔNG đưa mục 4/);
-    expect(prompt).toMatch(/không.*đọc source/i);
-    expect(prompt).toMatch(/không.*gọi tool/i);
+    expect(prompt).toMatch(/Vai trò & Nhiệm vụ/);
+    expect(prompt).toMatch(/Cấu trúc Description \(Format chuẩn BA\)/);
+    expect(prompt).toMatch(/1\. Yêu cầu khách hàng/);
+    expect(prompt).toMatch(/3\. Nội dung phân tích/);
+    expect(prompt).toMatch(/3\.1\. Màn hình/);
+    expect(prompt).toMatch(/3\.2\. Logic xử lý/);
+    expect(prompt).toMatch(/3\.3\. Popup/);
+    expect(prompt).toMatch(/KHÔNG đưa mục "4\. Câu hỏi cần xác nhận"/);
+    expect(prompt).toMatch(/không đọc source code/i);
+    expect(prompt).toMatch(/không gọi tool/i);
+    expect(prompt).toMatch(/100% văn phong nghiệp vụ/);
+    expect(prompt).toMatch(/Định dạng đầu ra \(BẮT BUỘC\)/);
+    expect(prompt).toMatch(/"acceptanceCriteria": \[\]/);
     expect(prompt).not.toMatch(/graphify/i);
     expect(prompt).not.toMatch(/code_map/);
-    expect(prompt).toMatch(/đúng tên đầu mục BA/i);
-    expect(prompt).toMatch(/3\.1/);
-    expect(prompt).toMatch(/không.*ép mọi khối thành bảng/i);
-    expect(prompt).toMatch(/heading \+ câu\/bullet/i);
-    expect(prompt).toMatch(/lượt chat.*sau.*ghi đè/i);
-    expect(prompt).toMatch(/bản mới nhất/i);
   });
 
   it("includes latest analysis block when provided", () => {
@@ -39,10 +42,12 @@ describe("buildThreadIssuePrompt", () => {
       threadBlock: "### Human\nok",
       gitlabTaskBlock: "",
       latestAnalysisBlock:
-        "## Phân tích BA mới nhất trong hội thoại\n## 3. Nội dung phân tích\nX",
+        "## Phân tích BA mới nhất trong hội thoại (ƯU TIÊN — đưa vào field description)\n## 3. Nội dung phân tích\nX",
     });
+    expect(prompt).toMatch(/Dữ liệu đầu vào/);
     expect(prompt).toMatch(/Phân tích BA mới nhất/);
     expect(prompt).toMatch(/Nội dung phân tích/);
+    expect(prompt).toMatch(/đưa vào field description/i);
   });
 });
 
@@ -75,6 +80,127 @@ describe("findLatestBaAnalysisMessage", () => {
     const latest = findLatestBaAnalysisMessage(messages);
     expect(latest?.id).toBe("3");
     expect(latest?.content).toContain("Bản mới");
+  });
+});
+
+describe("isThinIssueDescription / enrichIssueDraftWithLatestAnalysis", () => {
+  it("flags meta-only summaries as thin", () => {
+    expect(
+      isThinIssueDescription(
+        "Đã tổng hợp theo bản chốt cuối (gap import OT nhóm ↔ công tác nhóm khi bật cấu hình). Không đưa case đơn cha mồ côi REQ12812 vào issue.",
+      ),
+    ).toBe(true);
+  });
+
+  it("flags heading shells with only status narration as thin", () => {
+    const shell = `## 1. Yêu cầu khách hàng
+Đã tổng hợp theo bản chốt cuối. Không đưa case REQ12812 vào issue.
+
+## 3. Nội dung phân tích
+Đã mô tả và đã tìm hiểu trong chat — xem phân tích trên.
+`;
+    expect(isThinIssueDescription(shell)).toBe(true);
+  });
+
+  it("keeps full BA analysis as not thin", () => {
+    const full = `## 1. Yêu cầu khách hàng
+Import OT nhóm cần chặn trùng giờ với phiếu công tác nhóm.
+
+## 3. Nội dung phân tích
+### 3.2. Logic xử lý
+Khi bật "Tự động tính tăng ca" thì import OT phải kiểm tra overlap với công tác nhóm.
+`;
+    expect(isThinIssueDescription(full)).toBe(false);
+  });
+
+  it("replaces thin description with latest chat analysis", () => {
+    const analysis = `## 1. Yêu cầu khách hàng
+Import OT nhóm không chặn trùng giờ.
+
+## 3. Nội dung phân tích
+### 3.2. Logic xử lý
+Cần kiểm tra overlap khi bật tự động tính tăng ca.
+
+## 4. Câu hỏi cần xác nhận
+- Còn hỏi?
+`;
+    const out = enrichIssueDraftWithLatestAnalysis(
+      {
+        title: "Import OT nhóm",
+        description:
+          "Đã tổng hợp theo bản chốt cuối. Không đưa case REQ12812 vào issue.",
+        labels: [],
+        acceptanceCriteria: [],
+      },
+      analysis,
+    );
+    expect(out.description).toContain("Yêu cầu khách hàng");
+    expect(out.description).toContain("Logic xử lý");
+    expect(out.description).toContain("overlap");
+    expect(out.description).not.toMatch(/Câu hỏi cần xác nhận/);
+    expect(out.description).not.toMatch(/Đã tổng hợp/);
+  });
+
+  it("replaces heading+meta shell even when longer than a short chat snippet", () => {
+    const shell = `## 1. Yêu cầu khách hàng
+Đã mô tả theo bản chốt cuối và đã tìm hiểu gap import OT.
+
+## 3. Nội dung phân tích
+Đã tổng hợp theo chat — xem phân tích bên trên.
+`;
+    const analysis = `## 1. Yêu cầu khách hàng
+Import OT nhóm không chặn trùng giờ với phiếu công tác nhóm.
+
+## 3. Nội dung phân tích
+### 3.2. Logic xử lý
+Khi bật tự động tính tăng ca thì kiểm tra overlap theo khoảng giờ.
+`;
+    const out = enrichIssueDraftWithLatestAnalysis(
+      {
+        title: "Import OT",
+        description: shell,
+        labels: [],
+        acceptanceCriteria: [],
+      },
+      analysis,
+    );
+    expect(out.description).toContain("Logic xử lý");
+    expect(out.description).toContain("overlap");
+    expect(out.description).not.toMatch(/đã mô tả/i);
+  });
+
+  it("does not replace a rich description", () => {
+    const rich = `## 1. Yêu cầu khách hàng
+Import OT nhóm cần chặn trùng giờ với phiếu công tác nhóm khi bật cấu hình.
+
+## 3. Nội dung phân tích
+### 3.2. Logic xử lý
+So khớp khoảng giờ OT với phiếu công tác nhóm; trùng thì chặn và báo lỗi rõ ràng.
+`;
+    const out = enrichIssueDraftWithLatestAnalysis(
+      {
+        title: "T",
+        description: rich,
+        labels: [],
+        acceptanceCriteria: [],
+      },
+      "## 1. Yêu cầu khách hàng\nKhác",
+    );
+    expect(out.description).toBe(rich);
+  });
+});
+
+describe("pickBestIssueAgentText", () => {
+  it("prefers the side whose JSON description is not thin", () => {
+    const thin = `\`\`\`json
+{"title":"Import OT","description":"Đã tổng hợp theo bản chốt cuối. Đã mô tả trong chat.","labels":[],"acceptanceCriteria":[]}
+\`\`\``;
+    const rich = `\`\`\`json
+{"title":"Import OT","description":"## 1. Yêu cầu khách hàng\\nImport OT nhóm.\\n\\n## 3. Nội dung phân tích\\n### 3.2. Logic xử lý\\nChặn overlap khi bật tự động tính tăng ca.","labels":[],"acceptanceCriteria":[]}
+\`\`\``;
+    // Longer thin result should lose to shorter rich stream.
+    const paddedThin = `${thin}\n\n${"x".repeat(500)}`;
+    expect(pickBestIssueAgentText(paddedThin, rich)).toBe(rich.trim());
   });
 });
 
@@ -122,6 +248,19 @@ User muốn thêm validation.
     const draft = parseIssueDraftFromAgent(text);
     expect(draft?.title).toBe("Fix nút Lưu");
     expect(draft?.labels).toEqual(["bug"]);
+  });
+
+  it("prefers richer description among multiple JSON candidates", () => {
+    const text = `\`\`\`json
+{"title":"OT","description":"Đã tổng hợp theo chat.","labels":[],"acceptanceCriteria":[]}
+\`\`\`
+
+\`\`\`json
+{"title":"OT","description":"## 1. Yêu cầu khách hàng\\nImport OT.\\n\\n## 3. Nội dung phân tích\\n### 3.2. Logic xử lý\\nChặn overlap giờ với công tác nhóm.","labels":[],"acceptanceCriteria":[]}
+\`\`\``;
+    const draft = parseIssueDraftFromAgent(text);
+    expect(draft?.description).toContain("Logic xử lý");
+    expect(draft?.description).toContain("overlap");
   });
 
   it("falls back to markdown prose when JSON missing", () => {

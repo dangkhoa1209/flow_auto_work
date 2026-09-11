@@ -5,14 +5,116 @@ import {
   baDeliverAnswerRules,
   baGitlabBoundaryInstructions,
   baIntentTriageGate,
+  baLocalTaskCreateInstructions,
   baPresentationRules,
   baReadOnlyWorkspaceRules,
   baSpecFormatInstructions,
+  buildBaAnalysisModePrompt,
+  buildBaNormalChatPrompt,
+  buildBaPrompt,
 } from "../baChat.js";
 import {
   extractBaIssueRefs,
   formatBaIssueSnapshot,
 } from "../../gitlab/ba-issue-read.js";
+
+describe("buildBaNormalChatPrompt", () => {
+  it("uses the FAW normal-chat template when BA mode is off", () => {
+    const prompt = buildBaPrompt({
+      displayName: "Demo",
+      gitlabPath: "group/app",
+      mainBranch: "main",
+      historyBlock: "### Human\nhi",
+      gitlabTaskBlock: "",
+      question: "export excel",
+      analysisMode: false,
+      dbAccess: { allowed: false },
+    });
+    expect(prompt).toMatch(/trợ lý FAW/);
+    expect(prompt).toMatch(/PHÂN LOẠI Ý ĐỊNH \(INTENT TRIAGE\)/);
+    expect(prompt).toMatch(/Nhóm 1: Chào hỏi/);
+    expect(prompt).toMatch(/Nhóm 2: Thiếu ngữ cảnh/);
+    expect(prompt).toMatch(/Nhóm 3: Yêu cầu phân tích/);
+    expect(prompt).toMatch(/code_map_query/);
+    expect(prompt).toMatch(/Chưa tìm thấy trên hệ thống/);
+    expect(prompt).toMatch(/Đang lập kế hoạch/);
+    expect(prompt).toMatch(/Trình bày \(tự nhiên/);
+    expect(prompt).toMatch(/bảng khi cùng cấu trúc cột/);
+    expect(prompt).toMatch(/Câu hỏi của người dùng/);
+    expect(prompt).toMatch(/taskCreate/);
+    expect(prompt).not.toMatch(/Quy chuẩn định dạng Spec/);
+    expect(prompt).not.toMatch(/Format Spec BA/);
+    expect(prompt).not.toMatch(/Chế độ: Hỏi đáp sản phẩm/);
+    expect(prompt).not.toMatch(/trợ lý sản phẩm cho BA \/ PD \/ QC/);
+    expect(prompt).not.toMatch(/BA Mode đang BẬT/);
+  });
+
+  it("uses the FAW BA-mode template when analysisMode is on", () => {
+    const prompt = buildBaPrompt({
+      displayName: "Demo",
+      gitlabPath: "group/app",
+      mainBranch: "main",
+      historyBlock: "",
+      gitlabTaskBlock: "",
+      question: "phân tích màn hình X",
+      analysisMode: true,
+      dbAccess: { allowed: false },
+    });
+    expect(prompt).toMatch(/trợ lý FAW/);
+    expect(prompt).toMatch(/BA Mode đang BẬT/);
+    expect(prompt).toMatch(/PHÂN LOẠI Ý ĐỊNH \(INTENT TRIAGE\)/);
+    expect(prompt).toMatch(/Format Spec BA/);
+    expect(prompt).toMatch(/3\.1\. Màn hình/);
+    expect(prompt).toMatch(/3\.2\. Logic xử lý/);
+    expect(prompt).toMatch(/3\.3\. Popup/);
+    expect(prompt).toMatch(/4\. Câu hỏi cần xác nhận/);
+    expect(prompt).toMatch(/taskCreate/);
+    expect(prompt).toMatch(/BỎ HẲN Mục 4/);
+    expect(prompt).toMatch(/Câu hỏi của người dùng/);
+    expect(prompt).not.toMatch(/trợ lý sản phẩm cho BA \/ PD \/ QC/);
+    expect(prompt).not.toMatch(/INTENT TRIAGE & SANITY CHECK/);
+    expect(prompt).not.toMatch(/Chế độ: BA mode \(BẬT\)/);
+  });
+
+  it("injects project blocks into the normal-chat template", () => {
+    const prompt = buildBaNormalChatPrompt({
+      displayName: "Demo",
+      gitlabPath: "group/app",
+      mainBranch: "develop",
+      historyBlock: "### Human\nok",
+      gitlabTaskBlock: "## GitLab task (chỉ đọc)\n#1",
+      question: "chi tiết cột A",
+      dbBlock: "## 3b. Database (CẤM)",
+      graphifyBlock: "## Graphify map\nmap-here",
+    });
+    expect(prompt).toMatch(/Branch \(Read-only\):\*\* develop/);
+    expect(prompt).toMatch(/Nhánh hiện tại là \*\*develop\*\*/);
+    expect(prompt).toMatch(/Database \(CẤM\)/);
+    expect(prompt).toMatch(/Graphify map/);
+    expect(prompt).toMatch(/GitLab task \(chỉ đọc\)/);
+    expect(prompt).toMatch(/chi tiết cột A/);
+  });
+
+  it("injects project blocks into the BA-mode template", () => {
+    const prompt = buildBaAnalysisModePrompt({
+      displayName: "Demo",
+      gitlabPath: "group/app",
+      mainBranch: "develop",
+      historyBlock: "### Human\nok",
+      gitlabTaskBlock: "## GitLab task (chỉ đọc)\n#1",
+      question: "phân tích cột A",
+      dbBlock: "## 3b. Database (CẤM)",
+      graphifyBlock: "## Graphify map\nmap-here",
+    });
+    expect(prompt).toMatch(/BA Mode đang BẬT/);
+    expect(prompt).toMatch(/Branch \(Read-only\):\*\* develop/);
+    expect(prompt).toMatch(/Nhánh hiện tại là \*\*develop\*\*/);
+    expect(prompt).toMatch(/Database \(CẤM\)/);
+    expect(prompt).toMatch(/Graphify map/);
+    expect(prompt).toMatch(/GitLab task \(chỉ đọc\)/);
+    expect(prompt).toMatch(/phân tích cột A/);
+  });
+});
 
 describe("baReadOnlyWorkspaceRules", () => {
   it("forbids file writes and destructive shell/git", () => {
@@ -87,15 +189,28 @@ describe("baDeliverAnswerRules", () => {
 });
 
 describe("baGitlabBoundaryInstructions", () => {
-  it("forbids GitLab writes in every BA mode, allows read via pasted link/id", () => {
+  it("forbids GitLab writes, allows local task create, points to Create issue", () => {
     expect(BA_GITLAB_INTERACTION_ENABLED).toBe(false);
     const text = baGitlabBoundaryInstructions();
-    expect(text).toMatch(/GitLab ghi \(TẠM CẤM, cả BA mode\)/);
-    expect(text).toMatch(/không tạo\/sửa issue/);
-    expect(text).toMatch(/không comment/);
+    expect(text).toMatch(/GitLab ghi \(TẠM CẤM\)/);
+    expect(text).toMatch(/Không auto đăng lên GitLab/);
+    expect(text).toMatch(/Create issue/);
+    expect(text).toMatch(/task nội bộ/i);
     expect(text).toMatch(/GitLab đọc \(được phép\)/);
     expect(text).toMatch(/link issue/);
+    expect(text).not.toMatch(/từ chối ghi.*tạm khóa/);
     expect(text).not.toMatch(/gợi ý tạo ticket cho Dev/);
+  });
+});
+
+describe("baLocalTaskCreateInstructions", () => {
+  it("requires taskCreate JSON when user asks to create a task", () => {
+    const text = baLocalTaskCreateInstructions();
+    expect(text).toMatch(/taskCreate/);
+    expect(text).toMatch(/Create issue/);
+    expect(text).toMatch(/Tasks/);
+    expect(text).toMatch(/Không.*tạm khóa/);
+    expect(text).toMatch(/gần nguyên văn|đầy đủ nội dung đã phân tích|nội dung spec/i);
   });
 });
 
@@ -106,6 +221,7 @@ describe("baIntentTriageGate", () => {
     expect(text).toMatch(/GREETING \/ CASUAL \/ NOISE/);
     expect(text).toMatch(/INSUFFICIENT CONTEXT/);
     expect(text).toMatch(/FULL BA PIPELINE/);
+    expect(text).toMatch(/taskCreate/);
     expect(text).toMatch(/KHÔNG scan codebase/);
   });
 });

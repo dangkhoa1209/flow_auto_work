@@ -160,11 +160,34 @@ describe("extractChatBodyFromAgentText", () => {
     expect(body).toBe("1. A hay B?");
   });
 
-  it("strips GITLAB_COMMENT blocks from body", () => {
+  it("strips GITLAB_COMMENT blocks from body when prose is rich", () => {
     const text = `${longAnalysis}\n<<<GITLAB_COMMENT>>>\nsecret gitlab body\n<<<END_GITLAB_COMMENT>>>`;
     const body = extractChatBodyFromAgentText(text);
     expect(body).not.toContain("secret gitlab body");
     expect(body).toContain("Mục tiêu");
+  });
+
+  it("surfaces GITLAB_COMMENT when chat prose is only a thin status", () => {
+    const text = [
+      "Đã soạn comment key quyền #14877 lên task (Flow sẽ post); chưa commit.",
+      "",
+      "<<<GITLAB_COMMENT>>>",
+      "Key quyền hiện tại từ Index.vue:",
+      "- perm.staff.view",
+      "- perm.staff.edit",
+      "<<<END_GITLAB_COMMENT>>>",
+      "",
+      "<<<DONE>>>",
+      "SUMMARY: đã cmt #14877",
+      "<<<END_DONE>>>",
+    ].join("\n");
+    const body = extractChatBodyFromAgentText(text, {
+      summary: "đã cmt #14877",
+    });
+    expect(body).toContain("Đã soạn comment lên GitLab:");
+    expect(body).toContain("perm.staff.view");
+    expect(body).toContain("Flow sẽ post");
+    expect(body).not.toContain("<<<GITLAB_COMMENT>>>");
   });
 
   it("returns (no reply) for empty input", () => {

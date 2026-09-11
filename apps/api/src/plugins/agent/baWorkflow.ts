@@ -280,6 +280,7 @@ YC từ PD/khách thường **đủ để chạy tiếp** dù còn vài điểm 
 - Tổng hợp **một** GitLab issue cho **toàn bộ** YC (không chia nhiều task). Đây là "Kết quả phân tích" — trọng tâm mà BA sẽ tiếp tục chỉnh qua chat.
 - Title ngắn, rõ (tên chức năng + hành động) — **không** nhồi format spec vào title.
 - Description markdown theo đúng đầu mục BA: \`1. Yêu cầu khách hàng\` / \`2. Yêu cầu/Đề xuất từ PD\` (nếu có) / \`3. Nội dung phân tích\` (kèm 3.1–3.3 khi là spec màn hình). **Không** đưa mục 4 lên issue.
+- **Description phải đầy đủ** nội dung phân tích đã viết ở các bước trước (mục 1–3 gần nguyên văn). Một câu nhật ký / tóm tắt tiến độ **không đủ**.
 - \`acceptanceCriteria\` luôn \`[]\` (schema giữ field).
 - \`devNotes\`: ghi chú kỹ thuật NGẮN cho Dev (gợi ý vùng chức năng liên quan, ràng buộc kỹ thuật) — đây là chỗ DUY NHẤT được phép nói kỹ thuật. Không có gì đáng ghi thì để chuỗi rỗng.
 - **Không** gán label — để BA chọn sau.
@@ -464,6 +465,62 @@ export function stripResultUpdateBlock(text: string): string {
     .trim();
 }
 
+export type BaTaskCreate = {
+  title: string;
+  description?: string;
+  labels?: string[];
+  acceptanceCriteria?: string[];
+  devNotes?: string;
+};
+
+const TASK_CREATE_FENCE_RE =
+  /```(?:json)?\s*(\{[\s\S]*?"taskCreate"[\s\S]*?\})\s*```/i;
+
+function tryParseTaskCreate(raw: string): BaTaskCreate | null {
+  try {
+    const parsed = JSON.parse(raw) as { taskCreate?: BaTaskCreate };
+    const u = parsed.taskCreate;
+    if (!u || typeof u !== "object") return null;
+    const title = typeof u.title === "string" ? u.title.trim() : "";
+    if (!title) return null;
+    const out: BaTaskCreate = { title };
+    if (typeof u.description === "string") out.description = u.description.trim();
+    if (Array.isArray(u.labels)) {
+      out.labels = u.labels.map((l) => String(l).trim()).filter(Boolean);
+    }
+    if (Array.isArray(u.acceptanceCriteria)) {
+      out.acceptanceCriteria = u.acceptanceCriteria
+        .map((s) => String(s).trim())
+        .filter(Boolean);
+    }
+    if (typeof u.devNotes === "string") out.devNotes = u.devNotes.trim();
+    return out;
+  } catch {
+    return null;
+  }
+}
+
+/** Parse block tạo task nội bộ do BA/QC chat xuất ra (nếu có). */
+export function parseTaskCreateFromChat(text: string): BaTaskCreate | null {
+  const fence = TASK_CREATE_FENCE_RE.exec(text);
+  if (fence) {
+    const created = tryParseTaskCreate(fence[1]);
+    if (created) return created;
+  }
+  const inline = /\{[\s\S]*"taskCreate"\s*:[\s\S]*\}/.exec(text);
+  if (inline) return tryParseTaskCreate(inline[0]);
+  return null;
+}
+
+/** Bỏ block taskCreate khỏi nội dung chat hiển thị. */
+export function stripTaskCreateBlock(text: string): string {
+  return text
+    .replace(TASK_CREATE_FENCE_RE, "")
+    .replace(/\{[\s\S]*"taskCreate"\s*:[\s\S]*\}\s*$/m, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 export async function runBaWorkflowStep(opts: {
   baProjectId: string;
   requirement: BaRequirement;
@@ -614,6 +671,8 @@ export async function runBaWorkflowStep(opts: {
             );
             if (chunk.startsWith(streamed) && chunk.length >= streamed.length) {
               streamed = chunk;
+            } else if (streamed && streamed.endsWith(chunk)) {
+              /* duplicate trailing snapshot */
             } else if (chunk) {
               streamed += chunk;
             }

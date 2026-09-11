@@ -2,10 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   looksLikeGreetingOrNoise,
   parseResultUpdateFromChat,
+  parseTaskCreateFromChat,
   parseTaskFromWorkflowOutput,
   parseTasksFromBreakdown,
   parseWorkflowStepGate,
   stripResultUpdateBlock,
+  stripTaskCreateBlock,
 } from "../baWorkflow.js";
 import { parseTaskFromChatContent } from "../../../modules/baWorkbench/index.js";
 
@@ -128,6 +130,30 @@ describe("parseResultUpdateFromChat", () => {
     const cleaned = stripResultUpdateBlock(answer);
     expect(cleaned).toContain("Đã bổ sung phạm vi xuất PDF");
     expect(cleaned).not.toContain("resultUpdate");
+  });
+});
+
+describe("parseTaskCreateFromChat", () => {
+  const answer = `Đã soạn task cho Dev.
+
+\`\`\`json
+{"taskCreate":{"title":"Thêm nút xuất Excel","description":"Cho phép xuất danh sách","labels":[],"acceptanceCriteria":[],"devNotes":""}}
+\`\`\``;
+
+  it("parses taskCreate block", () => {
+    const created = parseTaskCreateFromChat(answer);
+    expect(created?.title).toBe("Thêm nút xuất Excel");
+    expect(created?.description).toContain("xuất danh sách");
+  });
+
+  it("returns null when no taskCreate block", () => {
+    expect(parseTaskCreateFromChat("Chỉ hỏi đáp")).toBeNull();
+  });
+
+  it("strips block from display content", () => {
+    const cleaned = stripTaskCreateBlock(answer);
+    expect(cleaned).toContain("Đã soạn task cho Dev");
+    expect(cleaned).not.toContain("taskCreate");
   });
 });
 
