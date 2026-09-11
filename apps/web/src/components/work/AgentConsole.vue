@@ -498,7 +498,7 @@ watch(chatBox, (el, prev) => {
           >
             <div class="faw-msg__who">{{ m.role === 'user' ? 'You' : m.role }}</div>
             <div class="faw-msg__bubble">
-              <ChatMessageBody :role="m.role" :body="m.body" />
+              <ChatMessageBody :role="m.role" :body="m.body" copyable />
               <time
                 v-if="formatChatTime(m.createdAt)"
                 class="faw-msg__time"

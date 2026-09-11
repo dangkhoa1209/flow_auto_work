@@ -80,6 +80,7 @@ function whoLabel(role: string) {
           v-if="m.content"
           :body="m.content"
           :role="m.role === 'user' ? 'user' : 'agent'"
+          copyable
         />
         <template v-else-if="streaming && streamingMessageId === m.id">
           <span class="chat-typing" aria-label="Đang suy nghĩ">
