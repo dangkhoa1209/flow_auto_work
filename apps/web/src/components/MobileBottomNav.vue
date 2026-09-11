@@ -90,7 +90,7 @@ const tabs = computed(() => {
   if (session.canAccessWork) {
     items.push({
       to: "/work",
-      label: "Work",
+      label: "Dev",
       icon: ThunderboltOutlined,
       match: (p) =>
         p.startsWith("/work") ||
@@ -117,7 +117,7 @@ const tabs = computed(() => {
   if (session.canAccessDevops) {
     items.push({
       to: "/devops",
-      label: "Build",
+      label: "Devops",
       icon: BuildOutlined,
       match: (p) =>
         p.startsWith("/devops") && !p.startsWith("/devops/settings"),

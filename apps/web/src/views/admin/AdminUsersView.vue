@@ -33,7 +33,7 @@ const ROLE_LABELS: Record<UserRole, string> = {
   qc: "QC",
   ba: "BA",
   pd: "PD",
-  devops: "Build",
+  devops: "Devops",
 };
 
 const roleOptions = ALL_ROLES.map((r) => ({

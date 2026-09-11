@@ -21,7 +21,7 @@ const work = useWorkStore();
 const settings = useSettingsStore();
 
 const nav = computed(() => [
-  { to: "/work", label: "Work" },
+  { to: "/work", label: "Dev" },
   { to: "/handoff", label: "Handoff" },
   { to: "/stats", label: "Stats" },
 ]);

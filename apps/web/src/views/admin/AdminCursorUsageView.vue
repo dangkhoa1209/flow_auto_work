@@ -207,7 +207,7 @@ watch(
       <div>
         <h1 class="faw-admin-page__title">Cursor usage</h1>
         <p class="faw-admin-page__desc">
-          Tokens and cost for BA Chat, Create issue, workflow, Work runs, Q&amp;A,
+          Tokens and cost for BA Chat, Create issue, workflow, Dev runs, Q&amp;A,
           QC testcases, and merge AI. Cost uses SDK billed cents when Cursor
           returns them; otherwise it is estimated from token rates.
         </p>
