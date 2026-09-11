@@ -121,6 +121,9 @@ export type Job = {
     message: string;
     source?: string;
     target?: string;
+    aiResolved?: boolean;
+    /** AI conflict-resolve summary (View detail) */
+    detail?: string;
   }>;
 };
 
