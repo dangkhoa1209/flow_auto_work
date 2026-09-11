@@ -44,8 +44,9 @@ import { loadBaLinkedContext } from "../ba/ba-linked-context.js";
 import { resolveBaUserGoogleAccessToken } from "../../modules/google/index.js";
 
 /**
- * Temporary gate: BA / PD / QC chat must not create GitLab issues, comments,
- * labels, or MRs. Flip to `true` when that workflow is ready again.
+ * Temporary gate: BA / PD / QC chat must not call GitLab write APIs
+ * (issues, comments, labels, MRs). Local Flow task drafts are still allowed.
+ * Flip to `true` when direct GitLab write from chat is ready again.
  */
 export const BA_GITLAB_INTERACTION_ENABLED = false;
 
@@ -53,11 +54,27 @@ export function baGitlabBoundaryInstructions(): string {
   if (BA_GITLAB_INTERACTION_ENABLED) {
     return `- Bị yêu cầu sửa code → từ chối lịch sự, gợi ý tạo ticket cho Dev.`;
   }
-  return `- Bị yêu cầu sửa code → từ chối lịch sự; nếu cần ticket thì **chỉ viết draft** (title + mô tả) ngay trong chat để người dùng tự dán lên GitLab.
-- **GitLab ghi (TẠM CẤM, cả BA mode):** không tạo/sửa issue, work item, task; không comment / note / label / assign / close; không MR; không gọi GitLab API, \`glab\`, MCP GitLab, hay curl/wget tới GitLab.
+  return `- Bị yêu cầu sửa code → từ chối lịch sự; nếu cần ticket Dev thì tạo **task nội bộ Flow** (chat BA/QC) hoặc hướng dẫn dùng **Create issue**.
+- **GitLab ghi (TẠM CẤM):** không tạo/sửa issue / work item trên GitLab; không comment / note / label / assign / close; không MR; không gọi GitLab API, \`glab\`, MCP GitLab, hay curl/wget tới GitLab. **Không auto đăng lên GitLab.**
 - Không đọc hay dùng \`GITLAB_TOKEN\`, PAT, token trong git remote / \`.env\` / biến môi trường.
 - **GitLab đọc (được phép):** chỉ khi người dùng dán **link issue** hoặc **#id / issue 123**. Hệ thống đã kéo sẵn vào mục "GitLab task (chỉ đọc)" — dùng block đó, **không** tự gọi GitLab.
-- Nếu nhờ đọc task mà chưa có link/#id: hỏi họ dán link hoặc mã issue. Nếu nhờ lên task / comment GitLab: **từ chối ghi**, giải thích đang tạm khóa, đưa draft trong chat.`;
+- Nếu nhờ đọc task mà chưa có link/#id: hỏi họ dán link hoặc mã issue.
+- User muốn **đăng / publish lên GitLab**: hướng dẫn dùng nút **Create issue** trên UI — **không** tự gọi API. **Không** từ chối tạo task nội bộ Flow.`;
+}
+
+/** Free BA/QC chat: create local Flow task draft when user asks (no GitLab publish). */
+export function baLocalTaskCreateInstructions(): string {
+  return `## Tạo task nội bộ Flow (khi user yêu cầu)
+Khi user nhờ **tạo task / tạo ticket / lưu task / lên task** (không yêu cầu publish GitLab):
+1. Soạn **title** ngắn + **description** (đã phân tích thì dùng mục 1–3, **bỏ mục 4**).
+2. **Cuối câu trả lời** xuất đúng **1** block JSON (bắt buộc để hệ thống lưu tab Tasks):
+\`\`\`json
+{"taskCreate":{"title":"…","description":"…","labels":[],"acceptanceCriteria":[],"devNotes":""}}
+\`\`\`
+3. Trong message: xác nhận đã tạo task draft — xem tab **Tasks**; muốn lên GitLab thì dùng **Create issue**.
+- **Không** từ chối kiểu "đang tạm khóa / không tạo được".
+- **Không** xuất \`taskCreate\` nếu user chỉ hỏi đáp / phân tích mà **chưa** nhờ tạo task.
+- **Cấm** gọi GitLab để tạo issue — chỉ lưu nội bộ Flow.`;
 }
 
 /** Workspace read-only — mọi BA chat (kể cả chat YC workflow). */
@@ -180,7 +197,7 @@ export function baDeliverAnswerRules(): string {
 export function baIntentTriageGate(): string {
   return `### 🛑 CRITICAL GATE: INTENT TRIAGE & SANITY CHECK (LUÔN THỰC HIỆN TRƯỚC TIÊN)
 
-Trước khi scan codebase hoặc sinh bất kỳ BA template nào (In/Out Scope, PRD, GitLab draft…),
+Trước khi scan codebase hoặc sinh bất kỳ BA template nào (In/Out Scope, PRD, draft task…),
 hãy phân loại input của user theo 3 nhóm sau. KHÔNG được bỏ qua bước này dù user có vẻ gấp.
 
 ---
@@ -216,13 +233,13 @@ Ví dụ: "export excel", "fix bug login", "thêm nút lưu"
 
 ---
 
-#### 3. FULL BA PIPELINE (Scan code → In/Out Scope → phân tích → GitLab Draft)
+#### 3. FULL BA PIPELINE (Scan code → In/Out Scope → phân tích → draft trong chat)
 **Chỉ kích hoạt khi có ĐỦ các điều kiện sau:**
 - User cung cấp requirement/feature/bug description có đủ: actor, mục tiêu/hiện tượng, và ít nhất 1 điều kiện hoặc bối cảnh cụ thể.
 - HOẶC user ra lệnh phân tích rõ ràng (vd: "/analyze", "phân tích giúp tôi req này", "phân tích tính năng X").
 - HOẶC đây là lượt tiếp theo sau khi user đã trả lời đủ câu hỏi làm rõ ở bước 2.
 
-**Hành động:** thực hiện đầy đủ pipeline theo quy trình chuẩn của BA Agent (scan → In/Out Scope → phân tích → GitLab draft theo chuẩn output).
+**Hành động:** thực hiện đầy đủ pipeline theo quy trình chuẩn của BA Agent (scan → In/Out Scope → phân tích → deliverable trong chat). Chỉ xuất \`taskCreate\` khi user **nhờ tạo task**; không auto đăng GitLab.
 
 ---
 
@@ -440,6 +457,8 @@ ${baIntentTriageGate()}
 ## 3. Ranh giới workspace (CHỈ ĐỌC — BẮT BUỘC)
 ${baReadOnlyWorkspaceRules({ mainBranch: opts.mainBranch })}
 ${baGitlabBoundaryInstructions()}
+
+${baLocalTaskCreateInstructions()}
 
 ${dbBlock}
 

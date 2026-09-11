@@ -5,6 +5,7 @@ import {
   baDeliverAnswerRules,
   baGitlabBoundaryInstructions,
   baIntentTriageGate,
+  baLocalTaskCreateInstructions,
   baPresentationRules,
   baReadOnlyWorkspaceRules,
   baSpecFormatInstructions,
@@ -87,15 +88,27 @@ describe("baDeliverAnswerRules", () => {
 });
 
 describe("baGitlabBoundaryInstructions", () => {
-  it("forbids GitLab writes in every BA mode, allows read via pasted link/id", () => {
+  it("forbids GitLab writes, allows local task create, points to Create issue", () => {
     expect(BA_GITLAB_INTERACTION_ENABLED).toBe(false);
     const text = baGitlabBoundaryInstructions();
-    expect(text).toMatch(/GitLab ghi \(TẠM CẤM, cả BA mode\)/);
-    expect(text).toMatch(/không tạo\/sửa issue/);
-    expect(text).toMatch(/không comment/);
+    expect(text).toMatch(/GitLab ghi \(TẠM CẤM\)/);
+    expect(text).toMatch(/Không auto đăng lên GitLab/);
+    expect(text).toMatch(/Create issue/);
+    expect(text).toMatch(/task nội bộ/i);
     expect(text).toMatch(/GitLab đọc \(được phép\)/);
     expect(text).toMatch(/link issue/);
+    expect(text).not.toMatch(/từ chối ghi.*tạm khóa/);
     expect(text).not.toMatch(/gợi ý tạo ticket cho Dev/);
+  });
+});
+
+describe("baLocalTaskCreateInstructions", () => {
+  it("requires taskCreate JSON when user asks to create a task", () => {
+    const text = baLocalTaskCreateInstructions();
+    expect(text).toMatch(/taskCreate/);
+    expect(text).toMatch(/Create issue/);
+    expect(text).toMatch(/Tasks/);
+    expect(text).toMatch(/Không.*tạm khóa/);
   });
 });
 
@@ -106,6 +119,7 @@ describe("baIntentTriageGate", () => {
     expect(text).toMatch(/GREETING \/ CASUAL \/ NOISE/);
     expect(text).toMatch(/INSUFFICIENT CONTEXT/);
     expect(text).toMatch(/FULL BA PIPELINE/);
+    expect(text).toMatch(/taskCreate/);
     expect(text).toMatch(/KHÔNG scan codebase/);
   });
 });

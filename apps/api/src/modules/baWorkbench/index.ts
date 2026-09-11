@@ -45,10 +45,12 @@ import {
   baBusinessLanguageRules,
   looksLikeGreetingOrNoise,
   parseResultUpdateFromChat,
+  parseTaskCreateFromChat,
   parseTaskFromWorkflowOutput,
   parseWorkflowStepGate,
   runBaWorkflowStep,
   stripResultUpdateBlock,
+  stripTaskCreateBlock,
   type WorkflowStepGate,
 } from "../../plugins/agent/baWorkflow.js";
 import {
@@ -926,6 +928,40 @@ export async function getWorkflowChatContext(
   };
 
   return { workflowBlock: parts.join("\n"), postProcessAnswer };
+}
+
+/**
+ * Free BA/QC chat: when agent emits `taskCreate`, save a local task draft
+ * (Tasks tab) — never publish to GitLab.
+ */
+export function getChatTaskCreatePostProcess(
+  userId: string,
+  baProjectId: string,
+  threadId: string,
+): (answer: string) => Promise<string | null> {
+  const uid = userId.toLowerCase();
+  return async (answer: string): Promise<string | null> => {
+    const created = parseTaskCreateFromChat(answer);
+    if (!created) return null;
+
+    const draft = await createBaTaskDraft({
+      userId: uid,
+      baProjectId,
+      threadId,
+      title: created.title,
+      description: created.description,
+      labels: created.labels,
+      acceptanceCriteria: created.acceptanceCriteria,
+      devNotes: created.devNotes,
+    });
+    logger.info("BA chat task draft created from taskCreate", {
+      threadId,
+      draftId: draft.id,
+    });
+
+    const cleaned = stripTaskCreateBlock(answer);
+    return `${cleaned}\n\n> ✅ Đã tạo task draft — xem tab **Tasks**. Muốn lên GitLab: dùng **Create issue**.`;
+  };
 }
 
 /** Extract title/description from chat markdown for pre-fill. */

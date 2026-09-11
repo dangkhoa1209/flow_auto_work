@@ -464,6 +464,62 @@ export function stripResultUpdateBlock(text: string): string {
     .trim();
 }
 
+export type BaTaskCreate = {
+  title: string;
+  description?: string;
+  labels?: string[];
+  acceptanceCriteria?: string[];
+  devNotes?: string;
+};
+
+const TASK_CREATE_FENCE_RE =
+  /```(?:json)?\s*(\{[\s\S]*?"taskCreate"[\s\S]*?\})\s*```/i;
+
+function tryParseTaskCreate(raw: string): BaTaskCreate | null {
+  try {
+    const parsed = JSON.parse(raw) as { taskCreate?: BaTaskCreate };
+    const u = parsed.taskCreate;
+    if (!u || typeof u !== "object") return null;
+    const title = typeof u.title === "string" ? u.title.trim() : "";
+    if (!title) return null;
+    const out: BaTaskCreate = { title };
+    if (typeof u.description === "string") out.description = u.description.trim();
+    if (Array.isArray(u.labels)) {
+      out.labels = u.labels.map((l) => String(l).trim()).filter(Boolean);
+    }
+    if (Array.isArray(u.acceptanceCriteria)) {
+      out.acceptanceCriteria = u.acceptanceCriteria
+        .map((s) => String(s).trim())
+        .filter(Boolean);
+    }
+    if (typeof u.devNotes === "string") out.devNotes = u.devNotes.trim();
+    return out;
+  } catch {
+    return null;
+  }
+}
+
+/** Parse block tạo task nội bộ do BA/QC chat xuất ra (nếu có). */
+export function parseTaskCreateFromChat(text: string): BaTaskCreate | null {
+  const fence = TASK_CREATE_FENCE_RE.exec(text);
+  if (fence) {
+    const created = tryParseTaskCreate(fence[1]);
+    if (created) return created;
+  }
+  const inline = /\{[\s\S]*"taskCreate"\s*:[\s\S]*\}/.exec(text);
+  if (inline) return tryParseTaskCreate(inline[0]);
+  return null;
+}
+
+/** Bỏ block taskCreate khỏi nội dung chat hiển thị. */
+export function stripTaskCreateBlock(text: string): string {
+  return text
+    .replace(TASK_CREATE_FENCE_RE, "")
+    .replace(/\{[\s\S]*"taskCreate"\s*:[\s\S]*\}\s*$/m, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 export async function runBaWorkflowStep(opts: {
   baProjectId: string;
   requirement: BaRequirement;

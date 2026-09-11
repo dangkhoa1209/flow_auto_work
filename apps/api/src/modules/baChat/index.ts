@@ -23,7 +23,7 @@ import {
   waitBaAnswerIdle,
 } from "../../plugins/agent/baChat.js";
 import { isJobKillRequested } from "../../plugins/agent/run.js";
-import { getWorkflowChatContext } from "../baWorkbench/index.js";
+import { getWorkflowChatContext, getChatTaskCreatePostProcess } from "../baWorkbench/index.js";
 
 export async function baStopThread(userId: string, threadId: string) {
   const thread = await getBaThread(threadId);
@@ -152,6 +152,11 @@ export async function baSendMessage(
 
     // Thread gắn YC workflow → chat có thể cập nhật thẳng Kết quả phân tích.
     const workflowCtx = await getWorkflowChatContext(userId, threadId);
+    const taskCreatePost = getChatTaskCreatePostProcess(
+      userId,
+      thread.baProjectId,
+      threadId,
+    );
 
     kickBaChatAnswer({
       userId: userId.toLowerCase(),
@@ -161,7 +166,16 @@ export async function baSendMessage(
       isFirstUserMessage: existing.filter((m) => m.role === "user").length === 0,
       analysisMode: Boolean(body.analysisMode),
       workflowBlock: workflowCtx?.workflowBlock,
-      postProcessAnswer: workflowCtx?.postProcessAnswer,
+      postProcessAnswer: async (answer) => {
+        let out = answer;
+        if (workflowCtx?.postProcessAnswer) {
+          const w = await workflowCtx.postProcessAnswer(out);
+          if (w?.trim()) out = w;
+        }
+        const t = await taskCreatePost(out);
+        if (t?.trim()) out = t;
+        return out === answer ? null : out;
+      },
     });
 
     return {
