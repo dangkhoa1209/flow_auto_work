@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, ref, useSlots } from "vue";
 import { message } from "ant-design-vue";
 import { renderChatHtml, cleanMarkdownBody } from "@/utils/chatFormat";
 
@@ -24,6 +24,7 @@ const props = withDefaults(
   },
 );
 
+const slots = useSlots();
 const bodyEl = ref<HTMLElement | null>(null);
 
 const useMarkdown = computed(() => {
@@ -46,6 +47,8 @@ const mdSource = computed(() => {
   // No issueUrl → keep original /uploads/ paths (no API proxy + token in clipboard).
   return cleanMarkdownBody(raw);
 });
+
+const showFoot = computed(() => props.copyable || !!slots.meta);
 
 async function writeClipboard(text: string, ok: string) {
   const t = text?.trim();
@@ -70,45 +73,65 @@ async function copyText() {
 </script>
 
 <template>
-  <div v-if="html" class="chat-md-wrap" :class="{ 'chat-md-wrap--copyable': copyable }">
-    <div v-if="copyable" class="chat-md-copy">
-      <button
-        type="button"
-        class="chat-md-copy__btn"
-        title="Copy as Markdown"
-        @click.stop="copyMd"
-      >
-        Copy MD
-      </button>
-      <button
-        type="button"
-        class="chat-md-copy__btn"
-        title="Copy as plain text"
-        @click.stop="copyText"
-      >
-        Copy text
-      </button>
-    </div>
+  <div v-if="html" class="chat-md-wrap">
     <div
       ref="bodyEl"
       class="chat-md"
       :class="useMarkdown ? 'chat-md-rich' : 'chat-md-user'"
       v-html="html"
     />
+    <div v-if="showFoot" class="chat-md-foot">
+      <div class="chat-md-foot__meta">
+        <slot name="meta" />
+      </div>
+      <div v-if="copyable" class="chat-md-copy">
+        <button
+          type="button"
+          class="chat-md-copy__btn"
+          title="Copy as Markdown"
+          @click.stop="copyMd"
+        >
+          Copy MD
+        </button>
+        <button
+          type="button"
+          class="chat-md-copy__btn"
+          title="Copy as plain text"
+          @click.stop="copyText"
+        >
+          Copy text
+        </button>
+      </div>
+    </div>
   </div>
   <div v-else class="text-ink-faint text-sm">{{ empty || "—" }}</div>
 </template>
 
 <style scoped>
-.chat-md-wrap--copyable {
-  position: relative;
+.chat-md-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  margin-top: 6px;
+  min-height: 18px;
+}
+.chat-md-foot__meta {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+.chat-md-foot__meta :deep(.faw-msg__time) {
+  margin-top: 0;
 }
 .chat-md-copy {
   display: flex;
   flex-wrap: wrap;
-  justify-content: flex-end;
+  align-items: center;
   gap: 4px;
-  margin: -2px 0 6px;
+}
+.faw-msg.user .chat-md-foot {
+  justify-content: flex-end;
 }
 .chat-md-copy__btn {
   appearance: none;

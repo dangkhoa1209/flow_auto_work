@@ -81,7 +81,17 @@ function whoLabel(role: string) {
           :body="m.content"
           :role="m.role === 'user' ? 'user' : 'agent'"
           copyable
-        />
+        >
+          <template #meta>
+            <time
+              v-if="formatChatTime(m.createdAt)"
+              class="faw-msg__time"
+              :datetime="m.createdAt"
+            >
+              {{ formatChatTime(m.createdAt) }}
+            </time>
+          </template>
+        </ChatMessageBody>
         <template v-else-if="streaming && streamingMessageId === m.id">
           <span class="chat-typing" aria-label="Đang suy nghĩ">
             <span /><span /><span />
@@ -91,7 +101,7 @@ function whoLabel(role: string) {
           }}</span>
         </template>
         <time
-          v-if="formatChatTime(m.createdAt)"
+          v-else-if="formatChatTime(m.createdAt)"
           class="faw-msg__time"
           :datetime="m.createdAt"
         >
