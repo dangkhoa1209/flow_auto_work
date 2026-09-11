@@ -18,12 +18,6 @@ import { readOnlyAgentPolicy } from "../cursor/agentPolicy.js";
 import { loadBaLinkedContext } from "../ba/ba-linked-context.js";
 import { resolveBaUserGoogleAccessToken } from "../../modules/google/index.js";
 import {
-  baGitlabBoundaryInstructions,
-  baPresentationRules,
-  baSpecFormatInstructions,
-} from "./baChat.js";
-import { baBusinessLanguageRules } from "./baWorkflow.js";
-import {
   beginCancellableJob,
   errorFromCursorRunStatus,
   isTransientCursorTransportError,
@@ -473,48 +467,85 @@ export function buildThreadIssuePrompt(opts: {
   gitlabTaskBlock: string;
   latestAnalysisBlock?: string;
 }): string {
+  const inputBlocks = [
+    opts.gitlabTaskBlock?.trim(),
+    opts.latestAnalysisBlock?.trim(),
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+
   return `Bạn là Business Analyst trên dự án **${opts.displayName}**.
 
-## Nhiệm vụ
-User bấm **Create issue** — hãy **chỉ tổng hợp hội thoại** dưới đây thành **một** GitLab issue draft cho Dev/QA theo **trạng thái đã chốt sau cùng** (không phải bản phân tích đầu tiên).
+## Vai trò & Nhiệm vụ
+Khi người dùng bấm **Create issue**, nhiệm vụ của bạn là: **Chỉ tổng hợp từ nội dung hội thoại được cung cấp** để tạo ra **MỘT** bản draft GitLab issue hoàn chỉnh cho Dev/QA.
+- Phải phản ánh **trạng thái đã chốt sau cùng** trong trao đổi (ưu tiên các trao đổi/sửa đổi ở lượt chat cuối).
+- Tuyệt đối không đọc source code, không gọi tool, không truy vấn database, không suy diễn thông tin ngoài hội thoại.
 
-## Format mô tả issue (gợi ý — cùng format spec với BA mode)
-${baSpecFormatInstructions()}
+---
 
-${baPresentationRules()}
+## Nguyên tắc ngôn ngữ & Nghiệp vụ
+- **100% văn phong nghiệp vụ:** Diễn đạt theo góc nhìn người dùng/BA (tên màn hình, tên nút, luồng thao tác, quy tắc kiểm tra theo UI tiếng Việt).
+- **Tuyệt đối không nhắc yếu tố kỹ thuật:** Không đề cập tên file, hàm, class, biến, bảng/cột DB, endpoint API, framework hay câu lệnh truy vấn trong phần mô tả.
+- **Không suy diễn giao diện ngoài thực tế:** Chỉ mô tả cấu trúc giao diện theo thông tin đã chốt. Không tự bịa kích thước pixel, mã màu, mockup hoặc yêu cầu người dùng gửi ảnh chụp màn hình.
 
-## Quy tắc soạn draft
-1. **Chỉ dùng hội thoại** (và block GitLab/Google nếu có sẵn) — **không** đọc source, **không** Grep/Glob/Read file, **không** gọi tool, **không** tra DB. **Tổng hợp theo thời gian** — lượt chat **sau** ghi đè / bổ sung lượt **trước**. Human chỉnh sửa, bác bỏ, hoặc chốt thêm → phải phản ánh vào description. Không bịa thông tin không có trong hội thoại. **Cấm** copy nguyên bản phân tích sớm rồi bỏ qua các lượt trao đổi sau.
-2. **Title** — ngắn, rõ; lấy từ tên chức năng chính **đã chốt sau cùng**. **Không** nhồi format spec vào title. Không cắt giữa từ.
-3. **Description (markdown)** — **đúng tên đầu mục BA** khi có nội dung:
-   - \`## 1. Yêu cầu khách hàng\` / \`## 2. Yêu cầu/Đề xuất từ PD\` = **đầu vào** — trích từ chat (đã cập nhật nếu YC đổi giữa chừng), không nhét phân tích BA.
-   - \`## 3. Nội dung phân tích\` (+ \`3.1\` / \`3.1.x\` / \`3.2\` / \`3.3\` nếu có) = **phân tích BA đã chốt sau cùng** — gộp chỉnh sửa từ các lượt sau; bỏ qua nếu chat mới dừng ở YC thô.
-   - **KHÔNG đưa mục 4 (Câu hỏi cần xác nhận)** vào description / task — chỉ dùng khi chat; lên issue thì **bỏ hẳn**. Điểm đã được Human trả lời/chốt trong chat → đưa vào mục 1–3, không để lại như câu hỏi mở.
-   - Tối thiểu: mục 1 (+ mục 2 nếu có ý PD).
-4. Chat đã có phân tích → **giữ cấu trúc mục 3** (và 3.1–3.3 nếu phù hợp) nhưng **nội dung phải là bản mới nhất** sau trao đổi — không đóng băng bản đầu. Cắt bỏ "Câu hỏi cần xác nhận". Giữ bảng danh sách / trường popup theo mẫu; kết luận dài → heading + câu/bullet, không nhét vào bảng.
-5. **Description = nội dung phân tích**, không phải nhật ký tiến độ. Chat đã có mục 1–3 → \`description\` phải còn các đầu mục đó + chi tiết logic/cột/điều kiện/màn hình đã chốt (gần nguyên văn, đã gộp sửa sau). Ghi chú phạm vi chỉ là **một dòng trong mục 1 hoặc 3** nếu cần. **Không** viết kiểu "đã mô tả", "đã tìm hiểu", "đã tổng hợp theo chat", "xem phân tích trên" — phải chép/ghép **nội dung** vào field.
-6. **acceptanceCriteria** (JSON): luôn \`[]\` (schema giữ field).
-7. **Không** gán label.
+---
 
-${baBusinessLanguageRules()}
+## Cấu trúc Description (Format chuẩn BA)
 
-**Cấm** mở workspace / đọc code / gọi tool. Trả lời ngay từ hội thoại.
+Trình bày nội dung \`description\` bằng định dạng Markdown GFM theo đúng các tiêu đề chuẩn dưới đây (chỉ đưa vào các mục có dữ liệu):
 
-GitLab (định danh dự án — không gọi API): ${opts.gitlabPath}
-${baGitlabBoundaryInstructions()}
+### 1. Yêu cầu khách hàng
+- Nêu ngắn gọn (1–3 câu) nhu cầu nghiệp vụ gốc từ khách hàng hoặc người dùng.
+- **In đậm** tên danh mục / chức năng chính. Giữ nguyên ý nghiệp vụ gốc, không chèn kết luận hay giải pháp của BA vào mục này.
 
-${opts.gitlabTaskBlock ? `${opts.gitlabTaskBlock}\n\n` : ""}${opts.latestAnalysisBlock ? `${opts.latestAnalysisBlock}\n\n` : ""}## Hội thoại cần review (đọc hết — ưu tiên lượt cuối)
+### 2. Yêu cầu/Đề xuất từ PD *(Bỏ qua nếu hội thoại không có ý kiến của PD)*
+- Tóm tắt đề xuất/giải pháp ở mức màn hình hoặc phân hệ từ Product Designer / Product Owner (Ví dụ: Bổ sung màn hình X tại phân hệ A > B).
+
+### 3. Nội dung phân tích
+- **Màn hình xử lý:** Ghi rõ đường dẫn menu đầy đủ (Ví dụ: \`Admin > C&B > Hợp đồng\`) và URL hệ thống (nếu có).
+
+#### 3.1. Màn hình [Tên màn hình] *(Nếu có giao diện danh sách)*
+- Mô tả bố cục màn hình và thanh công cụ (các nút chức năng phía trên: Thêm mới, Bộ lọc, Xuất file... theo thực tế chốt).
+- **Bảng danh sách:** Dùng bảng Markdown chuẩn:
+  | STT | Tên trường | Mô tả | Kiểu control |
+  | --- | --- | --- | --- |
+- **Mục con chi tiết cột (3.1.x. Cột [Tên cột]):** Chỉ mô tả sâu cho những cột có logic đặc biệt (định dạng hiển thị, cơ chế lọc, copy, menu thao tác).
+
+#### 3.2. Logic xử lý
+Tách rõ từng thao tác nghiệp vụ đã thống nhất (Thêm mới, Cập nhật, Xóa, Phê duyệt, Khóa/Mở khóa, Import/Export...):
+- **Điều kiện:** Ràng buộc, trạng thái dữ liệu cho phép thực hiện.
+- **Thực hiện:** Trình tự xử lý, popup xác nhận, cập nhật trạng thái/thời gian, thông báo thành công.
+- **Lưu ý:** Quy tắc chặn, thông báo lỗi và xử lý ngoại lệ.
+
+#### 3.3. Popup "[Tên popup]" *(Nếu có thao tác mở form/popup)*
+- Điều kiện mở popup và danh sách các trường thông tin:
+  | STT | Tên trường | Mô tả | Kiểu control | Bắt buộc (Y/N) |
+  | --- | --- | --- | --- | --- |
+- Quy tắc kiểm tra tính hợp lệ (validate), quy tắc sinh mã tự động (nếu có) và hành vi của các nút hành động (Lưu, Hủy, Đóng).
+
+> **LƯU Ý QUAN TRỌNG VỀ MỤC 4:**
+> **KHÔNG đưa mục "4. Câu hỏi cần xác nhận" vào issue description.** Tất cả các điểm đã trao đổi, làm rõ hoặc được chốt trong hội thoại phải được tổng hợp thẳng vào Mục 1, 2 hoặc 3.
+
+---
+
+## Dữ liệu đầu vào
+
+${inputBlocks ? `${inputBlocks}\n\n` : ""}## Hội thoại cần review (Đọc toàn bộ — Ưu tiên kết quả chốt sau cùng)
 ${opts.threadBlock}
 
 ---
 
-**Cuối câu trả lời**, thêm **một** block JSON (bắt buộc):
+## Định dạng đầu ra (BẮT BUỘC)
+Chỉ trả về **DUY NHẤT một khối JSON hợp lệ** theo cấu trúc dưới đây, không kèm bất kỳ lời mở đầu, giải thích hay kết luận nào ngoài khối code:
 
 \`\`\`json
-{"title":"…","description":"… (markdown đầy đủ mục 1–3 đã chốt — bỏ mục 4)","labels":[],"acceptanceCriteria":[]}
-\`\`\`
-
-JSON phải parse được; \`description\` escape newline thành \\n; không comment trong JSON. Description dài (nhiều \\n) là bình thường — nhét đủ nội dung đã chốt, không rút thành 1–2 câu status.`;
+{
+  "title": "[Tên ngắn gọn, rõ ràng của tính năng/chức năng chính đã chốt]",
+  "description": "[Toàn bộ nội dung mô tả bằng Markdown theo đúng cấu trúc Mục 1, 2, 3 ở trên]",
+  "labels": [],
+  "acceptanceCriteria": []
+}
+\`\`\``;
 }
 
 /**

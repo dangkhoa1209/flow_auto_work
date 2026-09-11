@@ -11,30 +11,28 @@ import {
 } from "../baThreadIssue.js";
 
 describe("buildThreadIssuePrompt", () => {
-  it("suggests spec format and excludes open questions from task", () => {
+  it("uses the Create issue BA draft prompt and excludes open questions", () => {
     const prompt = buildThreadIssuePrompt({
       displayName: "Demo",
       gitlabPath: "group/app",
       threadBlock: "### Human\nphân tích export excel",
       gitlabTaskBlock: "",
     });
-    expect(prompt).toMatch(/gợi ý.*format spec/i);
-    expect(prompt).toMatch(/đầu vào/);
-    expect(prompt).toMatch(/phân tích BA/);
-    expect(prompt).toMatch(/Tối thiểu: mục 1/);
-    expect(prompt).toMatch(/KHÔNG đưa mục 4/);
-    expect(prompt).toMatch(/không.*đọc source/i);
-    expect(prompt).toMatch(/không.*gọi tool/i);
+    expect(prompt).toMatch(/Vai trò & Nhiệm vụ/);
+    expect(prompt).toMatch(/Cấu trúc Description \(Format chuẩn BA\)/);
+    expect(prompt).toMatch(/1\. Yêu cầu khách hàng/);
+    expect(prompt).toMatch(/3\. Nội dung phân tích/);
+    expect(prompt).toMatch(/3\.1\. Màn hình/);
+    expect(prompt).toMatch(/3\.2\. Logic xử lý/);
+    expect(prompt).toMatch(/3\.3\. Popup/);
+    expect(prompt).toMatch(/KHÔNG đưa mục "4\. Câu hỏi cần xác nhận"/);
+    expect(prompt).toMatch(/không đọc source code/i);
+    expect(prompt).toMatch(/không gọi tool/i);
+    expect(prompt).toMatch(/100% văn phong nghiệp vụ/);
+    expect(prompt).toMatch(/Định dạng đầu ra \(BẮT BUỘC\)/);
+    expect(prompt).toMatch(/"acceptanceCriteria": \[\]/);
     expect(prompt).not.toMatch(/graphify/i);
     expect(prompt).not.toMatch(/code_map/);
-    expect(prompt).toMatch(/đúng tên đầu mục BA/i);
-    expect(prompt).toMatch(/3\.1/);
-    expect(prompt).toMatch(/không.*ép mọi khối thành bảng/i);
-    expect(prompt).toMatch(/heading \+ câu\/bullet/i);
-    expect(prompt).toMatch(/lượt chat.*sau.*ghi đè/i);
-    expect(prompt).toMatch(/bản mới nhất/i);
-    expect(prompt).toMatch(/nội dung phân tích|Description = nội dung/i);
-    expect(prompt).toMatch(/đã mô tả|đã tìm hiểu/i);
   });
 
   it("includes latest analysis block when provided", () => {
@@ -46,6 +44,7 @@ describe("buildThreadIssuePrompt", () => {
       latestAnalysisBlock:
         "## Phân tích BA mới nhất trong hội thoại (ƯU TIÊN — đưa vào field description)\n## 3. Nội dung phân tích\nX",
     });
+    expect(prompt).toMatch(/Dữ liệu đầu vào/);
     expect(prompt).toMatch(/Phân tích BA mới nhất/);
     expect(prompt).toMatch(/Nội dung phân tích/);
     expect(prompt).toMatch(/đưa vào field description/i);
