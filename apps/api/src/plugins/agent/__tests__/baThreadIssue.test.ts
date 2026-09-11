@@ -32,8 +32,8 @@ describe("buildThreadIssuePrompt", () => {
     expect(prompt).toMatch(/heading \+ câu\/bullet/i);
     expect(prompt).toMatch(/lượt chat.*sau.*ghi đè/i);
     expect(prompt).toMatch(/bản mới nhất/i);
-    expect(prompt).toMatch(/CẤM.*meta/i);
-    expect(prompt).toMatch(/Đã tổng hợp/i);
+    expect(prompt).toMatch(/đầy đủ nội dung đã phân tích/i);
+    expect(prompt).toMatch(/không đủ/i);
   });
 
   it("includes latest analysis block when provided", () => {

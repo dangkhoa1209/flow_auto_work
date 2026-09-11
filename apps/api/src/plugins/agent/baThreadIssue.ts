@@ -74,8 +74,8 @@ export function stripOpenQuestionsFromIssueDescription(
 }
 
 /**
- * Description quá mỏng / chỉ meta (vd. "Đã tổng hợp theo bản chốt cuối…")
- * — thiếu nội dung phân tích mục 1–3 đã có trong chat.
+ * Description chưa đủ nội dung phân tích mục 1–3 (thiếu đầu mục BA
+ * hoặc quá ngắn so với bản phân tích đã có trong chat).
  */
 export function isThinIssueDescription(description: string): boolean {
   const t = description.trim();
@@ -96,8 +96,8 @@ export function isThinIssueDescription(description: string): boolean {
 }
 
 /**
- * Khi agent chỉ trả meta ngắn: thay description bằng bản phân tích chat
- * (đã bỏ mục 4) nếu dài/hữu ích hơn.
+ * Khi description chưa đủ: thay bằng bản phân tích chat (đã bỏ mục 4)
+ * nếu dài/hữu ích hơn.
  */
 export function enrichIssueDraftWithLatestAnalysis(
   draft: BaThreadIssueDraft,
@@ -200,8 +200,7 @@ function formatLatestAnalysisBlock(messages: BaMessage[]): string {
   const latest = findLatestBaAnalysisMessage(messages);
   if (!latest?.content?.trim()) return "";
   return `## Phân tích BA mới nhất trong hội thoại (ƯU TIÊN — đưa vào field description)
-Đây là bản phân tích **gần nhất** trong chat. **Bắt buộc** đưa nội dung mục 1–3 (đã gộp chỉnh sửa sau, **bỏ mục 4**) vào \`description\` của JSON — gần như nguyên văn, đủ logic/cột/điều kiện đã chốt.
-**CẤM** thay bằng 1–2 câu meta kiểu "Đã tổng hợp theo bản chốt cuối…", "Không đưa case X…".
+Đây là bản phân tích **gần nhất** trong chat. **Yêu cầu:** \`description\` phải **đầy đủ** — đưa gần nguyên văn mục 1–3 (đã gộp chỉnh sửa sau, **bỏ mục 4**), gồm logic/cột/điều kiện đã chốt. Một câu nhật ký / tóm tắt tiến độ **không đủ**.
 Các lượt Human/Assistant **sau** khối này (nếu có trong "Hội thoại cần review") phải được **gộp vào** description; không đóng băng bản cũ.
 
 ${latest.content.trim()}`;
@@ -392,7 +391,7 @@ ${baPresentationRules()}
    - **KHÔNG đưa mục 4 (Câu hỏi cần xác nhận)** vào description / task — chỉ dùng khi chat; lên issue thì **bỏ hẳn**. Điểm đã được Human trả lời/chốt trong chat → đưa vào mục 1–3, không để lại như câu hỏi mở.
    - Tối thiểu: mục 1 (+ mục 2 nếu có ý PD).
 4. Chat đã có phân tích → **giữ cấu trúc mục 3** (và 3.1–3.3 nếu phù hợp) nhưng **nội dung phải là bản mới nhất** sau trao đổi — không đóng băng bản đầu. Cắt bỏ "Câu hỏi cần xác nhận". Giữ bảng danh sách / trường popup theo mẫu; kết luận dài → heading + câu/bullet, không nhét vào bảng.
-5. **Description phải ĐỦ nội dung đã phân tích** — **CẤM** thay description bằng câu meta / nhật ký soạn thảo kiểu: "Đã tổng hợp theo bản chốt cuối…", "Không đưa case X vào issue", "Tóm tắt hội thoại…", "Gap A ↔ B…". Những ghi chú phạm vi (loại case nào) chỉ là **một dòng trong mục 1 hoặc 3** nếu cần — **không** thay cho toàn bộ spec. Chat đã có mục 1–3 → \`description\` phải còn các đầu mục đó + chi tiết logic/cột/điều kiện đã chốt (gần nguyên văn, đã gộp sửa sau).
+5. **Description phải đầy đủ nội dung đã phân tích.** Chat đã có mục 1–3 → \`description\` phải còn các đầu mục đó + chi tiết logic/cột/điều kiện đã chốt (gần nguyên văn, đã gộp sửa sau). Ghi chú phạm vi (vd. loại case nào) chỉ là **một dòng trong mục 1 hoặc 3** nếu cần — không thay cho toàn bộ spec. Một câu nhật ký / tóm tắt tiến độ **không đủ** làm description.
 6. **acceptanceCriteria** (JSON): luôn \`[]\` (schema giữ field).
 7. **Không** gán label.
 
@@ -411,10 +410,10 @@ ${opts.threadBlock}
 **Cuối câu trả lời**, thêm **một** block JSON (bắt buộc):
 
 \`\`\`json
-{"title":"…","description":"… (markdown ĐỦ mục 1–3 đã chốt — KHÔNG meta ngắn, KHÔNG mục 4)","labels":[],"acceptanceCriteria":[]}
+{"title":"…","description":"… (markdown đầy đủ mục 1–3 đã chốt — bỏ mục 4)","labels":[],"acceptanceCriteria":[]}
 \`\`\`
 
-JSON phải parse được; \`description\` escape newline thành \\n; không comment trong JSON. Description dài (nhiều \\n) là bình thường khi đã có phân tích — **không** rút thành 1–2 câu.`;
+JSON phải parse được; \`description\` escape newline thành \\n; không comment trong JSON. Description dài (nhiều \\n) là bình thường khi đã có phân tích — viết đủ nội dung đã chốt.`;
 }
 
 /**
