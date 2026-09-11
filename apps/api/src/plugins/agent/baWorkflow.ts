@@ -671,6 +671,8 @@ export async function runBaWorkflowStep(opts: {
             );
             if (chunk.startsWith(streamed) && chunk.length >= streamed.length) {
               streamed = chunk;
+            } else if (streamed && streamed.endsWith(chunk)) {
+              /* duplicate trailing snapshot */
             } else if (chunk) {
               streamed += chunk;
             }

@@ -73,25 +73,68 @@ export function stripOpenQuestionsFromIssueDescription(
   return out.join("\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 
+/** Nhật ký tiến độ / meta — không thay cho nội dung phân tích. */
+const ISSUE_META_NARRATION_SOURCE =
+  String.raw`đã\s+(?:tổng\s+hợp|mô\s+tả|tìm\s+hiểu|soạn(?:\s+lại)?|phân\s+tích(?:\s+xong)?)|bản\s+chốt\s+cuối|không\s+đưa\s+(?:case|req)|tóm\s+tắt\s+hội\s+thoại|đã\s+soạn\s+(?:lại\s+)?(?:issue|task|draft)|xem\s+(?:lại\s+)?(?:phân\s+tích|chat|hội\s+thoại|bên\s+trên)|như\s+(?:đã\s+)?(?:nêu|mô\s+tả|trên)|gap\s+.+\s*↔`;
+
+function issueMetaNarrationRe(flags = "i"): RegExp {
+  return new RegExp(ISSUE_META_NARRATION_SOURCE, flags);
+}
+
+function hasBaIssueHeadings(text: string): boolean {
+  return (
+    /#{1,3}\s*1[\.\)]?\s*Yêu cầu/i.test(text) ||
+    /#{1,3}\s*3[\.\)]?\s*Nội dung phân tích/i.test(text) ||
+    /#{1,3}\s*3\.1[\.\)]?\s*Màn hình/i.test(text) ||
+    /#{1,3}\s*3\.2[\.\)]?\s*Logic xử lý/i.test(text)
+  );
+}
+
 /**
- * Description chưa đủ nội dung phân tích mục 1–3 (thiếu đầu mục BA
- * hoặc quá ngắn so với bản phân tích đã có trong chat).
+ * Có chi tiết phân tích thật (3.1/3.2, bảng, hoặc thân mục 3 đủ dài
+ * sau khi bỏ câu meta).
+ */
+export function hasIssueAnalysisSubstance(description: string): boolean {
+  const t = description.trim();
+  if (!t) return false;
+  if (/#{1,3}\s*3\.[12]/i.test(t)) return true;
+  const pipeCount = (t.match(/\|/g) || []).length;
+  if (pipeCount >= 8) return true;
+  const section3 =
+    /#{1,3}\s*3[\.\)]?\s*Nội dung phân tích[^\n]*\n([\s\S]*?)(?=#{1,3}\s+\S|$)/i.exec(
+      t,
+    );
+  if (section3) {
+    const body = section3[1]
+      .replace(issueMetaNarrationRe("gi"), "")
+      .replace(/#{1,6}\s+/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (body.length >= 120) return true;
+  }
+  const withoutMeta = t
+    .replace(issueMetaNarrationRe("gi"), "")
+    .replace(/#{1,6}\s+[^\n]*/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return withoutMeta.length >= 400;
+}
+
+/**
+ * Description chưa đủ nội dung phân tích mục 1–3 (thiếu đầu mục BA,
+ * chỉ nhật ký meta, hoặc quá ngắn so với bản phân tích trong chat).
  */
 export function isThinIssueDescription(description: string): boolean {
   const t = description.trim();
   if (!t) return true;
-  const hasBaHeadings =
-    /#{1,3}\s*1[\.\)]?\s*Yêu cầu/i.test(t) ||
-    /#{1,3}\s*3[\.\)]?\s*Nội dung phân tích/i.test(t) ||
-    /#{1,3}\s*3\.1[\.\)]?\s*Màn hình/i.test(t) ||
-    /#{1,3}\s*3\.2[\.\)]?\s*Logic xử lý/i.test(t);
-  if (hasBaHeadings && t.length >= 200) return false;
-  const metaOnly =
-    /đã\s+tổng\s+hợp|bản\s+chốt\s+cuối|không\s+đưa\s+(?:case|req)|tóm\s+tắt\s+hội\s+thoại|đã\s+soạn\s+(?:lại\s+)?(?:issue|task|draft)|gap\s+.+\s*↔/i.test(
-      t,
-    );
-  if (metaOnly && !hasBaHeadings) return true;
+  const hasBaHeadings = hasBaIssueHeadings(t);
+  const substance = hasIssueAnalysisSubstance(t);
+  const metaHit = issueMetaNarrationRe("i").test(t);
+
+  if (hasBaHeadings && substance && t.length >= 200) return false;
+  if (metaHit && !substance) return true;
   if (!hasBaHeadings && t.length < 500) return true;
+  if (hasBaHeadings && !substance) return true;
   return false;
 }
 
@@ -107,10 +150,53 @@ export function enrichIssueDraftWithLatestAnalysis(
   const analysis = (latestAnalysis || "").trim();
   if (!analysis) return draft;
   const cleaned = stripOpenQuestionsFromIssueDescription(analysis);
-  if (!cleaned || cleaned.length <= draft.description.trim().length) {
-    return draft;
+  if (!cleaned) return draft;
+  const draftThin = isThinIssueDescription(draft.description);
+  const cleanedBetter =
+    !isThinIssueDescription(cleaned) ||
+    cleaned.length > draft.description.trim().length;
+  if (draftThin && cleanedBetter) {
+    return { ...draft, description: cleaned };
   }
-  return { ...draft, description: cleaned };
+  return draft;
+}
+
+/** Bỏ JSON issue draft khỏi prose agent (để enrich từ phần chữ ngoài JSON). */
+export function stripIssueDraftJsonFromAgentText(text: string): string {
+  let out = text.replace(/```(?:json|JSON)?\s*[\s\S]*?```/g, "");
+  for (const obj of extractJsonObjectsWithTitle(text)) {
+    out = out.split(obj).join("");
+  }
+  return out.replace(/\n{3,}/g, "\n\n").trim();
+}
+
+/**
+ * Chọn bản agent text giàu description hơn giữa stream SSE và result.wait()
+ * (tránh lần tạo ngắn ngủn khi một phía truncated / meta).
+ */
+export function pickBestIssueAgentText(a: string, b: string): string {
+  const left = a.trim();
+  const right = b.trim();
+  if (!left) return right;
+  if (!right) return left;
+
+  const draftL = parseIssueDraftFromAgent(left);
+  const draftR = parseIssueDraftFromAgent(right);
+  if (draftL && draftR) {
+    const thinL = isThinIssueDescription(draftL.description);
+    const thinR = isThinIssueDescription(draftR.description);
+    if (thinL !== thinR) return thinL ? right : left;
+    if (draftR.description.length !== draftL.description.length) {
+      return draftR.description.length > draftL.description.length
+        ? right
+        : left;
+    }
+  } else if (draftL && !draftR) {
+    return left;
+  } else if (!draftL && draftR) {
+    return right;
+  }
+  return left.length >= right.length ? left : right;
 }
 
 /** Gộp AC vào mô tả; không gán label mặc định cho form. */
@@ -200,10 +286,20 @@ function formatLatestAnalysisBlock(messages: BaMessage[]): string {
   const latest = findLatestBaAnalysisMessage(messages);
   if (!latest?.content?.trim()) return "";
   return `## Phân tích BA mới nhất trong hội thoại (ƯU TIÊN — đưa vào field description)
-Đây là bản phân tích **gần nhất** trong chat. **Yêu cầu:** \`description\` phải **đầy đủ** — đưa gần nguyên văn mục 1–3 (đã gộp chỉnh sửa sau, **bỏ mục 4**), gồm logic/cột/điều kiện đã chốt. Một câu nhật ký / tóm tắt tiến độ **không đủ**.
+Đây là bản phân tích **gần nhất** trong chat. **Yêu cầu:** \`description\` phải mang **đầy đủ nội dung** mục 1–3 (logic/cột/điều kiện/màn hình đã chốt, gần nguyên văn, **bỏ mục 4**) — không thay bằng câu nhật ký kiểu "đã mô tả", "đã tìm hiểu", "đã tổng hợp theo chat".
 Các lượt Human/Assistant **sau** khối này (nếu có trong "Hội thoại cần review") phải được **gộp vào** description; không đóng băng bản cũ.
 
 ${latest.content.trim()}`;
+}
+
+function preferRicherIssueDraft(
+  a: BaThreadIssueDraft,
+  b: BaThreadIssueDraft,
+): BaThreadIssueDraft {
+  const thinA = isThinIssueDescription(a.description);
+  const thinB = isThinIssueDescription(b.description);
+  if (thinA !== thinB) return thinA ? b : a;
+  return b.description.length > a.description.length ? b : a;
 }
 
 /** Parse single issue JSON from agent output (tolerant + markdown fallback). */
@@ -211,14 +307,19 @@ export function parseIssueDraftFromAgent(text: string): BaThreadIssueDraft | nul
   const trimmed = text.trim();
   if (!trimmed) return null;
 
+  const candidates: BaThreadIssueDraft[] = [];
   for (const block of allCodeFenceBlocks(trimmed)) {
     const parsed = tryParseIssueJson(repairJsonLoose(block));
-    if (parsed) return parsed;
+    if (parsed) candidates.push(parsed);
   }
 
   for (const obj of extractJsonObjectsWithTitle(trimmed)) {
     const parsed = tryParseIssueJson(repairJsonLoose(obj));
-    if (parsed) return parsed;
+    if (parsed) candidates.push(parsed);
+  }
+
+  if (candidates.length) {
+    return candidates.reduce((best, cur) => preferRicherIssueDraft(best, cur));
   }
 
   return fallbackIssueDraftFromProse(trimmed);
@@ -391,7 +492,7 @@ ${baPresentationRules()}
    - **KHÔNG đưa mục 4 (Câu hỏi cần xác nhận)** vào description / task — chỉ dùng khi chat; lên issue thì **bỏ hẳn**. Điểm đã được Human trả lời/chốt trong chat → đưa vào mục 1–3, không để lại như câu hỏi mở.
    - Tối thiểu: mục 1 (+ mục 2 nếu có ý PD).
 4. Chat đã có phân tích → **giữ cấu trúc mục 3** (và 3.1–3.3 nếu phù hợp) nhưng **nội dung phải là bản mới nhất** sau trao đổi — không đóng băng bản đầu. Cắt bỏ "Câu hỏi cần xác nhận". Giữ bảng danh sách / trường popup theo mẫu; kết luận dài → heading + câu/bullet, không nhét vào bảng.
-5. **Description phải đầy đủ nội dung đã phân tích.** Chat đã có mục 1–3 → \`description\` phải còn các đầu mục đó + chi tiết logic/cột/điều kiện đã chốt (gần nguyên văn, đã gộp sửa sau). Ghi chú phạm vi (vd. loại case nào) chỉ là **một dòng trong mục 1 hoặc 3** nếu cần — không thay cho toàn bộ spec. Một câu nhật ký / tóm tắt tiến độ **không đủ** làm description.
+5. **Description = nội dung phân tích**, không phải nhật ký tiến độ. Chat đã có mục 1–3 → \`description\` phải còn các đầu mục đó + chi tiết logic/cột/điều kiện/màn hình đã chốt (gần nguyên văn, đã gộp sửa sau). Ghi chú phạm vi chỉ là **một dòng trong mục 1 hoặc 3** nếu cần. **Không** viết kiểu "đã mô tả", "đã tìm hiểu", "đã tổng hợp theo chat", "xem phân tích trên" — phải chép/ghép **nội dung** vào field.
 6. **acceptanceCriteria** (JSON): luôn \`[]\` (schema giữ field).
 7. **Không** gán label.
 
@@ -413,7 +514,7 @@ ${opts.threadBlock}
 {"title":"…","description":"… (markdown đầy đủ mục 1–3 đã chốt — bỏ mục 4)","labels":[],"acceptanceCriteria":[]}
 \`\`\`
 
-JSON phải parse được; \`description\` escape newline thành \\n; không comment trong JSON. Description dài (nhiều \\n) là bình thường khi đã có phân tích — viết đủ nội dung đã chốt.`;
+JSON phải parse được; \`description\` escape newline thành \\n; không comment trong JSON. Description dài (nhiều \\n) là bình thường — nhét đủ nội dung đã chốt, không rút thành 1–2 câu status.`;
 }
 
 /**
@@ -519,9 +620,13 @@ export async function runBaThreadIssueDraft(opts: {
                 };
               },
             );
+            if (!chunk) continue;
+            // Snapshot vs delta (same as BA chat) — tránh nhân đôi / mất đuôi JSON dài.
             if (chunk.startsWith(streamed) && chunk.length >= streamed.length) {
               streamed = chunk;
-            } else if (chunk) {
+            } else if (streamed && streamed.endsWith(chunk)) {
+              /* duplicate trailing snapshot */
+            } else {
               streamed += chunk;
             }
           }
@@ -552,11 +657,21 @@ export async function runBaThreadIssueDraft(opts: {
       const fromResult = String(
         (result as { result?: string }).result || "",
       ).trim();
-      const finalText =
-        fromResult.length >= streamed.length
-          ? fromResult || streamed
-          : streamed || fromResult;
+      const finalText = pickBestIssueAgentText(fromResult, streamed);
       if (!finalText) throw new Error("Agent returned empty content");
+      if (
+        fromResult &&
+        streamed &&
+        fromResult !== streamed &&
+        finalText === streamed &&
+        fromResult.length >= streamed.length
+      ) {
+        logger.info("BA thread issue draft preferred stream over longer result", {
+          threadId: opts.threadId,
+          resultChars: fromResult.length,
+          streamChars: streamed.length,
+        });
+      }
 
       await persistCursorUsage({
         kind: "ba_create_issue",
@@ -585,18 +700,24 @@ export async function runBaThreadIssueDraft(opts: {
       }
       const latestAnalysis =
         findLatestBaAnalysisMessage(messages)?.content || "";
-      const enriched = enrichIssueDraftWithLatestAnalysis(
+      let enriched = enrichIssueDraftWithLatestAnalysis(
         parsed,
         latestAnalysis,
       );
-      if (
-        enriched.description !== parsed.description &&
-        isThinIssueDescription(parsed.description)
-      ) {
-        logger.info("BA thread issue draft enriched from chat analysis", {
+      // Cùng lượt: agent có thể viết spec đầy đủ ngoài JSON mỏng.
+      if (isThinIssueDescription(enriched.description)) {
+        const fromProse = enrichIssueDraftWithLatestAnalysis(
+          enriched,
+          stripIssueDraftJsonFromAgentText(finalText),
+        );
+        enriched = fromProse;
+      }
+      if (enriched.description !== parsed.description) {
+        logger.info("BA thread issue draft enriched", {
           threadId: opts.threadId,
           thinChars: parsed.description.length,
           enrichedChars: enriched.description.length,
+          stillThin: isThinIssueDescription(enriched.description),
         });
       }
       logger.info("BA thread issue draft parsed", {

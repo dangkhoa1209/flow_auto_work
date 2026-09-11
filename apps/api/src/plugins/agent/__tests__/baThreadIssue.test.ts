@@ -6,6 +6,7 @@ import {
   isThinIssueDescription,
   normalizeIssueDraftForForm,
   parseIssueDraftFromAgent,
+  pickBestIssueAgentText,
   stripOpenQuestionsFromIssueDescription,
 } from "../baThreadIssue.js";
 
@@ -32,8 +33,8 @@ describe("buildThreadIssuePrompt", () => {
     expect(prompt).toMatch(/heading \+ câu\/bullet/i);
     expect(prompt).toMatch(/lượt chat.*sau.*ghi đè/i);
     expect(prompt).toMatch(/bản mới nhất/i);
-    expect(prompt).toMatch(/đầy đủ nội dung đã phân tích/i);
-    expect(prompt).toMatch(/không đủ/i);
+    expect(prompt).toMatch(/nội dung phân tích|Description = nội dung/i);
+    expect(prompt).toMatch(/đã mô tả|đã tìm hiểu/i);
   });
 
   it("includes latest analysis block when provided", () => {
@@ -92,6 +93,16 @@ describe("isThinIssueDescription / enrichIssueDraftWithLatestAnalysis", () => {
     ).toBe(true);
   });
 
+  it("flags heading shells with only status narration as thin", () => {
+    const shell = `## 1. Yêu cầu khách hàng
+Đã tổng hợp theo bản chốt cuối. Không đưa case REQ12812 vào issue.
+
+## 3. Nội dung phân tích
+Đã mô tả và đã tìm hiểu trong chat — xem phân tích trên.
+`;
+    expect(isThinIssueDescription(shell)).toBe(true);
+  });
+
   it("keeps full BA analysis as not thin", () => {
     const full = `## 1. Yêu cầu khách hàng
 Import OT nhóm cần chặn trùng giờ với phiếu công tác nhóm.
@@ -131,12 +142,41 @@ Cần kiểm tra overlap khi bật tự động tính tăng ca.
     expect(out.description).not.toMatch(/Đã tổng hợp/);
   });
 
-  it("does not replace a rich description", () => {
-    const rich = `## 1. Yêu cầu khách hàng
-A
+  it("replaces heading+meta shell even when longer than a short chat snippet", () => {
+    const shell = `## 1. Yêu cầu khách hàng
+Đã mô tả theo bản chốt cuối và đã tìm hiểu gap import OT.
 
 ## 3. Nội dung phân tích
-B đủ dài với logic đã chốt cho Dev và QA.
+Đã tổng hợp theo chat — xem phân tích bên trên.
+`;
+    const analysis = `## 1. Yêu cầu khách hàng
+Import OT nhóm không chặn trùng giờ với phiếu công tác nhóm.
+
+## 3. Nội dung phân tích
+### 3.2. Logic xử lý
+Khi bật tự động tính tăng ca thì kiểm tra overlap theo khoảng giờ.
+`;
+    const out = enrichIssueDraftWithLatestAnalysis(
+      {
+        title: "Import OT",
+        description: shell,
+        labels: [],
+        acceptanceCriteria: [],
+      },
+      analysis,
+    );
+    expect(out.description).toContain("Logic xử lý");
+    expect(out.description).toContain("overlap");
+    expect(out.description).not.toMatch(/đã mô tả/i);
+  });
+
+  it("does not replace a rich description", () => {
+    const rich = `## 1. Yêu cầu khách hàng
+Import OT nhóm cần chặn trùng giờ với phiếu công tác nhóm khi bật cấu hình.
+
+## 3. Nội dung phân tích
+### 3.2. Logic xử lý
+So khớp khoảng giờ OT với phiếu công tác nhóm; trùng thì chặn và báo lỗi rõ ràng.
 `;
     const out = enrichIssueDraftWithLatestAnalysis(
       {
@@ -148,6 +188,20 @@ B đủ dài với logic đã chốt cho Dev và QA.
       "## 1. Yêu cầu khách hàng\nKhác",
     );
     expect(out.description).toBe(rich);
+  });
+});
+
+describe("pickBestIssueAgentText", () => {
+  it("prefers the side whose JSON description is not thin", () => {
+    const thin = `\`\`\`json
+{"title":"Import OT","description":"Đã tổng hợp theo bản chốt cuối. Đã mô tả trong chat.","labels":[],"acceptanceCriteria":[]}
+\`\`\``;
+    const rich = `\`\`\`json
+{"title":"Import OT","description":"## 1. Yêu cầu khách hàng\\nImport OT nhóm.\\n\\n## 3. Nội dung phân tích\\n### 3.2. Logic xử lý\\nChặn overlap khi bật tự động tính tăng ca.","labels":[],"acceptanceCriteria":[]}
+\`\`\``;
+    // Longer thin result should lose to shorter rich stream.
+    const paddedThin = `${thin}\n\n${"x".repeat(500)}`;
+    expect(pickBestIssueAgentText(paddedThin, rich)).toBe(rich.trim());
   });
 });
 
@@ -195,6 +249,19 @@ User muốn thêm validation.
     const draft = parseIssueDraftFromAgent(text);
     expect(draft?.title).toBe("Fix nút Lưu");
     expect(draft?.labels).toEqual(["bug"]);
+  });
+
+  it("prefers richer description among multiple JSON candidates", () => {
+    const text = `\`\`\`json
+{"title":"OT","description":"Đã tổng hợp theo chat.","labels":[],"acceptanceCriteria":[]}
+\`\`\`
+
+\`\`\`json
+{"title":"OT","description":"## 1. Yêu cầu khách hàng\\nImport OT.\\n\\n## 3. Nội dung phân tích\\n### 3.2. Logic xử lý\\nChặn overlap giờ với công tác nhóm.","labels":[],"acceptanceCriteria":[]}
+\`\`\``;
+    const draft = parseIssueDraftFromAgent(text);
+    expect(draft?.description).toContain("Logic xử lý");
+    expect(draft?.description).toContain("overlap");
   });
 
   it("falls back to markdown prose when JSON missing", () => {

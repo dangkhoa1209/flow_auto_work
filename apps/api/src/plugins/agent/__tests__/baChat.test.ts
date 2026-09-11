@@ -109,7 +109,7 @@ describe("baLocalTaskCreateInstructions", () => {
     expect(text).toMatch(/Create issue/);
     expect(text).toMatch(/Tasks/);
     expect(text).toMatch(/Không.*tạm khóa/);
-    expect(text).toMatch(/gần nguyên văn|đầy đủ nội dung đã phân tích/i);
+    expect(text).toMatch(/gần nguyên văn|đầy đủ nội dung đã phân tích|nội dung spec/i);
   });
 });
 
