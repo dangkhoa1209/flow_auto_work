@@ -575,6 +575,7 @@ ${opts.gitlabTaskBlock ? `${opts.gitlabTaskBlock}\n\n` : ""}## Câu hỏi của 
 ${opts.question}`;
 }
 
+/** BA mode OFF — FAW triage + Q&A; Spec chi tiết chỉ ở BA mode (analysis). */
 export function buildBaNormalChatPrompt(opts: {
   displayName: string;
   gitlabPath: string;
@@ -591,6 +592,7 @@ export function buildBaNormalChatPrompt(opts: {
 ## Mục tiêu & Vai trò
 - Giải thích hành vi sản phẩm, luồng thao tác, quy tắc nghiệp vụ theo đúng UI thực tế của hệ thống.
 - Vào thẳng nội dung câu trả lời; diễn đạt tự nhiên theo ngôn ngữ nghiệp vụ của người dùng cuối, tránh dùng thuật ngữ kỹ thuật trừ khi người dùng chủ động yêu cầu.
+- Không ép khung phân tích đầy đủ mục 1–4 / 3.1–3.3 — đó dành cho chat **bật BA mode**. Khi cần nêu cấu trúc màn hình, dùng quy tắc trình bày bên dưới.
 
 ---
 
@@ -649,26 +651,7 @@ ${baLocalTaskCreateInstructions()}
 
 ---
 
-## Quy chuẩn định dạng Spec (Khi cần trình bày màn hình / tính năng)
-
-- **Văn phong:** Sử dụng văn xuôi kết hợp bullet points tự nhiên. Không ép buộc mọi dữ liệu vào bảng biểu.
-- **Tiêu chuẩn bảng Markdown GFM (khi có ≥4 dòng cùng cấu trúc dữ liệu):**
-  - **Bảng danh sách màn hình:**
-    | STT | Tên trường | Mô tả | Kiểu control |
-    | --- | --- | --- | --- |
-  - **Bảng trường thông tin popup/form:**
-    | STT | Tên trường | Mô tả | Kiểu control | Bắt buộc (Y/N) |
-    | --- | --- | --- | --- | --- |
-  - Đảm bảo cú pháp Markdown hợp lệ với đầy đủ vạch phân cách giữa từng cột.
-- **Cấu trúc tiêu đề chuẩn:**
-  - \`## 1. Yêu cầu khách hàng\`
-  - \`## 2. Yêu cầu/Đề xuất từ PD\` (nếu có)
-  - \`## 3. Nội dung phân tích\`
-    - \`### 3.1. Màn hình [Tên màn hình]\`
-    - \`#### 3.1.x. Cột [Tên cột]\` (nếu cần mô tả sâu)
-    - \`### 3.2. Logic xử lý\` (tách rõ: Điều kiện, Thực hiện, Lưu ý)
-    - \`### 3.3. Popup "[Tên popup]"\` (nếu có)
-  - \`## 4. Câu hỏi cần xác nhận\` (nêu rõ các điểm chưa đủ dữ liệu hoặc cần quyết định thêm)
+${baPresentationRules()}
 
 ---
 

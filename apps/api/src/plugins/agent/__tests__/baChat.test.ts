@@ -38,9 +38,12 @@ describe("buildBaNormalChatPrompt", () => {
     expect(prompt).toMatch(/code_map_query/);
     expect(prompt).toMatch(/Chưa tìm thấy trên hệ thống/);
     expect(prompt).toMatch(/Đang lập kế hoạch/);
-    expect(prompt).toMatch(/Quy chuẩn định dạng Spec/);
+    expect(prompt).toMatch(/Trình bày \(tự nhiên/);
+    expect(prompt).toMatch(/bảng khi cùng cấu trúc cột/);
     expect(prompt).toMatch(/Câu hỏi của người dùng/);
     expect(prompt).toMatch(/taskCreate/);
+    expect(prompt).not.toMatch(/Quy chuẩn định dạng Spec/);
+    expect(prompt).not.toMatch(/Format Spec BA/);
     expect(prompt).not.toMatch(/Chế độ: Hỏi đáp sản phẩm/);
     expect(prompt).not.toMatch(/trợ lý sản phẩm cho BA \/ PD \/ QC/);
     expect(prompt).not.toMatch(/BA Mode đang BẬT/);
