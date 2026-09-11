@@ -819,9 +819,10 @@ export async function runBaChatAgent(opts: {
       threadId: opts.threadId,
       messageId: opts.assistantMessageId,
       step: "read",
-      label: "Đang chuẩn bị code map (graphify)…",
+      label: "Code map (graphify nền)…",
     });
-    await ensureProjectGraphifyReady(project.localPath, { timeoutMs: 90_000 });
+    // Fire-and-forget if graph missing; do not wait for long graphify update.
+    await ensureProjectGraphifyReady(project.localPath);
     session.check();
     const graphifyQuery = await queryProjectGraphify(
       project.localPath,

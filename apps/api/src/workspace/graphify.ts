@@ -375,7 +375,11 @@ export function scheduleProjectGraphify(
 }
 
 /**
- * Ensure sibling graph.json exists (build if missing). Returns false if disabled / failed.
+ * Kick off sibling graph build in the background when graph.json is missing.
+ * Does **not** wait for `graphify update` by default — BA/Work continue with the
+ * existing map (or Grep) while rebuild runs. Pass `timeoutMs > 0` only if a
+ * caller truly needs to block until the file appears.
+ * Returns true when graph.json already exists (or appears within an explicit wait).
  */
 export async function ensureProjectGraphifyReady(
   sourcePath: string,
@@ -384,10 +388,9 @@ export async function ensureProjectGraphifyReady(
   if (!graphifyEnabled()) return false;
   const source = path.resolve(sourcePath.trim());
   const graphJson = graphifyGraphJsonForSource(source);
-  if (await pathExists(graphJson)) return true;
+  const hasGraph = await pathExists(graphJson);
 
-  const timeoutMs = opts?.timeoutMs ?? 90_000;
-  if (!inFlight.has(source)) {
+  if (!hasGraph && !inFlight.has(source)) {
     inFlight.add(source);
     void (async () => {
       try {
@@ -398,10 +401,14 @@ export async function ensureProjectGraphifyReady(
     })();
   }
 
+  // Default 0 — never block the agent pipeline on a long graphify rebuild.
+  const timeoutMs = opts?.timeoutMs ?? 0;
+  if (timeoutMs <= 0) return hasGraph;
+
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     if (await pathExists(graphJson)) return true;
-    // Update finished/skipped without a graph — do not block the work task.
+    // Update finished/skipped without a graph — do not keep polling.
     if (!inFlight.has(source)) break;
     await new Promise((r) => setTimeout(r, 500));
   }
@@ -605,7 +612,7 @@ export type WorkGraphifyPrep = {
   status: "disabled" | "ready" | "empty";
 };
 
-/** Ensure sibling graph exists; return how-to-use instructions (agent queries the tools itself). */
+/** Ensure sibling graph kickoff (background); return how-to-use instructions (agent queries the tools itself). */
 export async function prepareWorkGraphifyContext(opts: {
   sourcePath: string;
   timeoutMs?: number;
@@ -614,7 +621,8 @@ export async function prepareWorkGraphifyContext(opts: {
     return { block: "", queryText: null, status: "disabled" };
   }
   const ok = await ensureProjectGraphifyReady(opts.sourcePath, {
-    timeoutMs: opts.timeoutMs ?? 45_000,
+    // Do not wait for graphify update — Work continues while rebuild runs in background.
+    timeoutMs: opts.timeoutMs ?? 0,
   });
   return {
     block: formatWorkGraphifyPromptBlock({ sourcePath: opts.sourcePath }),

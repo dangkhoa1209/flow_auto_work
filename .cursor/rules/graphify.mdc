@@ -22,7 +22,7 @@ BA shared: `project/_ba/<slug>/source/`.
 - Manual rebuild: `scripts/graphify-work-project.sh <username>/<slug>`
 - Or: `GRAPHIFY_OUT="$(pwd)/project/<user>/<slug>/graphify-out" graphify update project/<user>/<slug>/source --force`
 
-API auto-runs that update after Work/BA clone (and BA pull). Disable with `GRAPHIFY_ENABLED=0`.
+API auto-runs that update after Work/BA clone (and BA pull) **in the background** — BA Chat / Work continue without waiting for `graphify update` to finish (use existing map or Grep). Disable with `GRAPHIFY_ENABLED=0`.
 
 **BA Chat / workflow:** API runs `graphify query` against the sibling graph and injects a "Code map" block into the Cursor prompt. **Work Run/Q&A:** attach `code_map_*` tools and tell the agent how to query (short locator — not the full ticket); the agent calls the tools itself. **Create issue** synthesizes the chat thread only — no graphify, no source read.
 
