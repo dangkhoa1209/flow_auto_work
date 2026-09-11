@@ -321,7 +321,7 @@ export function canAccessProjectChat(roles?: UserRole[] | null): boolean {
 }
 
 /**
- * Dedicated Devops home: devops role, not admin, not dev (dev → /work).
+ * Dedicated Devops home: devops role, not admin, not dev (dev → /dev).
  */
 export function isDevopsAudience(
   roles?: UserRole[] | null | Pick<WorkspaceUser, "roles">,
@@ -341,11 +341,11 @@ export function isDevopsAudience(
 export function primaryHomePath(roles?: UserRole[] | null): string {
   const r = normalizeUserRoles(roles);
   if (r.includes("admin")) return "/admin";
-  if (r.includes("dev")) return "/work";
+  if (r.includes("dev")) return "/dev";
   if (r.includes("devops")) return "/devops";
   if (isQcAudience(r)) return "/qc";
   if (isBaAudience(r)) return "/ba";
-  return "/work";
+  return "/dev";
 }
 
 export function isRegisterableRole(role: string): role is UserRole {

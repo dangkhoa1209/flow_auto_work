@@ -29,7 +29,7 @@ Server serves `apps/web/dist` when present; otherwise falls back to legacy `publ
 
 | Path | Purpose |
 |------|---------|
-| `/work` | Tasks / jobs / chat / progress |
+| `/dev` | Tasks / jobs / chat / progress (`/work` redirects here) |
 | `/handoff` | QC handoff |
 | `/stats` | Daily stats |
 | `/settings/project` | Project + branches |

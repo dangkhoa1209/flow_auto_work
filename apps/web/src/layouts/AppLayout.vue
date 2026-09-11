@@ -21,7 +21,7 @@ const work = useWorkStore();
 const settings = useSettingsStore();
 
 const nav = computed(() => [
-  { to: "/work", label: "Dev" },
+  { to: "/dev", label: "Dev" },
   { to: "/handoff", label: "Handoff" },
   { to: "/stats", label: "Stats" },
 ]);
@@ -139,7 +139,7 @@ async function onKillAll() {
   >
     <header class="faw-topbar faw-topbar--work">
       <!-- Brand: full logo desktop, icon-only mobile -->
-      <RouterLink to="/work" class="faw-brand" title="Flow Auto WorkBench">
+      <RouterLink to="/dev" class="faw-brand" title="Flow Auto WorkBench">
         <img
           class="faw-brand__logo faw-brand__logo--full"
           src="/logo.svg"

@@ -10,10 +10,20 @@ type SessionAccess = {
   canAccessDevops: boolean;
 };
 
+/** Dev app path (`/dev`); exclude `/devops` which shares the `/dev` prefix. */
+function isDevAppPath(path: string): boolean {
+  return (
+    path === "/dev" ||
+    path.startsWith("/dev/") ||
+    path === "/work" ||
+    path.startsWith("/work/")
+  );
+}
+
 /** First route the user is allowed to land on after login. */
 export function resolveHomeRoute(session: SessionAccess): string {
   if (session.isAdmin) return "/admin/users";
-  if (session.canAccessWork) return "/work";
+  if (session.canAccessWork) return "/dev";
   if (session.isDevopsAudience) return "/devops";
   if (session.isQcAudience) return "/qc";
   if (session.canAccessBa) return "/ba";
@@ -48,7 +58,7 @@ export function isPathAllowed(path: string, session: SessionAccess): boolean {
   if (path.startsWith("/ba")) return session.canAccessBa;
   if (path.startsWith("/qc")) return session.canAccessQc;
   if (
-    path.startsWith("/work") ||
+    isDevAppPath(path) ||
     path.startsWith("/handoff") ||
     path.startsWith("/stats") ||
     path.startsWith("/settings") ||

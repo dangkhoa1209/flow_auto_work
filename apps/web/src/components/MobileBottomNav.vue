@@ -89,11 +89,12 @@ const tabs = computed(() => {
   }
   if (session.canAccessWork) {
     items.push({
-      to: "/work",
+      to: "/dev",
       label: "Dev",
       icon: ThunderboltOutlined,
       match: (p) =>
-        p.startsWith("/work") ||
+        p === "/dev" ||
+        p.startsWith("/dev/") ||
         p.startsWith("/handoff") ||
         p.startsWith("/stats"),
     });
