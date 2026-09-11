@@ -9,11 +9,76 @@ import {
   baPresentationRules,
   baReadOnlyWorkspaceRules,
   baSpecFormatInstructions,
+  buildBaNormalChatPrompt,
+  buildBaPrompt,
 } from "../baChat.js";
 import {
   extractBaIssueRefs,
   formatBaIssueSnapshot,
 } from "../../gitlab/ba-issue-read.js";
+
+describe("buildBaNormalChatPrompt", () => {
+  it("uses the FAW normal-chat template when BA mode is off", () => {
+    const prompt = buildBaPrompt({
+      displayName: "Demo",
+      gitlabPath: "group/app",
+      mainBranch: "main",
+      historyBlock: "### Human\nhi",
+      gitlabTaskBlock: "",
+      question: "export excel",
+      analysisMode: false,
+      dbAccess: { allowed: false },
+    });
+    expect(prompt).toMatch(/trợ lý FAW/);
+    expect(prompt).toMatch(/PHÂN LOẠI Ý ĐỊNH \(INTENT TRIAGE\)/);
+    expect(prompt).toMatch(/Nhóm 1: Chào hỏi/);
+    expect(prompt).toMatch(/Nhóm 2: Thiếu ngữ cảnh/);
+    expect(prompt).toMatch(/Nhóm 3: Yêu cầu phân tích/);
+    expect(prompt).toMatch(/code_map_query/);
+    expect(prompt).toMatch(/Chưa tìm thấy trên hệ thống/);
+    expect(prompt).toMatch(/Đang lập kế hoạch/);
+    expect(prompt).toMatch(/Quy chuẩn định dạng Spec/);
+    expect(prompt).toMatch(/Câu hỏi của người dùng/);
+    expect(prompt).toMatch(/taskCreate/);
+    expect(prompt).not.toMatch(/Chế độ: Hỏi đáp sản phẩm/);
+    expect(prompt).not.toMatch(/trợ lý sản phẩm cho BA \/ PD \/ QC/);
+  });
+
+  it("keeps BA-mode composed prompt when analysisMode is on", () => {
+    const prompt = buildBaPrompt({
+      displayName: "Demo",
+      gitlabPath: "group/app",
+      mainBranch: "main",
+      historyBlock: "",
+      gitlabTaskBlock: "",
+      question: "phân tích màn hình X",
+      analysisMode: true,
+      dbAccess: { allowed: false },
+    });
+    expect(prompt).toMatch(/trợ lý sản phẩm cho BA \/ PD \/ QC/);
+    expect(prompt).toMatch(/Chế độ: BA mode/);
+    expect(prompt).toMatch(/INTENT TRIAGE & SANITY CHECK/);
+  });
+
+  it("injects project blocks into the normal-chat template", () => {
+    const prompt = buildBaNormalChatPrompt({
+      displayName: "Demo",
+      gitlabPath: "group/app",
+      mainBranch: "develop",
+      historyBlock: "### Human\nok",
+      gitlabTaskBlock: "## GitLab task (chỉ đọc)\n#1",
+      question: "chi tiết cột A",
+      dbBlock: "## 3b. Database (CẤM)",
+      graphifyBlock: "## Graphify map\nmap-here",
+    });
+    expect(prompt).toMatch(/Branch \(Read-only\):\*\* develop/);
+    expect(prompt).toMatch(/Nhánh hiện tại là \*\*develop\*\*/);
+    expect(prompt).toMatch(/Database \(CẤM\)/);
+    expect(prompt).toMatch(/Graphify map/);
+    expect(prompt).toMatch(/GitLab task \(chỉ đọc\)/);
+    expect(prompt).toMatch(/chi tiết cột A/);
+  });
+});
 
 describe("baReadOnlyWorkspaceRules", () => {
   it("forbids file writes and destructive shell/git", () => {
