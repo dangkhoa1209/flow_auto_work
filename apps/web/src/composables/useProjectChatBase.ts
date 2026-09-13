@@ -5,6 +5,7 @@ export type ProjectChatSuffix =
   | "chat"
   | "workflow"
   | "tasks"
+  | "create-data"
   | "settings-gitlab"
   | "settings-google"
   | "settings-account";

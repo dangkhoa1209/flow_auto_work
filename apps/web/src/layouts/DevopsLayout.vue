@@ -17,7 +17,7 @@ const queuePopOpen = ref(false);
 
 const tabs = computed(() => {
   const all: Array<{ key: DevopsTab; label: string }> = [
-    { key: "build", label: "Devops" },
+    { key: "build", label: "Build" },
     { key: "history", label: "History" },
   ];
   if (session.canConfigureDevopsScripts) {

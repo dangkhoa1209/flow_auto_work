@@ -90,7 +90,7 @@ const tabs = computed(() => {
   if (session.canAccessWork) {
     items.push({
       to: "/dev",
-      label: "Dev",
+      label: "Code",
       icon: ThunderboltOutlined,
       match: (p) =>
         p === "/dev" ||
@@ -102,7 +102,7 @@ const tabs = computed(() => {
   if (session.canAccessBa) {
     items.push({
       to: "/ba",
-      label: session.canAccessQc ? "BA" : "Chat",
+      label: "ChatBox",
       icon: MessageOutlined,
       match: (p) => p.startsWith("/ba") && !p.startsWith("/ba/settings"),
     });
@@ -110,7 +110,7 @@ const tabs = computed(() => {
   if (session.canAccessQc) {
     items.push({
       to: "/qc",
-      label: session.canAccessBa ? "QC" : "Chat",
+      label: "QC",
       icon: MessageOutlined,
       match: (p) => p.startsWith("/qc") && !p.startsWith("/qc/settings"),
     });
@@ -118,7 +118,7 @@ const tabs = computed(() => {
   if (session.canAccessDevops) {
     items.push({
       to: "/devops",
-      label: "Devops",
+      label: "Build",
       icon: BuildOutlined,
       match: (p) =>
         p.startsWith("/devops") && !p.startsWith("/devops/settings"),

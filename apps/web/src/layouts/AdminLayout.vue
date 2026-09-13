@@ -68,14 +68,14 @@ function isTabActive(tab: (typeof tabs)[0]): boolean {
 
       <AppTopbarRight settings-to="/admin/settings/account">
         <template #extra>
-          <RouterLink to="/ba" class="faw-btn">BA Chat</RouterLink>
-          <RouterLink to="/qc" class="faw-btn">QC Chat</RouterLink>
+          <RouterLink to="/ba" class="faw-btn">ChatBox</RouterLink>
+          <RouterLink to="/qc" class="faw-btn">QC</RouterLink>
           <RouterLink
             v-if="session.canAccessDevops"
             to="/devops"
             class="faw-btn"
           >
-            Devops
+            Build
           </RouterLink>
         </template>
       </AppTopbarRight>

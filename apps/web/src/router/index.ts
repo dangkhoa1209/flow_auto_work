@@ -81,6 +81,11 @@ const router = createRouter({
           component: () => import("@/views/BaTasksView.vue"),
         },
         {
+          path: "create-data",
+          name: "qc-create-data",
+          component: () => import("@/views/qc/QcCreateDataView.vue"),
+        },
+        {
           path: "settings",
           component: () => import("@/layouts/BaSettingsLayout.vue"),
           children: [

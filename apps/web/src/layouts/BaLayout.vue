@@ -33,13 +33,16 @@ const navActive = computed(() => {
   if (route.path.startsWith(`${basePath.value}/settings`)) return "settings";
   if (route.name === routeName("workflow")) return "workflow";
   if (route.name === routeName("tasks")) return "tasks";
+  if (route.name === routeName("create-data")) return "create-data";
   return "chat";
 });
 
+const isQc = computed(() => basePath.value === "/qc");
 const showProjectSelect = computed(() => navActive.value !== "settings");
 
 const showWorkflowTab = computed(() => ba.featureVisible("workflow"));
 const showTasksTab = computed(() => ba.featureVisible("tasks"));
+const showCreateDataTab = computed(() => isQc.value);
 const workflowTabLabel = computed(() =>
   ba.featureLabel("workflow", ba.features.workflowTabLabel || "Phân tích YC"),
 );
@@ -126,6 +129,14 @@ onMounted(() => {
           Chat
         </RouterLink>
         <RouterLink
+          v-if="showCreateDataTab"
+          :to="`${basePath}/create-data`"
+          class="faw-seg__btn"
+          :class="{ active: navActive === 'create-data' }"
+        >
+          Create Data
+        </RouterLink>
+        <RouterLink
           v-if="showWorkflowTab"
           :to="`${basePath}/workflow`"
           class="faw-seg__btn"
@@ -182,6 +193,14 @@ onMounted(() => {
         :class="{ active: navActive === 'chat' }"
       >
         Chat
+      </RouterLink>
+      <RouterLink
+        v-if="showCreateDataTab"
+        :to="`${basePath}/create-data`"
+        class="faw-mseg__btn"
+        :class="{ active: navActive === 'create-data' }"
+      >
+        Create Data
       </RouterLink>
       <RouterLink
         v-if="showWorkflowTab"
