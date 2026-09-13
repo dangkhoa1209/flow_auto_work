@@ -43,6 +43,7 @@ const showProjectSelect = computed(() => navActive.value !== "settings");
 const showWorkflowTab = computed(() => ba.featureVisible("workflow"));
 const showTasksTab = computed(() => ba.featureVisible("tasks"));
 const showCreateDataTab = computed(() => isQc.value);
+const chatTabLabel = computed(() => (isQc.value ? "Chatbox" : "Chat"));
 const workflowTabLabel = computed(() =>
   ba.featureLabel("workflow", ba.features.workflowTabLabel || "Phân tích YC"),
 );
@@ -126,7 +127,7 @@ onMounted(() => {
           class="faw-seg__btn"
           :class="{ active: navActive === 'chat' }"
         >
-          Chat
+          {{ chatTabLabel }}
         </RouterLink>
         <RouterLink
           v-if="showCreateDataTab"
@@ -192,7 +193,7 @@ onMounted(() => {
         class="faw-mseg__btn"
         :class="{ active: navActive === 'chat' }"
       >
-        Chat
+        {{ chatTabLabel }}
       </RouterLink>
       <RouterLink
         v-if="showCreateDataTab"
