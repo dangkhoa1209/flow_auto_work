@@ -286,6 +286,10 @@ export function buildMongoUri(cfg: BaDbConnectionResolved): string {
     params.set("authSource", cfg.database || "admin");
   }
   if (cfg.ssl) params.set("tls", "true");
+  // Single seed host (incl. SSH tunnel → 127.0.0.1). Without this, the driver
+  // rediscovers replica-set members (e.g. master:27017) and fails DNS locally
+  // with getaddrinfo EAI_AGAIN / ENOTFOUND — same as Sync DB mongorestore URI.
+  params.set("directConnection", "true");
   const q = params.toString() ? `?${params.toString()}` : "";
   return `mongodb://${auth}${cfg.host}:${cfg.port}/${encodeURIComponent(cfg.database)}${q}`;
 }
@@ -298,6 +302,7 @@ async function withMongo<T>(
   const client = new MongoClient(uri, {
     serverSelectionTimeoutMS: QUERY_TIMEOUT_MS,
     connectTimeoutMS: QUERY_TIMEOUT_MS,
+    directConnection: true,
   });
   try {
     await client.connect();

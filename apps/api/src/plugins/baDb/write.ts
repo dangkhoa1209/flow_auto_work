@@ -164,6 +164,7 @@ async function withMongo<T>(
   const client = new MongoClient(uri, {
     serverSelectionTimeoutMS: WRITE_TIMEOUT_MS,
     connectTimeoutMS: WRITE_TIMEOUT_MS,
+    directConnection: true,
   });
   try {
     await client.connect();

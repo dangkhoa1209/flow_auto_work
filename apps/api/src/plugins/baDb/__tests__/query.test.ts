@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { assertReadonlySql, parseMongoQuery } from "../query.js";
+import {
+  assertReadonlySql,
+  buildMongoUri,
+  parseMongoQuery,
+} from "../query.js";
 
 describe("assertReadonlySql", () => {
   it("allows select / with / show / describe / explain", () => {
@@ -72,5 +76,23 @@ describe("parseMongoQuery", () => {
 describe("assertReadonlySql database lock", () => {
   it("rejects USE", () => {
     expect(() => assertReadonlySql("USE otherdb")).toThrow(/USE|admin-configured/i);
+  });
+});
+
+describe("buildMongoUri", () => {
+  it("forces directConnection so SSH/replica-set hostnames are not rediscovered", () => {
+    const uri = buildMongoUri({
+      dialect: "mongodb",
+      host: "127.0.0.1",
+      port: 27019,
+      database: "app",
+      username: "u",
+      password: "p",
+      ssl: false,
+      ssh: null,
+    });
+    expect(uri).toContain("127.0.0.1:27019/");
+    expect(uri).toMatch(/[?&]directConnection=true/);
+    expect(uri).toMatch(/authSource=app/);
   });
 });
