@@ -9,24 +9,24 @@ const session = useSessionStore();
 const links = computed(() => {
   const out: Array<{ to: string; label: string; prefix: string }> = [];
   if (session.canAccessWork) {
-    out.push({ to: "/dev", label: "Dev", prefix: "/dev" });
+    out.push({ to: "/dev", label: "Code", prefix: "/dev" });
   }
   if (session.canAccessBa) {
     out.push({
       to: "/ba",
-      label: session.canAccessQc ? "BA" : "Chat",
+      label: "ChatBox",
       prefix: "/ba",
     });
   }
   if (session.canAccessQc) {
     out.push({
       to: "/qc",
-      label: session.canAccessBa ? "QC" : "Chat",
+      label: "QC",
       prefix: "/qc",
     });
   }
   if (session.canAccessDevops) {
-    out.push({ to: "/devops", label: "Devops", prefix: "/devops" });
+    out.push({ to: "/devops", label: "Build", prefix: "/devops" });
   }
   return out;
 });
