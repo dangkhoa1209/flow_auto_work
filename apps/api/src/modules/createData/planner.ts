@@ -27,6 +27,7 @@ function slugStep(prefix: string, i: number): string {
 export function buildSeedPlan(promptRaw: string): CreateDataPlanResponse {
   const prompt = promptRaw.trim();
   const notes: string[] = [
+    "Heuristic fallback only — prefer AI planner (code_map UI→BE) when Cursor is available.",
     "Plan writes directly to project Connect DB (insert/update/delete).",
     "Review collection/table names and fields against real schema before execute.",
     "Placeholders like {{create_user_1.id}} resolve from prior step write results.",

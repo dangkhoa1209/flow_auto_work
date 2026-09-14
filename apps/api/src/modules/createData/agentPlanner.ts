@@ -148,54 +148,64 @@ function buildSeedPlannerPrompt(opts: {
 - Deliverable = JSON plan trong chat — không ghi disk. (Execute riêng sẽ ghi Connect DB.)
 
 ## Nhiệm vụ
-Lập kế hoạch tạo dữ liệu test **ghi thẳng Connect DB** (insert / update / delete) — **KHÔNG** dùng HTTP API.
+Người dùng mô tả **kịch bản nghiệp vụ** (vd. "tạo 3 nhân viên"). Bạn **không** được bịa insert từ tên entity — phải **trace flow tạo thật trong code**, rồi dịch thành các bước ghi Connect DB (insert/update/delete) sao cho data giống khi tạo qua UI/API.
 
-Env nhãn: **${opts.environment}** (không bao giờ Production).
+Env nhãn: **${opts.environment}** (không bao giờ Production). Không gọi HTTP lúc plan/execute — chỉ **mirror** logic BE bằng DB writes.
 
 ${opts.graphifyBlock ? `${opts.graphifyBlock}\n` : ""}
-## Nguồn sự thật
-1. Gọi \`code_map_query\` với locator ngắn (entity / model / collection) **trước** Grep.
-2. Đọc model/migration/schema trong source để lấy tên bảng/collection + field bắt buộc.
-3. ${dbLine}
+## Quy trình bắt buộc (UI → BE → data phát sinh)
+1. **Locator**: rút ngắn yêu cầu thành screen/feature/symbol (vd. \`tạo nhân viên\`, \`StaffCreate\`, \`EmployeeController\`) — gọi \`code_map_query\` **trước** Grep.
+2. **Trace flow**: từ form/UI (Vue/React) → route/API handler → service/use-case → model/repo. Dùng \`code_map_path\` / \`code_map_explain\` khi cần nối UI ↔ BE.
+3. **Validate**: đọc rule bắt buộc / unique / format / FK / enum / default trên form + BE (request DTO, validator, middleware). Field nào bắt buộc thì phải có trong \`data\` hoặc hỏi trong \`questions\`.
+4. **Data phát sinh**: khi tạo 1 entity, BE còn insert/update bảng nào khác? (profile, role map, wallet, log, counter, soft-delete flag…). Mỗi side-effect = thêm step (hoặc field trong cùng document nếu Mongo embed).
+5. **Schema thật**: đối chiếu tên bảng/collection + kiểu với model/migration.
+6. ${dbLine}
 ${notesLine}
+
+## Cấm
+- Không plan kiểu "có chữ nhân viên → insert collection users với email giả" mà chưa đọc flow.
+- Không bỏ validation bắt buộc; không bỏ bảng phụ mà code luôn tạo kèm.
+- Không đề xuất HTTP method/endpoint trong JSON (execute chỉ ghi DB).
+- Không bao giờ nhắm Production.
 
 ## Yêu cầu người dùng
 ${opts.prompt}
 
 ## Output (BẮT BUỘC)
+Trong prose (tiếng Việt, ngắn): tóm tắt flow đã tìm (UI → BE), validate chính, và data phát sinh.
 Cuối câu trả lời xuất **đúng 1** JSON block (fence \`\`\`json):
 
 \`\`\`json
 {
   "steps": [
     {
-      "step_id": "create_user_1",
-      "description": "Insert user #1",
+      "step_id": "create_staff_1",
+      "description": "Insert staff #1 (mirror StaffService.create)",
       "op": "insert",
-      "collection": "users",
-      "data": { "email": "…" },
+      "collection": "staff",
+      "data": { "code": "…", "name": "…" },
       "filter": null,
       "depends_on": [],
       "rollback": true
     }
   ],
   "questions": [],
-  "notes": ["…"]
+  "notes": ["Flow: … → …; side-effects: …"]
 }
 \`\`\`
 
 ### Quy tắc plan
 - \`op\`: chỉ \`insert\` | \`update\` | \`delete\`.
-- \`collection\`: tên bảng (SQL) hoặc collection (Mongo) — khớp schema thật, không bịa.
+- \`collection\` / field / default: khớp code + schema thật, không bịa.
 - \`insert\`: bắt buộc \`data\`; \`update\`: \`data\` + \`filter\`; \`delete\`: \`filter\` (filter không được rỗng).
-- Thứ tự đúng dependency; dùng placeholder \`{{step_id.field}}\` / \`{{step_id.id}}\` / \`{{step_id._id}}\` để nối kết quả bước trước.
-- Thiếu thông tin bắt buộc → điền \`questions\`, có thể \`steps: []\`.
-- Không bao giờ nhắm Production; không đề xuất HTTP method/endpoint.
-- Trong message prose: tóm tắt ngắn (tiếng Việt) + JSON ở cuối.`;
+- Thứ tự = dependency nghiệp vụ; placeholder \`{{step_id.field}}\` / \`{{step_id.id}}\` / \`{{step_id._id}}\` nối FK / id sinh ra.
+- Thiếu thông tin bắt buộc từ validate → điền \`questions\`, có thể \`steps: []\`.
+- \`notes\`: ghi ngắn flow + side-effects đã mirror.`;
 }
 
 /**
  * Cursor SDK Seed Planner — same stack as BA chat (code_map + optional DB tools).
+ * Agent must trace UI→BE create flow (validate + side-effect writes), then emit DB steps.
  * Falls back to heuristic planner if agent/key/repo unavailable.
  */
 export async function runCreateDataPlannerAgent(opts: {
