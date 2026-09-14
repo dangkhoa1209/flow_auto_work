@@ -21,6 +21,7 @@ import {
   deleteSystemCursorPat,
   isBaDevMode,
   normalizeBaFeatures,
+  type BaCreateDataConfigPatch,
   type BaDbConnectionPatch,
   type BaDbDialect,
   type BaFeatureState,
@@ -100,6 +101,29 @@ function parseDbPatch(raw: unknown): BaDbConnectionPatch | undefined {
   return patch;
 }
 
+function parseCreateDataPatch(
+  raw: unknown,
+): BaCreateDataConfigPatch | undefined {
+  if (raw === undefined) return undefined;
+  if (raw === null) return { clear: true };
+  if (typeof raw !== "object") {
+    throw new AppError("createData must be an object", 400);
+  }
+  const b = raw as Record<string, unknown>;
+  if (b.clear === true) return { clear: true };
+  const patch: BaCreateDataConfigPatch = {};
+  if (b.enabled !== undefined) patch.enabled = Boolean(b.enabled);
+  // HTTP API targets retired — ignore incoming targets
+  if (b.targets !== undefined) {
+    patch.targets = [];
+  }
+  if (b.notes !== undefined) {
+    patch.notes =
+      b.notes == null ? null : String(b.notes).trim() || null;
+  }
+  return patch;
+}
+
 export async function adminUpdateBaProject(
   idRaw: string,
   body: {
@@ -110,11 +134,13 @@ export async function adminUpdateBaProject(
     mainBranch?: string;
     localPath?: string;
     db?: unknown;
+    createData?: unknown;
   },
 ) {
   const id = idRaw.trim();
   try {
     const db = parseDbPatch(body.db);
+    const createData = parseCreateDataPatch(body.createData);
     const project = await updateBaProject(id, {
       displayName: body.displayName,
       gitlabPath: body.gitlabPath,
@@ -123,6 +149,7 @@ export async function adminUpdateBaProject(
       mainBranch: body.mainBranch,
       localPath: body.localPath,
       ...(db !== undefined ? { db } : {}),
+      ...(createData !== undefined ? { createData } : {}),
     });
     return { project: toPublicBaProject(project) };
   } catch (err) {
@@ -349,10 +376,14 @@ export async function adminUpdateBaFeatures(body: {
   workflow?: string;
   tasks?: string;
   syncDatabase?: string;
+  createData?: string;
   workflowTabLabel?: string;
 }) {
   const patch: Partial<
-    Record<"createIssue" | "workflow" | "tasks" | "syncDatabase", BaFeatureState>
+    Record<
+      "createIssue" | "workflow" | "tasks" | "syncDatabase" | "createData",
+      BaFeatureState
+    >
   > & {
     workflowTabLabel?: string;
   } = {};
@@ -361,6 +392,7 @@ export async function adminUpdateBaFeatures(body: {
     "workflow",
     "tasks",
     "syncDatabase",
+    "createData",
   ] as const) {
     const value = body[key];
     if (value === undefined) continue;

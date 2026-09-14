@@ -4,6 +4,7 @@
  */
 import { BaMessageModel, BaProjectModel, BaRequirementModel, BaTaskDraftModel, BaThreadModel, SystemSettingsModel } from "./ba.js";
 import { ChatModel } from "./chat.js";
+import { CreateDataBatchModel } from "./createData.js";
 import { BuildJobModel, BuildScriptModel } from "./devops.js";
 import { SyncDbJobModel } from "./syncDb.js";
 import { JobModel } from "./job.js";
@@ -44,6 +45,7 @@ const ALL_MODELS = [
   BuildJobModel,
   BuildScriptModel,
   SyncDbJobModel,
+  CreateDataBatchModel,
   StatsAnalysisCacheModel,
   CursorUsageModel,
 ] as const;

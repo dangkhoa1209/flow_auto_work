@@ -96,6 +96,15 @@ export type RealtimeBaProgress = {
   detail?: string;
 };
 
+export type RealtimeCreateDataProgress = {
+  type: "create_data_progress";
+  userId: string;
+  baProjectId: string;
+  step: "pull" | "start" | "read" | "tool" | "write" | "done" | "error";
+  label: string;
+  detail?: string;
+};
+
 export type RealtimeBaIssueDraftProgress = {
   type: "ba_issue_draft_progress";
   userId: string;
@@ -162,6 +171,7 @@ export type RealtimeHandlers = {
   onBaDone?: (ev: RealtimeBaDone) => void;
   onBaError?: (ev: RealtimeBaError) => void;
   onBaProgress?: (ev: RealtimeBaProgress) => void;
+  onCreateDataProgress?: (ev: RealtimeCreateDataProgress) => void;
   onBaIssueDraftProgress?: (ev: RealtimeBaIssueDraftProgress) => void;
   onBaIssueDraftDone?: (ev: RealtimeBaIssueDraftDone) => void;
   onBaIssueDraftError?: (ev: RealtimeBaIssueDraftError) => void;
@@ -249,6 +259,10 @@ function bind(source: EventSource) {
   listen<RealtimeBaDone>("ba_done", "onBaDone");
   listen<RealtimeBaError>("ba_error", "onBaError");
   listen<RealtimeBaProgress>("ba_progress", "onBaProgress");
+  listen<RealtimeCreateDataProgress>(
+    "create_data_progress",
+    "onCreateDataProgress",
+  );
   listen<RealtimeBaIssueDraftProgress>(
     "ba_issue_draft_progress",
     "onBaIssueDraftProgress",

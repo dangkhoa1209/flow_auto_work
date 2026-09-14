@@ -58,6 +58,46 @@ export type BaDbConnectionResolved = {
   ssl: boolean;
 };
 
+/** Per-project Create Data — writes Connect DB (never Production). */
+export type BaCreateDataEnvKey = "local" | "development" | "staging";
+
+/** @deprecated HTTP API targets — kept for legacy stored config only */
+export type BaCreateDataEnvTarget = {
+  environment: BaCreateDataEnvKey;
+  apiBaseUrl: string;
+  label?: string;
+};
+
+export type BaCreateDataConfig = {
+  enabled: boolean;
+  /** @deprecated Ignored — Create Data uses Connect DB */
+  targets?: BaCreateDataEnvTarget[];
+  /** Free-text notes for AI + operators (which server/DB). */
+  notes?: string;
+  updatedAt: string;
+};
+
+export type BaCreateDataConfigPublic = {
+  /** True when Create Data was configured (enabled and/or notes). */
+  configured: boolean;
+  enabled: boolean;
+  /** Always empty in public responses (HTTP targets retired). */
+  targets: BaCreateDataEnvTarget[];
+  notes: string | null;
+  /** Seed mode — always direct Connect DB write. */
+  mode: "db";
+  updatedAt: string | null;
+};
+
+export type BaCreateDataConfigPatch = {
+  enabled?: boolean;
+  /** @deprecated Ignored */
+  targets?: BaCreateDataEnvTarget[];
+  notes?: string | null;
+  /** Remove Create Data config. */
+  clear?: boolean;
+};
+
 export type BaProject = {
   id: string;
   slug: string;
@@ -70,6 +110,8 @@ export type BaProject = {
   cloneStatus: CloneStatus;
   cloneError?: string | null;
   db?: BaDbConnection | null;
+  /** Seed via Connect DB write — admin enables per project. */
+  createData?: BaCreateDataConfig | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -86,6 +128,7 @@ export type BaProjectPublic = {
   cloneError: string | null;
   hasGitlabToken: boolean;
   db: BaDbConnectionPublic;
+  createData: BaCreateDataConfigPublic;
   createdAt: string;
   updatedAt: string;
 };
@@ -105,7 +148,12 @@ export type TaskTypeLabelMapping = {
  */
 export type BaFeatureState = "hide" | "lab" | "production";
 
-export type BaFeatureKey = "createIssue" | "workflow" | "tasks" | "syncDatabase";
+export type BaFeatureKey =
+  | "createIssue"
+  | "workflow"
+  | "tasks"
+  | "syncDatabase"
+  | "createData";
 
 export type BaFeatureFlags = Record<BaFeatureKey, BaFeatureState>;
 
@@ -162,6 +210,82 @@ export type BaDbConnectionPatch = {
   /** Remove entire DB config. */
   clear?: boolean;
 };
+
+const CREATE_DATA_ENV_KEYS: BaCreateDataEnvKey[] = [
+  "local",
+  "development",
+  "staging",
+];
+
+export function normalizeCreateDataTargets(
+  raw: unknown,
+): BaCreateDataEnvTarget[] {
+  if (!Array.isArray(raw)) return [];
+  const out: BaCreateDataEnvTarget[] = [];
+  const seen = new Set<string>();
+  for (const row of raw) {
+    if (!row || typeof row !== "object") continue;
+    const r = row as Record<string, unknown>;
+    const environment = String(r.environment || "")
+      .trim()
+      .toLowerCase() as BaCreateDataEnvKey;
+    if (!CREATE_DATA_ENV_KEYS.includes(environment)) continue;
+    const apiBaseUrl = String(r.apiBaseUrl || "")
+      .trim()
+      .replace(/\/+$/, "");
+    if (!apiBaseUrl) continue;
+    if (seen.has(environment)) continue;
+    seen.add(environment);
+    const label = String(r.label || "").trim();
+    out.push({
+      environment,
+      apiBaseUrl,
+      ...(label ? { label } : {}),
+    });
+  }
+  return out;
+}
+
+export function toPublicBaCreateData(
+  cfg: BaCreateDataConfig | null | undefined,
+): BaCreateDataConfigPublic {
+  const enabled = Boolean(cfg?.enabled);
+  const notes = cfg?.notes?.trim() ? cfg.notes.trim() : null;
+  return {
+    configured: Boolean(cfg) && (enabled || Boolean(notes)),
+    enabled,
+    targets: [],
+    notes,
+    mode: "db",
+    updatedAt: cfg?.updatedAt || null,
+  };
+}
+
+function applyCreateDataPatch(
+  existing: BaCreateDataConfig | null | undefined,
+  patch: BaCreateDataConfigPatch,
+): BaCreateDataConfig | null {
+  if (patch.clear) return null;
+  const now = new Date().toISOString();
+  const base: BaCreateDataConfig = existing
+    ? {
+        enabled: existing.enabled,
+        targets: [],
+        notes: existing.notes,
+        updatedAt: existing.updatedAt || now,
+      }
+    : { enabled: false, targets: [], updatedAt: now };
+  if (patch.enabled !== undefined) base.enabled = Boolean(patch.enabled);
+  // HTTP targets retired — drop on save
+  base.targets = [];
+  if (patch.notes !== undefined) {
+    const n = patch.notes == null ? "" : String(patch.notes).trim();
+    base.notes = n || undefined;
+  }
+  base.updatedAt = now;
+  if (!base.enabled && !base.notes) return null;
+  return base;
+}
 
 const DEFAULT_PORTS: Record<BaDbDialect, number> = {
   mysql: 3306,
@@ -256,6 +380,7 @@ export function toPublicBaProject(p: BaProject): BaProjectPublic {
     cloneError: p.cloneError ?? null,
     hasGitlabToken: Boolean(p.gitlabTokenEnc),
     db: toPublicBaDb(p.db),
+    createData: toPublicBaCreateData(p.createData),
     createdAt: p.createdAt,
     updatedAt: p.updatedAt,
   };
@@ -387,6 +512,7 @@ export async function updateBaProject(
     cloneStatus?: CloneStatus;
     cloneError?: string | null;
     db?: BaDbConnectionPatch;
+    createData?: BaCreateDataConfigPatch;
   },
 ): Promise<BaProject> {
   const existing = await getBaProject(id);
@@ -416,6 +542,13 @@ export async function updateBaProject(
     } else {
       existing.db = next;
     }
+  }
+
+  if (patch.createData !== undefined) {
+    existing.createData = applyCreateDataPatch(
+      existing.createData,
+      patch.createData,
+    );
   }
 
   existing.updatedAt = now;
@@ -520,6 +653,7 @@ export const BA_FEATURE_KEYS: BaFeatureKey[] = [
   "workflow",
   "tasks",
   "syncDatabase",
+  "createData",
 ];
 
 export const DEFAULT_BA_WORKFLOW_TAB_LABEL = "Phân tích YC";
@@ -539,6 +673,9 @@ export function normalizeBaFeatures(
       tasks: normalizeBaFeatureState(raw?.tasks),
       syncDatabase: normalizeBaFeatureState(
         (raw as { syncDatabase?: unknown } | null | undefined)?.syncDatabase,
+      ),
+      createData: normalizeBaFeatureState(
+        (raw as { createData?: unknown } | null | undefined)?.createData,
       ),
     },
     workflowTabLabel:
@@ -565,6 +702,7 @@ export async function getEffectiveBaFeatures(): Promise<BaFeatureSettingsEffecti
       workflow: "production",
       tasks: "production",
       syncDatabase: "production",
+      createData: "production",
     },
     workflowTabLabel: base.workflowTabLabel,
     devMode,

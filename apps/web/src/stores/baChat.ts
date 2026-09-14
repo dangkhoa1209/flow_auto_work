@@ -19,11 +19,27 @@ export type BaProject = {
     dialect: string | null;
     database: string | null;
   };
+  createData?: {
+    configured: boolean;
+    enabled: boolean;
+    targets: Array<{
+      environment: "local" | "development" | "staging";
+      apiBaseUrl: string;
+      label?: string;
+    }>;
+    notes: string | null;
+    mode?: "db";
+  };
 };
 
 export type BaFeatureState = "hide" | "lab" | "production";
 
-export type BaFeatureKey = "createIssue" | "workflow" | "tasks" | "syncDatabase";
+export type BaFeatureKey =
+  | "createIssue"
+  | "workflow"
+  | "tasks"
+  | "syncDatabase"
+  | "createData";
 
 export type BaFeatures = {
   flags: Record<BaFeatureKey, BaFeatureState>;
@@ -37,6 +53,7 @@ const DEFAULT_BA_FEATURES: BaFeatures = {
     workflow: "hide",
     tasks: "hide",
     syncDatabase: "hide",
+    createData: "hide",
   },
   workflowTabLabel: "Phân tích YC",
   devMode: false,
