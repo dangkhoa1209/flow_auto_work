@@ -21,15 +21,15 @@ function slugStep(prefix: string, i: number): string {
 
 /**
  * Deterministic Seed Planner (v1).
- * Produces API-only steps with `{{step_id.field}}` placeholders — never DB inserts.
- * When the prompt is ambiguous, returns clarifying questions instead of guessing required fields.
+ * Produces Connect DB insert/update steps with `{{step_id.field}}` placeholders.
+ * When the prompt is ambiguous, returns clarifying questions instead of guessing.
  */
 export function buildSeedPlan(promptRaw: string): CreateDataPlanResponse {
   const prompt = promptRaw.trim();
   const notes: string[] = [
-    "Plan uses HTTP APIs only (no direct DB insert).",
-    "Review and edit endpoints/payloads to match the project OpenAPI before execute.",
-    "Placeholders like {{create_user_1.id}} resolve from prior step JSON responses.",
+    "Plan writes directly to project Connect DB (insert/update/delete).",
+    "Review collection/table names and fields against real schema before execute.",
+    "Placeholders like {{create_user_1.id}} resolve from prior step write results.",
   ];
   const questions: string[] = [];
 
@@ -57,10 +57,10 @@ export function buildSeedPlan(promptRaw: string): CreateDataPlanResponse {
 
   if (!wantsUsers && !wantsOrders) {
     questions.push(
-      "Which entity should be created first (user, staff, order, …) and via which API path?",
+      "Which collection/table should be seeded first (users, staff, orders, …)?",
     );
     questions.push(
-      "What is the staging/local API base URL and auth scheme (Bearer / cookie)?",
+      "Confirm Connect DB is enabled for this project (Admin → Connect DB).",
     );
     return { steps: [], questions, notes };
   }
@@ -72,28 +72,27 @@ export function buildSeedPlan(promptRaw: string): CreateDataPlanResponse {
     const stepId = slugStep("create_user", i);
     steps.push({
       step_id: stepId,
-      description: `Create user #${i + 1}`,
-      method: "POST",
-      endpoint: "/api/users",
-      payload: {
+      description: `Insert user #${i + 1}`,
+      op: "insert",
+      collection: "users",
+      data: {
         email: `seed.user${i + 1}@example.com`,
         name: `Seed User ${i + 1}`,
-        password: "ChangeMe1!",
       },
+      filter: null,
       depends_on: [],
-      rollback_endpoint: "/api/users/{{id}}",
+      rollback: true,
     });
   }
 
   if (wantsOrders) {
     if (!wantsUsers) {
       questions.push(
-        "Orders need a user_id — should we create users first, or reuse an existing user_id?",
+        "Orders need a user_id — should we insert users first, or reuse an existing id?",
       );
     }
     const perUserCompleted = wantsCompleted || (!wantsCompleted && !wantsPending);
     const perUserPending = wantsPending || (!wantsCompleted && !wantsPending);
-    // If prompt mentions both statuses (common QC scenario), create both.
     const both =
       (wantsCompleted && wantsPending) ||
       /mỗi user.*(hoàn thành|completed).*(pending|chờ)/i.test(prompt) ||
@@ -108,16 +107,17 @@ export function buildSeedPlan(promptRaw: string): CreateDataPlanResponse {
       const stepId = `create_order_${kind}_${userIdx + 1}_${ordIdx + 1}`;
       steps.push({
         step_id: stepId,
-        description: `Create ${kind} order for user #${userIdx + 1}`,
-        method: "POST",
-        endpoint: "/api/orders",
-        payload: {
+        description: `Insert ${kind} order for user #${userIdx + 1}`,
+        op: "insert",
+        collection: "orders",
+        data: {
           user_id: `{{${userStep}.id}}`,
           status: kind === "completed" ? "completed" : "pending",
           note: `Seed ${kind} order (batch)`,
         },
+        filter: null,
         depends_on: wantsUsers ? [userStep] : [],
-        rollback_endpoint: "/api/orders/{{id}}",
+        rollback: true,
       });
     };
 
@@ -130,11 +130,11 @@ export function buildSeedPlan(promptRaw: string): CreateDataPlanResponse {
 
   if (steps.length === 0) {
     questions.push(
-      "Could not infer steps — name entities, counts, and desired statuses.",
+      "Could not infer steps — name collections/tables, counts, and desired fields.",
     );
   } else {
     notes.push(
-      "Default paths /api/users and /api/orders are placeholders — align with project routes before run.",
+      "Default collections users/orders are placeholders — align with project schema before run.",
     );
   }
 

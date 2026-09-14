@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { buildSeedPlan } from "../planner.js";
 import { parseSeedPlanFromAgent } from "../parsePlan.js";
-import { assertSafeEnvironment, resolvePlaceholders } from "../executor.js";
+import {
+  assertSafeDbHost,
+  assertSafeEnvironment,
+  resolvePlaceholders,
+} from "../executor.js";
 import { normalizeCreateDataTargets } from "../../../workspace/baStore.js";
 
 describe("buildSeedPlan", () => {
@@ -13,11 +17,11 @@ describe("buildSeedPlan", () => {
     expect(plan.steps.some((s) => s.step_id === "create_user_1")).toBe(true);
     expect(plan.steps.some((s) => s.step_id === "create_user_2")).toBe(true);
     expect(
-      plan.steps.filter((s) => s.endpoint === "/api/orders"),
+      plan.steps.filter((s) => s.collection === "orders"),
     ).toHaveLength(4);
     const order = plan.steps.find((s) => s.step_id.startsWith("create_order_"));
-    expect(order?.payload?.user_id).toMatch(/\{\{create_user_\d+\.id\}\}/);
-    expect(order?.method).toBe("POST");
+    expect(order?.data?.user_id).toMatch(/\{\{create_user_\d+\.id\}\}/);
+    expect(order?.op).toBe("insert");
   });
 
   it("asks questions when scenario is unclear", () => {
@@ -28,7 +32,7 @@ describe("buildSeedPlan", () => {
 });
 
 describe("parseSeedPlanFromAgent", () => {
-  it("parses fenced JSON plan", () => {
+  it("parses fenced JSON DB plan", () => {
     const text = `Tóm tắt plan.
 
 \`\`\`json
@@ -36,10 +40,11 @@ describe("parseSeedPlanFromAgent", () => {
   "steps": [
     {
       "step_id": "create_staff_1",
-      "description": "Create staff",
-      "method": "POST",
-      "endpoint": "/api/v1/staff",
-      "payload": { "code": "NV01" },
+      "description": "Insert staff",
+      "op": "insert",
+      "collection": "staff",
+      "data": { "code": "NV01" },
+      "filter": null,
       "depends_on": []
     }
   ],
@@ -50,8 +55,29 @@ describe("parseSeedPlanFromAgent", () => {
 `;
     const plan = parseSeedPlanFromAgent(text);
     expect(plan?.steps).toHaveLength(1);
-    expect(plan?.steps[0]?.endpoint).toBe("/api/v1/staff");
+    expect(plan?.steps[0]?.collection).toBe("staff");
+    expect(plan?.steps[0]?.op).toBe("insert");
     expect(plan?.notes).toContain("from source");
+  });
+
+  it("rejects legacy HTTP plans", () => {
+    const text = `\`\`\`json
+{
+  "steps": [
+    {
+      "step_id": "create_staff_1",
+      "method": "POST",
+      "endpoint": "/api/v1/staff",
+      "payload": { "code": "NV01" },
+      "depends_on": []
+    }
+  ],
+  "questions": [],
+  "notes": []
+}
+\`\`\``;
+    const plan = parseSeedPlanFromAgent(text);
+    expect(plan).toBeNull();
   });
 });
 
@@ -73,6 +99,10 @@ describe("normalizeCreateDataTargets", () => {
 describe("executor guards", () => {
   it("blocks production environment", () => {
     expect(() => assertSafeEnvironment("production")).toThrow(/Production/i);
+  });
+
+  it("blocks production-looking DB host", () => {
+    expect(() => assertSafeDbHost("db.prod.internal")).toThrow(/production/i);
   });
 
   it("resolves step placeholders", () => {

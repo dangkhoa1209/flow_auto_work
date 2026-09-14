@@ -71,7 +71,6 @@ export const createDataController = {
       baProjectId,
       prompt: String(req.body?.prompt || ""),
       environment: parseEnvironment(req.body?.environment),
-      apiBaseUrl: String(req.body?.apiBaseUrl || ""),
       steps: req.body?.steps,
       questions: req.body?.questions,
     });
@@ -90,9 +89,6 @@ export const createDataController = {
     const batch = await createDataExecuteBatch({
       userId: userId(),
       id: String(req.params.id || ""),
-      authToken: req.body?.authToken
-        ? String(req.body.authToken)
-        : undefined,
     });
     res.formatter.ok({ batch });
   }),
@@ -101,9 +97,6 @@ export const createDataController = {
     const batch = await createDataRollbackBatch({
       userId: userId(),
       id: String(req.params.id || ""),
-      authToken: req.body?.authToken
-        ? String(req.body.authToken)
-        : undefined,
     });
     res.formatter.ok({ batch });
   }),

@@ -2,12 +2,16 @@ import { AppError } from "../../utils/AppError.js";
 import {
   getBaProject,
   getEffectiveBaFeatures,
+  isBaDbAccessAllowed,
+  resolveBaProjectDb,
   toPublicBaCreateData,
+  toPublicBaDb,
 } from "../../workspace/baStore.js";
 import {
-  assertSafeApiBaseUrl,
+  assertSafeDbHost,
   assertSafeEnvironment,
   executeBatchSteps,
+  isCreateDataDbOp,
   rollbackBatchSteps,
 } from "./executor.js";
 import { buildSeedPlan } from "./planner.js";
@@ -20,6 +24,7 @@ import {
 } from "./store.js";
 import type {
   CreateDataBatch,
+  CreateDataDbSnapshot,
   CreateDataEnvironment,
   CreateDataPlanResponse,
   CreateDataStepPlan,
@@ -53,41 +58,128 @@ function normalizeSteps(raw: unknown): CreateDataStepPlan[] {
     throw new AppError("steps must be an array", 400, "create_data_bad_steps");
   }
   return raw.map((s, i) => {
-    const row = s as Partial<CreateDataStepPlan>;
-    const step_id = String(row.step_id || "").trim() || `step_${i + 1}`;
-    const method = String(row.method || "POST").toUpperCase();
-    if (!["GET", "POST", "PUT", "PATCH", "DELETE"].includes(method)) {
+    const row = s as Partial<CreateDataStepPlan> & {
+      method?: string;
+      endpoint?: string;
+      table?: string;
+      payload?: Record<string, unknown>;
+    };
+    if (row.method || row.endpoint) {
       throw new AppError(
-        `Invalid method on ${step_id}`,
+        "HTTP steps are no longer supported — regenerate the plan (DB insert/update/delete)",
         400,
-        "create_data_bad_method",
+        "create_data_http_deprecated",
       );
     }
-    const endpoint = String(row.endpoint || "").trim();
-    if (!endpoint) {
+    const step_id = String(row.step_id || "").trim() || `step_${i + 1}`;
+    const op = String(row.op || "").toLowerCase();
+    if (!isCreateDataDbOp(op)) {
       throw new AppError(
-        `endpoint required on ${step_id}`,
+        `Invalid op on ${step_id} (insert|update|delete)`,
         400,
-        "create_data_bad_endpoint",
+        "create_data_bad_op",
+      );
+    }
+    const collection = String(row.collection || row.table || "").trim();
+    if (!collection) {
+      throw new AppError(
+        `collection/table required on ${step_id}`,
+        400,
+        "create_data_bad_collection",
+      );
+    }
+    const data =
+      row.data && typeof row.data === "object"
+        ? (row.data as Record<string, unknown>)
+        : row.payload && typeof row.payload === "object"
+          ? row.payload
+          : null;
+    const filter =
+      row.filter && typeof row.filter === "object"
+        ? (row.filter as Record<string, unknown>)
+        : null;
+    if (op === "insert" && !data) {
+      throw new AppError(
+        `data required on insert ${step_id}`,
+        400,
+        "create_data_bad_data",
+      );
+    }
+    if (
+      (op === "update" || op === "delete") &&
+      (!filter || !Object.keys(filter).length)
+    ) {
+      throw new AppError(
+        `non-empty filter required on ${op} ${step_id}`,
+        400,
+        "create_data_bad_filter",
+      );
+    }
+    if (op === "update" && !data) {
+      throw new AppError(
+        `data required on update ${step_id}`,
+        400,
+        "create_data_bad_data",
       );
     }
     return {
       step_id,
       description: String(row.description || step_id),
-      method: method as CreateDataStepPlan["method"],
-      endpoint,
-      payload:
-        row.payload && typeof row.payload === "object"
-          ? (row.payload as Record<string, unknown>)
-          : null,
+      op,
+      collection,
+      data,
+      filter,
       depends_on: Array.isArray(row.depends_on)
         ? row.depends_on.map(String)
         : [],
-      rollback_endpoint: row.rollback_endpoint
-        ? String(row.rollback_endpoint)
-        : null,
+      rollback: row.rollback === false ? false : true,
     };
   });
+}
+
+async function requireWriteDb(baProjectId: string): Promise<{
+  cfg: NonNullable<Awaited<ReturnType<typeof resolveBaProjectDb>>>;
+  snapshot: CreateDataDbSnapshot;
+  seedEnabled: boolean;
+}> {
+  const project = await getBaProject(baProjectId);
+  if (!project) {
+    throw new AppError("Project not found", 404, "ba_project_not_found");
+  }
+  const seedCfg = toPublicBaCreateData(project.createData);
+  if (!seedCfg.enabled) {
+    throw new AppError(
+      "Create Data is not enabled for this project — ask Admin to enable it",
+      403,
+      "create_data_disabled",
+    );
+  }
+  if (!isBaDbAccessAllowed(project)) {
+    throw new AppError(
+      "Connect DB is not enabled — configure Admin → Connect DB before seeding",
+      400,
+      "create_data_db_required",
+    );
+  }
+  const cfg = await resolveBaProjectDb(baProjectId);
+  if (!cfg) {
+    throw new AppError(
+      "Connect DB credentials unavailable",
+      400,
+      "create_data_db_unavailable",
+    );
+  }
+  assertSafeDbHost(cfg.host);
+  return {
+    cfg,
+    snapshot: {
+      dialect: cfg.dialect,
+      host: cfg.host,
+      port: cfg.port,
+      database: cfg.database,
+    },
+    seedEnabled: seedCfg.enabled,
+  };
 }
 
 export async function createDataPlan(opts: {
@@ -100,7 +192,7 @@ export async function createDataPlan(opts: {
 }): Promise<
   CreateDataPlanResponse & {
     planner: "ai" | "heuristic";
-    suggestedApiBaseUrl: string | null;
+    suggestedDbTarget: CreateDataDbSnapshot | null;
   }
 > {
   await assertCreateDataFeatureOn();
@@ -109,16 +201,20 @@ export async function createDataPlan(opts: {
     throw new AppError("Project not found", 404, "ba_project_not_found");
   }
   const environment = assertSafeEnvironment(opts.environment || "staging");
-  const seedCfg = toPublicBaCreateData(project.createData);
-  const suggestedApiBaseUrl =
-    seedCfg.enabled
-      ? seedCfg.targets.find((t) => t.environment === environment)?.apiBaseUrl ||
-        null
+  const dbPublic = toPublicBaDb(project.db);
+  const suggestedDbTarget =
+    dbPublic.configured && dbPublic.enabled && dbPublic.dialect && dbPublic.host && dbPublic.database
+      ? {
+          dialect: dbPublic.dialect,
+          host: dbPublic.host,
+          port: dbPublic.port || 0,
+          database: dbPublic.database,
+        }
       : null;
 
   if (opts.heuristicOnly) {
     const plan = buildSeedPlan(opts.prompt);
-    return { ...plan, planner: "heuristic", suggestedApiBaseUrl };
+    return { ...plan, planner: "heuristic", suggestedDbTarget };
   }
 
   const plan = await runCreateDataPlannerAgent({
@@ -127,7 +223,7 @@ export async function createDataPlan(opts: {
     prompt: opts.prompt,
     environment,
   });
-  return { ...plan, suggestedApiBaseUrl };
+  return { ...plan, suggestedDbTarget };
 }
 
 export async function createDataCreateBatch(opts: {
@@ -135,17 +231,12 @@ export async function createDataCreateBatch(opts: {
   baProjectId: string;
   prompt: string;
   environment: string;
-  apiBaseUrl: string;
   steps: unknown;
   questions?: string[];
 }): Promise<CreateDataBatch> {
   await assertCreateDataFeatureOn();
-  const project = await getBaProject(opts.baProjectId);
-  if (!project) {
-    throw new AppError("Project not found", 404, "ba_project_not_found");
-  }
   const environment = assertSafeEnvironment(opts.environment);
-  const apiBaseUrl = assertSafeApiBaseUrl(opts.apiBaseUrl);
+  const { snapshot } = await requireWriteDb(opts.baProjectId);
   const steps = normalizeSteps(opts.steps);
   if (!steps.length) {
     throw new AppError("Plan has no steps", 400, "create_data_empty_plan");
@@ -159,7 +250,8 @@ export async function createDataCreateBatch(opts: {
     baProjectId: opts.baProjectId,
     prompt: opts.prompt.trim(),
     environment,
-    apiBaseUrl,
+    mode: "db",
+    dbTarget: snapshot,
     status: "preview",
     steps,
     results: steps.map((s) => ({
@@ -199,7 +291,6 @@ export async function createDataGetBatch(opts: {
 export async function createDataExecuteBatch(opts: {
   userId: string;
   id: string;
-  authToken?: string;
 }): Promise<CreateDataBatch> {
   await assertCreateDataFeatureOn();
   const batch = await createDataGetBatch({ userId: opts.userId, id: opts.id });
@@ -207,7 +298,7 @@ export async function createDataExecuteBatch(opts: {
     throw new AppError("Batch already running", 409, "create_data_busy");
   }
   assertSafeEnvironment(batch.environment);
-  assertSafeApiBaseUrl(batch.apiBaseUrl);
+  const { cfg } = await requireWriteDb(batch.baProjectId);
 
   const startedAt = new Date().toISOString();
   await updateCreateDataBatch(batch.id, {
@@ -217,10 +308,7 @@ export async function createDataExecuteBatch(opts: {
   });
 
   try {
-    const { results, status, error } = await executeBatchSteps(
-      batch,
-      opts.authToken,
-    );
+    const { results, status, error } = await executeBatchSteps(batch, cfg);
     const updated = await updateCreateDataBatch(batch.id, {
       status,
       results,
@@ -243,7 +331,6 @@ export async function createDataExecuteBatch(opts: {
 export async function createDataRollbackBatch(opts: {
   userId: string;
   id: string;
-  authToken?: string;
 }): Promise<CreateDataBatch> {
   await assertCreateDataFeatureOn();
   const batch = await createDataGetBatch({ userId: opts.userId, id: opts.id });
@@ -255,9 +342,9 @@ export async function createDataRollbackBatch(opts: {
     );
   }
   assertSafeEnvironment(batch.environment);
-  assertSafeApiBaseUrl(batch.apiBaseUrl);
+  const { cfg } = await requireWriteDb(batch.baProjectId);
 
-  const rollbackResults = await rollbackBatchSteps(batch, opts.authToken);
+  const rollbackResults = await rollbackBatchSteps(batch, cfg);
   const updated = await updateCreateDataBatch(batch.id, {
     status: "rolled_back",
     results: batch.results.map((r) => {

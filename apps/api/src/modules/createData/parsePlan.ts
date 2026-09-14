@@ -1,30 +1,45 @@
+import { isCreateDataDbOp } from "./executor.js";
 import type { CreateDataPlanResponse, CreateDataStepPlan } from "./types.js";
-
-const METHODS = new Set(["GET", "POST", "PUT", "PATCH", "DELETE"]);
 
 function asStep(raw: unknown, index: number): CreateDataStepPlan | null {
   if (!raw || typeof raw !== "object") return null;
   const row = raw as Record<string, unknown>;
   const step_id = String(row.step_id || "").trim() || `step_${index + 1}`;
-  const method = String(row.method || "POST").toUpperCase();
-  if (!METHODS.has(method)) return null;
-  const endpoint = String(row.endpoint || "").trim();
-  if (!endpoint) return null;
+
+  // Reject legacy HTTP plans early
+  if (row.method != null || row.endpoint != null) return null;
+
+  const opRaw = String(row.op || "").toLowerCase();
+  if (!isCreateDataDbOp(opRaw)) return null;
+  const collection = String(row.collection || row.table || "").trim();
+  if (!collection) return null;
+
+  const data =
+    row.data && typeof row.data === "object" && !Array.isArray(row.data)
+      ? (row.data as Record<string, unknown>)
+      : row.payload && typeof row.payload === "object" && !Array.isArray(row.payload)
+        ? (row.payload as Record<string, unknown>)
+        : null;
+  const filter =
+    row.filter && typeof row.filter === "object" && !Array.isArray(row.filter)
+      ? (row.filter as Record<string, unknown>)
+      : null;
+
+  if (opRaw === "insert" && !data) return null;
+  if ((opRaw === "update" || opRaw === "delete") && !filter) return null;
+  if (opRaw === "update" && !data) return null;
+
   return {
     step_id,
     description: String(row.description || step_id),
-    method: method as CreateDataStepPlan["method"],
-    endpoint,
-    payload:
-      row.payload && typeof row.payload === "object"
-        ? (row.payload as Record<string, unknown>)
-        : null,
+    op: opRaw,
+    collection,
+    data,
+    filter,
     depends_on: Array.isArray(row.depends_on)
       ? row.depends_on.map(String)
       : [],
-    rollback_endpoint: row.rollback_endpoint
-      ? String(row.rollback_endpoint)
-      : null,
+    rollback: row.rollback === false ? false : true,
   };
 }
 
@@ -32,7 +47,6 @@ function tryParsePlanObject(text: string): CreateDataPlanResponse | null {
   try {
     const obj = JSON.parse(text) as Record<string, unknown>;
     if (!obj || typeof obj !== "object") return null;
-    // Prefer { plan: { steps } } or { steps }
     const planRoot =
       obj.plan && typeof obj.plan === "object"
         ? (obj.plan as Record<string, unknown>)

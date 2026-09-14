@@ -1,6 +1,9 @@
+import type { BaDbConnectionResolved } from "../../workspace/baStore.js";
+import { runBaWriteOp } from "../../plugins/baDb/write.js";
 import { AppError } from "../../utils/AppError.js";
 import type {
   CreateDataBatch,
+  CreateDataDbOp,
   CreateDataEnvironment,
   CreateDataStepPlan,
   CreateDataStepResult,
@@ -33,37 +36,20 @@ export function assertSafeEnvironment(env: string): CreateDataEnvironment {
   );
 }
 
-export function assertSafeApiBaseUrl(raw: string): string {
-  const url = raw.trim().replace(/\/+$/, "");
-  if (!url) {
-    throw new AppError("apiBaseUrl required", 400, "create_data_base_required");
-  }
-  let parsed: URL;
-  try {
-    parsed = new URL(url);
-  } catch {
-    throw new AppError("apiBaseUrl is not a valid URL", 400, "create_data_bad_url");
-  }
-  if (!/^https?:$/i.test(parsed.protocol)) {
-    throw new AppError(
-      "apiBaseUrl must be http(s)",
-      400,
-      "create_data_bad_url_scheme",
-    );
-  }
-  const host = parsed.hostname.toLowerCase();
+/** Block hosts that look like production Connect DB. */
+export function assertSafeDbHost(host: string): void {
+  const h = host.trim().toLowerCase();
   if (
-    host.includes("prod") ||
-    host.endsWith(".production") ||
-    /(^|\.)prod\./.test(host)
+    h.includes("prod") ||
+    h.endsWith(".production") ||
+    /(^|\.)prod\./.test(h)
   ) {
     throw new AppError(
-      "apiBaseUrl looks like production — blocked",
+      "Connect DB host looks like production — blocked",
       403,
-      "create_data_production_url_blocked",
+      "create_data_production_db_blocked",
     );
   }
-  return url;
 }
 
 function getByPath(obj: unknown, path: string): unknown {
@@ -77,7 +63,7 @@ function getByPath(obj: unknown, path: string): unknown {
   return cur;
 }
 
-/** Resolve `{{step_id.field}}` or `{{field}}` (current response id shorthand for rollback). */
+/** Resolve `{{step_id.field}}` placeholders in strings / nested objects. */
 export function resolvePlaceholders(
   value: unknown,
   outputs: Record<string, unknown>,
@@ -94,7 +80,6 @@ export function resolvePlaceholders(
       const [stepId, ...rest] = key.split(".");
       const fromStep = getByPath(outputs[stepId], rest.join("."));
       if (fromStep == null) {
-        // Also try nested data.id patterns commonly returned by APIs
         const dataPath = getByPath(outputs[stepId], ["data", ...rest].join("."));
         if (dataPath != null) return String(dataPath);
         return "";
@@ -115,94 +100,51 @@ export function resolvePlaceholders(
   return value;
 }
 
-function pickCreatedId(response: unknown): string | null {
-  if (!response || typeof response !== "object") return null;
-  const r = response as Record<string, unknown>;
-  for (const key of ["id", "_id", "user_id", "order_id"]) {
-    const v = r[key];
-    if (typeof v === "string" || typeof v === "number") return String(v);
-  }
-  const data = r.data;
-  if (data && typeof data === "object") {
-    const d = data as Record<string, unknown>;
-    for (const key of ["id", "_id"]) {
-      const v = d[key];
-      if (typeof v === "string" || typeof v === "number") return String(v);
-    }
-  }
-  return null;
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
 }
 
-async function callStep(
-  apiBaseUrl: string,
+async function runDbStep(
+  cfg: BaDbConnectionResolved,
   step: CreateDataStepPlan,
   outputs: Record<string, unknown>,
-  authToken?: string,
 ): Promise<{ result: CreateDataStepResult; body: unknown }> {
   const startedAt = new Date().toISOString();
-  const endpoint = String(
-    resolvePlaceholders(step.endpoint, outputs) ?? step.endpoint,
-  );
-  const url = endpoint.startsWith("http")
-    ? endpoint
-    : `${apiBaseUrl}${endpoint.startsWith("/") ? "" : "/"}${endpoint}`;
-  const payload = step.payload
-    ? (resolvePlaceholders(step.payload, outputs) as Record<string, unknown>)
+  const data = step.data
+    ? (resolvePlaceholders(step.data, outputs) as Record<string, unknown>)
+    : null;
+  const filter = step.filter
+    ? (resolvePlaceholders(step.filter, outputs) as Record<string, unknown>)
     : null;
 
-  const headers: Record<string, string> = {
-    Accept: "application/json",
-  };
-  if (payload && step.method !== "GET") {
-    headers["Content-Type"] = "application/json";
-  }
-  if (authToken?.trim()) {
-    headers.Authorization = authToken.trim().startsWith("Bearer ")
-      ? authToken.trim()
-      : `Bearer ${authToken.trim()}`;
-  }
-
   try {
-    const res = await fetch(url, {
-      method: step.method,
-      headers,
-      body:
-        payload && step.method !== "GET" ? JSON.stringify(payload) : undefined,
+    const write = await runBaWriteOp(cfg, {
+      op: step.op,
+      collection: step.collection,
+      data,
+      filter,
     });
-    const text = await res.text();
-    let body: unknown = text;
-    try {
-      body = text ? JSON.parse(text) : null;
-    } catch {
-      /* keep text */
-    }
-    const finishedAt = new Date().toISOString();
-    if (!res.ok) {
-      return {
-        body,
-        result: {
-          step_id: step.step_id,
-          status: "failed",
-          httpStatus: res.status,
-          response: body,
-          error: `HTTP ${res.status}`,
-          startedAt,
-          finishedAt,
-          createdId: null,
-        },
-      };
-    }
+    const body = write.document || {
+      createdId: write.createdId,
+      matchedCount: write.matchedCount,
+      modifiedCount: write.modifiedCount,
+      deletedCount: write.deletedCount,
+    };
     return {
       body,
       result: {
         step_id: step.step_id,
         status: "success",
-        httpStatus: res.status,
-        response: body,
+        httpStatus: null,
+        response: {
+          ...write,
+          document: write.document,
+        },
         error: null,
         startedAt,
-        finishedAt,
-        createdId: pickCreatedId(body),
+        finishedAt: new Date().toISOString(),
+        createdId: write.createdId,
       },
     };
   } catch (e) {
@@ -224,12 +166,13 @@ async function callStep(
 
 export async function executeBatchSteps(
   batch: CreateDataBatch,
-  authToken?: string,
+  cfg: BaDbConnectionResolved,
 ): Promise<{
   results: CreateDataStepResult[];
   status: CreateDataBatch["status"];
   error: string | null;
 }> {
+  assertSafeDbHost(cfg.host);
   const outputs: Record<string, unknown> = {};
   const results: CreateDataStepResult[] = [];
   let failed = false;
@@ -241,6 +184,19 @@ export async function executeBatchSteps(
         step_id: step.step_id,
         status: "skipped",
         error: "Skipped after prior failure",
+      });
+      continue;
+    }
+    if ((step as { method?: string }).method || (step as { endpoint?: string }).endpoint) {
+      failed = true;
+      error =
+        "Legacy HTTP step detected — re-generate the plan (Create Data is DB-only now)";
+      results.push({
+        step_id: step.step_id,
+        status: "failed",
+        error,
+        startedAt: new Date().toISOString(),
+        finishedAt: new Date().toISOString(),
       });
       continue;
     }
@@ -258,12 +214,7 @@ export async function executeBatchSteps(
       continue;
     }
 
-    const { result, body } = await callStep(
-      batch.apiBaseUrl,
-      step,
-      outputs,
-      authToken,
-    );
+    const { result, body } = await runDbStep(cfg, step, outputs);
     results.push(result);
     if (result.status === "success") {
       outputs[step.step_id] = body;
@@ -281,45 +232,57 @@ export async function executeBatchSteps(
   return { results, status, error };
 }
 
+function rollbackFilterFor(
+  dialect: string,
+  createdId: string,
+): Record<string, unknown> {
+  if (dialect === "mongodb") {
+    return { _id: createdId };
+  }
+  return { id: createdId };
+}
+
 export async function rollbackBatchSteps(
   batch: CreateDataBatch,
-  authToken?: string,
+  cfg: BaDbConnectionResolved,
 ): Promise<CreateDataStepResult[]> {
+  assertSafeDbHost(cfg.host);
   const out: CreateDataStepResult[] = [];
-  // Reverse successful creates
   const success = [...batch.results]
     .filter((r) => r.status === "success" && r.createdId)
     .reverse();
 
   for (const r of success) {
     const plan = batch.steps.find((s) => s.step_id === r.step_id);
-    if (!plan?.rollback_endpoint) {
+    const wantRollback = plan?.rollback !== false && plan?.op === "insert";
+    if (!wantRollback || !r.createdId) {
       out.push({
         step_id: r.step_id,
         status: "skipped",
-        error: "No rollback_endpoint",
+        error: "No DB rollback for this step",
       });
       continue;
     }
-    const endpoint = String(
-      resolvePlaceholders(plan.rollback_endpoint, {}, r.response) ||
-        plan.rollback_endpoint.replace("{{id}}", String(r.createdId)),
-    );
     const fakeStep: CreateDataStepPlan = {
       step_id: `rollback_${r.step_id}`,
       description: `Rollback ${r.step_id}`,
-      method: "DELETE",
-      endpoint,
-      payload: null,
+      op: "delete",
+      collection: plan.collection,
+      data: null,
+      filter: rollbackFilterFor(cfg.dialect, r.createdId),
       depends_on: [],
     };
-    const { result } = await callStep(
-      batch.apiBaseUrl,
-      fakeStep,
-      {},
-      authToken,
-    );
+    const { result } = await runDbStep(cfg, fakeStep, {});
     out.push({ ...result, step_id: r.step_id });
   }
   return out;
+}
+
+export function isCreateDataDbOp(raw: unknown): raw is CreateDataDbOp {
+  const op = String(raw || "").toLowerCase();
+  return op === "insert" || op === "update" || op === "delete";
+}
+
+export function asStepData(raw: unknown): Record<string, unknown> | null {
+  return asRecord(raw);
 }

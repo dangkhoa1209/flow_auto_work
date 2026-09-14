@@ -18,14 +18,17 @@ export type CreateDataBatchStatus =
   | "partial"
   | "rolled_back";
 
+export type CreateDataDbOp = "insert" | "update" | "delete";
+
 export type CreateDataStepPlan = {
   step_id: string;
   description: string;
-  method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
-  endpoint: string;
-  payload: Record<string, unknown> | null;
+  op: CreateDataDbOp;
+  collection: string;
+  data: Record<string, unknown> | null;
+  filter: Record<string, unknown> | null;
   depends_on: string[];
-  rollback_endpoint?: string | null;
+  rollback?: boolean;
 };
 
 export type CreateDataStepResult = {
@@ -37,13 +40,21 @@ export type CreateDataStepResult = {
   createdId?: string | null;
 };
 
+export type CreateDataDbSnapshot = {
+  dialect: string;
+  host: string;
+  port: number;
+  database: string;
+};
+
 export type CreateDataBatch = {
   id: string;
   batchId: string;
   baProjectId: string;
   prompt: string;
   environment: CreateDataEnvironment;
-  apiBaseUrl: string;
+  mode?: "db" | "http";
+  dbTarget?: CreateDataDbSnapshot | null;
   status: CreateDataBatchStatus;
   steps: CreateDataStepPlan[];
   results: CreateDataStepResult[];
@@ -58,7 +69,7 @@ export type CreateDataPlan = {
   questions: string[];
   notes: string[];
   planner?: "ai" | "heuristic";
-  suggestedApiBaseUrl?: string | null;
+  suggestedDbTarget?: CreateDataDbSnapshot | null;
 };
 
 export const createDataApi = {
@@ -95,7 +106,6 @@ export const createDataApi = {
     baProjectId: string;
     prompt: string;
     environment: CreateDataEnvironment;
-    apiBaseUrl: string;
     steps: CreateDataStepPlan[];
     questions?: string[];
   }) {
@@ -109,17 +119,17 @@ export const createDataApi = {
     return api<{ batch: CreateDataBatch }>(API.ba.createData.batch(id));
   },
 
-  execute(id: string, authToken?: string) {
+  execute(id: string) {
     return api<{ batch: CreateDataBatch }>(API.ba.createData.execute(id), {
       method: "POST",
-      body: JSON.stringify({ authToken: authToken || undefined }),
+      body: JSON.stringify({}),
     });
   },
 
-  rollback(id: string, authToken?: string) {
+  rollback(id: string) {
     return api<{ batch: CreateDataBatch }>(API.ba.createData.rollback(id), {
       method: "POST",
-      body: JSON.stringify({ authToken: authToken || undefined }),
+      body: JSON.stringify({}),
     });
   },
 };

@@ -58,9 +58,10 @@ export type BaDbConnectionResolved = {
   ssl: boolean;
 };
 
-/** Per-project Create Data seed targets (HTTP API envs — never Production). */
+/** Per-project Create Data — writes Connect DB (never Production). */
 export type BaCreateDataEnvKey = "local" | "development" | "staging";
 
+/** @deprecated HTTP API targets — kept for legacy stored config only */
 export type BaCreateDataEnvTarget = {
   environment: BaCreateDataEnvKey;
   apiBaseUrl: string;
@@ -69,22 +70,28 @@ export type BaCreateDataEnvTarget = {
 
 export type BaCreateDataConfig = {
   enabled: boolean;
-  targets: BaCreateDataEnvTarget[];
-  /** Free-text: server / DB name being seeded via APIs (for AI + operators). */
+  /** @deprecated Ignored — Create Data uses Connect DB */
+  targets?: BaCreateDataEnvTarget[];
+  /** Free-text notes for AI + operators (which server/DB). */
   notes?: string;
   updatedAt: string;
 };
 
 export type BaCreateDataConfigPublic = {
+  /** True when Create Data was configured (enabled and/or notes). */
   configured: boolean;
   enabled: boolean;
+  /** Always empty in public responses (HTTP targets retired). */
   targets: BaCreateDataEnvTarget[];
   notes: string | null;
+  /** Seed mode — always direct Connect DB write. */
+  mode: "db";
   updatedAt: string | null;
 };
 
 export type BaCreateDataConfigPatch = {
   enabled?: boolean;
+  /** @deprecated Ignored */
   targets?: BaCreateDataEnvTarget[];
   notes?: string | null;
   /** Remove Create Data config. */
@@ -103,7 +110,7 @@ export type BaProject = {
   cloneStatus: CloneStatus;
   cloneError?: string | null;
   db?: BaDbConnection | null;
-  /** Seed via real APIs — admin configures targets per project. */
+  /** Seed via Connect DB write — admin enables per project. */
   createData?: BaCreateDataConfig | null;
   createdAt: string;
   updatedAt: string;
@@ -242,13 +249,14 @@ export function normalizeCreateDataTargets(
 export function toPublicBaCreateData(
   cfg: BaCreateDataConfig | null | undefined,
 ): BaCreateDataConfigPublic {
-  const targets = normalizeCreateDataTargets(cfg?.targets);
-  const configured = targets.length > 0;
+  const enabled = Boolean(cfg?.enabled);
+  const notes = cfg?.notes?.trim() ? cfg.notes.trim() : null;
   return {
-    configured,
-    enabled: Boolean(cfg?.enabled) && configured,
-    targets,
-    notes: cfg?.notes?.trim() ? cfg.notes.trim() : null,
+    configured: Boolean(cfg) && (enabled || Boolean(notes)),
+    enabled,
+    targets: [],
+    notes,
+    mode: "db",
     updatedAt: cfg?.updatedAt || null,
   };
 }
@@ -262,21 +270,20 @@ function applyCreateDataPatch(
   const base: BaCreateDataConfig = existing
     ? {
         enabled: existing.enabled,
-        targets: normalizeCreateDataTargets(existing.targets),
+        targets: [],
         notes: existing.notes,
         updatedAt: existing.updatedAt || now,
       }
     : { enabled: false, targets: [], updatedAt: now };
   if (patch.enabled !== undefined) base.enabled = Boolean(patch.enabled);
-  if (patch.targets !== undefined) {
-    base.targets = normalizeCreateDataTargets(patch.targets);
-  }
+  // HTTP targets retired — drop on save
+  base.targets = [];
   if (patch.notes !== undefined) {
     const n = patch.notes == null ? "" : String(patch.notes).trim();
     base.notes = n || undefined;
   }
   base.updatedAt = now;
-  if (!base.targets.length && !base.enabled && !base.notes) return null;
+  if (!base.enabled && !base.notes) return null;
   return base;
 }
 

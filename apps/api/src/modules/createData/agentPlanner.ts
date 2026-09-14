@@ -123,18 +123,18 @@ function buildSeedPlannerPrompt(opts: {
   mainBranch: string;
   prompt: string;
   environment: CreateDataEnvironment;
-  apiBaseUrl: string | null;
   seedNotes: string | null;
-  dbAccess: { allowed: boolean; dialect?: string; database?: string };
+  dbAccess: {
+    allowed: boolean;
+    dialect?: string;
+    database?: string;
+    host?: string;
+  };
   graphifyBlock: string;
 }): string {
   const dbLine = opts.dbAccess.allowed
-    ? `- DB read-only ON (${opts.dbAccess.dialect} / ${opts.dbAccess.database}) — dùng tool query_* để hiểu schema / FK / mẫu dữ liệu. **Cấm** INSERT/UPDATE/DELETE.`
-    : `- DB chưa bật — suy ra schema từ source (model/migration/OpenAPI/validation).`;
-
-  const targetLine = opts.apiBaseUrl
-    ? `- API base URL đã cấu hình cho env **${opts.environment}**: \`${opts.apiBaseUrl}\``
-    : `- Env **${opts.environment}** chưa có apiBaseUrl trong Admin — vẫn lập plan với endpoint relative; user sẽ điền base URL trước execute.`;
+    ? `- Connect DB ON (**${opts.dbAccess.dialect}** @ \`${opts.dbAccess.host}\` / \`${opts.dbAccess.database}\`) — dùng tool query_* để đọc schema / FK / mẫu. Execute sẽ **ghi thẳng** DB này (insert/update/delete).`
+    : `- Connect DB chưa bật — suy ra schema từ source (model/migration). User phải bật Connect DB trước khi execute.`;
 
   const notesLine = opts.seedNotes
     ? `- Ghi chú seed (admin): ${opts.seedNotes}`
@@ -142,20 +142,21 @@ function buildSeedPlannerPrompt(opts: {
 
   return `Bạn là **Seed Data Planner** cho project **${opts.displayName}** (branch ${opts.mainBranch}).
 
-## Vai trò (read-only workspace)
-- Chỉ đọc source + DB read-only (nếu bật) để lập plan — **không** sửa file / commit / push.
+## Vai trò (read-only workspace khi plan)
+- Chỉ đọc source + DB read-only tools để lập plan — **không** sửa file / commit / push trong workspace.
 - Ưu tiên tool \`code_map_*\` trước Grep/Shell. Shell chỉ khi thật sự cần đọc file đã biết path.
-- Deliverable = JSON plan trong chat — không ghi disk.
+- Deliverable = JSON plan trong chat — không ghi disk. (Execute riêng sẽ ghi Connect DB.)
 
 ## Nhiệm vụ
-Lập kế hoạch tạo dữ liệu test **đi qua HTTP API thật** (giống user thao tác UI) — **KHÔNG** đề xuất insert thẳng DB.
+Lập kế hoạch tạo dữ liệu test **ghi thẳng Connect DB** (insert / update / delete) — **KHÔNG** dùng HTTP API.
+
+Env nhãn: **${opts.environment}** (không bao giờ Production).
 
 ${opts.graphifyBlock ? `${opts.graphifyBlock}\n` : ""}
 ## Nguồn sự thật
-1. Gọi \`code_map_query\` với locator ngắn (entity / API / màn hình) **trước** Grep.
-2. Đọc route/controller/validation/OpenAPI trong source để lấy method + path + payload bắt buộc.
+1. Gọi \`code_map_query\` với locator ngắn (entity / model / collection) **trước** Grep.
+2. Đọc model/migration/schema trong source để lấy tên bảng/collection + field bắt buộc.
 3. ${dbLine}
-${targetLine}
 ${notesLine}
 
 ## Yêu cầu người dùng
@@ -169,12 +170,13 @@ Cuối câu trả lời xuất **đúng 1** JSON block (fence \`\`\`json):
   "steps": [
     {
       "step_id": "create_user_1",
-      "description": "Create user #1",
-      "method": "POST",
-      "endpoint": "/api/…",
-      "payload": { "email": "…" },
+      "description": "Insert user #1",
+      "op": "insert",
+      "collection": "users",
+      "data": { "email": "…" },
+      "filter": null,
       "depends_on": [],
-      "rollback_endpoint": "/api/…/{{id}}"
+      "rollback": true
     }
   ],
   "questions": [],
@@ -183,10 +185,12 @@ Cuối câu trả lời xuất **đúng 1** JSON block (fence \`\`\`json):
 \`\`\`
 
 ### Quy tắc plan
-- Thứ tự đúng dependency; dùng placeholder \`{{step_id.field}}\` để nối output bước trước.
-- Endpoint/path phải khớp source project — **không** bịa \`/api/users\` nếu project dùng path khác.
+- \`op\`: chỉ \`insert\` | \`update\` | \`delete\`.
+- \`collection\`: tên bảng (SQL) hoặc collection (Mongo) — khớp schema thật, không bịa.
+- \`insert\`: bắt buộc \`data\`; \`update\`: \`data\` + \`filter\`; \`delete\`: \`filter\` (filter không được rỗng).
+- Thứ tự đúng dependency; dùng placeholder \`{{step_id.field}}\` / \`{{step_id.id}}\` / \`{{step_id._id}}\` để nối kết quả bước trước.
 - Thiếu thông tin bắt buộc → điền \`questions\`, có thể \`steps: []\`.
-- Không bao giờ nhắm Production; không đề xuất SQL INSERT / mongosh insert.
+- Không bao giờ nhắm Production; không đề xuất HTTP method/endpoint.
 - Trong message prose: tóm tắt ngắn (tiếng Việt) + JSON ở cuối.`;
 }
 
@@ -207,10 +211,6 @@ export async function runCreateDataPlannerAgent(opts: {
   }
 
   const seedCfg = toPublicBaCreateData(project.createData);
-  const envTarget = seedCfg.enabled
-    ? seedCfg.targets.find((t) => t.environment === opts.environment)
-    : undefined;
-  const apiBaseUrl = envTarget?.apiBaseUrl || null;
 
   const repoReady =
     project.cloneStatus === "ready" && (await isGitRepo(project.localPath));
@@ -274,6 +274,7 @@ export async function runCreateDataPlannerAgent(opts: {
       allowed: Boolean(dbCfg),
       dialect: dbCfg?.dialect,
       database: dbCfg?.database,
+      host: dbCfg?.host,
     };
 
     publishProgress({
@@ -299,7 +300,6 @@ export async function runCreateDataPlannerAgent(opts: {
       mainBranch: project.mainBranch || "main",
       prompt: opts.prompt,
       environment: opts.environment,
-      apiBaseUrl,
       seedNotes: seedCfg.notes,
       dbAccess,
       graphifyBlock,
@@ -440,10 +440,10 @@ export async function runCreateDataPlannerAgent(opts: {
             step: "done",
             label: `Plan sẵn sàng · ${parsed.steps.length} steps`,
           });
-          if (apiBaseUrl) {
+          if (dbAccess.allowed) {
             parsed.notes = [
               ...(parsed.notes || []),
-              `Default API base (${opts.environment}): ${apiBaseUrl}`,
+              `Connect DB target (${opts.environment}): ${dbAccess.dialect} ${dbAccess.host}/${dbAccess.database}`,
             ];
           }
           return { ...parsed, planner: "ai" };

@@ -66,7 +66,7 @@ const FEATURES: {
   {
     key: "createData",
     name: "Create Data",
-    desc: "Seed test data via real APIs (plan → preview → execute). Never targets production.",
+    desc: "Seed test data via Connect DB write (plan → preview → insert/update). Never targets production.",
   },
 ];
 

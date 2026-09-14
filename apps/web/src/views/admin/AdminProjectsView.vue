@@ -26,6 +26,7 @@ type BaCreateDataPublic = {
     label?: string;
   }>;
   notes: string | null;
+  mode?: "db";
   updatedAt: string | null;
 };
 
@@ -73,9 +74,6 @@ const seedEditingId = ref<string | null>(null);
 const seedSaving = ref(false);
 const seedForm = reactive({
   enabled: false,
-  localUrl: "",
-  developmentUrl: "",
-  stagingUrl: "",
   notes: "",
 });
 
@@ -177,9 +175,6 @@ function resetDbForm() {
 function resetSeedForm() {
   seedEditingId.value = null;
   seedForm.enabled = false;
-  seedForm.localUrl = "";
-  seedForm.developmentUrl = "";
-  seedForm.stagingUrl = "";
   seedForm.notes = "";
 }
 
@@ -234,12 +229,6 @@ function openSeed(p: BaProject) {
   seedEditingId.value = p.id;
   const c = p.createData;
   seedForm.enabled = Boolean(c?.enabled);
-  seedForm.localUrl =
-    c?.targets.find((t) => t.environment === "local")?.apiBaseUrl || "";
-  seedForm.developmentUrl =
-    c?.targets.find((t) => t.environment === "development")?.apiBaseUrl || "";
-  seedForm.stagingUrl =
-    c?.targets.find((t) => t.environment === "staging")?.apiBaseUrl || "";
   seedForm.notes = c?.notes || "";
 }
 
@@ -435,31 +424,14 @@ async function saveDb() {
 
 async function saveSeed() {
   if (!seedEditingId.value) return;
-  const targets: Array<{
-    environment: "local" | "development" | "staging";
-    apiBaseUrl: string;
-  }> = [];
-  if (seedForm.localUrl.trim()) {
-    targets.push({
-      environment: "local",
-      apiBaseUrl: seedForm.localUrl.trim(),
-    });
-  }
-  if (seedForm.developmentUrl.trim()) {
-    targets.push({
-      environment: "development",
-      apiBaseUrl: seedForm.developmentUrl.trim(),
-    });
-  }
-  if (seedForm.stagingUrl.trim()) {
-    targets.push({
-      environment: "staging",
-      apiBaseUrl: seedForm.stagingUrl.trim(),
-    });
-  }
-  if (seedForm.enabled && !targets.length) {
-    message.warning("Add at least one API base URL (local / development / staging)");
-    return;
+  if (seedForm.enabled) {
+    const db = seedEditingProject.value?.db;
+    if (!db?.configured || !db.enabled) {
+      message.warning(
+        "Bật Connect DB (enabled) trước — Create Data ghi thẳng Connect DB",
+      );
+      return;
+    }
   }
   seedSaving.value = true;
   try {
@@ -468,15 +440,15 @@ async function saveSeed() {
       body: JSON.stringify({
         createData: {
           enabled: seedForm.enabled,
-          targets,
+          targets: [],
           notes: seedForm.notes.trim() || null,
         },
       }),
     });
     message.success(
       seedForm.enabled
-        ? "Create Data targets saved & active"
-        : "Create Data targets saved (inactive)",
+        ? "Create Data enabled — writes Connect DB"
+        : "Create Data saved (inactive)",
     );
     resetSeedForm();
     await load();
@@ -658,19 +630,13 @@ function dbTag(record: BaProject): { label: string; color: string } {
 }
 
 function seedTag(record: BaProject): { label: string; color: string } {
-  if (!record.createData?.configured) {
+  if (!record.createData?.configured && !record.createData?.enabled) {
     return { label: "Not configured", color: "default" };
   }
-  if (record.createData.enabled) {
-    return {
-      label: `ON · ${record.createData.targets.length} env`,
-      color: "green",
-    };
+  if (record.createData?.enabled) {
+    return { label: "ON · Connect DB", color: "green" };
   }
-  return {
-    label: `Off · ${record.createData.targets.length} env`,
-    color: "orange",
-  };
+  return { label: "Off", color: "orange" };
 }
 
 function onProjectAction(key: string, record: BaProject) {
@@ -704,7 +670,7 @@ onUnmounted(() => {
           Configure BA Chat projects — GitLab PAT → pick repo → main branch.
           Clones into
           <code class="text-xs">project/_ba/&lt;slug&gt;/source</code>.
-          Optional read-only DB + Create Data API targets (per project).
+          Optional Connect DB + Create Data (direct DB seed, per project).
         </p>
       </div>
       <a-button type="primary" size="small" :loading="loading" @click="openCreate">
@@ -964,45 +930,37 @@ onUnmounted(() => {
         Create Data — {{ seedEditingProject?.displayName || seedEditingId }}
       </h2>
       <p class="text-xs text-ink-muted mt-0 mb-3">
-        Cấu hình API target (local / development / staging) để Seed Planner đi qua
-        HTTP thật. Dùng chung Connect DB (read-only) của project để AI xem schema —
-        <strong class="text-ink font-medium">không</strong> insert DB trực tiếp.
-        Production bị chặn cứng.
+        Bật Create Data để Seed Planner / Execute
+        <strong class="text-ink font-medium">ghi thẳng Connect DB</strong>
+        của project (insert / update / delete). Dùng cùng Connect DB với Sync
+        target. Production bị chặn cứng (env label + host có chữ prod).
       </p>
+      <div
+        v-if="seedEditingProject?.db"
+        class="text-[12px] text-ink-muted mb-3 font-mono"
+      >
+        Connect DB:
+        <span v-if="seedEditingProject.db.enabled" class="text-ink">
+          {{ seedEditingProject.db.dialect }}
+          {{ seedEditingProject.db.host }}:{{ seedEditingProject.db.port }}/{{
+            seedEditingProject.db.database
+          }}
+        </span>
+        <span v-else class="text-orange-600">chưa bật / chưa cấu hình</span>
+      </div>
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <label class="flex flex-col gap-1 text-sm sm:col-span-2">
-          <span class="text-ink-muted">Active (dùng URL mặc định trên tab Create Data)</span>
+          <span class="text-ink-muted">Active (cho phép ghi Connect DB từ tab Create Data)</span>
           <a-switch v-model:checked="seedForm.enabled" />
         </label>
         <label class="flex flex-col gap-1 text-sm sm:col-span-2">
-          <span class="text-ink-muted">API base — Local</span>
-          <a-input
-            v-model:value="seedForm.localUrl"
-            placeholder="http://localhost:3000"
-          />
-        </label>
-        <label class="flex flex-col gap-1 text-sm sm:col-span-2">
-          <span class="text-ink-muted">API base — Development</span>
-          <a-input
-            v-model:value="seedForm.developmentUrl"
-            placeholder="https://dev.example.com"
-          />
-        </label>
-        <label class="flex flex-col gap-1 text-sm sm:col-span-2">
-          <span class="text-ink-muted">API base — Staging</span>
-          <a-input
-            v-model:value="seedForm.stagingUrl"
-            placeholder="https://staging.example.com"
-          />
-        </label>
-        <label class="flex flex-col gap-1 text-sm sm:col-span-2">
           <span class="text-ink-muted">
-            Notes (server / DB đang seed — hiện cho AI + operator)
+            Notes (ngữ cảnh server / DB — hiện cho AI + operator)
           </span>
           <a-textarea
             v-model:value="seedForm.notes"
             :rows="2"
-            placeholder="vd. Staging API → Mongo tenant_demo (read-only Connect DB)"
+            placeholder="vd. Staging Mongo tenant_demo (Connect DB)"
           />
         </label>
       </div>

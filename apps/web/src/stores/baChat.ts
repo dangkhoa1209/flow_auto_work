@@ -28,6 +28,7 @@ export type BaProject = {
       label?: string;
     }>;
     notes: string | null;
+    mode?: "db";
   };
 };
 

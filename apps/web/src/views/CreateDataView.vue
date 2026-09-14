@@ -19,8 +19,6 @@ const prompt = ref(
   "Create 2 users, each with 1 completed order and 1 pending order",
 );
 const environment = ref<CreateDataEnvironment>("staging");
-const apiBaseUrl = ref("http://localhost:3000");
-const authToken = ref("");
 
 const planning = ref(false);
 const saving = ref(false);
@@ -32,7 +30,8 @@ const planSteps = ref<CreateDataStepPlan[]>([]);
 const planQuestions = ref<string[]>([]);
 const planNotes = ref<string[]>([]);
 const planPlanner = ref<"ai" | "heuristic" | null>(null);
-const editingPayloads = ref<Record<string, string>>({});
+const editingData = ref<Record<string, string>>({});
+const editingFilter = ref<Record<string, string>>({});
 const progressLines = ref<RealtimeCreateDataProgress[]>([]);
 
 const activeBatch = ref<CreateDataBatch | null>(null);
@@ -45,16 +44,28 @@ const envOptions = [
 ];
 
 const seedConfig = computed(() => ba.selectedProject?.createData || null);
+const dbPublic = computed(() => ba.selectedProject?.db || null);
+
+const dbTargetLabel = computed(() => {
+  const d = dbPublic.value;
+  if (!d?.configured || !d.enabled) return null;
+  return `${d.dialect || "?"} · ${d.database || "?"}`;
+});
 
 const seedHint = computed(() => {
   const cfg = seedConfig.value;
-  if (!cfg?.configured) {
-    return "Admin chưa cấu hình Create Data target cho project này — điền API base URL thủ công.";
+  const db = dbPublic.value;
+  if (!db?.configured || !db.enabled) {
+    return "Admin chưa bật Connect DB cho project — Create Data cần Connect DB để ghi.";
   }
-  if (!cfg.enabled) {
-    return "Create Data target đang tắt (Admin) — vẫn có thể plan; bật enable để dùng URL mặc định.";
+  if (!cfg?.enabled) {
+    return "Create Data đang tắt (Admin) — bật Enable trên Admin Projects trước khi execute.";
   }
-  return cfg.notes || null;
+  const parts = [
+    `Target: ${db.dialect} ${db.database}`,
+    cfg.notes || null,
+  ].filter(Boolean);
+  return parts.join(" · ");
 });
 
 const canGenerate = computed(
@@ -65,7 +76,8 @@ const canSavePreview = computed(
   () =>
     Boolean(ba.selectedProjectId) &&
     planSteps.value.length > 0 &&
-    apiBaseUrl.value.trim().length > 0,
+    Boolean(seedConfig.value?.enabled) &&
+    Boolean(dbPublic.value?.enabled),
 );
 
 const statusColor: Record<string, string> = {
@@ -79,42 +91,45 @@ const statusColor: Record<string, string> = {
   rolled_back: "text-ink-muted",
 };
 
-function applySeedUrlForEnv() {
-  const cfg = seedConfig.value;
-  if (!cfg?.enabled) return;
-  const hit = cfg.targets.find((t) => t.environment === environment.value);
-  if (hit?.apiBaseUrl) apiBaseUrl.value = hit.apiBaseUrl;
-}
-
 function resultFor(stepId: string) {
   return activeBatch.value?.results.find((r) => r.step_id === stepId);
 }
 
-function syncPayloadEditors(steps: CreateDataStepPlan[]) {
-  const next: Record<string, string> = {};
+function syncEditors(steps: CreateDataStepPlan[]) {
+  const dataNext: Record<string, string> = {};
+  const filterNext: Record<string, string> = {};
   for (const s of steps) {
-    next[s.step_id] = s.payload
-      ? JSON.stringify(s.payload, null, 2)
-      : "";
+    dataNext[s.step_id] = s.data ? JSON.stringify(s.data, null, 2) : "";
+    filterNext[s.step_id] = s.filter ? JSON.stringify(s.filter, null, 2) : "";
   }
-  editingPayloads.value = next;
+  editingData.value = dataNext;
+  editingFilter.value = filterNext;
 }
 
-function applyEditedPayloads(): CreateDataStepPlan[] | null {
+function applyEditedSteps(): CreateDataStepPlan[] | null {
   const out: CreateDataStepPlan[] = [];
   for (const s of planSteps.value) {
-    const raw = editingPayloads.value[s.step_id] ?? "";
-    if (!raw.trim()) {
-      out.push({ ...s, payload: null });
-      continue;
+    let data: Record<string, unknown> | null = null;
+    let filter: Record<string, unknown> | null = null;
+    const rawData = editingData.value[s.step_id] ?? "";
+    const rawFilter = editingFilter.value[s.step_id] ?? "";
+    if (rawData.trim()) {
+      try {
+        data = JSON.parse(rawData) as Record<string, unknown>;
+      } catch {
+        message.error(`Invalid JSON data on ${s.step_id}`);
+        return null;
+      }
     }
-    try {
-      const parsed = JSON.parse(raw) as Record<string, unknown>;
-      out.push({ ...s, payload: parsed });
-    } catch {
-      message.error(`Invalid JSON payload on ${s.step_id}`);
-      return null;
+    if (rawFilter.trim()) {
+      try {
+        filter = JSON.parse(rawFilter) as Record<string, unknown>;
+      } catch {
+        message.error(`Invalid JSON filter on ${s.step_id}`);
+        return null;
+      }
     }
+    out.push({ ...s, data, filter });
   }
   return out;
 }
@@ -134,10 +149,7 @@ async function generatePlan() {
     planQuestions.value = res.plan.questions || [];
     planNotes.value = res.plan.notes || [];
     planPlanner.value = res.plan.planner || null;
-    if (res.plan.suggestedApiBaseUrl) {
-      apiBaseUrl.value = res.plan.suggestedApiBaseUrl;
-    }
-    syncPayloadEditors(planSteps.value);
+    syncEditors(planSteps.value);
     if (!planSteps.value.length) {
       message.warning("Planner needs more detail — see questions below");
     } else {
@@ -163,7 +175,7 @@ async function stopPlan() {
 
 async function saveAndPreview() {
   if (!ba.selectedProjectId || !canSavePreview.value) return;
-  const steps = applyEditedPayloads();
+  const steps = applyEditedSteps();
   if (!steps) return;
   saving.value = true;
   try {
@@ -171,13 +183,12 @@ async function saveAndPreview() {
       baProjectId: ba.selectedProjectId,
       prompt: prompt.value.trim(),
       environment: environment.value,
-      apiBaseUrl: apiBaseUrl.value.trim(),
       steps,
       questions: planQuestions.value,
     });
     activeBatch.value = res.batch;
     planSteps.value = res.batch.steps;
-    syncPayloadEditors(planSteps.value);
+    syncEditors(planSteps.value);
     message.success(`Batch ${res.batch.batchId} saved — review then Execute`);
     await loadHistory();
   } catch (e) {
@@ -194,14 +205,9 @@ async function executeBatch() {
   }
   executing.value = true;
   try {
-    const res = await createDataApi.execute(
-      activeBatch.value.id,
-      authToken.value.trim() || undefined,
-    );
+    const res = await createDataApi.execute(activeBatch.value.id);
     activeBatch.value = res.batch;
-    message[res.batch.status === "success" ? "success" : "warning"](
-      `Batch ${res.batch.batchId}: ${res.batch.status}`,
-    );
+    message.success(`Batch ${res.batch.status}`);
     await loadHistory();
   } catch (e) {
     message.error(e instanceof Error ? e.message : String(e));
@@ -213,18 +219,15 @@ async function executeBatch() {
 function confirmRollback() {
   if (!activeBatch.value) return;
   Modal.confirm({
-    title: "Rollback this batch?",
+    title: "Rollback batch?",
     content:
-      "Deletes created records via rollback_endpoint (best effort). Production is never targeted.",
+      "Deletes inserted rows/docs by recorded createdId (insert steps only).",
     okText: "Rollback",
     okType: "danger",
     async onOk() {
       rollingBack.value = true;
       try {
-        const res = await createDataApi.rollback(
-          activeBatch.value!.id,
-          authToken.value.trim() || undefined,
-        );
+        const res = await createDataApi.rollback(activeBatch.value!.id);
         activeBatch.value = res.batch;
         message.success("Rollback finished");
         await loadHistory();
@@ -238,10 +241,7 @@ function confirmRollback() {
 }
 
 async function loadHistory() {
-  if (!ba.selectedProjectId) {
-    history.value = [];
-    return;
-  }
+  if (!ba.selectedProjectId) return;
   loadingHistory.value = true;
   try {
     const res = await createDataApi.listBatches(ba.selectedProjectId);
@@ -258,12 +258,10 @@ async function openHistory(b: CreateDataBatch) {
     const res = await createDataApi.getBatch(b.id);
     activeBatch.value = res.batch;
     planSteps.value = res.batch.steps;
+    planQuestions.value = res.batch.questions || [];
     prompt.value = res.batch.prompt;
     environment.value = res.batch.environment;
-    apiBaseUrl.value = res.batch.apiBaseUrl;
-    planQuestions.value = res.batch.questions || [];
-    planPlanner.value = null;
-    syncPayloadEditors(res.batch.steps);
+    syncEditors(planSteps.value);
   } catch (e) {
     message.error(e instanceof Error ? e.message : String(e));
   }
@@ -272,27 +270,22 @@ async function openHistory(b: CreateDataBatch) {
 watch(
   () => ba.selectedProjectId,
   () => {
-    void loadHistory();
     activeBatch.value = null;
     planSteps.value = [];
+    planNotes.value = [];
+    planQuestions.value = [];
     progressLines.value = [];
-    applySeedUrlForEnv();
+    void loadHistory();
   },
 );
-
-watch(environment, () => {
-  applySeedUrlForEnv();
-});
 
 let unsubRt: (() => void) | undefined;
 
 onMounted(() => {
-  applySeedUrlForEnv();
   void loadHistory();
   unsubRt = subscribeRealtime({
     onCreateDataProgress: (ev) => {
       if (ev.baProjectId !== ba.selectedProjectId) return;
-      // Server already scopes by userId; double-check project.
       progressLines.value = [...progressLines.value.slice(-24), ev];
     },
   });
@@ -309,7 +302,7 @@ onUnmounted(() => {
       <div class="faw-console-head__title min-w-0">
         <h2>Create Data</h2>
         <div class="faw-console-head__win">
-          AI Seed Planner (Cursor + code map) → preview → execute HTTP APIs — never Production / never direct DB insert
+          AI Seed Planner → preview → insert/update Connect DB — never Production
         </div>
       </div>
     </div>
@@ -325,7 +318,6 @@ onUnmounted(() => {
       v-else
       class="flex-1 min-h-0 overflow-hidden grid grid-cols-1 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]"
     >
-      <!-- Left: form + plan -->
       <div class="min-h-0 overflow-y-auto p-4 space-y-4 border-b lg:border-b-0 lg:border-r border-[var(--app-border)]">
         <label class="flex flex-col gap-1 text-sm">
           <span class="text-ink-muted">Scenario</span>
@@ -338,34 +330,27 @@ onUnmounted(() => {
 
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <label class="flex flex-col gap-1 text-sm">
-            <span class="text-ink-muted">Environment</span>
+            <span class="text-ink-muted">Environment label</span>
             <a-select
               v-model:value="environment"
               :options="envOptions"
               class="w-full"
             />
           </label>
-          <label class="flex flex-col gap-1 text-sm">
-            <span class="text-ink-muted">API base URL</span>
-            <a-input
-              v-model:value="apiBaseUrl"
-              placeholder="http://localhost:3000"
-            />
-          </label>
+          <div class="flex flex-col gap-1 text-sm">
+            <span class="text-ink-muted">Connect DB target</span>
+            <div
+              class="min-h-[32px] px-3 py-1.5 rounded border border-[var(--app-border)] text-[13px] font-mono"
+              :class="dbTargetLabel ? 'text-ink' : 'text-ink-muted'"
+            >
+              {{ dbTargetLabel || "Not configured" }}
+            </div>
+          </div>
         </div>
 
         <p v-if="seedHint" class="text-[12px] text-ink-muted m-0">
           {{ seedHint }}
         </p>
-
-        <label class="flex flex-col gap-1 text-sm">
-          <span class="text-ink-muted">Auth token (optional, not stored on plan)</span>
-          <a-input-password
-            v-model:value="authToken"
-            placeholder="Bearer token for target API"
-            autocomplete="off"
-          />
-        </label>
 
         <div class="flex flex-wrap gap-2">
           <button
@@ -418,7 +403,7 @@ onUnmounted(() => {
           type="info"
           show-icon
           class="text-xs"
-          message="Planner dùng Cursor SDK + code map / đọc source (và DB read-only nếu Admin đã Connect DB). Execute chỉ gọi HTTP API — Production bị chặn."
+          message="Planner dùng Cursor + code map / schema (Connect DB read-only khi plan). Execute ghi thẳng Connect DB — Production bị chặn."
         />
 
         <div
@@ -465,11 +450,17 @@ onUnmounted(() => {
           <code class="text-ink">{{ activeBatch.batchId }}</code>
           ·
           <span :class="statusColor[activeBatch.status]">{{ activeBatch.status }}</span>
+          <span v-if="activeBatch.dbTarget">
+            · {{ activeBatch.dbTarget.dialect }}
+            {{ activeBatch.dbTarget.database }}
+          </span>
           <span v-if="activeBatch.error"> — {{ activeBatch.error }}</span>
         </div>
 
         <div v-if="planSteps.length" class="space-y-3">
-          <div class="text-sm font-medium text-ink">Steps (edit payloads before save/execute)</div>
+          <div class="text-sm font-medium text-ink">
+            Steps (edit data/filter before save/execute)
+          </div>
           <div
             v-for="(s, idx) in planSteps"
             :key="s.step_id"
@@ -489,16 +480,31 @@ onUnmounted(() => {
                 </div>
                 <div class="text-[12px] text-ink-muted">{{ s.description }}</div>
                 <div class="text-[12px] font-mono mt-1">
-                  {{ s.method }} {{ s.endpoint }}
+                  {{ s.op }} {{ s.collection }}
                 </div>
               </div>
             </div>
-            <a-textarea
-              v-model:value="editingPayloads[s.step_id]"
-              :rows="4"
-              class="font-mono text-[12px]"
-              placeholder="null / JSON payload"
-            />
+            <label class="flex flex-col gap-1 text-[11px] text-ink-muted">
+              data
+              <a-textarea
+                v-model:value="editingData[s.step_id]"
+                :rows="4"
+                class="font-mono text-[12px]"
+                placeholder="null / JSON document or row"
+              />
+            </label>
+            <label
+              v-if="s.op !== 'insert'"
+              class="flex flex-col gap-1 text-[11px] text-ink-muted"
+            >
+              filter
+              <a-textarea
+                v-model:value="editingFilter[s.step_id]"
+                :rows="2"
+                class="font-mono text-[12px]"
+                placeholder="WHERE / Mongo filter JSON"
+              />
+            </label>
             <div
               v-if="resultFor(s.step_id)?.error"
               class="text-[12px] text-red-600"
@@ -515,7 +521,6 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <!-- Right: history -->
       <div class="min-h-0 overflow-y-auto p-4 space-y-3">
         <div class="flex items-center justify-between gap-2">
           <div class="text-sm font-medium text-ink">Batch history</div>

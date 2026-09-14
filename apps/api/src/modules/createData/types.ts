@@ -15,17 +15,25 @@ export type CreateDataBatchStatus =
   | "partial"
   | "rolled_back";
 
-export type CreateDataHttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+/** Direct Connect DB write (replaces HTTP seed steps). */
+export type CreateDataDbOp = "insert" | "update" | "delete";
 
 export type CreateDataStepPlan = {
   step_id: string;
   description: string;
-  method: CreateDataHttpMethod;
-  endpoint: string;
-  payload: Record<string, unknown> | null;
+  op: CreateDataDbOp;
+  /** SQL table or Mongo collection */
+  collection: string;
+  /** Insert document / update fields */
+  data: Record<string, unknown> | null;
+  /** WHERE / Mongo filter for update|delete */
+  filter: Record<string, unknown> | null;
   depends_on: string[];
-  /** Optional DELETE path template for rollback, e.g. `/api/users/{{id}}` */
-  rollback_endpoint?: string | null;
+  /**
+   * When true (default for insert), rollback deletes by createdId
+   * using filter `{ id| _id: createdId }`.
+   */
+  rollback?: boolean;
 };
 
 export type CreateDataStepResult = {
@@ -40,6 +48,13 @@ export type CreateDataStepResult = {
   createdId?: string | null;
 };
 
+export type CreateDataDbSnapshot = {
+  dialect: string;
+  host: string;
+  port: number;
+  database: string;
+};
+
 export type CreateDataBatch = {
   id: string;
   batchId: string;
@@ -47,7 +62,11 @@ export type CreateDataBatch = {
   baProjectId: string;
   prompt: string;
   environment: CreateDataEnvironment;
-  apiBaseUrl: string;
+  /** Legacy HTTP batches only — ignored for DB mode */
+  apiBaseUrl?: string;
+  /** Snapshot of Connect DB at batch create time */
+  dbTarget?: CreateDataDbSnapshot | null;
+  mode?: "db" | "http";
   status: CreateDataBatchStatus;
   steps: CreateDataStepPlan[];
   results: CreateDataStepResult[];
@@ -64,5 +83,6 @@ export type CreateDataPlanResponse = {
   questions: string[];
   notes: string[];
   planner?: "ai" | "heuristic";
-  suggestedApiBaseUrl?: string | null;
+  /** Connect DB summary for UI */
+  suggestedDbTarget?: CreateDataDbSnapshot | null;
 };

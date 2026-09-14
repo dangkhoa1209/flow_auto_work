@@ -6,7 +6,6 @@ import {
   getSystemSettings,
   getTaskTypeLabelMapping,
   listBaProjects,
-  normalizeCreateDataTargets,
   resolveBaProjectDbForTest,
   toPublicBaProject,
   toPublicSystemSettings,
@@ -33,7 +32,6 @@ import { AppError } from "../../utils/AppError.js";
 import { logger } from "../../logger.js";
 import { testBaDbConnection } from "../../plugins/baDb/query.js";
 import { listCursorModelsForApiKey } from "../../plugins/cursor/modelList.js";
-import { assertSafeApiBaseUrl } from "../createData/executor.js";
 
 export async function adminListBaProjects() {
   return (await listBaProjects()).map(toPublicBaProject);
@@ -115,12 +113,9 @@ function parseCreateDataPatch(
   if (b.clear === true) return { clear: true };
   const patch: BaCreateDataConfigPatch = {};
   if (b.enabled !== undefined) patch.enabled = Boolean(b.enabled);
+  // HTTP API targets retired — ignore incoming targets
   if (b.targets !== undefined) {
-    const targets = normalizeCreateDataTargets(b.targets);
-    for (const t of targets) {
-      assertSafeApiBaseUrl(t.apiBaseUrl);
-    }
-    patch.targets = targets;
+    patch.targets = [];
   }
   if (b.notes !== undefined) {
     patch.notes =
