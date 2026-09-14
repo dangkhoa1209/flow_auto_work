@@ -349,10 +349,14 @@ export async function adminUpdateBaFeatures(body: {
   workflow?: string;
   tasks?: string;
   syncDatabase?: string;
+  createData?: string;
   workflowTabLabel?: string;
 }) {
   const patch: Partial<
-    Record<"createIssue" | "workflow" | "tasks" | "syncDatabase", BaFeatureState>
+    Record<
+      "createIssue" | "workflow" | "tasks" | "syncDatabase" | "createData",
+      BaFeatureState
+    >
   > & {
     workflowTabLabel?: string;
   } = {};
@@ -361,6 +365,7 @@ export async function adminUpdateBaFeatures(body: {
     "workflow",
     "tasks",
     "syncDatabase",
+    "createData",
   ] as const) {
     const value = body[key];
     if (value === undefined) continue;

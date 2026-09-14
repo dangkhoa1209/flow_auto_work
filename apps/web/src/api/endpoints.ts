@@ -106,6 +106,16 @@ export const API = {
       jobCancel: (id: string) =>
         `/api/ba/sync-db/jobs/${encodeURIComponent(id)}/cancel`,
     },
+    createData: {
+      plan: "/api/ba/create-data/plan",
+      batches: "/api/ba/create-data/batches",
+      batch: (id: string) =>
+        `/api/ba/create-data/batches/${encodeURIComponent(id)}`,
+      execute: (id: string) =>
+        `/api/ba/create-data/batches/${encodeURIComponent(id)}/execute`,
+      rollback: (id: string) =>
+        `/api/ba/create-data/batches/${encodeURIComponent(id)}/rollback`,
+    },
   },
   projects: {
     root: "/api/projects",

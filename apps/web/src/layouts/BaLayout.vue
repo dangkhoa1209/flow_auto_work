@@ -33,6 +33,7 @@ const navActive = computed(() => {
   if (route.path.startsWith(`${basePath.value}/settings`)) return "settings";
   if (route.name === routeName("workflow")) return "workflow";
   if (route.name === routeName("tasks")) return "tasks";
+  if (route.name === routeName("create-data")) return "create-data";
   return "chat";
 });
 
@@ -40,11 +41,15 @@ const showProjectSelect = computed(() => navActive.value !== "settings");
 
 const showWorkflowTab = computed(() => ba.featureVisible("workflow"));
 const showTasksTab = computed(() => ba.featureVisible("tasks"));
+const showCreateDataTab = computed(() => ba.featureVisible("createData"));
 const chatTabLabel = "Chatbox";
 const workflowTabLabel = computed(() =>
   ba.featureLabel("workflow", ba.features.workflowTabLabel || "Phân tích YC"),
 );
 const tasksTabLabel = computed(() => ba.featureLabel("tasks", "Tasks"));
+const createDataTabLabel = computed(() =>
+  ba.featureLabel("createData", "Create Data"),
+);
 
 watch(
   () => [ba.featuresLoaded, route.name, basePath.value] as const,
@@ -52,7 +57,8 @@ watch(
     if (!loaded) return;
     if (
       (name === routeName("workflow") && !showWorkflowTab.value) ||
-      (name === routeName("tasks") && !showTasksTab.value)
+      (name === routeName("tasks") && !showTasksTab.value) ||
+      (name === routeName("create-data") && !showCreateDataTab.value)
     ) {
       void router.replace({ name: routeName("chat") });
     }
@@ -142,13 +148,21 @@ onMounted(() => {
         >
           {{ tasksTabLabel }}
         </RouterLink>
+        <RouterLink
+          v-if="showCreateDataTab"
+          :to="`${basePath}/create-data`"
+          class="faw-seg__btn"
+          :class="{ active: navActive === 'create-data' }"
+        >
+          {{ createDataTabLabel }}
+        </RouterLink>
       </nav>
 
       <!-- Project in topbar (mobile + desktop) — one picker only -->
       <div
         v-if="showProjectSelect"
         class="faw-crumb faw-ba-topbar-project min-w-0 flex-1 lg:flex-none lg:min-w-[180px] max-w-[320px]"
-        title="Project — shared for Chat / Workflow / Tasks"
+        title="Project — shared for Chat / Workflow / Tasks / Create Data"
       >
         <BaProjectSelect :show-label="false" embedded size="small" />
       </div>
@@ -199,6 +213,14 @@ onMounted(() => {
         :class="{ active: navActive === 'tasks' }"
       >
         {{ tasksTabLabel }}
+      </RouterLink>
+      <RouterLink
+        v-if="showCreateDataTab"
+        :to="`${basePath}/create-data`"
+        class="faw-mseg__btn"
+        :class="{ active: navActive === 'create-data' }"
+      >
+        {{ createDataTabLabel }}
       </RouterLink>
     </nav>
 
