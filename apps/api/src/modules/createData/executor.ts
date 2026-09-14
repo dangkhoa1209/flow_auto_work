@@ -1,5 +1,6 @@
 import type { BaDbConnectionResolved } from "../../workspace/baStore.js";
 import { runBaWriteOp } from "../../plugins/baDb/write.js";
+import { withBaDbResolvedConnection } from "../../plugins/baDb/withTunnel.js";
 import { AppError } from "../../utils/AppError.js";
 import type {
   CreateDataBatch,
@@ -36,7 +37,7 @@ export function assertSafeEnvironment(env: string): CreateDataEnvironment {
   );
 }
 
-/** Block hosts that look like production Connect DB. */
+/** Block hosts that look like production Connect DB / SSH bastion. */
 export function assertSafeDbHost(host: string): void {
   const h = host.trim().toLowerCase();
   if (
@@ -49,6 +50,14 @@ export function assertSafeDbHost(host: string): void {
       403,
       "create_data_production_db_blocked",
     );
+  }
+}
+
+/** Safety checks for write target (DB host + optional SSH bastion). */
+export function assertSafeCreateDataTarget(cfg: BaDbConnectionResolved): void {
+  assertSafeDbHost(cfg.host);
+  if (cfg.ssh?.enabled && cfg.ssh.sshHost) {
+    assertSafeDbHost(cfg.ssh.sshHost);
   }
 }
 
@@ -172,64 +181,69 @@ export async function executeBatchSteps(
   status: CreateDataBatch["status"];
   error: string | null;
 }> {
-  assertSafeDbHost(cfg.host);
-  const outputs: Record<string, unknown> = {};
-  const results: CreateDataStepResult[] = [];
-  let failed = false;
-  let error: string | null = null;
+  assertSafeCreateDataTarget(cfg);
+  return withBaDbResolvedConnection(cfg, async (connectCfg) => {
+    const outputs: Record<string, unknown> = {};
+    const results: CreateDataStepResult[] = [];
+    let failed = false;
+    let error: string | null = null;
 
-  for (const step of batch.steps) {
-    if (failed) {
-      results.push({
-        step_id: step.step_id,
-        status: "skipped",
-        error: "Skipped after prior failure",
-      });
-      continue;
-    }
-    if ((step as { method?: string }).method || (step as { endpoint?: string }).endpoint) {
-      failed = true;
-      error =
-        "Legacy HTTP step detected — re-generate the plan (Create Data is DB-only now)";
-      results.push({
-        step_id: step.step_id,
-        status: "failed",
-        error,
-        startedAt: new Date().toISOString(),
-        finishedAt: new Date().toISOString(),
-      });
-      continue;
-    }
-    const missingDep = step.depends_on.find((d) => !(d in outputs));
-    if (missingDep) {
-      failed = true;
-      error = `Missing dependency output: ${missingDep}`;
-      results.push({
-        step_id: step.step_id,
-        status: "failed",
-        error,
-        startedAt: new Date().toISOString(),
-        finishedAt: new Date().toISOString(),
-      });
-      continue;
+    for (const step of batch.steps) {
+      if (failed) {
+        results.push({
+          step_id: step.step_id,
+          status: "skipped",
+          error: "Skipped after prior failure",
+        });
+        continue;
+      }
+      if (
+        (step as { method?: string }).method ||
+        (step as { endpoint?: string }).endpoint
+      ) {
+        failed = true;
+        error =
+          "Legacy HTTP step detected — re-generate the plan (Create Data is DB-only now)";
+        results.push({
+          step_id: step.step_id,
+          status: "failed",
+          error,
+          startedAt: new Date().toISOString(),
+          finishedAt: new Date().toISOString(),
+        });
+        continue;
+      }
+      const missingDep = step.depends_on.find((d) => !(d in outputs));
+      if (missingDep) {
+        failed = true;
+        error = `Missing dependency output: ${missingDep}`;
+        results.push({
+          step_id: step.step_id,
+          status: "failed",
+          error,
+          startedAt: new Date().toISOString(),
+          finishedAt: new Date().toISOString(),
+        });
+        continue;
+      }
+
+      const { result, body } = await runDbStep(connectCfg, step, outputs);
+      results.push(result);
+      if (result.status === "success") {
+        outputs[step.step_id] = body;
+      } else {
+        failed = true;
+        error = result.error || "Step failed";
+      }
     }
 
-    const { result, body } = await runDbStep(cfg, step, outputs);
-    results.push(result);
-    if (result.status === "success") {
-      outputs[step.step_id] = body;
-    } else {
-      failed = true;
-      error = result.error || "Step failed";
-    }
-  }
+    const successCount = results.filter((r) => r.status === "success").length;
+    let status: CreateDataBatch["status"] = "success";
+    if (failed && successCount === 0) status = "failed";
+    else if (failed) status = "partial";
 
-  const successCount = results.filter((r) => r.status === "success").length;
-  let status: CreateDataBatch["status"] = "success";
-  if (failed && successCount === 0) status = "failed";
-  else if (failed) status = "partial";
-
-  return { results, status, error };
+    return { results, status, error };
+  });
 }
 
 function rollbackFilterFor(
@@ -246,36 +260,38 @@ export async function rollbackBatchSteps(
   batch: CreateDataBatch,
   cfg: BaDbConnectionResolved,
 ): Promise<CreateDataStepResult[]> {
-  assertSafeDbHost(cfg.host);
-  const out: CreateDataStepResult[] = [];
-  const success = [...batch.results]
-    .filter((r) => r.status === "success" && r.createdId)
-    .reverse();
+  assertSafeCreateDataTarget(cfg);
+  return withBaDbResolvedConnection(cfg, async (connectCfg) => {
+    const out: CreateDataStepResult[] = [];
+    const success = [...batch.results]
+      .filter((r) => r.status === "success" && r.createdId)
+      .reverse();
 
-  for (const r of success) {
-    const plan = batch.steps.find((s) => s.step_id === r.step_id);
-    const wantRollback = plan?.rollback !== false && plan?.op === "insert";
-    if (!wantRollback || !r.createdId) {
-      out.push({
-        step_id: r.step_id,
-        status: "skipped",
-        error: "No DB rollback for this step",
-      });
-      continue;
+    for (const r of success) {
+      const plan = batch.steps.find((s) => s.step_id === r.step_id);
+      const wantRollback = plan?.rollback !== false && plan?.op === "insert";
+      if (!wantRollback || !r.createdId) {
+        out.push({
+          step_id: r.step_id,
+          status: "skipped",
+          error: "No DB rollback for this step",
+        });
+        continue;
+      }
+      const fakeStep: CreateDataStepPlan = {
+        step_id: `rollback_${r.step_id}`,
+        description: `Rollback ${r.step_id}`,
+        op: "delete",
+        collection: plan.collection,
+        data: null,
+        filter: rollbackFilterFor(connectCfg.dialect, r.createdId),
+        depends_on: [],
+      };
+      const { result } = await runDbStep(connectCfg, fakeStep, {});
+      out.push({ ...result, step_id: r.step_id });
     }
-    const fakeStep: CreateDataStepPlan = {
-      step_id: `rollback_${r.step_id}`,
-      description: `Rollback ${r.step_id}`,
-      op: "delete",
-      collection: plan.collection,
-      data: null,
-      filter: rollbackFilterFor(cfg.dialect, r.createdId),
-      depends_on: [],
-    };
-    const { result } = await runDbStep(cfg, fakeStep, {});
-    out.push({ ...result, step_id: r.step_id });
-  }
-  return out;
+    return out;
+  });
 }
 
 export function isCreateDataDbOp(raw: unknown): raw is CreateDataDbOp {

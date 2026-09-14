@@ -32,7 +32,9 @@ import { scheduleProjectGraphify } from "../../workspace/graphify.js";
 import { AppError } from "../../utils/AppError.js";
 import { logger } from "../../logger.js";
 import { testBaDbConnection } from "../../plugins/baDb/query.js";
+import { withBaDbResolvedConnection } from "../../plugins/baDb/withTunnel.js";
 import { listCursorModelsForApiKey } from "../../plugins/cursor/modelList.js";
+import { assertSafeCreateDataTarget } from "../createData/executor.js";
 
 export async function adminListBaProjects() {
   return (await listBaProjects()).map(toPublicBaProject);
@@ -99,6 +101,51 @@ function parseDbPatch(raw: unknown): BaDbConnectionPatch | undefined {
     patch.password = String(b.password);
   }
   if (b.ssl !== undefined) patch.ssl = Boolean(b.ssl);
+  if (b.ssh !== undefined) {
+    if (b.ssh === null) {
+      patch.ssh = { clear: true };
+    } else if (typeof b.ssh === "object") {
+      const s = b.ssh as Record<string, unknown>;
+      if (s.clear === true) {
+        patch.ssh = { clear: true };
+      } else {
+        const ssh: NonNullable<BaDbConnectionPatch["ssh"]> = {};
+        if (s.enabled !== undefined) ssh.enabled = Boolean(s.enabled);
+        if (s.sshHost !== undefined) ssh.sshHost = String(s.sshHost);
+        if (s.sshPort !== undefined) {
+          const n = Number(s.sshPort);
+          if (!Number.isFinite(n) || n <= 0) {
+            throw new AppError("db.ssh.sshPort invalid", 400);
+          }
+          ssh.sshPort = Math.floor(n);
+        }
+        if (s.sshUsername !== undefined) {
+          ssh.sshUsername = String(s.sshUsername);
+        }
+        if (s.sshPassword !== undefined && String(s.sshPassword).length > 0) {
+          ssh.sshPassword = String(s.sshPassword);
+        }
+        if (
+          s.sshPrivateKey !== undefined &&
+          String(s.sshPrivateKey).length > 0
+        ) {
+          ssh.sshPrivateKey = String(s.sshPrivateKey);
+        }
+        if (s.clearSshPassword === true) ssh.clearSshPassword = true;
+        if (s.clearSshPrivateKey === true) ssh.clearSshPrivateKey = true;
+        if (s.tunnelLocalPort !== undefined) {
+          const n = Number(s.tunnelLocalPort);
+          if (!Number.isFinite(n) || n <= 0) {
+            throw new AppError("db.ssh.tunnelLocalPort invalid", 400);
+          }
+          ssh.tunnelLocalPort = Math.floor(n);
+        }
+        patch.ssh = ssh;
+      }
+    } else {
+      throw new AppError("db.ssh must be an object", 400);
+    }
+  }
   return patch;
 }
 
@@ -201,11 +248,15 @@ export async function adminTestBaCreateDataDb(idRaw: string) {
     );
   }
   try {
-    const result = await testBaDbConnection(cfg);
+    assertSafeCreateDataTarget(cfg);
+    const result = await withBaDbResolvedConnection(cfg, (connectCfg) =>
+      testBaDbConnection(connectCfg),
+    );
     return {
       ok: true as const,
       dialect: result.dialect,
       elapsedMs: result.elapsedMs,
+      viaSsh: Boolean(cfg.ssh?.enabled && cfg.ssh.sshHost),
     };
   } catch (err) {
     throw new AppError(

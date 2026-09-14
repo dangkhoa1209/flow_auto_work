@@ -10,7 +10,7 @@ import {
   toPublicBaDb,
 } from "../../workspace/baStore.js";
 import {
-  assertSafeDbHost,
+  assertSafeCreateDataTarget,
   assertSafeEnvironment,
   executeBatchSteps,
   isCreateDataDbOp,
@@ -176,7 +176,7 @@ async function requireWriteDb(baProjectId: string): Promise<{
       "create_data_db_unavailable",
     );
   }
-  assertSafeDbHost(cfg.host);
+  assertSafeCreateDataTarget(cfg);
   return {
     cfg,
     snapshot: {

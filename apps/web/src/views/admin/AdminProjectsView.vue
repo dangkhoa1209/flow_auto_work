@@ -5,6 +5,17 @@ import { MoreOutlined } from "@ant-design/icons-vue";
 import { api } from "@/api/client";
 import { API } from "@/api/endpoints";
 
+type BaDbSshPublic = {
+  enabled: boolean;
+  configured: boolean;
+  sshHost: string | null;
+  sshPort: number;
+  sshUsername: string | null;
+  hasSshPassword: boolean;
+  hasSshPrivateKey: boolean;
+  tunnelLocalPort: number;
+};
+
 type BaDbPublic = {
   configured: boolean;
   enabled: boolean;
@@ -14,6 +25,7 @@ type BaDbPublic = {
   database: string | null;
   username: string | null;
   ssl: boolean;
+  ssh?: BaDbSshPublic | null;
   updatedAt: string | null;
 };
 
@@ -76,8 +88,6 @@ const seedSaving = ref(false);
 const seedTesting = ref(false);
 const seedForm = reactive({
   enabled: false,
-  notes: "",
-  dbEnabled: false,
   dialect: "mysql" as "mysql" | "postgres" | "mongodb",
   host: "",
   port: 3306,
@@ -85,6 +95,15 @@ const seedForm = reactive({
   username: "",
   password: "",
   ssl: false,
+  sshEnabled: false,
+  sshHost: "",
+  sshPort: 22,
+  sshUsername: "",
+  sshPassword: "",
+  sshPrivateKey: "",
+  clearSshPassword: false,
+  clearSshPrivateKey: false,
+  tunnelLocalPort: 13306,
 });
 
 const gitlabProjects = ref<
@@ -185,8 +204,6 @@ function resetDbForm() {
 function resetSeedForm() {
   seedEditingId.value = null;
   seedForm.enabled = false;
-  seedForm.notes = "";
-  seedForm.dbEnabled = false;
   seedForm.dialect = "mysql";
   seedForm.host = "";
   seedForm.port = 3306;
@@ -194,6 +211,15 @@ function resetSeedForm() {
   seedForm.username = "";
   seedForm.password = "";
   seedForm.ssl = false;
+  seedForm.sshEnabled = false;
+  seedForm.sshHost = "";
+  seedForm.sshPort = 22;
+  seedForm.sshUsername = "";
+  seedForm.sshPassword = "";
+  seedForm.sshPrivateKey = "";
+  seedForm.clearSshPassword = false;
+  seedForm.clearSshPrivateKey = false;
+  seedForm.tunnelLocalPort = 13306;
 }
 
 async function load() {
@@ -246,10 +272,10 @@ function openSeed(p: BaProject) {
   resetDbForm();
   seedEditingId.value = p.id;
   const c = p.createData;
-  seedForm.enabled = Boolean(c?.enabled);
-  seedForm.notes = c?.notes || "";
   const d = c?.db;
-  seedForm.dbEnabled = Boolean(d?.enabled);
+  const ssh = d?.ssh;
+  // One Active switch (same UX as Connect DB) drives feature + seed db.enabled.
+  seedForm.enabled = Boolean(c?.enabled || d?.enabled);
   seedForm.dialect = d?.dialect || "mysql";
   seedForm.host = d?.host || "";
   seedForm.port =
@@ -259,6 +285,16 @@ function openSeed(p: BaProject) {
   seedForm.username = d?.username || "";
   seedForm.password = "";
   seedForm.ssl = Boolean(d?.ssl);
+  seedForm.sshEnabled = Boolean(ssh?.enabled);
+  seedForm.sshHost = ssh?.sshHost || "";
+  seedForm.sshPort = ssh?.sshPort || 22;
+  seedForm.sshUsername = ssh?.sshUsername || "";
+  seedForm.sshPassword = "";
+  seedForm.sshPrivateKey = "";
+  seedForm.clearSshPassword = false;
+  seedForm.clearSshPrivateKey = false;
+  seedForm.tunnelLocalPort =
+    ssh?.tunnelLocalPort || defaultTunnelPort(seedForm.dialect);
 }
 
 function onSeedDialectChange(v: "mysql" | "postgres" | "mongodb") {
@@ -267,15 +303,22 @@ function onSeedDialectChange(v: "mysql" | "postgres" | "mongodb") {
   if (!seedForm.port || known.includes(Number(seedForm.port))) {
     seedForm.port = defaultPort(v);
   }
+  const knownTunnel = [13306, 15432, 27019];
+  if (
+    !seedForm.tunnelLocalPort ||
+    knownTunnel.includes(Number(seedForm.tunnelLocalPort))
+  ) {
+    seedForm.tunnelLocalPort = defaultTunnelPort(v);
+  }
 }
 
 function copySeedFromConnectDb() {
   const d = seedEditingProject.value?.db;
   if (!d?.configured) {
-    message.warning("Project Connect DB chưa cấu hình — không copy được");
+    message.warning("Project Connect DB is not configured");
     return;
   }
-  seedForm.dbEnabled = Boolean(d.enabled);
+  seedForm.enabled = Boolean(d.enabled);
   seedForm.dialect = d.dialect || "mysql";
   seedForm.host = d.host || "";
   seedForm.port =
@@ -285,8 +328,9 @@ function copySeedFromConnectDb() {
   seedForm.username = d.username || "";
   seedForm.password = "";
   seedForm.ssl = Boolean(d.ssl);
+  // SSH stays as-is (Connect DB has no SSH) — turn on and fill if needed.
   message.info(
-    "Đã copy host/DB từ Connect DB (Sync target) — nhập lại password rồi Save",
+    "Copied DB fields from Connect DB — enter password; configure SSH tunnel if needed, then Save",
   );
 }
 
@@ -294,6 +338,42 @@ function defaultPort(dialect: "mysql" | "postgres" | "mongodb") {
   if (dialect === "postgres") return 5432;
   if (dialect === "mongodb") return 27017;
   return 3306;
+}
+
+function defaultTunnelPort(dialect: "mysql" | "postgres" | "mongodb") {
+  if (dialect === "postgres") return 15432;
+  if (dialect === "mongodb") return 27019;
+  return 13306;
+}
+
+function buildSeedDbPayload(): Record<string, unknown> {
+  const db: Record<string, unknown> = {
+    enabled: seedForm.enabled,
+    dialect: seedForm.dialect,
+    host: seedForm.host.trim(),
+    port: Number(seedForm.port) || defaultPort(seedForm.dialect),
+    database: seedForm.database.trim(),
+    username: seedForm.username.trim(),
+    ssl: seedForm.ssl,
+  };
+  if (seedForm.password.trim()) db.password = seedForm.password.trim();
+
+  const ssh: Record<string, unknown> = {
+    enabled: seedForm.sshEnabled,
+    sshHost: seedForm.sshHost.trim(),
+    sshPort: Number(seedForm.sshPort) || 22,
+    sshUsername: seedForm.sshUsername.trim(),
+    tunnelLocalPort:
+      Number(seedForm.tunnelLocalPort) || defaultTunnelPort(seedForm.dialect),
+  };
+  if (seedForm.sshPassword.trim()) ssh.sshPassword = seedForm.sshPassword.trim();
+  if (seedForm.sshPrivateKey.trim()) {
+    ssh.sshPrivateKey = seedForm.sshPrivateKey;
+  }
+  if (seedForm.clearSshPassword) ssh.clearSshPassword = true;
+  if (seedForm.clearSshPrivateKey) ssh.clearSshPrivateKey = true;
+  db.ssh = ssh;
+  return db;
 }
 
 function onDialectChange(v: "mysql" | "postgres" | "mongodb") {
@@ -482,70 +562,55 @@ async function saveDb() {
 
 async function saveSeed() {
   if (!seedEditingId.value) return;
-  const fillingSeedDb =
-    seedForm.host.trim() ||
-    seedForm.database.trim() ||
-    seedForm.dbEnabled ||
-    seedForm.password.trim();
-  if (seedForm.enabled && !fillingSeedDb) {
-    const seedConfigured =
-      seedEditingProject.value?.createData?.db?.configured;
-    const projectDb = seedEditingProject.value?.db;
-    if (
-      !seedConfigured &&
-      !(projectDb?.configured && projectDb.enabled)
-    ) {
-      message.warning(
-        "Cần Seed Connect (form bên dưới) hoặc project Connect DB (Sync target) trước khi bật",
-      );
-      return;
-    }
+  if (!seedForm.host.trim() || !seedForm.database.trim()) {
+    message.warning("Host and database required");
+    return;
   }
-  if (fillingSeedDb) {
-    if (!seedForm.host.trim() || !seedForm.database.trim()) {
-      message.warning("Host and database required for seed Connect");
+  const isMongo = seedForm.dialect === "mongodb";
+  if (!isMongo && !seedForm.username.trim()) {
+    message.warning("Username required");
+    return;
+  }
+  const existing = seedEditingProject.value?.createData?.db?.configured;
+  if (!isMongo && !existing && !seedForm.password.trim()) {
+    message.warning("Password required for first setup");
+    return;
+  }
+  if (seedForm.sshEnabled) {
+    if (!seedForm.sshHost.trim() || !seedForm.sshUsername.trim()) {
+      message.warning("SSH host and username required when SSH tunnel is on");
       return;
     }
-    const isMongo = seedForm.dialect === "mongodb";
-    if (!isMongo && !seedForm.username.trim()) {
-      message.warning("Username required");
-      return;
-    }
-    const existing = seedEditingProject.value?.createData?.db?.configured;
-    if (!isMongo && !existing && !seedForm.password.trim()) {
-      message.warning("Password required for first seed Connect setup");
+    const sshExisting = seedEditingProject.value?.createData?.db?.ssh;
+    const hasAuth =
+      seedForm.sshPassword.trim() ||
+      seedForm.sshPrivateKey.trim() ||
+      (sshExisting?.hasSshPassword && !seedForm.clearSshPassword) ||
+      (sshExisting?.hasSshPrivateKey && !seedForm.clearSshPrivateKey);
+    if (!hasAuth) {
+      message.warning("SSH password or private key required when tunnel is on");
       return;
     }
   }
   seedSaving.value = true;
   try {
-    const createData: Record<string, unknown> = {
-      enabled: seedForm.enabled,
-      targets: [],
-      notes: seedForm.notes.trim() || null,
-    };
-    if (seedForm.host.trim() && seedForm.database.trim()) {
-      const db: Record<string, unknown> = {
-        enabled: seedForm.dbEnabled,
-        dialect: seedForm.dialect,
-        host: seedForm.host.trim(),
-        port: Number(seedForm.port) || defaultPort(seedForm.dialect),
-        database: seedForm.database.trim(),
-        username: seedForm.username.trim(),
-        ssl: seedForm.ssl,
-      };
-      if (seedForm.password.trim()) db.password = seedForm.password.trim();
-      createData.db = db;
-    }
-
     await api(API.admin.baProject(seedEditingId.value), {
       method: "PATCH",
-      body: JSON.stringify({ createData }),
+      body: JSON.stringify({
+        createData: {
+          enabled: seedForm.enabled,
+          targets: [],
+          notes: seedEditingProject.value?.createData?.notes ?? null,
+          db: buildSeedDbPayload(),
+        },
+      }),
     });
     message.success(
       seedForm.enabled
-        ? "Create Data enabled — writes seed Connect DB"
-        : "Create Data saved (inactive)",
+        ? seedForm.sshEnabled
+          ? "DB saved & active — Create Data writes via SSH tunnel"
+          : "DB saved & active — Create Data can write seed Connect"
+        : "DB saved (inactive)",
     );
     resetSeedForm();
     await load();
@@ -563,7 +628,7 @@ async function testSeedDb() {
     seedForm.dialect !== "mongodb" &&
     !seedForm.password.trim()
   ) {
-    message.warning("Save seed Connect credentials first, then test");
+    message.warning("Save DB credentials first, then test");
     return;
   }
   if (!seedForm.host.trim() || !seedForm.database.trim()) {
@@ -581,23 +646,13 @@ async function testSeedDb() {
         seedEditingProject.value?.createData?.db?.configured ||
         seedForm.password.trim());
     if (canSave) {
-      const db: Record<string, unknown> = {
-        enabled: seedForm.dbEnabled,
-        dialect: seedForm.dialect,
-        host: seedForm.host.trim(),
-        port: Number(seedForm.port) || defaultPort(seedForm.dialect),
-        database: seedForm.database.trim(),
-        username: seedForm.username.trim(),
-        ssl: seedForm.ssl,
-      };
-      if (seedForm.password.trim()) db.password = seedForm.password.trim();
       await api(API.admin.baProject(seedEditingId.value), {
         method: "PATCH",
         body: JSON.stringify({
           createData: {
             enabled: seedForm.enabled,
-            notes: seedForm.notes.trim() || null,
-            db,
+            notes: seedEditingProject.value?.createData?.notes ?? null,
+            db: buildSeedDbPayload(),
           },
         }),
       });
@@ -607,12 +662,15 @@ async function testSeedDb() {
       ok?: boolean;
       elapsedMs?: number;
       dialect?: string;
+      viaSsh?: boolean;
     }>(API.admin.baTestCreateDataDb(seedEditingId.value), {
       method: "POST",
       body: "{}",
     });
     message.success(
-      `Seed Connect OK (${res.dialect || seedForm.dialect}, ${res.elapsedMs ?? "?"}ms)`,
+      `Connection OK (${res.dialect || seedForm.dialect}${
+        res.viaSsh ? " via SSH" : ""
+      }, ${res.elapsedMs ?? "?"}ms)`,
     );
   } catch (e) {
     message.error(e instanceof Error ? e.message : String(e));
@@ -624,9 +682,9 @@ async function testSeedDb() {
 function clearSeedDb() {
   if (!seedEditingId.value) return;
   Modal.confirm({
-    title: "Remove Create Data Connect?",
+    title: "Remove DB connection?",
     content:
-      "Encrypted seed credentials will be deleted. Create Data cannot execute until reconfigured.",
+      "Encrypted credentials will be deleted. Create Data cannot execute until reconfigured.",
     okType: "danger",
     onOk: async () => {
       await api(API.admin.baProject(seedEditingId.value!), {
@@ -634,12 +692,12 @@ function clearSeedDb() {
         body: JSON.stringify({
           createData: {
             enabled: seedForm.enabled,
-            notes: seedForm.notes.trim() || null,
+            notes: seedEditingProject.value?.createData?.notes ?? null,
             db: { clear: true },
           },
         }),
       });
-      message.success("Create Data Connect removed");
+      message.success("DB connection removed");
       resetSeedForm();
       await load();
     },
@@ -821,8 +879,11 @@ function seedTag(record: BaProject): { label: string; color: string } {
     return { label: "Not configured", color: "default" };
   }
   if (record.createData?.enabled && record.createData?.db?.enabled) {
+    const viaSsh = record.createData.db.ssh?.enabled
+      ? " · SSH"
+      : "";
     return {
-      label: `ON · ${record.createData.db.dialect || "db"}`,
+      label: `ON · ${record.createData.db.dialect || "db"}${viaSsh}`,
       color: "green",
     };
   }
@@ -1120,36 +1181,19 @@ onUnmounted(() => {
       class="mb-6 p-4 rounded-lg border border-line bg-surface-raised shadow-sm"
     >
       <h2 class="text-base font-semibold text-ink mt-0 mb-1">
-        Create Data — {{ seedEditingProject?.displayName || seedEditingId }}
+        Create Data DB — {{ seedEditingProject?.displayName || seedEditingId }}
       </h2>
       <p class="text-xs text-ink-muted mt-0 mb-3">
-        Bật Create Data để Seed Planner / Execute
-        <strong class="text-ink font-medium">ghi thẳng Connect seed DB</strong>
-        (insert / update / delete). Form Connect riêng — thường trùng host/DB với
-        Sync target, <strong class="text-ink font-medium">không</strong> dùng
-        Sync system (SSH/source). Production bị chặn cứng (env label + host có
-        chữ prod).
+        Password is encrypted with AES-GCM (FLOW_SECRETS_KEY). Only when
+        <strong class="text-ink font-medium">Active</strong> can Create Data
+        execute insert / update / delete — credentials are never exposed to the agent shell.
+        Optional <strong class="text-ink font-medium">SSH tunnel</strong> (own credentials,
+        not Sync system). Host/Port below = DB as seen from the SSH server (often localhost).
       </p>
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <label class="flex flex-col gap-1 text-sm sm:col-span-2">
-          <span class="text-ink-muted">Active (cho phép ghi từ tab Create Data)</span>
+          <span class="text-ink-muted">Active (allow Create Data writes)</span>
           <a-switch v-model:checked="seedForm.enabled" />
-        </label>
-
-        <div class="sm:col-span-2 flex flex-wrap items-center gap-2 pt-1">
-          <span class="text-sm font-medium text-ink">Seed Connect DB</span>
-          <button
-            type="button"
-            class="px-2 py-0.5 text-xs border border-line rounded-md hover:border-accent"
-            @click="copySeedFromConnectDb"
-          >
-            Copy from project Connect DB
-          </button>
-        </div>
-
-        <label class="flex flex-col gap-1 text-sm sm:col-span-2">
-          <span class="text-ink-muted">Seed Connect Active</span>
-          <a-switch v-model:checked="seedForm.dbEnabled" />
         </label>
         <label class="flex flex-col gap-1 text-sm">
           <span class="text-ink-muted">Dialect</span>
@@ -1169,52 +1213,134 @@ onUnmounted(() => {
           <a-input-number v-model:value="seedForm.port" class="w-full" :min="1" />
         </label>
         <label class="flex flex-col gap-1 text-sm sm:col-span-2">
-          <span class="text-ink-muted">Host</span>
-          <a-input
-            v-model:value="seedForm.host"
-            placeholder="staging-db.example.com (blocked if contains prod)"
-          />
+          <span class="text-ink-muted">
+            Host
+            <em v-if="seedForm.sshEnabled">(remote DB from SSH — often localhost)</em>
+          </span>
+          <a-input v-model:value="seedForm.host" placeholder="db.example.com" />
         </label>
-        <label class="flex flex-col gap-1 text-sm sm:col-span-2">
+        <label class="flex flex-col gap-1 text-sm">
           <span class="text-ink-muted">Database</span>
-          <a-input v-model:value="seedForm.database" placeholder="app_staging" />
+          <a-input v-model:value="seedForm.database" placeholder="app_db" />
         </label>
         <label class="flex flex-col gap-1 text-sm">
           <span class="text-ink-muted">
             Username
             <em v-if="seedForm.dialect === 'mongodb'">(optional if no auth)</em>
           </span>
-          <a-input v-model:value="seedForm.username" placeholder="seed_user" />
+          <a-input v-model:value="seedForm.username" placeholder="app_user" />
         </label>
-        <label class="flex flex-col gap-1 text-sm">
+        <label class="flex flex-col gap-1 text-sm sm:col-span-2">
           <span class="text-ink-muted">
             Password
-            <template v-if="seedEditingProject?.createData?.db?.configured">
-              <span class="text-emerald-600">(set — leave blank to keep)</span>
+            <template v-if="seedForm.dialect === 'mongodb'">
+              (optional if no auth
+              {{
+                seedEditingProject?.createData?.db?.configured
+                  ? "; blank = keep old"
+                  : ""
+              }})
+            </template>
+            <template v-else-if="seedEditingProject?.createData?.db?.configured">
+              (leave blank to keep current password)
             </template>
           </span>
           <a-input-password
             v-model:value="seedForm.password"
             placeholder="••••••••"
-            autocomplete="new-password"
           />
         </label>
         <label class="flex items-center gap-2 text-sm sm:col-span-2">
           <a-checkbox v-model:checked="seedForm.ssl" />
-          <span class="text-ink-muted">SSL / TLS</span>
+          <span class="text-ink-muted">Use SSL</span>
         </label>
+      </div>
 
+      <a-divider class="!my-4" />
+
+      <div class="flex items-center justify-between gap-3 mb-3">
+        <div>
+          <div class="text-sm font-medium text-ink">SSH tunnel (live server)</div>
+          <div class="text-xs text-ink-muted">
+            Local forward → remote DB Host/Port above. Separate from Admin → Sync DB.
+          </div>
+        </div>
+        <a-switch v-model:checked="seedForm.sshEnabled" />
+      </div>
+      <div
+        v-if="seedForm.sshEnabled"
+        class="grid grid-cols-1 sm:grid-cols-2 gap-3"
+      >
+        <label class="flex flex-col gap-1 text-sm">
+          <span class="text-ink-muted">SSH Host</span>
+          <a-input v-model:value="seedForm.sshHost" placeholder="bastion.example.com" />
+        </label>
+        <label class="flex flex-col gap-1 text-sm">
+          <span class="text-ink-muted">SSH Port</span>
+          <a-input-number
+            v-model:value="seedForm.sshPort"
+            class="w-full"
+            :min="1"
+            :max="65535"
+          />
+        </label>
+        <label class="flex flex-col gap-1 text-sm sm:col-span-2">
+          <span class="text-ink-muted">SSH Username</span>
+          <a-input v-model:value="seedForm.sshUsername" placeholder="ops" />
+        </label>
         <label class="flex flex-col gap-1 text-sm sm:col-span-2">
           <span class="text-ink-muted">
-            Notes (ngữ cảnh server / DB — hiện cho AI + operator)
+            SSH Password
+            <span
+              v-if="seedEditingProject?.createData?.db?.ssh?.hasSshPassword"
+              class="text-emerald-600"
+            >(set)</span>
+          </span>
+          <a-input-password
+            v-model:value="seedForm.sshPassword"
+            placeholder="Leave blank to keep"
+          />
+          <label
+            v-if="seedEditingProject?.createData?.db?.ssh?.hasSshPassword"
+            class="flex items-center gap-2 text-xs text-ink-muted mt-1"
+          >
+            <a-checkbox v-model:checked="seedForm.clearSshPassword" />
+            Clear saved SSH password
+          </label>
+        </label>
+        <label class="flex flex-col gap-1 text-sm sm:col-span-2">
+          <span class="text-ink-muted">
+            Private key (optional, instead of password)
+            <span
+              v-if="seedEditingProject?.createData?.db?.ssh?.hasSshPrivateKey"
+              class="text-emerald-600"
+            >(set)</span>
           </span>
           <a-textarea
-            v-model:value="seedForm.notes"
-            :rows="2"
-            placeholder="vd. Staging Mongo tenant_demo (seed Connect)"
+            v-model:value="seedForm.sshPrivateKey"
+            :rows="3"
+            placeholder="Leave blank to keep"
+            class="font-mono text-xs"
+          />
+          <label
+            v-if="seedEditingProject?.createData?.db?.ssh?.hasSshPrivateKey"
+            class="flex items-center gap-2 text-xs text-ink-muted mt-1"
+          >
+            <a-checkbox v-model:checked="seedForm.clearSshPrivateKey" />
+            Clear saved private key
+          </label>
+        </label>
+        <label class="flex flex-col gap-1 text-sm sm:col-span-2">
+          <span class="text-ink-muted">Local tunnel port</span>
+          <a-input-number
+            v-model:value="seedForm.tunnelLocalPort"
+            class="w-full"
+            :min="1024"
+            :max="65535"
           />
         </label>
       </div>
+
       <div class="flex flex-wrap gap-2 pt-4">
         <button
           type="button"
@@ -1222,7 +1348,7 @@ onUnmounted(() => {
           :disabled="seedSaving"
           @click="saveSeed"
         >
-          {{ seedSaving ? "Saving…" : "Save Create Data" }}
+          {{ seedSaving ? "Saving…" : "Save DB" }}
         </button>
         <button
           type="button"
@@ -1238,7 +1364,14 @@ onUnmounted(() => {
           class="px-3 py-1.5 text-sm text-red-600 border border-line rounded-md"
           @click="clearSeedDb"
         >
-          Remove seed Connect
+          Remove DB
+        </button>
+        <button
+          type="button"
+          class="px-3 py-1.5 text-sm border border-line rounded-md hover:border-accent"
+          @click="copySeedFromConnectDb"
+        >
+          Copy from Connect DB
         </button>
         <button
           type="button"

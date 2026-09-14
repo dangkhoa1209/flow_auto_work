@@ -78,7 +78,9 @@ const seedHint = computed(() => {
   const d = effectiveDb.value;
   const via =
     seed?.configured && seed.enabled
-      ? "seed Connect"
+      ? seed.ssh?.enabled
+        ? "seed Connect (SSH tunnel)"
+        : "seed Connect"
       : "project Connect (Sync target fallback)";
   const parts = [
     d ? `Target: ${d.dialect} ${d.database} · ${via}` : null,
