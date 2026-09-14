@@ -63,4 +63,6 @@ export type CreateDataPlanResponse = {
   steps: CreateDataStepPlan[];
   questions: string[];
   notes: string[];
+  planner?: "ai" | "heuristic";
+  suggestedApiBaseUrl?: string | null;
 };

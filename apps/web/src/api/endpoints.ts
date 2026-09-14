@@ -108,6 +108,7 @@ export const API = {
     },
     createData: {
       plan: "/api/ba/create-data/plan",
+      planStop: "/api/ba/create-data/plan/stop",
       batches: "/api/ba/create-data/batches",
       batch: (id: string) =>
         `/api/ba/create-data/batches/${encodeURIComponent(id)}`,

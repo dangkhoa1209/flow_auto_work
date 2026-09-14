@@ -125,7 +125,7 @@ export class JobQueue {
   ): boolean {
     const me = (viewer.ownerUsername || "").trim().toLowerCase();
     const project = (viewer.workspaceProjectId || "").trim();
-    if (ev.type.startsWith("ba_")) {
+    if (ev.type.startsWith("ba_") || ev.type.startsWith("create_data_")) {
       if (!me || !ev.userId) return true;
       return ev.userId.trim().toLowerCase() === me;
     }

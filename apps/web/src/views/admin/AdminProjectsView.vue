@@ -17,6 +17,18 @@ type BaDbPublic = {
   updatedAt: string | null;
 };
 
+type BaCreateDataPublic = {
+  configured: boolean;
+  enabled: boolean;
+  targets: Array<{
+    environment: "local" | "development" | "staging";
+    apiBaseUrl: string;
+    label?: string;
+  }>;
+  notes: string | null;
+  updatedAt: string | null;
+};
+
 type BaProject = {
   id: string;
   slug: string;
@@ -29,6 +41,7 @@ type BaProject = {
   cloneError: string | null;
   hasGitlabToken: boolean;
   db?: BaDbPublic;
+  createData?: BaCreateDataPublic;
 };
 
 const loading = ref(false);
@@ -56,6 +69,16 @@ const dbForm = reactive({
   ssl: false,
 });
 
+const seedEditingId = ref<string | null>(null);
+const seedSaving = ref(false);
+const seedForm = reactive({
+  enabled: false,
+  localUrl: "",
+  developmentUrl: "",
+  stagingUrl: "",
+  notes: "",
+});
+
 const gitlabProjects = ref<
   Array<{ pathWithNamespace: string; name?: string; id?: number }>
 >([]);
@@ -78,6 +101,7 @@ const columns = [
   { title: "Clone path", key: "path", width: 240 },
   { title: "Clone", key: "clone", width: 100 },
   { title: "DB", key: "db", width: 120 },
+  { title: "Create Data", key: "seed", width: 120 },
   { title: "", key: "actions", width: 52, align: "right" as const, fixed: "right" as const },
 ];
 
@@ -114,6 +138,10 @@ const dbEditingProject = computed(() =>
   projects.value.find((p) => p.id === dbEditingId.value) || null,
 );
 
+const seedEditingProject = computed(() =>
+  projects.value.find((p) => p.id === seedEditingId.value) || null,
+);
+
 function filterSelectOption(
   input: string,
   option?: { label?: string },
@@ -144,6 +172,15 @@ function resetDbForm() {
   dbForm.username = "";
   dbForm.password = "";
   dbForm.ssl = false;
+}
+
+function resetSeedForm() {
+  seedEditingId.value = null;
+  seedForm.enabled = false;
+  seedForm.localUrl = "";
+  seedForm.developmentUrl = "";
+  seedForm.stagingUrl = "";
+  seedForm.notes = "";
 }
 
 async function load() {
@@ -177,6 +214,7 @@ function openEdit(p: BaProject) {
 }
 
 function openDb(p: BaProject) {
+  resetSeedForm();
   dbEditingId.value = p.id;
   const d = p.db;
   dbForm.enabled = Boolean(d?.enabled);
@@ -189,6 +227,20 @@ function openDb(p: BaProject) {
   dbForm.username = d?.username || "";
   dbForm.password = "";
   dbForm.ssl = Boolean(d?.ssl);
+}
+
+function openSeed(p: BaProject) {
+  resetDbForm();
+  seedEditingId.value = p.id;
+  const c = p.createData;
+  seedForm.enabled = Boolean(c?.enabled);
+  seedForm.localUrl =
+    c?.targets.find((t) => t.environment === "local")?.apiBaseUrl || "";
+  seedForm.developmentUrl =
+    c?.targets.find((t) => t.environment === "development")?.apiBaseUrl || "";
+  seedForm.stagingUrl =
+    c?.targets.find((t) => t.environment === "staging")?.apiBaseUrl || "";
+  seedForm.notes = c?.notes || "";
 }
 
 function defaultPort(dialect: "mysql" | "postgres" | "mongodb") {
@@ -381,6 +433,60 @@ async function saveDb() {
   }
 }
 
+async function saveSeed() {
+  if (!seedEditingId.value) return;
+  const targets: Array<{
+    environment: "local" | "development" | "staging";
+    apiBaseUrl: string;
+  }> = [];
+  if (seedForm.localUrl.trim()) {
+    targets.push({
+      environment: "local",
+      apiBaseUrl: seedForm.localUrl.trim(),
+    });
+  }
+  if (seedForm.developmentUrl.trim()) {
+    targets.push({
+      environment: "development",
+      apiBaseUrl: seedForm.developmentUrl.trim(),
+    });
+  }
+  if (seedForm.stagingUrl.trim()) {
+    targets.push({
+      environment: "staging",
+      apiBaseUrl: seedForm.stagingUrl.trim(),
+    });
+  }
+  if (seedForm.enabled && !targets.length) {
+    message.warning("Add at least one API base URL (local / development / staging)");
+    return;
+  }
+  seedSaving.value = true;
+  try {
+    await api(API.admin.baProject(seedEditingId.value), {
+      method: "PATCH",
+      body: JSON.stringify({
+        createData: {
+          enabled: seedForm.enabled,
+          targets,
+          notes: seedForm.notes.trim() || null,
+        },
+      }),
+    });
+    message.success(
+      seedForm.enabled
+        ? "Create Data targets saved & active"
+        : "Create Data targets saved (inactive)",
+    );
+    resetSeedForm();
+    await load();
+  } catch (e) {
+    message.error(e instanceof Error ? e.message : String(e));
+  } finally {
+    seedSaving.value = false;
+  }
+}
+
 async function testDb() {
   if (!dbEditingId.value) return;
   if (
@@ -551,9 +657,26 @@ function dbTag(record: BaProject): { label: string; color: string } {
   return { label: `Off · ${record.db.dialect}`, color: "orange" };
 }
 
+function seedTag(record: BaProject): { label: string; color: string } {
+  if (!record.createData?.configured) {
+    return { label: "Not configured", color: "default" };
+  }
+  if (record.createData.enabled) {
+    return {
+      label: `ON · ${record.createData.targets.length} env`,
+      color: "green",
+    };
+  }
+  return {
+    label: `Off · ${record.createData.targets.length} env`,
+    color: "orange",
+  };
+}
+
 function onProjectAction(key: string, record: BaProject) {
   if (key === "edit") openEdit(record);
   else if (key === "db") openDb(record);
+  else if (key === "seed") openSeed(record);
   else if (key === "clone") confirmClone(record);
   else if (key === "delete") confirmDelete(record);
 }
@@ -581,7 +704,7 @@ onUnmounted(() => {
           Configure BA Chat projects — GitLab PAT → pick repo → main branch.
           Clones into
           <code class="text-xs">project/_ba/&lt;slug&gt;/source</code>.
-          Optional read-only DB.
+          Optional read-only DB + Create Data API targets (per project).
         </p>
       </div>
       <a-button type="primary" size="small" :loading="loading" @click="openCreate">
@@ -833,6 +956,75 @@ onUnmounted(() => {
       </div>
     </div>
 
+    <div
+      v-if="seedEditingId"
+      class="mb-6 p-4 rounded-lg border border-line bg-surface-raised shadow-sm"
+    >
+      <h2 class="text-base font-semibold text-ink mt-0 mb-1">
+        Create Data — {{ seedEditingProject?.displayName || seedEditingId }}
+      </h2>
+      <p class="text-xs text-ink-muted mt-0 mb-3">
+        Cấu hình API target (local / development / staging) để Seed Planner đi qua
+        HTTP thật. Dùng chung Connect DB (read-only) của project để AI xem schema —
+        <strong class="text-ink font-medium">không</strong> insert DB trực tiếp.
+        Production bị chặn cứng.
+      </p>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <label class="flex flex-col gap-1 text-sm sm:col-span-2">
+          <span class="text-ink-muted">Active (dùng URL mặc định trên tab Create Data)</span>
+          <a-switch v-model:checked="seedForm.enabled" />
+        </label>
+        <label class="flex flex-col gap-1 text-sm sm:col-span-2">
+          <span class="text-ink-muted">API base — Local</span>
+          <a-input
+            v-model:value="seedForm.localUrl"
+            placeholder="http://localhost:3000"
+          />
+        </label>
+        <label class="flex flex-col gap-1 text-sm sm:col-span-2">
+          <span class="text-ink-muted">API base — Development</span>
+          <a-input
+            v-model:value="seedForm.developmentUrl"
+            placeholder="https://dev.example.com"
+          />
+        </label>
+        <label class="flex flex-col gap-1 text-sm sm:col-span-2">
+          <span class="text-ink-muted">API base — Staging</span>
+          <a-input
+            v-model:value="seedForm.stagingUrl"
+            placeholder="https://staging.example.com"
+          />
+        </label>
+        <label class="flex flex-col gap-1 text-sm sm:col-span-2">
+          <span class="text-ink-muted">
+            Notes (server / DB đang seed — hiện cho AI + operator)
+          </span>
+          <a-textarea
+            v-model:value="seedForm.notes"
+            :rows="2"
+            placeholder="vd. Staging API → Mongo tenant_demo (read-only Connect DB)"
+          />
+        </label>
+      </div>
+      <div class="flex flex-wrap gap-2 pt-4">
+        <button
+          type="button"
+          class="faw-btn faw-btn--run"
+          :disabled="seedSaving"
+          @click="saveSeed"
+        >
+          {{ seedSaving ? "Saving…" : "Save Create Data" }}
+        </button>
+        <button
+          type="button"
+          class="px-3 py-1.5 text-sm text-ink-muted hover:text-ink"
+          @click="resetSeedForm"
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+
     <div class="faw-admin-toolbar">
       <a-input
         v-model:value="search"
@@ -926,6 +1118,12 @@ onUnmounted(() => {
           </a-tag>
         </template>
 
+        <template v-else-if="column.key === 'seed'">
+          <a-tag :color="seedTag(record as BaProject).color">
+            {{ seedTag(record as BaProject).label }}
+          </a-tag>
+        </template>
+
         <template v-else-if="column.key === 'actions'">
           <a-dropdown :trigger="['click']">
             <a-button size="small" type="text" class="!px-1.5">
@@ -937,6 +1135,7 @@ onUnmounted(() => {
               >
                 <a-menu-item key="edit">Edit</a-menu-item>
                 <a-menu-item key="db">Database</a-menu-item>
+                <a-menu-item key="seed">Create Data</a-menu-item>
                 <a-menu-item
                   key="clone"
                   :disabled="

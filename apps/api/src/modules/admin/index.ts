@@ -6,6 +6,7 @@ import {
   getSystemSettings,
   getTaskTypeLabelMapping,
   listBaProjects,
+  normalizeCreateDataTargets,
   resolveBaProjectDbForTest,
   toPublicBaProject,
   toPublicSystemSettings,
@@ -21,6 +22,7 @@ import {
   deleteSystemCursorPat,
   isBaDevMode,
   normalizeBaFeatures,
+  type BaCreateDataConfigPatch,
   type BaDbConnectionPatch,
   type BaDbDialect,
   type BaFeatureState,
@@ -31,6 +33,7 @@ import { AppError } from "../../utils/AppError.js";
 import { logger } from "../../logger.js";
 import { testBaDbConnection } from "../../plugins/baDb/query.js";
 import { listCursorModelsForApiKey } from "../../plugins/cursor/modelList.js";
+import { assertSafeApiBaseUrl } from "../createData/executor.js";
 
 export async function adminListBaProjects() {
   return (await listBaProjects()).map(toPublicBaProject);
@@ -100,6 +103,32 @@ function parseDbPatch(raw: unknown): BaDbConnectionPatch | undefined {
   return patch;
 }
 
+function parseCreateDataPatch(
+  raw: unknown,
+): BaCreateDataConfigPatch | undefined {
+  if (raw === undefined) return undefined;
+  if (raw === null) return { clear: true };
+  if (typeof raw !== "object") {
+    throw new AppError("createData must be an object", 400);
+  }
+  const b = raw as Record<string, unknown>;
+  if (b.clear === true) return { clear: true };
+  const patch: BaCreateDataConfigPatch = {};
+  if (b.enabled !== undefined) patch.enabled = Boolean(b.enabled);
+  if (b.targets !== undefined) {
+    const targets = normalizeCreateDataTargets(b.targets);
+    for (const t of targets) {
+      assertSafeApiBaseUrl(t.apiBaseUrl);
+    }
+    patch.targets = targets;
+  }
+  if (b.notes !== undefined) {
+    patch.notes =
+      b.notes == null ? null : String(b.notes).trim() || null;
+  }
+  return patch;
+}
+
 export async function adminUpdateBaProject(
   idRaw: string,
   body: {
@@ -110,11 +139,13 @@ export async function adminUpdateBaProject(
     mainBranch?: string;
     localPath?: string;
     db?: unknown;
+    createData?: unknown;
   },
 ) {
   const id = idRaw.trim();
   try {
     const db = parseDbPatch(body.db);
+    const createData = parseCreateDataPatch(body.createData);
     const project = await updateBaProject(id, {
       displayName: body.displayName,
       gitlabPath: body.gitlabPath,
@@ -123,6 +154,7 @@ export async function adminUpdateBaProject(
       mainBranch: body.mainBranch,
       localPath: body.localPath,
       ...(db !== undefined ? { db } : {}),
+      ...(createData !== undefined ? { createData } : {}),
     });
     return { project: toPublicBaProject(project) };
   } catch (err) {

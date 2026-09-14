@@ -2,6 +2,7 @@ import { AppError } from "../../utils/AppError.js";
 import {
   getBaProject,
   getEffectiveBaFeatures,
+  toPublicBaCreateData,
 } from "../../workspace/baStore.js";
 import {
   assertSafeApiBaseUrl,
@@ -10,6 +11,7 @@ import {
   rollbackBatchSteps,
 } from "./executor.js";
 import { buildSeedPlan } from "./planner.js";
+import { runCreateDataPlannerAgent, stopCreateDataPlanner } from "./agentPlanner.js";
 import {
   getCreateDataBatch,
   insertCreateDataBatch,
@@ -26,6 +28,7 @@ import type {
 export type { CreateDataBatch, CreateDataPlanResponse, CreateDataStepPlan };
 export { ensureCreateDataIndexes } from "./store.js";
 export { buildSeedPlan } from "./planner.js";
+export { stopCreateDataPlanner };
 
 async function assertCreateDataFeatureOn() {
   const { flags, devMode } = await getEffectiveBaFeatures();
@@ -88,10 +91,43 @@ function normalizeSteps(raw: unknown): CreateDataStepPlan[] {
 }
 
 export async function createDataPlan(opts: {
+  userId: string;
   prompt: string;
-}): Promise<CreateDataPlanResponse> {
+  baProjectId: string;
+  environment?: string;
+  /** Force heuristic only (tests / offline). */
+  heuristicOnly?: boolean;
+}): Promise<
+  CreateDataPlanResponse & {
+    planner: "ai" | "heuristic";
+    suggestedApiBaseUrl: string | null;
+  }
+> {
   await assertCreateDataFeatureOn();
-  return buildSeedPlan(opts.prompt);
+  const project = await getBaProject(opts.baProjectId);
+  if (!project) {
+    throw new AppError("Project not found", 404, "ba_project_not_found");
+  }
+  const environment = assertSafeEnvironment(opts.environment || "staging");
+  const seedCfg = toPublicBaCreateData(project.createData);
+  const suggestedApiBaseUrl =
+    seedCfg.enabled
+      ? seedCfg.targets.find((t) => t.environment === environment)?.apiBaseUrl ||
+        null
+      : null;
+
+  if (opts.heuristicOnly) {
+    const plan = buildSeedPlan(opts.prompt);
+    return { ...plan, planner: "heuristic", suggestedApiBaseUrl };
+  }
+
+  const plan = await runCreateDataPlannerAgent({
+    userId: opts.userId,
+    baProjectId: opts.baProjectId,
+    prompt: opts.prompt,
+    environment,
+  });
+  return { ...plan, suggestedApiBaseUrl };
 }
 
 export async function createDataCreateBatch(opts: {

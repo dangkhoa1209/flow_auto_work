@@ -9,6 +9,7 @@ export function createCreateDataRoutes(): Router {
   router.use(requireBa);
 
   router.post("/plan", createDataController.plan);
+  router.post("/plan/stop", createDataController.stopPlan);
   router.get("/batches", createDataController.listBatches);
   router.post("/batches", createDataController.createBatch);
   router.get("/batches/:id", createDataController.getBatch);

@@ -19,6 +19,16 @@ export type BaProject = {
     dialect: string | null;
     database: string | null;
   };
+  createData?: {
+    configured: boolean;
+    enabled: boolean;
+    targets: Array<{
+      environment: "local" | "development" | "staging";
+      apiBaseUrl: string;
+      label?: string;
+    }>;
+    notes: string | null;
+  };
 };
 
 export type BaFeatureState = "hide" | "lab" | "production";

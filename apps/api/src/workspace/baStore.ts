@@ -58,6 +58,39 @@ export type BaDbConnectionResolved = {
   ssl: boolean;
 };
 
+/** Per-project Create Data seed targets (HTTP API envs — never Production). */
+export type BaCreateDataEnvKey = "local" | "development" | "staging";
+
+export type BaCreateDataEnvTarget = {
+  environment: BaCreateDataEnvKey;
+  apiBaseUrl: string;
+  label?: string;
+};
+
+export type BaCreateDataConfig = {
+  enabled: boolean;
+  targets: BaCreateDataEnvTarget[];
+  /** Free-text: server / DB name being seeded via APIs (for AI + operators). */
+  notes?: string;
+  updatedAt: string;
+};
+
+export type BaCreateDataConfigPublic = {
+  configured: boolean;
+  enabled: boolean;
+  targets: BaCreateDataEnvTarget[];
+  notes: string | null;
+  updatedAt: string | null;
+};
+
+export type BaCreateDataConfigPatch = {
+  enabled?: boolean;
+  targets?: BaCreateDataEnvTarget[];
+  notes?: string | null;
+  /** Remove Create Data config. */
+  clear?: boolean;
+};
+
 export type BaProject = {
   id: string;
   slug: string;
@@ -70,6 +103,8 @@ export type BaProject = {
   cloneStatus: CloneStatus;
   cloneError?: string | null;
   db?: BaDbConnection | null;
+  /** Seed via real APIs — admin configures targets per project. */
+  createData?: BaCreateDataConfig | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -86,6 +121,7 @@ export type BaProjectPublic = {
   cloneError: string | null;
   hasGitlabToken: boolean;
   db: BaDbConnectionPublic;
+  createData: BaCreateDataConfigPublic;
   createdAt: string;
   updatedAt: string;
 };
@@ -167,6 +203,82 @@ export type BaDbConnectionPatch = {
   /** Remove entire DB config. */
   clear?: boolean;
 };
+
+const CREATE_DATA_ENV_KEYS: BaCreateDataEnvKey[] = [
+  "local",
+  "development",
+  "staging",
+];
+
+export function normalizeCreateDataTargets(
+  raw: unknown,
+): BaCreateDataEnvTarget[] {
+  if (!Array.isArray(raw)) return [];
+  const out: BaCreateDataEnvTarget[] = [];
+  const seen = new Set<string>();
+  for (const row of raw) {
+    if (!row || typeof row !== "object") continue;
+    const r = row as Record<string, unknown>;
+    const environment = String(r.environment || "")
+      .trim()
+      .toLowerCase() as BaCreateDataEnvKey;
+    if (!CREATE_DATA_ENV_KEYS.includes(environment)) continue;
+    const apiBaseUrl = String(r.apiBaseUrl || "")
+      .trim()
+      .replace(/\/+$/, "");
+    if (!apiBaseUrl) continue;
+    if (seen.has(environment)) continue;
+    seen.add(environment);
+    const label = String(r.label || "").trim();
+    out.push({
+      environment,
+      apiBaseUrl,
+      ...(label ? { label } : {}),
+    });
+  }
+  return out;
+}
+
+export function toPublicBaCreateData(
+  cfg: BaCreateDataConfig | null | undefined,
+): BaCreateDataConfigPublic {
+  const targets = normalizeCreateDataTargets(cfg?.targets);
+  const configured = targets.length > 0;
+  return {
+    configured,
+    enabled: Boolean(cfg?.enabled) && configured,
+    targets,
+    notes: cfg?.notes?.trim() ? cfg.notes.trim() : null,
+    updatedAt: cfg?.updatedAt || null,
+  };
+}
+
+function applyCreateDataPatch(
+  existing: BaCreateDataConfig | null | undefined,
+  patch: BaCreateDataConfigPatch,
+): BaCreateDataConfig | null {
+  if (patch.clear) return null;
+  const now = new Date().toISOString();
+  const base: BaCreateDataConfig = existing
+    ? {
+        enabled: existing.enabled,
+        targets: normalizeCreateDataTargets(existing.targets),
+        notes: existing.notes,
+        updatedAt: existing.updatedAt || now,
+      }
+    : { enabled: false, targets: [], updatedAt: now };
+  if (patch.enabled !== undefined) base.enabled = Boolean(patch.enabled);
+  if (patch.targets !== undefined) {
+    base.targets = normalizeCreateDataTargets(patch.targets);
+  }
+  if (patch.notes !== undefined) {
+    const n = patch.notes == null ? "" : String(patch.notes).trim();
+    base.notes = n || undefined;
+  }
+  base.updatedAt = now;
+  if (!base.targets.length && !base.enabled && !base.notes) return null;
+  return base;
+}
 
 const DEFAULT_PORTS: Record<BaDbDialect, number> = {
   mysql: 3306,
@@ -261,6 +373,7 @@ export function toPublicBaProject(p: BaProject): BaProjectPublic {
     cloneError: p.cloneError ?? null,
     hasGitlabToken: Boolean(p.gitlabTokenEnc),
     db: toPublicBaDb(p.db),
+    createData: toPublicBaCreateData(p.createData),
     createdAt: p.createdAt,
     updatedAt: p.updatedAt,
   };
@@ -392,6 +505,7 @@ export async function updateBaProject(
     cloneStatus?: CloneStatus;
     cloneError?: string | null;
     db?: BaDbConnectionPatch;
+    createData?: BaCreateDataConfigPatch;
   },
 ): Promise<BaProject> {
   const existing = await getBaProject(id);
@@ -421,6 +535,13 @@ export async function updateBaProject(
     } else {
       existing.db = next;
     }
+  }
+
+  if (patch.createData !== undefined) {
+    existing.createData = applyCreateDataPatch(
+      existing.createData,
+      patch.createData,
+    );
   }
 
   existing.updatedAt = now;

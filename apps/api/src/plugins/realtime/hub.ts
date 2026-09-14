@@ -163,6 +163,21 @@ export type RealtimeEvent =
       requirementId: string;
       step: string;
       error: string;
+    }
+  | {
+      type: "create_data_progress";
+      userId: string;
+      baProjectId: string;
+      step:
+        | "pull"
+        | "start"
+        | "read"
+        | "tool"
+        | "write"
+        | "done"
+        | "error";
+      label: string;
+      detail?: string;
     };
 
 type Listener = (event: RealtimeEvent) => void;

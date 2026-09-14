@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { message, Modal } from "ant-design-vue";
 import { useBaChatStore } from "@/stores/baChat";
 import {
@@ -8,6 +8,10 @@ import {
   type CreateDataEnvironment,
   type CreateDataStepPlan,
 } from "@/api/createDataApi";
+import {
+  subscribeRealtime,
+  type RealtimeCreateDataProgress,
+} from "@/realtime/client";
 
 const ba = useBaChatStore();
 
@@ -27,7 +31,9 @@ const loadingHistory = ref(false);
 const planSteps = ref<CreateDataStepPlan[]>([]);
 const planQuestions = ref<string[]>([]);
 const planNotes = ref<string[]>([]);
+const planPlanner = ref<"ai" | "heuristic" | null>(null);
 const editingPayloads = ref<Record<string, string>>({});
+const progressLines = ref<RealtimeCreateDataProgress[]>([]);
 
 const activeBatch = ref<CreateDataBatch | null>(null);
 const history = ref<CreateDataBatch[]>([]);
@@ -37,6 +43,19 @@ const envOptions = [
   { value: "development", label: "Development" },
   { value: "staging", label: "Staging" },
 ];
+
+const seedConfig = computed(() => ba.selectedProject?.createData || null);
+
+const seedHint = computed(() => {
+  const cfg = seedConfig.value;
+  if (!cfg?.configured) {
+    return "Admin chưa cấu hình Create Data target cho project này — điền API base URL thủ công.";
+  }
+  if (!cfg.enabled) {
+    return "Create Data target đang tắt (Admin) — vẫn có thể plan; bật enable để dùng URL mặc định.";
+  }
+  return cfg.notes || null;
+});
 
 const canGenerate = computed(
   () => Boolean(ba.selectedProjectId) && prompt.value.trim().length > 0,
@@ -59,6 +78,13 @@ const statusColor: Record<string, string> = {
   partial: "text-orange-600",
   rolled_back: "text-ink-muted",
 };
+
+function applySeedUrlForEnv() {
+  const cfg = seedConfig.value;
+  if (!cfg?.enabled) return;
+  const hit = cfg.targets.find((t) => t.environment === environment.value);
+  if (hit?.apiBaseUrl) apiBaseUrl.value = hit.apiBaseUrl;
+}
 
 function resultFor(stepId: string) {
   return activeBatch.value?.results.find((r) => r.step_id === stepId);
@@ -94,24 +120,44 @@ function applyEditedPayloads(): CreateDataStepPlan[] | null {
 }
 
 async function generatePlan() {
-  if (!canGenerate.value) return;
+  if (!canGenerate.value || !ba.selectedProjectId) return;
   planning.value = true;
   activeBatch.value = null;
+  progressLines.value = [];
   try {
-    const res = await createDataApi.plan(prompt.value.trim());
+    const res = await createDataApi.plan({
+      prompt: prompt.value.trim(),
+      baProjectId: ba.selectedProjectId,
+      environment: environment.value,
+    });
     planSteps.value = res.plan.steps || [];
     planQuestions.value = res.plan.questions || [];
     planNotes.value = res.plan.notes || [];
+    planPlanner.value = res.plan.planner || null;
+    if (res.plan.suggestedApiBaseUrl) {
+      apiBaseUrl.value = res.plan.suggestedApiBaseUrl;
+    }
     syncPayloadEditors(planSteps.value);
     if (!planSteps.value.length) {
       message.warning("Planner needs more detail — see questions below");
     } else {
-      message.success(`Plan ready · ${planSteps.value.length} steps`);
+      const via = res.plan.planner === "ai" ? "AI + source" : "heuristic";
+      message.success(`Plan ready · ${planSteps.value.length} steps (${via})`);
     }
   } catch (e) {
     message.error(e instanceof Error ? e.message : String(e));
   } finally {
     planning.value = false;
+  }
+}
+
+async function stopPlan() {
+  if (!ba.selectedProjectId) return;
+  try {
+    await createDataApi.stopPlan(ba.selectedProjectId);
+    message.info("Stop requested");
+  } catch (e) {
+    message.error(e instanceof Error ? e.message : String(e));
   }
 }
 
@@ -216,6 +262,7 @@ async function openHistory(b: CreateDataBatch) {
     environment.value = res.batch.environment;
     apiBaseUrl.value = res.batch.apiBaseUrl;
     planQuestions.value = res.batch.questions || [];
+    planPlanner.value = null;
     syncPayloadEditors(res.batch.steps);
   } catch (e) {
     message.error(e instanceof Error ? e.message : String(e));
@@ -228,11 +275,31 @@ watch(
     void loadHistory();
     activeBatch.value = null;
     planSteps.value = [];
+    progressLines.value = [];
+    applySeedUrlForEnv();
   },
 );
 
+watch(environment, () => {
+  applySeedUrlForEnv();
+});
+
+let unsubRt: (() => void) | undefined;
+
 onMounted(() => {
+  applySeedUrlForEnv();
   void loadHistory();
+  unsubRt = subscribeRealtime({
+    onCreateDataProgress: (ev) => {
+      if (ev.baProjectId !== ba.selectedProjectId) return;
+      // Server already scopes by userId; double-check project.
+      progressLines.value = [...progressLines.value.slice(-24), ev];
+    },
+  });
+});
+
+onUnmounted(() => {
+  unsubRt?.();
 });
 </script>
 
@@ -242,7 +309,7 @@ onMounted(() => {
       <div class="faw-console-head__title min-w-0">
         <h2>Create Data</h2>
         <div class="faw-console-head__win">
-          Seed via real APIs (plan → preview → execute) — never Production, never direct DB insert
+          AI Seed Planner (Cursor + code map) → preview → execute HTTP APIs — never Production / never direct DB insert
         </div>
       </div>
     </div>
@@ -287,6 +354,10 @@ onMounted(() => {
           </label>
         </div>
 
+        <p v-if="seedHint" class="text-[12px] text-ink-muted m-0">
+          {{ seedHint }}
+        </p>
+
         <label class="flex flex-col gap-1 text-sm">
           <span class="text-ink-muted">Auth token (optional, not stored on plan)</span>
           <a-input-password
@@ -303,7 +374,15 @@ onMounted(() => {
             :disabled="!canGenerate || planning"
             @click="generatePlan"
           >
-            {{ planning ? "Planning…" : "Generate plan" }}
+            {{ planning ? "Planning…" : "Generate plan (AI)" }}
+          </button>
+          <button
+            v-if="planning"
+            type="button"
+            class="faw-btn faw-btn--danger"
+            @click="stopPlan"
+          >
+            Stop
           </button>
           <button
             type="button"
@@ -339,8 +418,36 @@ onMounted(() => {
           type="info"
           show-icon
           class="text-xs"
-          message="Production is hard-blocked. Executor calls the target HTTP APIs so validation and side-effects match real UI flows."
+          message="Planner dùng Cursor SDK + code map / đọc source (và DB read-only nếu Admin đã Connect DB). Execute chỉ gọi HTTP API — Production bị chặn."
         />
+
+        <div
+          v-if="planning || progressLines.length"
+          class="rounded border border-[var(--app-border)] p-2 space-y-1 max-h-40 overflow-y-auto"
+        >
+          <div class="text-[11px] font-medium text-ink-muted uppercase tracking-wide">
+            Planner activity
+          </div>
+          <div
+            v-for="(line, i) in progressLines"
+            :key="`${line.step}-${i}-${line.label}`"
+            class="text-[12px] font-mono text-ink truncate"
+          >
+            <span class="text-ink-faint">{{ line.step }}</span>
+            · {{ line.label }}
+            <span v-if="line.detail" class="text-ink-muted"> · {{ line.detail }}</span>
+          </div>
+          <div v-if="planning && !progressLines.length" class="text-[12px] text-ink-muted">
+            Starting Cursor Seed Planner…
+          </div>
+        </div>
+
+        <div v-if="planPlanner" class="text-[12px] text-ink-muted">
+          Planner:
+          <span class="text-ink">{{
+            planPlanner === "ai" ? "AI (Cursor + source)" : "heuristic fallback"
+          }}</span>
+        </div>
 
         <div v-if="planNotes.length" class="text-[12px] text-ink-muted space-y-1">
           <div v-for="(n, i) in planNotes" :key="i">• {{ n }}</div>

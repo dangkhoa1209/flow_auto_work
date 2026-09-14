@@ -57,14 +57,31 @@ export type CreateDataPlan = {
   steps: CreateDataStepPlan[];
   questions: string[];
   notes: string[];
+  planner?: "ai" | "heuristic";
+  suggestedApiBaseUrl?: string | null;
 };
 
 export const createDataApi = {
-  plan(prompt: string) {
+  plan(opts: {
+    prompt: string;
+    baProjectId: string;
+    environment: CreateDataEnvironment;
+    heuristicOnly?: boolean;
+  }) {
     return api<{ plan: CreateDataPlan }>(API.ba.createData.plan, {
       method: "POST",
-      body: JSON.stringify({ prompt }),
+      body: JSON.stringify(opts),
     });
+  },
+
+  stopPlan(baProjectId: string) {
+    return api<{ ok: boolean; cancelled: boolean }>(
+      API.ba.createData.planStop,
+      {
+        method: "POST",
+        body: JSON.stringify({ baProjectId }),
+      },
+    );
   },
 
   listBatches(baProjectId: string) {

@@ -10,6 +10,7 @@ import {
   createDataPlan,
   createDataRollbackBatch,
   parseEnvironment,
+  stopCreateDataPlanner,
 } from "../../modules/createData/index.js";
 
 function userId(): string {
@@ -27,8 +28,25 @@ function requireProjectId(raw: unknown): string {
 export const createDataController = {
   plan: asyncHandler(async (req: Request, res: Response) => {
     const prompt = String(req.body?.prompt || "").trim();
-    const plan = await createDataPlan({ prompt });
+    const baProjectId = requireProjectId(
+      req.body?.baProjectId || req.body?.projectId,
+    );
+    const plan = await createDataPlan({
+      userId: userId(),
+      prompt,
+      baProjectId,
+      environment: req.body?.environment,
+      heuristicOnly: Boolean(req.body?.heuristicOnly),
+    });
     res.formatter.ok({ plan });
+  }),
+
+  stopPlan: asyncHandler(async (req: Request, res: Response) => {
+    const baProjectId = requireProjectId(
+      req.body?.baProjectId || req.body?.projectId,
+    );
+    const cancelled = await stopCreateDataPlanner(userId(), baProjectId);
+    res.formatter.ok({ ok: true, cancelled });
   }),
 
   listBatches: asyncHandler(async (req: Request, res: Response) => {

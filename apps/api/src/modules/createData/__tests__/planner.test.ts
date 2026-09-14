@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { buildSeedPlan } from "../planner.js";
+import { parseSeedPlanFromAgent } from "../parsePlan.js";
 import { assertSafeEnvironment, resolvePlaceholders } from "../executor.js";
+import { normalizeCreateDataTargets } from "../../../workspace/baStore.js";
 
 describe("buildSeedPlan", () => {
   it("builds users + completed/pending orders from VN prompt", () => {
@@ -22,6 +24,49 @@ describe("buildSeedPlan", () => {
     const plan = buildSeedPlan("làm gì đó giúp mình");
     expect(plan.steps).toHaveLength(0);
     expect(plan.questions.length).toBeGreaterThan(0);
+  });
+});
+
+describe("parseSeedPlanFromAgent", () => {
+  it("parses fenced JSON plan", () => {
+    const text = `Tóm tắt plan.
+
+\`\`\`json
+{
+  "steps": [
+    {
+      "step_id": "create_staff_1",
+      "description": "Create staff",
+      "method": "POST",
+      "endpoint": "/api/v1/staff",
+      "payload": { "code": "NV01" },
+      "depends_on": []
+    }
+  ],
+  "questions": [],
+  "notes": ["from source"]
+}
+\`\`\`
+`;
+    const plan = parseSeedPlanFromAgent(text);
+    expect(plan?.steps).toHaveLength(1);
+    expect(plan?.steps[0]?.endpoint).toBe("/api/v1/staff");
+    expect(plan?.notes).toContain("from source");
+  });
+});
+
+describe("normalizeCreateDataTargets", () => {
+  it("keeps one URL per env and drops production", () => {
+    const targets = normalizeCreateDataTargets([
+      { environment: "staging", apiBaseUrl: "https://stg.example/" },
+      { environment: "staging", apiBaseUrl: "https://dup.example" },
+      { environment: "production", apiBaseUrl: "https://prod.example" },
+      { environment: "local", apiBaseUrl: "http://localhost:3000" },
+    ]);
+    expect(targets).toEqual([
+      { environment: "staging", apiBaseUrl: "https://stg.example" },
+      { environment: "local", apiBaseUrl: "http://localhost:3000" },
+    ]);
   });
 });
 
