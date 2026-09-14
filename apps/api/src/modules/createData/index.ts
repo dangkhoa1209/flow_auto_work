@@ -2,7 +2,9 @@ import { AppError } from "../../utils/AppError.js";
 import {
   getBaProject,
   getEffectiveBaFeatures,
+  isBaCreateDataDbAccessAllowed,
   isBaDbAccessAllowed,
+  resolveBaCreateDataDb,
   resolveBaProjectDb,
   toPublicBaCreateData,
   toPublicBaDb,
@@ -138,7 +140,7 @@ function normalizeSteps(raw: unknown): CreateDataStepPlan[] {
 }
 
 async function requireWriteDb(baProjectId: string): Promise<{
-  cfg: NonNullable<Awaited<ReturnType<typeof resolveBaProjectDb>>>;
+  cfg: NonNullable<Awaited<ReturnType<typeof resolveBaCreateDataDb>>>;
   snapshot: CreateDataDbSnapshot;
   seedEnabled: boolean;
 }> {
@@ -154,17 +156,22 @@ async function requireWriteDb(baProjectId: string): Promise<{
       "create_data_disabled",
     );
   }
-  if (!isBaDbAccessAllowed(project)) {
+  // Prefer dedicated seed Connect; fall back to project Connect DB (Sync target).
+  const hasSeedDb = isBaCreateDataDbAccessAllowed(project);
+  const hasProjectDb = isBaDbAccessAllowed(project);
+  if (!hasSeedDb && !hasProjectDb) {
     throw new AppError(
-      "Connect DB is not enabled — configure Admin → Connect DB before seeding",
+      "Create Data Connect DB is not configured — Admin → Projects → Create Data (or project Connect DB)",
       400,
       "create_data_db_required",
     );
   }
-  const cfg = await resolveBaProjectDb(baProjectId);
+  const cfg =
+    (await resolveBaCreateDataDb(baProjectId)) ||
+    (await resolveBaProjectDb(baProjectId));
   if (!cfg) {
     throw new AppError(
-      "Connect DB credentials unavailable",
+      "Create Data Connect DB credentials unavailable",
       400,
       "create_data_db_unavailable",
     );
@@ -201,14 +208,22 @@ export async function createDataPlan(opts: {
     throw new AppError("Project not found", 404, "ba_project_not_found");
   }
   const environment = assertSafeEnvironment(opts.environment || "staging");
-  const dbPublic = toPublicBaDb(project.db);
+  const seedCfg = toPublicBaCreateData(project.createData);
+  const projectDb = toPublicBaDb(project.db);
+  const seedDb = seedCfg.db;
+  const suggestedFrom =
+    seedDb.configured && seedDb.enabled
+      ? seedDb
+      : projectDb.configured && projectDb.enabled
+        ? projectDb
+        : null;
   const suggestedDbTarget =
-    dbPublic.configured && dbPublic.enabled && dbPublic.dialect && dbPublic.host && dbPublic.database
+    suggestedFrom?.dialect && suggestedFrom.host && suggestedFrom.database
       ? {
-          dialect: dbPublic.dialect,
-          host: dbPublic.host,
-          port: dbPublic.port || 0,
-          database: dbPublic.database,
+          dialect: suggestedFrom.dialect,
+          host: suggestedFrom.host,
+          port: suggestedFrom.port || 0,
+          database: suggestedFrom.database,
         }
       : null;
 

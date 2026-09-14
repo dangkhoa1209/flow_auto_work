@@ -16,6 +16,10 @@ export function createAdminRoutes(): Router {
   router.post("/ba-projects/:id/clone", adminController.cloneProject);
   router.get("/ba-projects/:id/clone-status", adminController.cloneStatus);
   router.post("/ba-projects/:id/test-db", adminController.testDb);
+  router.post(
+    "/ba-projects/:id/test-create-data-db",
+    adminController.testCreateDataDb,
+  );
 
   router.get("/settings/cursor", adminController.getCursor);
   router.get("/settings/cursor-models", adminController.cursorModels);

@@ -41,6 +41,12 @@ export const adminController = {
     res.formatter.ok(await admin.adminTestBaProjectDb(String(req.params.id || "")));
   }),
 
+  testCreateDataDb: asyncHandler(async (req: Request, res: Response) => {
+    res.formatter.ok(
+      await admin.adminTestBaCreateDataDb(String(req.params.id || "")),
+    );
+  }),
+
   getCursor: asyncHandler(async (_req: Request, res: Response) => {
     res.formatter.ok(await admin.adminGetCursorSettings());
   }),

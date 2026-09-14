@@ -58,7 +58,7 @@ export type BaDbConnectionResolved = {
   ssl: boolean;
 };
 
-/** Per-project Create Data — writes Connect DB (never Production). */
+/** Per-project Create Data — dedicated seed DB write target (never Production). */
 export type BaCreateDataEnvKey = "local" | "development" | "staging";
 
 /** @deprecated HTTP API targets — kept for legacy stored config only */
@@ -68,24 +68,32 @@ export type BaCreateDataEnvTarget = {
   label?: string;
 };
 
+/**
+ * Create Data seed config. `db` is a dedicated connection (same shape as
+ * project Connect DB / Sync target) — not Sync system SSH/source credentials.
+ */
 export type BaCreateDataConfig = {
   enabled: boolean;
-  /** @deprecated Ignored — Create Data uses Connect DB */
+  /** @deprecated Ignored — Create Data uses createData.db */
   targets?: BaCreateDataEnvTarget[];
   /** Free-text notes for AI + operators (which server/DB). */
   notes?: string;
+  /** Encrypted seed write target — separate from Sync system config. */
+  db?: BaDbConnection | null;
   updatedAt: string;
 };
 
 export type BaCreateDataConfigPublic = {
-  /** True when Create Data was configured (enabled and/or notes). */
+  /** True when Create Data was configured (enabled, notes, and/or seed db). */
   configured: boolean;
   enabled: boolean;
   /** Always empty in public responses (HTTP targets retired). */
   targets: BaCreateDataEnvTarget[];
   notes: string | null;
-  /** Seed mode — always direct Connect DB write. */
+  /** Seed mode — always direct DB write via createData.db. */
   mode: "db";
+  /** Public seed DB (no secrets) — usually same host/db as Sync target. */
+  db: BaDbConnectionPublic;
   updatedAt: string | null;
 };
 
@@ -94,6 +102,8 @@ export type BaCreateDataConfigPatch = {
   /** @deprecated Ignored */
   targets?: BaCreateDataEnvTarget[];
   notes?: string | null;
+  /** Seed write connection (same fields as Connect DB). */
+  db?: BaDbConnectionPatch;
   /** Remove Create Data config. */
   clear?: boolean;
 };
@@ -251,12 +261,15 @@ export function toPublicBaCreateData(
 ): BaCreateDataConfigPublic {
   const enabled = Boolean(cfg?.enabled);
   const notes = cfg?.notes?.trim() ? cfg.notes.trim() : null;
+  const db = toPublicBaDb(cfg?.db);
   return {
-    configured: Boolean(cfg) && (enabled || Boolean(notes)),
+    configured:
+      Boolean(cfg) && (enabled || Boolean(notes) || db.configured),
     enabled,
     targets: [],
     notes,
     mode: "db",
+    db,
     updatedAt: cfg?.updatedAt || null,
   };
 }
@@ -272,9 +285,10 @@ function applyCreateDataPatch(
         enabled: existing.enabled,
         targets: [],
         notes: existing.notes,
+        db: existing.db ?? null,
         updatedAt: existing.updatedAt || now,
       }
-    : { enabled: false, targets: [], updatedAt: now };
+    : { enabled: false, targets: [], db: null, updatedAt: now };
   if (patch.enabled !== undefined) base.enabled = Boolean(patch.enabled);
   // HTTP targets retired — drop on save
   base.targets = [];
@@ -282,9 +296,64 @@ function applyCreateDataPatch(
     const n = patch.notes == null ? "" : String(patch.notes).trim();
     base.notes = n || undefined;
   }
+  if (patch.db !== undefined) {
+    const next = applyDbPatch(existing?.db, patch.db);
+    base.db = next;
+  }
   base.updatedAt = now;
-  if (!base.enabled && !base.notes) return null;
+  if (!base.enabled && !base.notes && !base.db) return null;
   return base;
+}
+
+/** True when Create Data seed DB is enabled with credentials. */
+export function isBaCreateDataDbAccessAllowed(
+  project: BaProject | null | undefined,
+): boolean {
+  const db = project?.createData?.db;
+  if (!db?.enabled || !db.host || !db.database) return false;
+  if (db.dialect === "mongodb") return true;
+  return Boolean(db.passwordEnc);
+}
+
+/**
+ * Decrypt Create Data seed DB (write target). Null if inactive / missing.
+ * Separate from Sync system config and from project Connect DB (`project.db`).
+ */
+export async function resolveBaCreateDataDb(
+  id: string,
+): Promise<BaDbConnectionResolved | null> {
+  const p = await getBaProject(id);
+  if (!isBaCreateDataDbAccessAllowed(p) || !p?.createData?.db) return null;
+  const db = p.createData.db;
+  const password = db.passwordEnc ? decryptSecret(db.passwordEnc) : "";
+  return {
+    dialect: db.dialect,
+    host: db.host,
+    port: db.port,
+    database: db.database,
+    username: db.username,
+    password,
+    ssl: Boolean(db.ssl),
+  };
+}
+
+/** Decrypt Create Data DB for admin test even when feature disabled. */
+export async function resolveBaCreateDataDbForTest(
+  id: string,
+): Promise<BaDbConnectionResolved | null> {
+  const p = await getBaProject(id);
+  const db = p?.createData?.db;
+  if (!db?.host || !db.database) return null;
+  if (db.dialect !== "mongodb" && !db.passwordEnc) return null;
+  return {
+    dialect: db.dialect,
+    host: db.host,
+    port: db.port,
+    database: db.database,
+    username: db.username,
+    password: db.passwordEnc ? decryptSecret(db.passwordEnc) : "",
+    ssl: Boolean(db.ssl),
+  };
 }
 
 const DEFAULT_PORTS: Record<BaDbDialect, number> = {

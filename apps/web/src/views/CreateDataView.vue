@@ -44,25 +44,44 @@ const envOptions = [
 ];
 
 const seedConfig = computed(() => ba.selectedProject?.createData || null);
-const dbPublic = computed(() => ba.selectedProject?.db || null);
+const seedDbPublic = computed(() => seedConfig.value?.db || null);
+const projectDbPublic = computed(() => ba.selectedProject?.db || null);
+
+/** Prefer dedicated seed Connect; fall back to project Connect (Sync target). */
+const effectiveDb = computed(() => {
+  const seed = seedDbPublic.value;
+  if (seed?.configured && seed.enabled) return seed;
+  const proj = projectDbPublic.value;
+  if (proj?.configured && proj.enabled) return proj;
+  return seed || proj || null;
+});
 
 const dbTargetLabel = computed(() => {
-  const d = dbPublic.value;
+  const d = effectiveDb.value;
   if (!d?.configured || !d.enabled) return null;
   return `${d.dialect || "?"} · ${d.database || "?"}`;
 });
 
 const seedHint = computed(() => {
   const cfg = seedConfig.value;
-  const db = dbPublic.value;
-  if (!db?.configured || !db.enabled) {
-    return "Admin chưa bật Connect DB cho project — Create Data cần Connect DB để ghi.";
+  const seed = seedDbPublic.value;
+  const proj = projectDbPublic.value;
+  if (
+    !(seed?.configured && seed.enabled) &&
+    !(proj?.configured && proj.enabled)
+  ) {
+    return "Admin chưa cấu hình Seed Connect DB (Create Data) — có thể Copy từ project Connect DB.";
   }
   if (!cfg?.enabled) {
     return "Create Data đang tắt (Admin) — bật Enable trên Admin Projects trước khi execute.";
   }
+  const d = effectiveDb.value;
+  const via =
+    seed?.configured && seed.enabled
+      ? "seed Connect"
+      : "project Connect (Sync target fallback)";
   const parts = [
-    `Target: ${db.dialect} ${db.database}`,
+    d ? `Target: ${d.dialect} ${d.database} · ${via}` : null,
     cfg.notes || null,
   ].filter(Boolean);
   return parts.join(" · ");
@@ -77,7 +96,7 @@ const canSavePreview = computed(
     Boolean(ba.selectedProjectId) &&
     planSteps.value.length > 0 &&
     Boolean(seedConfig.value?.enabled) &&
-    Boolean(dbPublic.value?.enabled),
+    Boolean(effectiveDb.value?.enabled),
 );
 
 const statusColor: Record<string, string> = {
@@ -338,7 +357,7 @@ onUnmounted(() => {
             />
           </label>
           <div class="flex flex-col gap-1 text-sm">
-            <span class="text-ink-muted">Connect DB target</span>
+            <span class="text-ink-muted">Seed Connect DB target</span>
             <div
               class="min-h-[32px] px-3 py-1.5 rounded border border-[var(--app-border)] text-[13px] font-mono"
               :class="dbTargetLabel ? 'text-ink' : 'text-ink-muted'"
@@ -403,7 +422,7 @@ onUnmounted(() => {
           type="info"
           show-icon
           class="text-xs"
-          message="Planner dùng Cursor + code map / schema (Connect DB read-only khi plan). Execute ghi thẳng Connect DB — Production bị chặn."
+          message="Planner dùng Cursor + code map / schema (seed Connect RO khi plan). Execute ghi thẳng seed Connect DB — không dùng Sync system. Production bị chặn."
         />
 
         <div

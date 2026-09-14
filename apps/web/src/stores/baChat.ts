@@ -29,6 +29,14 @@ export type BaProject = {
     }>;
     notes: string | null;
     mode?: "db";
+    db?: {
+      configured: boolean;
+      enabled: boolean;
+      dialect: string | null;
+      host?: string | null;
+      port?: number | null;
+      database: string | null;
+    };
   };
 };
 

@@ -27,6 +27,7 @@ type BaCreateDataPublic = {
   }>;
   notes: string | null;
   mode?: "db";
+  db?: BaDbPublic;
   updatedAt: string | null;
 };
 
@@ -72,9 +73,18 @@ const dbForm = reactive({
 
 const seedEditingId = ref<string | null>(null);
 const seedSaving = ref(false);
+const seedTesting = ref(false);
 const seedForm = reactive({
   enabled: false,
   notes: "",
+  dbEnabled: false,
+  dialect: "mysql" as "mysql" | "postgres" | "mongodb",
+  host: "",
+  port: 3306,
+  database: "",
+  username: "",
+  password: "",
+  ssl: false,
 });
 
 const gitlabProjects = ref<
@@ -176,6 +186,14 @@ function resetSeedForm() {
   seedEditingId.value = null;
   seedForm.enabled = false;
   seedForm.notes = "";
+  seedForm.dbEnabled = false;
+  seedForm.dialect = "mysql";
+  seedForm.host = "";
+  seedForm.port = 3306;
+  seedForm.database = "";
+  seedForm.username = "";
+  seedForm.password = "";
+  seedForm.ssl = false;
 }
 
 async function load() {
@@ -230,6 +248,46 @@ function openSeed(p: BaProject) {
   const c = p.createData;
   seedForm.enabled = Boolean(c?.enabled);
   seedForm.notes = c?.notes || "";
+  const d = c?.db;
+  seedForm.dbEnabled = Boolean(d?.enabled);
+  seedForm.dialect = d?.dialect || "mysql";
+  seedForm.host = d?.host || "";
+  seedForm.port =
+    d?.port ||
+    (d?.dialect === "postgres" ? 5432 : d?.dialect === "mongodb" ? 27017 : 3306);
+  seedForm.database = d?.database || "";
+  seedForm.username = d?.username || "";
+  seedForm.password = "";
+  seedForm.ssl = Boolean(d?.ssl);
+}
+
+function onSeedDialectChange(v: "mysql" | "postgres" | "mongodb") {
+  seedForm.dialect = v;
+  const known = [3306, 5432, 27017];
+  if (!seedForm.port || known.includes(Number(seedForm.port))) {
+    seedForm.port = defaultPort(v);
+  }
+}
+
+function copySeedFromConnectDb() {
+  const d = seedEditingProject.value?.db;
+  if (!d?.configured) {
+    message.warning("Project Connect DB chưa cấu hình — không copy được");
+    return;
+  }
+  seedForm.dbEnabled = Boolean(d.enabled);
+  seedForm.dialect = d.dialect || "mysql";
+  seedForm.host = d.host || "";
+  seedForm.port =
+    d.port ||
+    defaultPort((d.dialect || "mysql") as "mysql" | "postgres" | "mongodb");
+  seedForm.database = d.database || "";
+  seedForm.username = d.username || "";
+  seedForm.password = "";
+  seedForm.ssl = Boolean(d.ssl);
+  message.info(
+    "Đã copy host/DB từ Connect DB (Sync target) — nhập lại password rồi Save",
+  );
 }
 
 function defaultPort(dialect: "mysql" | "postgres" | "mongodb") {
@@ -424,30 +482,69 @@ async function saveDb() {
 
 async function saveSeed() {
   if (!seedEditingId.value) return;
-  if (seedForm.enabled) {
-    const db = seedEditingProject.value?.db;
-    if (!db?.configured || !db.enabled) {
+  const fillingSeedDb =
+    seedForm.host.trim() ||
+    seedForm.database.trim() ||
+    seedForm.dbEnabled ||
+    seedForm.password.trim();
+  if (seedForm.enabled && !fillingSeedDb) {
+    const seedConfigured =
+      seedEditingProject.value?.createData?.db?.configured;
+    const projectDb = seedEditingProject.value?.db;
+    if (
+      !seedConfigured &&
+      !(projectDb?.configured && projectDb.enabled)
+    ) {
       message.warning(
-        "Bật Connect DB (enabled) trước — Create Data ghi thẳng Connect DB",
+        "Cần Seed Connect (form bên dưới) hoặc project Connect DB (Sync target) trước khi bật",
       );
+      return;
+    }
+  }
+  if (fillingSeedDb) {
+    if (!seedForm.host.trim() || !seedForm.database.trim()) {
+      message.warning("Host and database required for seed Connect");
+      return;
+    }
+    const isMongo = seedForm.dialect === "mongodb";
+    if (!isMongo && !seedForm.username.trim()) {
+      message.warning("Username required");
+      return;
+    }
+    const existing = seedEditingProject.value?.createData?.db?.configured;
+    if (!isMongo && !existing && !seedForm.password.trim()) {
+      message.warning("Password required for first seed Connect setup");
       return;
     }
   }
   seedSaving.value = true;
   try {
+    const createData: Record<string, unknown> = {
+      enabled: seedForm.enabled,
+      targets: [],
+      notes: seedForm.notes.trim() || null,
+    };
+    if (seedForm.host.trim() && seedForm.database.trim()) {
+      const db: Record<string, unknown> = {
+        enabled: seedForm.dbEnabled,
+        dialect: seedForm.dialect,
+        host: seedForm.host.trim(),
+        port: Number(seedForm.port) || defaultPort(seedForm.dialect),
+        database: seedForm.database.trim(),
+        username: seedForm.username.trim(),
+        ssl: seedForm.ssl,
+      };
+      if (seedForm.password.trim()) db.password = seedForm.password.trim();
+      createData.db = db;
+    }
+
     await api(API.admin.baProject(seedEditingId.value), {
       method: "PATCH",
-      body: JSON.stringify({
-        createData: {
-          enabled: seedForm.enabled,
-          targets: [],
-          notes: seedForm.notes.trim() || null,
-        },
-      }),
+      body: JSON.stringify({ createData }),
     });
     message.success(
       seedForm.enabled
-        ? "Create Data enabled — writes Connect DB"
+        ? "Create Data enabled — writes seed Connect DB"
         : "Create Data saved (inactive)",
     );
     resetSeedForm();
@@ -457,6 +554,96 @@ async function saveSeed() {
   } finally {
     seedSaving.value = false;
   }
+}
+
+async function testSeedDb() {
+  if (!seedEditingId.value) return;
+  if (
+    !seedEditingProject.value?.createData?.db?.configured &&
+    seedForm.dialect !== "mongodb" &&
+    !seedForm.password.trim()
+  ) {
+    message.warning("Save seed Connect credentials first, then test");
+    return;
+  }
+  if (!seedForm.host.trim() || !seedForm.database.trim()) {
+    message.warning("Host and database required");
+    return;
+  }
+  seedTesting.value = true;
+  try {
+    const isMongo = seedForm.dialect === "mongodb";
+    const canSave =
+      seedForm.host.trim() &&
+      seedForm.database.trim() &&
+      (isMongo || seedForm.username.trim()) &&
+      (isMongo ||
+        seedEditingProject.value?.createData?.db?.configured ||
+        seedForm.password.trim());
+    if (canSave) {
+      const db: Record<string, unknown> = {
+        enabled: seedForm.dbEnabled,
+        dialect: seedForm.dialect,
+        host: seedForm.host.trim(),
+        port: Number(seedForm.port) || defaultPort(seedForm.dialect),
+        database: seedForm.database.trim(),
+        username: seedForm.username.trim(),
+        ssl: seedForm.ssl,
+      };
+      if (seedForm.password.trim()) db.password = seedForm.password.trim();
+      await api(API.admin.baProject(seedEditingId.value), {
+        method: "PATCH",
+        body: JSON.stringify({
+          createData: {
+            enabled: seedForm.enabled,
+            notes: seedForm.notes.trim() || null,
+            db,
+          },
+        }),
+      });
+      await load();
+    }
+    const res = await api<{
+      ok?: boolean;
+      elapsedMs?: number;
+      dialect?: string;
+    }>(API.admin.baTestCreateDataDb(seedEditingId.value), {
+      method: "POST",
+      body: "{}",
+    });
+    message.success(
+      `Seed Connect OK (${res.dialect || seedForm.dialect}, ${res.elapsedMs ?? "?"}ms)`,
+    );
+  } catch (e) {
+    message.error(e instanceof Error ? e.message : String(e));
+  } finally {
+    seedTesting.value = false;
+  }
+}
+
+function clearSeedDb() {
+  if (!seedEditingId.value) return;
+  Modal.confirm({
+    title: "Remove Create Data Connect?",
+    content:
+      "Encrypted seed credentials will be deleted. Create Data cannot execute until reconfigured.",
+    okType: "danger",
+    onOk: async () => {
+      await api(API.admin.baProject(seedEditingId.value!), {
+        method: "PATCH",
+        body: JSON.stringify({
+          createData: {
+            enabled: seedForm.enabled,
+            notes: seedForm.notes.trim() || null,
+            db: { clear: true },
+          },
+        }),
+      });
+      message.success("Create Data Connect removed");
+      resetSeedForm();
+      await load();
+    },
+  });
 }
 
 async function testDb() {
@@ -633,8 +820,14 @@ function seedTag(record: BaProject): { label: string; color: string } {
   if (!record.createData?.configured && !record.createData?.enabled) {
     return { label: "Not configured", color: "default" };
   }
+  if (record.createData?.enabled && record.createData?.db?.enabled) {
+    return {
+      label: `ON · ${record.createData.db.dialect || "db"}`,
+      color: "green",
+    };
+  }
   if (record.createData?.enabled) {
-    return { label: "ON · Connect DB", color: "green" };
+    return { label: "ON · no seed DB", color: "orange" };
   }
   return { label: "Off", color: "orange" };
 }
@@ -670,7 +863,7 @@ onUnmounted(() => {
           Configure BA Chat projects — GitLab PAT → pick repo → main branch.
           Clones into
           <code class="text-xs">project/_ba/&lt;slug&gt;/source</code>.
-          Optional Connect DB + Create Data (direct DB seed, per project).
+          Optional Connect DB + Create Data (dedicated seed Connect, per project).
         </p>
       </div>
       <a-button type="primary" size="small" :loading="loading" @click="openCreate">
@@ -931,28 +1124,86 @@ onUnmounted(() => {
       </h2>
       <p class="text-xs text-ink-muted mt-0 mb-3">
         Bật Create Data để Seed Planner / Execute
-        <strong class="text-ink font-medium">ghi thẳng Connect DB</strong>
-        của project (insert / update / delete). Dùng cùng Connect DB với Sync
-        target. Production bị chặn cứng (env label + host có chữ prod).
+        <strong class="text-ink font-medium">ghi thẳng Connect seed DB</strong>
+        (insert / update / delete). Form Connect riêng — thường trùng host/DB với
+        Sync target, <strong class="text-ink font-medium">không</strong> dùng
+        Sync system (SSH/source). Production bị chặn cứng (env label + host có
+        chữ prod).
       </p>
-      <div
-        v-if="seedEditingProject?.db"
-        class="text-[12px] text-ink-muted mb-3 font-mono"
-      >
-        Connect DB:
-        <span v-if="seedEditingProject.db.enabled" class="text-ink">
-          {{ seedEditingProject.db.dialect }}
-          {{ seedEditingProject.db.host }}:{{ seedEditingProject.db.port }}/{{
-            seedEditingProject.db.database
-          }}
-        </span>
-        <span v-else class="text-orange-600">chưa bật / chưa cấu hình</span>
-      </div>
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <label class="flex flex-col gap-1 text-sm sm:col-span-2">
-          <span class="text-ink-muted">Active (cho phép ghi Connect DB từ tab Create Data)</span>
+          <span class="text-ink-muted">Active (cho phép ghi từ tab Create Data)</span>
           <a-switch v-model:checked="seedForm.enabled" />
         </label>
+
+        <div class="sm:col-span-2 flex flex-wrap items-center gap-2 pt-1">
+          <span class="text-sm font-medium text-ink">Seed Connect DB</span>
+          <button
+            type="button"
+            class="px-2 py-0.5 text-xs border border-line rounded-md hover:border-accent"
+            @click="copySeedFromConnectDb"
+          >
+            Copy from project Connect DB
+          </button>
+        </div>
+
+        <label class="flex flex-col gap-1 text-sm sm:col-span-2">
+          <span class="text-ink-muted">Seed Connect Active</span>
+          <a-switch v-model:checked="seedForm.dbEnabled" />
+        </label>
+        <label class="flex flex-col gap-1 text-sm">
+          <span class="text-ink-muted">Dialect</span>
+          <a-select
+            :value="seedForm.dialect"
+            :options="[
+              { value: 'mysql', label: 'MySQL / MariaDB' },
+              { value: 'postgres', label: 'PostgreSQL' },
+              { value: 'mongodb', label: 'MongoDB' },
+            ]"
+            class="w-full"
+            @update:value="onSeedDialectChange"
+          />
+        </label>
+        <label class="flex flex-col gap-1 text-sm">
+          <span class="text-ink-muted">Port</span>
+          <a-input-number v-model:value="seedForm.port" class="w-full" :min="1" />
+        </label>
+        <label class="flex flex-col gap-1 text-sm sm:col-span-2">
+          <span class="text-ink-muted">Host</span>
+          <a-input
+            v-model:value="seedForm.host"
+            placeholder="staging-db.example.com (blocked if contains prod)"
+          />
+        </label>
+        <label class="flex flex-col gap-1 text-sm sm:col-span-2">
+          <span class="text-ink-muted">Database</span>
+          <a-input v-model:value="seedForm.database" placeholder="app_staging" />
+        </label>
+        <label class="flex flex-col gap-1 text-sm">
+          <span class="text-ink-muted">
+            Username
+            <em v-if="seedForm.dialect === 'mongodb'">(optional if no auth)</em>
+          </span>
+          <a-input v-model:value="seedForm.username" placeholder="seed_user" />
+        </label>
+        <label class="flex flex-col gap-1 text-sm">
+          <span class="text-ink-muted">
+            Password
+            <template v-if="seedEditingProject?.createData?.db?.configured">
+              <span class="text-emerald-600">(set — leave blank to keep)</span>
+            </template>
+          </span>
+          <a-input-password
+            v-model:value="seedForm.password"
+            placeholder="••••••••"
+            autocomplete="new-password"
+          />
+        </label>
+        <label class="flex items-center gap-2 text-sm sm:col-span-2">
+          <a-checkbox v-model:checked="seedForm.ssl" />
+          <span class="text-ink-muted">SSL / TLS</span>
+        </label>
+
         <label class="flex flex-col gap-1 text-sm sm:col-span-2">
           <span class="text-ink-muted">
             Notes (ngữ cảnh server / DB — hiện cho AI + operator)
@@ -960,7 +1211,7 @@ onUnmounted(() => {
           <a-textarea
             v-model:value="seedForm.notes"
             :rows="2"
-            placeholder="vd. Staging Mongo tenant_demo (Connect DB)"
+            placeholder="vd. Staging Mongo tenant_demo (seed Connect)"
           />
         </label>
       </div>
@@ -972,6 +1223,22 @@ onUnmounted(() => {
           @click="saveSeed"
         >
           {{ seedSaving ? "Saving…" : "Save Create Data" }}
+        </button>
+        <button
+          type="button"
+          class="px-3 py-1.5 text-sm border border-line rounded-md hover:border-accent"
+          :disabled="seedTesting"
+          @click="testSeedDb"
+        >
+          {{ seedTesting ? "Testing…" : "Test connection" }}
+        </button>
+        <button
+          v-if="seedEditingProject?.createData?.db?.configured"
+          type="button"
+          class="px-3 py-1.5 text-sm text-red-600 border border-line rounded-md"
+          @click="clearSeedDb"
+        >
+          Remove seed Connect
         </button>
         <button
           type="button"
