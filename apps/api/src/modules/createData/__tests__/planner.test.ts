@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { buildSeedPlan } from "../planner.js";
 import { parseSeedPlanFromAgent } from "../parsePlan.js";
 import {
+  assertSafeCreateDataTarget,
   assertSafeDbHost,
   assertSafeEnvironment,
   resolvePlaceholders,
@@ -103,6 +104,29 @@ describe("executor guards", () => {
 
   it("blocks production-looking DB host", () => {
     expect(() => assertSafeDbHost("db.prod.internal")).toThrow(/production/i);
+  });
+
+  it("blocks production-looking SSH bastion", () => {
+    expect(() =>
+      assertSafeCreateDataTarget({
+        dialect: "mysql",
+        host: "localhost",
+        port: 3306,
+        database: "app",
+        username: "u",
+        password: "p",
+        ssl: false,
+        ssh: {
+          enabled: true,
+          sshHost: "bastion.prod.internal",
+          sshPort: 22,
+          sshUsername: "ops",
+          sshPassword: "x",
+          sshPrivateKey: "",
+          tunnelLocalPort: 13306,
+        },
+      }),
+    ).toThrow(/production/i);
   });
 
   it("resolves step placeholders", () => {

@@ -21,6 +21,40 @@ import {
 
 export type BaDbDialect = "mysql" | "postgres" | "mongodb";
 
+/** Optional SSH local-forward (Create Data seed writes via bastion). */
+export type BaDbSshConfig = {
+  enabled: boolean;
+  sshHost: string;
+  sshPort: number;
+  sshUsername: string;
+  /** AES-GCM via encryptSecret — never return to clients. */
+  sshPasswordEnc?: string;
+  sshPrivateKeyEnc?: string;
+  /** Local listen port; forwards to BaDbConnection.host:port on the SSH server. */
+  tunnelLocalPort: number;
+};
+
+export type BaDbSshPublic = {
+  enabled: boolean;
+  configured: boolean;
+  sshHost: string | null;
+  sshPort: number;
+  sshUsername: string | null;
+  hasSshPassword: boolean;
+  hasSshPrivateKey: boolean;
+  tunnelLocalPort: number;
+};
+
+export type BaDbSshResolved = {
+  enabled: boolean;
+  sshHost: string;
+  sshPort: number;
+  sshUsername: string;
+  sshPassword: string;
+  sshPrivateKey: string;
+  tunnelLocalPort: number;
+};
+
 /** Encrypted-at-rest DB connection for BA read-only queries. */
 export type BaDbConnection = {
   enabled: boolean;
@@ -32,6 +66,8 @@ export type BaDbConnection = {
   /** AES-GCM ciphertext via encryptSecret — never return to clients. Optional for MongoDB without auth. */
   passwordEnc?: string;
   ssl?: boolean;
+  /** SSH tunnel — used by Create Data seed; ignored by Connect DB / Sync target. */
+  ssh?: BaDbSshConfig | null;
   updatedAt: string;
 };
 
@@ -44,6 +80,7 @@ export type BaDbConnectionPublic = {
   database: string | null;
   username: string | null;
   ssl: boolean;
+  ssh: BaDbSshPublic | null;
   updatedAt: string | null;
 };
 
@@ -56,6 +93,8 @@ export type BaDbConnectionResolved = {
   username: string;
   password: string;
   ssl: boolean;
+  /** When set + enabled, open SSH tunnel then connect to 127.0.0.1:tunnelLocalPort. */
+  ssh?: BaDbSshResolved | null;
 };
 
 /** Per-project Create Data — dedicated seed DB write target (never Production). */
@@ -69,8 +108,8 @@ export type BaCreateDataEnvTarget = {
 };
 
 /**
- * Create Data seed config. `db` is a dedicated connection (same shape as
- * project Connect DB / Sync target) — not Sync system SSH/source credentials.
+ * Create Data seed config. `db` is a dedicated write connection (optional
+ * SSH tunnel) — separate from Sync system SSH/source credentials.
  */
 export type BaCreateDataConfig = {
   enabled: boolean;
@@ -90,9 +129,9 @@ export type BaCreateDataConfigPublic = {
   /** Always empty in public responses (HTTP targets retired). */
   targets: BaCreateDataEnvTarget[];
   notes: string | null;
-  /** Seed mode — always direct DB write via createData.db. */
+  /** Seed mode — always DB write via createData.db (direct or SSH tunnel). */
   mode: "db";
-  /** Public seed DB (no secrets) — usually same host/db as Sync target. */
+  /** Public seed DB (no secrets). */
   db: BaDbConnectionPublic;
   updatedAt: string | null;
 };
@@ -207,6 +246,21 @@ export type SystemSettingsPublic = {
   updatedAt: string;
 };
 
+export type BaDbSshPatch = {
+  enabled?: boolean;
+  sshHost?: string;
+  sshPort?: number;
+  sshUsername?: string;
+  /** New password; empty keeps existing. */
+  sshPassword?: string;
+  sshPrivateKey?: string;
+  clearSshPassword?: boolean;
+  clearSshPrivateKey?: boolean;
+  tunnelLocalPort?: number;
+  /** Remove SSH tunnel config. */
+  clear?: boolean;
+};
+
 export type BaDbConnectionPatch = {
   enabled?: boolean;
   dialect?: BaDbDialect;
@@ -217,9 +271,152 @@ export type BaDbConnectionPatch = {
   /** New password; empty/undefined keeps existing. */
   password?: string;
   ssl?: boolean;
+  /** SSH tunnel (Create Data). Omit to keep existing. */
+  ssh?: BaDbSshPatch;
   /** Remove entire DB config. */
   clear?: boolean;
 };
+
+const DEFAULT_SSH_TUNNEL_PORTS: Record<BaDbDialect, number> = {
+  mysql: 13306,
+  postgres: 15432,
+  mongodb: 27019,
+};
+
+export function defaultTunnelLocalPort(dialect: BaDbDialect): number {
+  return DEFAULT_SSH_TUNNEL_PORTS[dialect];
+}
+
+function toPublicBaDbSsh(
+  ssh: BaDbSshConfig | null | undefined,
+): BaDbSshPublic | null {
+  if (!ssh?.sshHost) return null;
+  const hasSshPassword = Boolean(ssh.sshPasswordEnc);
+  const hasSshPrivateKey = Boolean(ssh.sshPrivateKeyEnc);
+  const configured = Boolean(
+    ssh.sshHost &&
+      ssh.sshUsername &&
+      (hasSshPassword || hasSshPrivateKey),
+  );
+  return {
+    enabled: Boolean(ssh.enabled),
+    configured,
+    sshHost: ssh.sshHost || null,
+    sshPort: ssh.sshPort || 22,
+    sshUsername: ssh.sshUsername || null,
+    hasSshPassword,
+    hasSshPrivateKey,
+    tunnelLocalPort:
+      ssh.tunnelLocalPort || defaultTunnelLocalPort("mysql"),
+  };
+}
+
+function applySshPatch(
+  existing: BaDbSshConfig | null | undefined,
+  patch: BaDbSshPatch | undefined,
+  dialect: BaDbDialect,
+): BaDbSshConfig | null {
+  if (patch === undefined) return existing ?? null;
+  if (patch.clear) return null;
+
+  const sshHost = (
+    patch.sshHost !== undefined ? patch.sshHost : existing?.sshHost || ""
+  ).trim();
+  const sshUsername = (
+    patch.sshUsername !== undefined
+      ? patch.sshUsername
+      : existing?.sshUsername || ""
+  ).trim();
+  const sshPortRaw =
+    patch.sshPort !== undefined ? Number(patch.sshPort) : existing?.sshPort;
+  const sshPort =
+    Number.isFinite(sshPortRaw) && (sshPortRaw as number) > 0
+      ? Math.floor(sshPortRaw as number)
+      : 22;
+  const tunnelRaw =
+    patch.tunnelLocalPort !== undefined
+      ? Number(patch.tunnelLocalPort)
+      : existing?.tunnelLocalPort;
+  const tunnelLocalPort =
+    Number.isFinite(tunnelRaw) && (tunnelRaw as number) > 0
+      ? Math.floor(tunnelRaw as number)
+      : defaultTunnelLocalPort(dialect);
+  const enabled =
+    patch.enabled !== undefined
+      ? Boolean(patch.enabled)
+      : Boolean(existing?.enabled);
+
+  let sshPasswordEnc = existing?.sshPasswordEnc;
+  if (patch.clearSshPassword) sshPasswordEnc = undefined;
+  else if (patch.sshPassword !== undefined && String(patch.sshPassword).trim()) {
+    sshPasswordEnc = encryptSecret(String(patch.sshPassword).trim());
+  }
+
+  let sshPrivateKeyEnc = existing?.sshPrivateKeyEnc;
+  if (patch.clearSshPrivateKey) sshPrivateKeyEnc = undefined;
+  else if (
+    patch.sshPrivateKey !== undefined &&
+    String(patch.sshPrivateKey).trim()
+  ) {
+    sshPrivateKeyEnc = encryptSecret(String(patch.sshPrivateKey));
+  }
+
+  if (!enabled && !sshHost && !sshUsername) return null;
+
+  if (enabled) {
+    if (!sshHost) throw new Error("SSH host required when SSH tunnel is enabled");
+    if (!sshUsername) {
+      throw new Error("SSH username required when SSH tunnel is enabled");
+    }
+    if (!sshPasswordEnc && !sshPrivateKeyEnc) {
+      throw new Error(
+        "SSH password or private key required when SSH tunnel is enabled",
+      );
+    }
+  }
+  if (
+    !Number.isFinite(sshPort) ||
+    sshPort < 1 ||
+    sshPort > 65535
+  ) {
+    throw new Error("Invalid SSH port");
+  }
+  if (
+    !Number.isFinite(tunnelLocalPort) ||
+    tunnelLocalPort < 1 ||
+    tunnelLocalPort > 65535
+  ) {
+    throw new Error("Invalid tunnel local port");
+  }
+
+  const doc: BaDbSshConfig = {
+    enabled,
+    sshHost,
+    sshPort,
+    sshUsername,
+    tunnelLocalPort,
+  };
+  if (sshPasswordEnc) doc.sshPasswordEnc = sshPasswordEnc;
+  if (sshPrivateKeyEnc) doc.sshPrivateKeyEnc = sshPrivateKeyEnc;
+  return doc;
+}
+
+function resolveSsh(
+  ssh: BaDbSshConfig | null | undefined,
+): BaDbSshResolved | null {
+  if (!ssh?.enabled || !ssh.sshHost || !ssh.sshUsername) return null;
+  return {
+    enabled: true,
+    sshHost: ssh.sshHost,
+    sshPort: ssh.sshPort || 22,
+    sshUsername: ssh.sshUsername,
+    sshPassword: ssh.sshPasswordEnc ? decryptSecret(ssh.sshPasswordEnc) : "",
+    sshPrivateKey: ssh.sshPrivateKeyEnc
+      ? decryptSecret(ssh.sshPrivateKeyEnc)
+      : "",
+    tunnelLocalPort: ssh.tunnelLocalPort || defaultTunnelLocalPort("mysql"),
+  };
+}
 
 const CREATE_DATA_ENV_KEYS: BaCreateDataEnvKey[] = [
   "local",
@@ -334,6 +531,7 @@ export async function resolveBaCreateDataDb(
     username: db.username,
     password,
     ssl: Boolean(db.ssl),
+    ssh: resolveSsh(db.ssh),
   };
 }
 
@@ -353,6 +551,7 @@ export async function resolveBaCreateDataDbForTest(
     username: db.username,
     password: db.passwordEnc ? decryptSecret(db.passwordEnc) : "",
     ssl: Boolean(db.ssl),
+    ssh: resolveSsh(db.ssh),
   };
 }
 
@@ -393,6 +592,7 @@ export function toPublicBaDb(db: BaDbConnection | null | undefined): BaDbConnect
       database: null,
       username: null,
       ssl: false,
+      ssh: null,
       updatedAt: null,
     };
   }
@@ -409,6 +609,7 @@ export function toPublicBaDb(db: BaDbConnection | null | undefined): BaDbConnect
       database: db.database || null,
       username: db.username || null,
       ssl: Boolean(db.ssl),
+      ssh: toPublicBaDbSsh(db.ssh),
       updatedAt: db.updatedAt || null,
     };
   }
@@ -421,6 +622,7 @@ export function toPublicBaDb(db: BaDbConnection | null | undefined): BaDbConnect
     database: db.database || null,
     username: db.username || null,
     ssl: Boolean(db.ssl),
+    ssh: toPublicBaDbSsh(db.ssh),
     updatedAt: db.updatedAt || null,
   };
 }
@@ -555,6 +757,8 @@ function applyDbPatch(
     if (!username) throw new Error("DB username required");
   }
 
+  const ssh = applySshPatch(existing?.ssh, patch.ssh, dialect);
+
   const doc: BaDbConnection = {
     enabled,
     dialect,
@@ -566,6 +770,7 @@ function applyDbPatch(
     updatedAt: new Date().toISOString(),
   };
   if (passwordEnc) doc.passwordEnc = passwordEnc;
+  if (ssh) doc.ssh = ssh;
   return doc;
 }
 

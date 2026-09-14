@@ -36,6 +36,11 @@ export type BaProject = {
       host?: string | null;
       port?: number | null;
       database: string | null;
+      ssh?: {
+        enabled: boolean;
+        configured?: boolean;
+        sshHost?: string | null;
+      } | null;
     };
   };
 };
