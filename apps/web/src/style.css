@@ -4251,6 +4251,14 @@ a.faw-mseg__btn {
   font-family: var(--font-mono, ui-monospace, monospace);
   font-size: 10.5px;
   color: var(--ink-faint, var(--ink-muted));
+  align-self: flex-start;
+  margin-top: 2px;
+}
+.faw-build-chip__body {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
 }
 .faw-build-chip__name {
   font-weight: 600;
@@ -4258,6 +4266,15 @@ a.faw-mseg__btn {
 }
 .faw-build-chip.is-running .faw-build-chip__name {
   color: var(--ink);
+}
+.faw-build-chip__time {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 10.5px;
+  color: var(--ink-faint, var(--ink-muted));
+  white-space: nowrap;
+}
+.faw-build-chip.is-running .faw-build-chip__time {
+  color: var(--ink-muted);
 }
 .faw-build-chip__arrow {
   color: var(--ink-faint, var(--ink-muted));

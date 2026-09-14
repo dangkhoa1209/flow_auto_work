@@ -247,6 +247,38 @@ function formatTime(iso?: string) {
   return t.toLocaleString("en-US", { hour12: false });
 }
 
+/** Compact clock for queue chips (History-style start/end, shorter). */
+function formatChipClock(iso?: string) {
+  if (!iso) return "—";
+  const t = new Date(iso);
+  if (Number.isNaN(t.getTime())) return "—";
+  return t.toLocaleTimeString("en-US", {
+    hour12: false,
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+}
+
+/** Queue chip meta: start (or queued) time + live/finished duration when available. */
+function queueChipTime(job: BuildJob) {
+  void nowTick.value;
+  if (job.status === "running") {
+    const start = formatChipClock(job.startedAt || job.queuedAt);
+    const elapsed = formatDuration(job);
+    return elapsed !== "—" ? `${start} · ${elapsed}` : start;
+  }
+  if (job.status === "queued") {
+    return `queued ${formatChipClock(job.queuedAt)}`;
+  }
+  const start = formatChipClock(job.startedAt || job.queuedAt);
+  if (job.finishedAt) {
+    return `${start} → ${formatChipClock(job.finishedAt)}`;
+  }
+  const dur = formatDuration(job);
+  return dur !== "—" ? `${start} · ${dur}` : start;
+}
+
 function statusClass(status: BuildStatus) {
   switch (status) {
     case "queued":
@@ -625,12 +657,20 @@ onUnmounted(() => {
                 type="button"
                 class="faw-build-chip"
                 :class="{ 'is-running': job.status === 'running' }"
+                :title="
+                  job.status === 'running'
+                    ? `Started ${formatTime(job.startedAt || job.queuedAt)}`
+                    : `Queued ${formatTime(job.queuedAt)}`
+                "
                 @click="toggleBuildCard(job)"
               >
                 <span class="faw-build-chip__pos">
                   {{ job.status === "running" ? "●" : `#${idx + 1}` }}
                 </span>
-                <span class="faw-build-chip__name">{{ job.scriptLabel }}</span>
+                <span class="faw-build-chip__body">
+                  <span class="faw-build-chip__name">{{ job.scriptLabel }}</span>
+                  <span class="faw-build-chip__time">{{ queueChipTime(job) }}</span>
+                </span>
               </button>
               <span
                 v-if="idx < queueActive.length - 1"
