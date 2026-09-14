@@ -7,6 +7,7 @@ import {
   getTaskTypeLabelMapping,
   listBaProjects,
   resolveBaProjectDbForTest,
+  resolveBaCreateDataDbForTest,
   toPublicBaProject,
   toPublicSystemSettings,
   updateBaProject,
@@ -121,6 +122,10 @@ function parseCreateDataPatch(
     patch.notes =
       b.notes == null ? null : String(b.notes).trim() || null;
   }
+  if (b.db !== undefined) {
+    const dbPatch = parseDbPatch(b.db);
+    if (dbPatch !== undefined) patch.db = dbPatch;
+  }
   return patch;
 }
 
@@ -181,6 +186,32 @@ export async function adminTestBaProjectDb(idRaw: string) {
       err instanceof Error ? err.message : String(err),
       400,
       "ba_db_test_failed",
+    );
+  }
+}
+
+export async function adminTestBaCreateDataDb(idRaw: string) {
+  const id = idRaw.trim();
+  const cfg = await resolveBaCreateDataDbForTest(id);
+  if (!cfg) {
+    throw new AppError(
+      "Create Data DB chưa cấu hình — lưu host/database (và password nếu cần) trước",
+      400,
+      "create_data_db_not_configured",
+    );
+  }
+  try {
+    const result = await testBaDbConnection(cfg);
+    return {
+      ok: true as const,
+      dialect: result.dialect,
+      elapsedMs: result.elapsedMs,
+    };
+  } catch (err) {
+    throw new AppError(
+      err instanceof Error ? err.message : String(err),
+      400,
+      "create_data_db_test_failed",
     );
   }
 }

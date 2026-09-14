@@ -14,7 +14,9 @@ import { persistCursorUsage } from "../../plugins/cursor/recordUsage.js";
 import { readOnlyAgentPolicy } from "../../plugins/cursor/agentPolicy.js";
 import {
   getBaProject,
+  isBaCreateDataDbAccessAllowed,
   isBaDbAccessAllowed,
+  resolveBaCreateDataDb,
   resolveBaProjectDb,
   resolveSystemCursorApiKey,
   resolveSystemCursorModel,
@@ -286,10 +288,14 @@ export async function runCreateDataPlannerAgent(opts: {
     const model = await resolveSystemCursorModelSpec();
     const modelLabel = cursorModelLogLabel(await resolveSystemCursorModel());
 
-    const dbAllowed = isBaDbAccessAllowed(project);
-    const dbCfg = dbAllowed
-      ? await resolveBaProjectDb(project.id)
+    const seedDbCfg = isBaCreateDataDbAccessAllowed(project)
+      ? await resolveBaCreateDataDb(project.id)
       : null;
+    const projectDbCfg =
+      !seedDbCfg && isBaDbAccessAllowed(project)
+        ? await resolveBaProjectDb(project.id)
+        : null;
+    const dbCfg = seedDbCfg || projectDbCfg;
     const dbAccess = {
       allowed: Boolean(dbCfg),
       dialect: dbCfg?.dialect,

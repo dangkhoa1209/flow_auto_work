@@ -42,6 +42,8 @@ export const API = {
       `/api/admin/ba-projects/${encodeURIComponent(id)}/clone-status`,
     baTestDb: (id: string) =>
       `/api/admin/ba-projects/${encodeURIComponent(id)}/test-db`,
+    baTestCreateDataDb: (id: string) =>
+      `/api/admin/ba-projects/${encodeURIComponent(id)}/test-create-data-db`,
     cursorSettings: "/api/admin/settings/cursor",
     cursorModels: "/api/admin/settings/cursor-models",
     cursorPats: "/api/admin/settings/cursor-pats",
