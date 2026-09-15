@@ -159,23 +159,31 @@ function buildSeedPlannerPrompt(opts: {
 ${opts.graphifyBlock ? `${opts.graphifyBlock}\n` : ""}## Quy trình bắt buộc (UI → BE → data phát sinh)
 1. Locator: rút yêu cầu thành screen/feature/symbol, tra bằng code_map_query trước.
 2. Trace flow thật: form (Vue/React) → route/API handler → service/use-case → model/repo.
-3. Validate: liệt kê rule bắt buộc/unique/format/FK/enum/default từ form + BE (DTO, validator, middleware). Field bắt buộc mà người dùng chưa cho → đưa vào "questions", không tự bịa giá trị.
-4. Data phát sinh: mọi bảng/collection phụ mà BE luôn tạo kèm (profile, role map, wallet, log, counter, soft-delete flag...) phải có step riêng (hoặc field embed nếu Mongo).
-5. Schema thật: tên bảng/collection + kiểu dữ liệu phải khớp model/migration đã đọc được — trích rõ trong "notes" phần nào lấy từ đâu.
-6. Nguồn schema:
+3. Validate: liệt kê rule bắt buộc/unique/format/FK/enum/default từ form + BE (DTO, validator, middleware).
+4. Điền data (QUAN TRỌNG):
+   - Giá trị người dùng **đã nêu** → dùng đúng giá trị đó.
+   - Field bắt buộc / FK / unique / format mà người dùng **chưa nêu** → **TỰ SINH** giá trị hợp lệ (theo rule đã đọc: độ dài, regex, enum, unique giả lập, FK trỏ bản ghi seed trước hoặc mẫu hợp lệ từ DB đọc được). Ghi ngắn trong "notes" field nào đã auto-fill.
+   - Ví dụ: "tạo NV mới tên An" → name=An, còn lại (code, email, cccd, department_id…) AI tự lo cho đủ validate.
+5. Giá trị người dùng **vi phạm** validate (format/độ dài/enum/unique rõ ràng) → **KHÔNG** tạo step chứa giá trị sai. Trả "steps": [] và đưa lỗi vào "questions" (field + reason trích rule). Ví dụ: "cccd=33333" nhưng rule yêu cầu 12 số → báo lỗi, không insert.
+6. Data phát sinh: mọi bảng/collection phụ mà BE luôn tạo kèm (profile, role map, wallet, log, counter, soft-delete flag...) phải có step riêng (hoặc field embed nếu Mongo).
+7. Schema thật: tên bảng/collection + kiểu dữ liệu phải khớp model/migration đã đọc được — trích rõ trong "notes" phần nào lấy từ đâu.
+8. Nguồn schema:
 ${schemaSourceBlock}
 ${notesLine}
 ## Khi không tìm thấy flow tương ứng trong code
-- KHÔNG suy đoán bừa. Trả "steps": [] và giải thích trong "questions" (vd: feature/API tương ứng chưa tìm thấy trong code, cần người dùng cung cấp path hoặc xác nhận feature name).
+- KHÔNG suy đoán entity/bảng bừa. Trả "steps": [] và giải thích trong "questions" (vd: feature/API tương ứng chưa tìm thấy trong code, cần path hoặc tên feature).
+- Phân biệt: thiếu **tên entity/flow** → hỏi; thiếu **giá trị field** sau khi đã biết schema → tự sinh (không hỏi).
 
 ## Cấm
 - Không insert theo suy đoán tên entity khi chưa đọc flow thật.
-- Không bỏ validation bắt buộc.
+- Không bỏ validation bắt buộc — mọi field trong data phải thỏa rule đã đọc.
 - Không bỏ bảng/collection phụ mà code luôn tạo kèm.
 - Không đề xuất HTTP method/endpoint trong JSON.
+- Không hỏi lại field bắt buộc chỉ vì user chưa nêu — hãy auto-fill trừ khi không suy ra được rule/schema hợp lệ.
+- Không "sửa ngầm" giá trị user đưa sai cho khớp rule — phải báo lỗi trong questions.
 
 ## Output bắt buộc
-Prose tiếng Việt, 3–6 câu: flow đã trace (UI → BE), validate chính đã áp dụng, data phát sinh đã mirror.
+Prose tiếng Việt, 3–6 câu: flow đã trace (UI → BE), validate chính, field nào auto-fill, field nào user cung cấp (hoặc lỗi validate nếu có).
 
 Sau đó đúng 1 JSON block (\`\`\`json), theo schema:
 
@@ -195,21 +203,23 @@ Sau đó đúng 1 JSON block (\`\`\`json), theo schema:
   ],
   "questions": [
     {
-      "field": "string, tên field/thông tin còn thiếu",
-      "reason": "string, vì sao bắt buộc (trích rule đã đọc được)"
+      "field": "string, tên field lỗi hoặc thông tin còn thiếu (entity/flow)",
+      "reason": "string, lỗi validate (trích rule) hoặc vì sao cần người dùng bổ sung"
     }
   ],
-  "notes": ["string — flow đã trace, side-effects, nguồn schema (DB thật / suy ra từ source)"]
+  "notes": ["string — flow đã trace, auto-filled fields, side-effects, nguồn schema (DB thật / suy ra từ source)"]
 }
 \`\`\`
 
 ### Quy tắc plan
-- op = insert → data bắt buộc, filter = null.
+- op = insert → data bắt buộc, filter = null. data phải đủ field bắt buộc (user + auto-fill).
 - op = update → data + filter đều bắt buộc, filter không rỗng.
 - op = delete → filter bắt buộc, không rỗng; data = null.
 - depends_on liệt kê đúng step_id mà step hiện tại tham chiếu qua placeholder {{step_id.field}} / {{step_id.id}} / {{step_id._id}}.
 - Thứ tự steps trong mảng phải theo đúng dependency nghiệp vụ (step bị phụ thuộc đứng trước).
-- Thiếu thông tin bắt buộc → để steps: [] hoặc chỉ các step không phụ thuộc thông tin thiếu, và luôn điền questions tương ứng.
+- User giá trị sai validate → steps: [] + questions (validation error).
+- Không biết entity/flow trong code → steps: [] + questions (cần làm rõ feature).
+- Đã biết flow + schema → ưu tiên steps đầy đủ với auto-fill; questions chỉ khi thật sự không suy ra được.
 
 ## Yêu cầu người dùng
 ${opts.prompt}`;

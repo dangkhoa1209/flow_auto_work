@@ -345,7 +345,7 @@ onUnmounted(() => {
           <a-textarea
             v-model:value="prompt"
             :rows="3"
-            placeholder='e.g. "Create 10 users, each with 1 completed and 1 pending order"'
+            placeholder='e.g. "Tạo NV mới tên An" (AI tự điền field còn lại) hoặc "Tạo NV cccd 33333" (sai rule → báo lỗi)'
           />
         </label>
 
@@ -460,7 +460,9 @@ onUnmounted(() => {
         </div>
 
         <div v-if="planQuestions.length" class="space-y-1">
-          <div class="text-sm font-medium text-orange-700">Needs clarification</div>
+          <div class="text-sm font-medium text-orange-700">
+            Needs clarification / validation
+          </div>
           <ul class="m-0 pl-4 text-[13px] text-ink-muted space-y-1">
             <li v-for="(q, i) in planQuestions" :key="i">{{ q }}</li>
           </ul>
