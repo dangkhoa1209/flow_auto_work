@@ -43,6 +43,21 @@ function asStep(raw: unknown, index: number): CreateDataStepPlan | null {
   };
 }
 
+/** Format AI question entry (string or {field, reason}) for UI. */
+export function formatPlanQuestion(raw: unknown): string {
+  if (typeof raw === "string") return raw.trim();
+  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+    const row = raw as Record<string, unknown>;
+    const field = String(row.field || row.name || "").trim();
+    const reason = String(row.reason || row.message || row.error || "").trim();
+    if (field && reason) return `${field}: ${reason}`;
+    if (reason) return reason;
+    if (field) return field;
+  }
+  const s = String(raw ?? "").trim();
+  return s === "[object Object]" ? "" : s;
+}
+
 function tryParsePlanObject(text: string): CreateDataPlanResponse | null {
   try {
     const obj = JSON.parse(text) as Record<string, unknown>;
@@ -60,11 +75,14 @@ function tryParsePlanObject(text: string): CreateDataPlanResponse | null {
     const steps = stepsRaw
       .map((s, i) => asStep(s, i))
       .filter((s): s is CreateDataStepPlan => Boolean(s));
-    const questions = Array.isArray(planRoot.questions)
-      ? planRoot.questions.map(String)
+    const questionsRaw = Array.isArray(planRoot.questions)
+      ? planRoot.questions
       : Array.isArray(obj.questions)
-        ? obj.questions.map(String)
+        ? obj.questions
         : [];
+    const questions = questionsRaw
+      .map(formatPlanQuestion)
+      .filter((q) => Boolean(q));
     const notes = Array.isArray(planRoot.notes)
       ? planRoot.notes.map(String)
       : Array.isArray(obj.notes)

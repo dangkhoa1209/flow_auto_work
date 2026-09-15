@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { buildSeedPlan } from "../planner.js";
-import { parseSeedPlanFromAgent } from "../parsePlan.js";
+import {
+  formatPlanQuestion,
+  parseSeedPlanFromAgent,
+} from "../parsePlan.js";
 import {
   assertSafeCreateDataTarget,
   assertSafeDbHost,
@@ -61,6 +64,26 @@ describe("parseSeedPlanFromAgent", () => {
     expect(plan?.notes).toContain("from source");
   });
 
+  it("formats {field, reason} questions instead of [object Object]", () => {
+    const text = `\`\`\`json
+{
+  "steps": [],
+  "questions": [
+    {
+      "field": "cccd",
+      "reason": "phải đủ 12 số (nhận 33333)"
+    }
+  ],
+  "notes": ["validation failed"]
+}
+\`\`\``;
+    const plan = parseSeedPlanFromAgent(text);
+    expect(plan?.steps).toHaveLength(0);
+    expect(plan?.questions).toEqual([
+      "cccd: phải đủ 12 số (nhận 33333)",
+    ]);
+  });
+
   it("rejects legacy HTTP plans", () => {
     const text = `\`\`\`json
 {
@@ -79,6 +102,18 @@ describe("parseSeedPlanFromAgent", () => {
 \`\`\``;
     const plan = parseSeedPlanFromAgent(text);
     expect(plan).toBeNull();
+  });
+});
+
+describe("formatPlanQuestion", () => {
+  it("keeps plain strings", () => {
+    expect(formatPlanQuestion("Which table?")).toBe("Which table?");
+  });
+
+  it("joins field + reason", () => {
+    expect(
+      formatPlanQuestion({ field: "email", reason: "required" }),
+    ).toBe("email: required");
   });
 });
 
