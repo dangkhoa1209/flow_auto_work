@@ -42,7 +42,7 @@ import {
 import { withBaDbResolvedConnection } from "../../plugins/baDb/withTunnel.js";
 import type { BaDbConnectionResolved } from "../../workspace/baStore.js";
 import { mergeBaAgentCustomTools } from "../../plugins/ba/graphifyTools.js";
-import { buildSeedPlan } from "./planner.js";
+import { buildSeedPlan, assertPlanEntityAlignment } from "./planner.js";
 import { parseSeedPlanFromAgent } from "./parsePlan.js";
 import type {
   CreateDataEnvironment,
@@ -260,6 +260,8 @@ ${notesLine}
 - Không "sửa ngầm" giá trị user đưa sai cho khớp rule — phải báo lỗi trong questions.
 - **Không** dùng placeholder trỏ step không tồn tại (\`{{fk_catalog.*}}\`, \`{{catalog.*}}\`, …). FK master phải là literal id từ query_* hoặc từ step insert trước đó.
 - **Không** gọi GitLab API / MCP — chỉ dùng block "GitLab task (chỉ đọc)" nếu đã được nạp.
+- **Thuật ngữ:** «nhân viên» / staff / NV / employee → collection **Staff** (thường \`staffs\`), **KHÔNG** dùng \`users\` trừ khi user nói rõ «người dùng / user account».
+- **Số lượng:** chỉ tạo đúng số bản ghi user **đã nêu** cạnh từ nhân viên/staff/user (vd "tạo 2 nhân viên"). Không lấy số từ ngày/tháng/năm (2026, tháng 9…) làm số lượng insert. Không nêu số → mặc định **1** bản ghi chính (+ side-effect bắt buộc). Cấm sinh hàng chục step chỉ vì đoán.
 
 ## Output bắt buộc
 Prose tiếng Việt, 3–6 câu: flow đã trace (UI → BE), validate chính, field nào auto-fill, field nào user cung cấp (hoặc lỗi validate nếu có).
@@ -855,22 +857,20 @@ export async function runCreateDataPlannerAgent(opts: {
               `Connect DB target (${opts.environment}): ${dbAccess.dialect} / ${dbAccess.database}`,
             ];
           }
-          const validated = applySideEffectValidation(
+          const afterSideEffects = applySideEffectValidation(
             parsed,
             knowledge?.sideEffectEdges || [],
           );
-          const { sideEffectGaps, ...planBody } = validated;
-          if (sideEffectGaps.length) {
-            planBody.notes = [
-              ...(planBody.notes || []),
-              `metrics: pass1=${pass1Ms}ms pass2=${pass2Ms}ms tools=${toolCalls} codeMap=${codeMapCache}`,
-            ];
-          } else {
-            planBody.notes = [
-              ...(planBody.notes || []),
-              `metrics: pass1=${pass1Ms}ms pass2=${pass2Ms}ms tools=${toolCalls} codeMap=${codeMapCache}`,
-            ];
-          }
+          const { sideEffectGaps, ...alignedBase } = afterSideEffects;
+          const planBody = assertPlanEntityAlignment(
+            opts.prompt,
+            alignedBase,
+            scope.collections,
+          );
+          planBody.notes = [
+            ...(planBody.notes || []),
+            `metrics: pass1=${pass1Ms}ms pass2=${pass2Ms}ms tools=${toolCalls} codeMap=${codeMapCache}`,
+          ];
           const ready = { ...planBody, planner: "ai" as const, metrics };
           publishProgress({
             userId: opts.userId,
@@ -878,7 +878,9 @@ export async function runCreateDataPlannerAgent(opts: {
             step: "done",
             label: sideEffectGaps.length
               ? `Needs side-effects · ${sideEffectGaps.length} gap(s)`
-              : `Plan ready · ${planBody.steps.length} steps`,
+              : planBody.steps.length
+                ? `Plan ready · ${planBody.steps.length} steps`
+                : "Needs clarification",
             plan: ready,
           });
           return ready;

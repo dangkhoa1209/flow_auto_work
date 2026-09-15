@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { buildSeedPlan } from "../planner.js";
+import {
+  assertPlanEntityAlignment,
+  buildSeedPlan,
+  extractEntityCount,
+} from "../planner.js";
 import {
   formatPlanQuestion,
   parseSeedPlanFromAgent,
@@ -12,6 +16,22 @@ import {
   resolvePlaceholders,
 } from "../executor.js";
 import { normalizeCreateDataTargets } from "../../../workspace/baStore.js";
+
+describe("extractEntityCount", () => {
+  it("defaults to 1 when no count is stated", () => {
+    expect(extractEntityCount("Tạo nhân viên mới tên An")).toBe(1);
+    expect(extractEntityCount("Create a new staff for September 2026")).toBe(1);
+  });
+
+  it("reads count next to staff/user words only", () => {
+    expect(extractEntityCount("Tạo 3 nhân viên")).toBe(3);
+    expect(extractEntityCount("create 2 users")).toBe(2);
+  });
+
+  it("does not treat years as count", () => {
+    expect(extractEntityCount("Tạo nhân viên tháng 9/2026")).toBe(1);
+  });
+});
 
 describe("buildSeedPlan", () => {
   it("builds users + completed/pending orders from VN prompt", () => {
@@ -29,10 +49,42 @@ describe("buildSeedPlan", () => {
     expect(order?.op).toBe("insert");
   });
 
+  it("maps nhân viên to staffs (not users) and defaults to 1", () => {
+    const plan = buildSeedPlan("Tạo nhân viên mới");
+    expect(plan.steps).toHaveLength(1);
+    expect(plan.steps[0]?.collection).toBe("staffs");
+    expect(plan.steps[0]?.op).toBe("insert");
+  });
+
   it("asks questions when scenario is unclear", () => {
     const plan = buildSeedPlan("làm gì đó giúp mình");
     expect(plan.steps).toHaveLength(0);
     expect(plan.questions.length).toBeGreaterThan(0);
+  });
+});
+
+describe("assertPlanEntityAlignment", () => {
+  it("blocks users-only plan when scenario is staff", () => {
+    const out = assertPlanEntityAlignment(
+      "Tạo nhân viên mới",
+      {
+        steps: [
+          {
+            step_id: "u1",
+            description: "user",
+            op: "insert",
+            collection: "users",
+            data: { email: "a@b.c" },
+            filter: null,
+            depends_on: [],
+          },
+        ],
+        questions: [],
+        notes: [],
+      },
+    );
+    expect(out.steps).toHaveLength(0);
+    expect(out.questions.some((q) => /staffs/i.test(q))).toBe(true);
   });
 });
 
