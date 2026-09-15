@@ -24,6 +24,7 @@ type BaDbPublic = {
   port: number | null;
   database: string | null;
   username: string | null;
+  authSource?: string | null;
   ssl: boolean;
   ssh?: BaDbSshPublic | null;
   updatedAt: string | null;
@@ -80,6 +81,7 @@ const dbForm = reactive({
   database: "",
   username: "",
   password: "",
+  authSource: "admin",
   ssl: false,
 });
 
@@ -94,6 +96,7 @@ const seedForm = reactive({
   database: "",
   username: "",
   password: "",
+  authSource: "admin",
   ssl: false,
   sshEnabled: false,
   sshHost: "",
@@ -198,6 +201,7 @@ function resetDbForm() {
   dbForm.database = "";
   dbForm.username = "";
   dbForm.password = "";
+  dbForm.authSource = "admin";
   dbForm.ssl = false;
 }
 
@@ -210,6 +214,7 @@ function resetSeedForm() {
   seedForm.database = "";
   seedForm.username = "";
   seedForm.password = "";
+  seedForm.authSource = "admin";
   seedForm.ssl = false;
   seedForm.sshEnabled = false;
   seedForm.sshHost = "";
@@ -265,6 +270,7 @@ function openDb(p: BaProject) {
   dbForm.database = d?.database || "";
   dbForm.username = d?.username || "";
   dbForm.password = "";
+  dbForm.authSource = d?.authSource || "admin";
   dbForm.ssl = Boolean(d?.ssl);
 }
 
@@ -284,6 +290,7 @@ function openSeed(p: BaProject) {
   seedForm.database = d?.database || "";
   seedForm.username = d?.username || "";
   seedForm.password = "";
+  seedForm.authSource = d?.authSource || "admin";
   seedForm.ssl = Boolean(d?.ssl);
   seedForm.sshEnabled = Boolean(ssh?.enabled);
   seedForm.sshHost = ssh?.sshHost || "";
@@ -327,6 +334,7 @@ function copySeedFromConnectDb() {
   seedForm.database = d.database || "";
   seedForm.username = d.username || "";
   seedForm.password = "";
+  seedForm.authSource = d.authSource || "admin";
   seedForm.ssl = Boolean(d.ssl);
   // SSH stays as-is (Connect DB has no SSH) — turn on and fill if needed.
   message.info(
@@ -356,6 +364,9 @@ function buildSeedDbPayload(): Record<string, unknown> {
     username: seedForm.username.trim(),
     ssl: seedForm.ssl,
   };
+  if (seedForm.dialect === "mongodb") {
+    db.authSource = seedForm.authSource.trim() || "admin";
+  }
   if (seedForm.password.trim()) db.password = seedForm.password.trim();
 
   const ssh: Record<string, unknown> = {
@@ -540,6 +551,9 @@ async function saveDb() {
       username: dbForm.username.trim(),
       ssl: dbForm.ssl,
     };
+    if (dbForm.dialect === "mongodb") {
+      db.authSource = dbForm.authSource.trim() || "admin";
+    }
     if (dbForm.password.trim()) db.password = dbForm.password.trim();
 
     await api(API.admin.baProject(dbEditingId.value), {
@@ -740,6 +754,9 @@ async function testDb() {
         username: dbForm.username.trim(),
         ssl: dbForm.ssl,
       };
+      if (dbForm.dialect === "mongodb") {
+        db.authSource = dbForm.authSource.trim() || "admin";
+      }
       if (dbForm.password.trim()) db.password = dbForm.password.trim();
       await api(API.admin.baProject(dbEditingId.value), {
         method: "PATCH",
@@ -1118,6 +1135,16 @@ onUnmounted(() => {
           </span>
           <a-input v-model:value="dbForm.username" placeholder="readonly_user" />
         </label>
+        <label
+          v-if="dbForm.dialect === 'mongodb'"
+          class="flex flex-col gap-1 text-sm sm:col-span-2"
+        >
+          <span class="text-ink-muted">Auth source</span>
+          <a-input
+            v-model:value="dbForm.authSource"
+            placeholder="admin"
+          />
+        </label>
         <label class="flex flex-col gap-1 text-sm sm:col-span-2">
           <span class="text-ink-muted">
             Password
@@ -1229,6 +1256,16 @@ onUnmounted(() => {
             <em v-if="seedForm.dialect === 'mongodb'">(optional if no auth)</em>
           </span>
           <a-input v-model:value="seedForm.username" placeholder="app_user" />
+        </label>
+        <label
+          v-if="seedForm.dialect === 'mongodb'"
+          class="flex flex-col gap-1 text-sm sm:col-span-2"
+        >
+          <span class="text-ink-muted">Auth source</span>
+          <a-input
+            v-model:value="seedForm.authSource"
+            placeholder="admin"
+          />
         </label>
         <label class="flex flex-col gap-1 text-sm sm:col-span-2">
           <span class="text-ink-muted">
