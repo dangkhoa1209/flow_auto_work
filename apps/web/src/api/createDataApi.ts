@@ -72,6 +72,9 @@ export type CreateDataPlan = {
   suggestedDbTarget?: CreateDataDbSnapshot | null;
 };
 
+/** Planner can run up to ~10 minutes; keep HTTP above the default 120s axios cap. */
+export const CREATE_DATA_PLAN_TIMEOUT_MS = 10 * 60 * 1000;
+
 export const createDataApi = {
   plan(opts: {
     prompt: string;
@@ -82,6 +85,7 @@ export const createDataApi = {
     return api<{ plan: CreateDataPlan }>(API.ba.createData.plan, {
       method: "POST",
       body: JSON.stringify(opts),
+      timeout: CREATE_DATA_PLAN_TIMEOUT_MS,
     });
   },
 

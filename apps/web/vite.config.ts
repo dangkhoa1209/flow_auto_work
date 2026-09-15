@@ -15,6 +15,9 @@ export default defineConfig({
       "/api": {
         target: "http://127.0.0.1:8787",
         ws: true,
+        // Create Data /plan can run the Cursor planner for several minutes.
+        timeout: 10 * 60 * 1000,
+        proxyTimeout: 10 * 60 * 1000,
       },
       "/health": "http://127.0.0.1:8787",
     },

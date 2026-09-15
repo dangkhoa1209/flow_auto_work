@@ -10,8 +10,10 @@ import {
   toPublicBaDb,
 } from "../../workspace/baStore.js";
 import {
+  assertPlanPlaceholdersReferToSteps,
   assertSafeCreateDataTarget,
   assertSafeEnvironment,
+  collectPlaceholderStepRefs,
   executeBatchSteps,
   isCreateDataDbOp,
   rollbackBatchSteps,
@@ -124,6 +126,12 @@ function normalizeSteps(raw: unknown): CreateDataStepPlan[] {
         "create_data_bad_data",
       );
     }
+    const depends_on = Array.isArray(row.depends_on)
+      ? row.depends_on.map(String)
+      : [];
+    const autoDeps = collectPlaceholderStepRefs({ data, filter }).filter(
+      (id) => id !== step_id && !depends_on.includes(id),
+    );
     return {
       step_id,
       description: String(row.description || step_id),
@@ -131,9 +139,7 @@ function normalizeSteps(raw: unknown): CreateDataStepPlan[] {
       collection,
       data,
       filter,
-      depends_on: Array.isArray(row.depends_on)
-        ? row.depends_on.map(String)
-        : [],
+      depends_on: [...depends_on, ...autoDeps],
       rollback: row.rollback === false ? false : true,
     };
   });
@@ -256,6 +262,7 @@ export async function createDataCreateBatch(opts: {
   if (!steps.length) {
     throw new AppError("Plan has no steps", 400, "create_data_empty_plan");
   }
+  assertPlanPlaceholdersReferToSteps(steps);
   const now = new Date().toISOString();
   const { id, batchId } = newIds();
   const doc: CreateDataBatch = {

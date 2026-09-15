@@ -14,6 +14,79 @@ const BLOCKED_ENV = new Set(["production", "prod", "live"]);
 
 const PLACEHOLDER_RE = /\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/g;
 
+/** Collect `{{expr}}` expressions from nested plan data/filter. */
+export function collectPlaceholderExprs(value: unknown): string[] {
+  const out: string[] = [];
+  if (typeof value === "string") {
+    for (const m of value.matchAll(PLACEHOLDER_RE)) {
+      const expr = m[1]?.trim();
+      if (expr) out.push(expr);
+    }
+    return out;
+  }
+  if (Array.isArray(value)) {
+    for (const v of value) out.push(...collectPlaceholderExprs(v));
+    return out;
+  }
+  if (value && typeof value === "object") {
+    for (const v of Object.values(value as Record<string, unknown>)) {
+      out.push(...collectPlaceholderExprs(v));
+    }
+  }
+  return out;
+}
+
+/** Step ids referenced by `{{step_id.field}}` (ignores bare `{{field}}`). */
+export function collectPlaceholderStepRefs(value: unknown): string[] {
+  const refs = new Set<string>();
+  for (const expr of collectPlaceholderExprs(value)) {
+    if (!expr.includes(".")) continue;
+    const stepId = expr.split(".")[0]?.trim();
+    if (stepId) refs.add(stepId);
+  }
+  return [...refs];
+}
+
+/**
+ * Ensure every `{{step_id.*}}` in the plan points at a real step_id.
+ * Blocks invented refs like `{{fk_catalog.country_id}}` with no fk_catalog step.
+ */
+export function assertPlanPlaceholdersReferToSteps(
+  steps: CreateDataStepPlan[],
+): void {
+  const ids = new Set(steps.map((s) => s.step_id));
+  for (const step of steps) {
+    const exprs = [
+      ...collectPlaceholderExprs(step.data),
+      ...collectPlaceholderExprs(step.filter),
+    ];
+    for (const expr of exprs) {
+      if (!expr.includes(".")) {
+        throw new AppError(
+          `Step ${step.step_id} has invalid placeholder {{${expr}}} — use {{step_id.field}} (e.g. {{insert_staff_a.id}})`,
+          400,
+          "create_data_bad_placeholder",
+        );
+      }
+      const ref = expr.split(".")[0]!;
+      if (!ids.has(ref)) {
+        throw new AppError(
+          `Step ${step.step_id} references unknown step "{{${expr}}}" — there is no step_id "${ref}". Query real FK ids from Connect DB (literal values) or insert that row in a prior step.`,
+          400,
+          "create_data_bad_placeholder",
+        );
+      }
+      if (ref === step.step_id) {
+        throw new AppError(
+          `Step ${step.step_id} cannot reference itself via {{${expr}}}`,
+          400,
+          "create_data_bad_placeholder",
+        );
+      }
+    }
+  }
+}
+
 export function assertSafeEnvironment(env: string): CreateDataEnvironment {
   const normalized = env.trim().toLowerCase();
   if (BLOCKED_ENV.has(normalized)) {
@@ -114,20 +187,66 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   return value as Record<string, unknown>;
 }
 
+function assertPlaceholdersResolvable(
+  step: CreateDataStepPlan,
+  outputs: Record<string, unknown>,
+): void {
+  const exprs = [
+    ...collectPlaceholderExprs(step.data),
+    ...collectPlaceholderExprs(step.filter),
+  ];
+  const missing: string[] = [];
+  for (const expr of exprs) {
+    if (!expr.includes(".")) {
+      missing.push(`{{${expr}}}`);
+      continue;
+    }
+    const stepRef = expr.split(".")[0]!;
+    if (!(stepRef in outputs)) {
+      missing.push(`{{${expr}}} (no prior output for "${stepRef}")`);
+    }
+  }
+  if (missing.length) {
+    throw new Error(
+      `Unresolved placeholders on ${step.step_id}: ${missing.join("; ")}`,
+    );
+  }
+}
+
+function assertNoLeftoverPlaceholders(
+  stepId: string,
+  data: unknown,
+  filter: unknown,
+): void {
+  const leftover = [
+    ...collectPlaceholderExprs(data),
+    ...collectPlaceholderExprs(filter),
+  ];
+  if (leftover.length) {
+    throw new Error(
+      `Placeholders still present after resolve on ${stepId}: ${leftover
+        .map((e) => `{{${e}}}`)
+        .join(", ")}`,
+    );
+  }
+}
+
 async function runDbStep(
   cfg: BaDbConnectionResolved,
   step: CreateDataStepPlan,
   outputs: Record<string, unknown>,
 ): Promise<{ result: CreateDataStepResult; body: unknown }> {
   const startedAt = new Date().toISOString();
-  const data = step.data
-    ? (resolvePlaceholders(step.data, outputs) as Record<string, unknown>)
-    : null;
-  const filter = step.filter
-    ? (resolvePlaceholders(step.filter, outputs) as Record<string, unknown>)
-    : null;
-
   try {
+    assertPlaceholdersResolvable(step, outputs);
+    const data = step.data
+      ? (resolvePlaceholders(step.data, outputs) as Record<string, unknown>)
+      : null;
+    const filter = step.filter
+      ? (resolvePlaceholders(step.filter, outputs) as Record<string, unknown>)
+      : null;
+    assertNoLeftoverPlaceholders(step.step_id, data, filter);
+
     const write = await runBaWriteOp(cfg, {
       op: step.op,
       collection: step.collection,

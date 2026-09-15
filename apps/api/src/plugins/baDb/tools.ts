@@ -3,6 +3,7 @@ import {
   formatQueryResultForAgent,
   runBaReadonlyQuery,
 } from "./query.js";
+import { withBaDbResolvedConnection } from "./withTunnel.js";
 
 /** Cursor SDK custom tools for BA read-only DB access. */
 export function buildBaDbCustomTools(
@@ -15,11 +16,13 @@ export function buildBaDbCustomTools(
     execute: (args: Record<string, unknown>) => Promise<string>;
   }
 > {
+  // No host/SSH details in tool descriptions — the agent only sees the locked
+  // database name; connections happen server-side.
   if (cfg.dialect === "mongodb") {
     return {
       query_readonly_mongo: {
         description:
-          `Read-only MongoDB queries against the LOCKED database "${cfg.database}" on ${cfg.host} only. ` +
+          `Read-only MongoDB queries against the LOCKED database "${cfg.database}" only. ` +
           `You cannot switch DB / pass database|db in JSON. Tenant codes are filters inside this DB, not other databases. ` +
           `If the user named a specific id/code (e.g. staff NV A) and filter returns 0 — report not found; do not substitute another entity. ` +
           `JSON: {"op":"listCollections"} | {"op":"find","collection":"…","filter":{},"limit":20} | ` +
@@ -39,7 +42,9 @@ export function buildBaDbCustomTools(
         async execute(args) {
           const query = String(args?.query || "");
           try {
-            const res = await runBaReadonlyQuery(cfg, query);
+            const res = await withBaDbResolvedConnection(cfg, (connectCfg) =>
+              runBaReadonlyQuery(connectCfg, query),
+            );
             return formatQueryResultForAgent(res);
           } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
@@ -53,7 +58,7 @@ export function buildBaDbCustomTools(
   return {
     query_readonly_sql: {
       description:
-        `Read-only SQL against the LOCKED database "${cfg.database}" (${cfg.dialect}@${cfg.host}) only. ` +
+        `Read-only SQL against the LOCKED database "${cfg.database}" (${cfg.dialect}) only. ` +
         `No USE / no otherdb.table. Tenant codes = WHERE filters in this DB. ` +
         `If the user named a specific id/code (e.g. staff NV A) and query returns 0 — report not found; do not substitute another entity. ` +
         `Only SELECT / WITH / SHOW / DESCRIBE / EXPLAIN. Never invent credentials — use this tool only.`,
@@ -70,7 +75,9 @@ export function buildBaDbCustomTools(
       async execute(args) {
         const sql = String(args?.sql || "");
         try {
-          const res = await runBaReadonlyQuery(cfg, sql);
+          const res = await withBaDbResolvedConnection(cfg, (connectCfg) =>
+            runBaReadonlyQuery(connectCfg, sql),
+          );
           return formatQueryResultForAgent(res);
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);

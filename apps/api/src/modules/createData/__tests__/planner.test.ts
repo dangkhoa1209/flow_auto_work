@@ -5,6 +5,7 @@ import {
   parseSeedPlanFromAgent,
 } from "../parsePlan.js";
 import {
+  assertPlanPlaceholdersReferToSteps,
   assertSafeCreateDataTarget,
   assertSafeDbHost,
   assertSafeEnvironment,
@@ -170,5 +171,46 @@ describe("executor guards", () => {
       { create_user_1: { id: "u99" } },
     ) as { user_id: string };
     expect(out.user_id).toBe("u99");
+  });
+
+  it("rejects plans that invent fake placeholder steps", () => {
+    expect(() =>
+      assertPlanPlaceholdersReferToSteps([
+        {
+          step_id: "insert_staff_a",
+          description: "staff",
+          op: "insert",
+          collection: "staffs",
+          data: { country_id: "{{fk_catalog.country_id}}" },
+          filter: null,
+          depends_on: [],
+        },
+      ]),
+    ).toThrow(/fk_catalog/);
+  });
+
+  it("accepts placeholders that point at earlier steps", () => {
+    expect(() =>
+      assertPlanPlaceholdersReferToSteps([
+        {
+          step_id: "insert_staff_a",
+          description: "staff",
+          op: "insert",
+          collection: "staffs",
+          data: { full_name: "A" },
+          filter: null,
+          depends_on: [],
+        },
+        {
+          step_id: "insert_history_a",
+          description: "history",
+          op: "insert",
+          collection: "staff_histories",
+          data: { staff_id: "{{insert_staff_a._id}}" },
+          filter: null,
+          depends_on: ["insert_staff_a"],
+        },
+      ]),
+    ).not.toThrow();
   });
 });

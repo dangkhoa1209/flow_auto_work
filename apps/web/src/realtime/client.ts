@@ -103,6 +103,12 @@ export type RealtimeCreateDataProgress = {
   step: "pull" | "start" | "read" | "tool" | "write" | "done" | "error";
   label: string;
   detail?: string;
+  plan?: {
+    steps: import("@/api/createDataApi").CreateDataStepPlan[];
+    questions: string[];
+    notes: string[];
+    planner: "ai" | "heuristic";
+  };
 };
 
 export type RealtimeBaIssueDraftProgress = {

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { message, Modal } from "ant-design-vue";
 import { useBaChatStore } from "@/stores/baChat";
 import {
@@ -15,10 +15,9 @@ import {
 
 const ba = useBaChatStore();
 
-const prompt = ref(
-  "Create 2 users, each with 1 completed order and 1 pending order",
-);
-const environment = ref<CreateDataEnvironment>("staging");
+const prompt = ref("");
+/** Fixed seed label — Production is blocked server-side. */
+const environment: CreateDataEnvironment = "staging";
 
 const planning = ref(false);
 const saving = ref(false);
@@ -36,12 +35,12 @@ const progressLines = ref<RealtimeCreateDataProgress[]>([]);
 
 const activeBatch = ref<CreateDataBatch | null>(null);
 const history = ref<CreateDataBatch[]>([]);
-
-const envOptions = [
-  { value: "local", label: "Local" },
-  { value: "development", label: "Development" },
-  { value: "staging", label: "Staging" },
-];
+const stepsSectionRef = ref<HTMLElement | null>(null);
+const summarySectionRef = ref<HTMLElement | null>(null);
+const planToastKey = ref("");
+const showPlanNotes = ref(false);
+const showPlannerLog = ref(false);
+const forceShowEditors = ref(false);
 
 const seedConfig = computed(() => ba.selectedProject?.createData || null);
 const seedDbPublic = computed(() => seedConfig.value?.db || null);
@@ -70,10 +69,10 @@ const seedHint = computed(() => {
     !(seed?.configured && seed.enabled) &&
     !(proj?.configured && proj.enabled)
   ) {
-    return "Admin chưa cấu hình Seed Connect DB (Create Data) — có thể Copy từ project Connect DB.";
+    return "Admin has not configured Seed Connect DB (Create Data) — you can copy from the project Connect DB.";
   }
   if (!cfg?.enabled) {
-    return "Create Data đang tắt (Admin) — bật Enable trên Admin Projects trước khi execute.";
+    return "Create Data is off (Admin) — enable it on Admin Projects before execute.";
   }
   const d = effectiveDb.value;
   const via =
@@ -93,13 +92,122 @@ const canGenerate = computed(
   () => Boolean(ba.selectedProjectId) && prompt.value.trim().length > 0,
 );
 
+const nextAction = computed(() => {
+  if (planning.value) return null;
+  if (brokenPlaceholders.value.length) {
+    return {
+      type: "warning" as const,
+      text: `Plan has broken FK placeholders (${brokenPlaceholders.value
+        .slice(0, 4)
+        .join(", ")}${brokenPlaceholders.value.length > 4 ? "…" : ""}). Execute is blocked until you regenerate with real catalog ids from Connect DB.`,
+    };
+  }
+  if (planSteps.value.length && !canSavePreview.value) {
+    return {
+      type: "warning" as const,
+      text: `Plan is ready (${planSteps.value.length} steps), but Execute is blocked: ${saveDisabledReason.value}`,
+    };
+  }
+  if (planSteps.value.length && !activeBatch.value) {
+    return {
+      type: "info" as const,
+      text: `Plan ready · ${planSteps.value.length} steps. Review the JSON below, then click Execute to write to the seed Connect DB.`,
+    };
+  }
+  if (activeBatch.value?.status === "preview") {
+    return {
+      type: "info" as const,
+      text: `Batch ${activeBatch.value.batchId} ready (${planSteps.value.length} steps). Click Execute to write to the seed Connect DB.`,
+    };
+  }
+  if (
+    activeBatch.value &&
+    ["success", "partial"].includes(activeBatch.value.status) &&
+    brokenPlaceholders.value.length
+  ) {
+    return {
+      type: "warning" as const,
+      text: `Batch ${activeBatch.value.batchId} ran, but plan still has unresolved placeholders — catalog FKs were likely written empty. Rollback and regenerate the plan.`,
+    };
+  }
+  return null;
+});
+
+const PLACEHOLDER_RE = /\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/g;
+
+function collectPlaceholderExprsLocal(value: unknown): string[] {
+  const out: string[] = [];
+  if (typeof value === "string") {
+    for (const m of value.matchAll(PLACEHOLDER_RE)) {
+      const expr = m[1]?.trim();
+      if (expr) out.push(expr);
+    }
+    return out;
+  }
+  if (Array.isArray(value)) {
+    for (const v of value) out.push(...collectPlaceholderExprsLocal(v));
+    return out;
+  }
+  if (value && typeof value === "object") {
+    for (const v of Object.values(value as Record<string, unknown>)) {
+      out.push(...collectPlaceholderExprsLocal(v));
+    }
+  }
+  return out;
+}
+
+/** Placeholders that point at a step_id not present in the plan (e.g. {{fk_catalog.country_id}}). */
+const brokenPlaceholders = computed(() => {
+  const ids = new Set(planSteps.value.map((s) => s.step_id));
+  const bad = new Set<string>();
+  for (const s of planSteps.value) {
+    for (const expr of [
+      ...collectPlaceholderExprsLocal(s.data),
+      ...collectPlaceholderExprsLocal(s.filter),
+    ]) {
+      if (!expr.includes(".")) {
+        bad.add(`{{${expr}}}`);
+        continue;
+      }
+      const ref = expr.split(".")[0]!;
+      if (!ids.has(ref)) bad.add(`{{${expr}}}`);
+    }
+  }
+  return [...bad];
+});
+
 const canSavePreview = computed(
   () =>
     Boolean(ba.selectedProjectId) &&
     planSteps.value.length > 0 &&
     Boolean(seedConfig.value?.enabled) &&
-    Boolean(effectiveDb.value?.enabled),
+    Boolean(effectiveDb.value?.enabled) &&
+    brokenPlaceholders.value.length === 0,
 );
+
+const saveDisabledReason = computed(() => {
+  if (!planSteps.value.length) return "Generate a plan first";
+  if (brokenPlaceholders.value.length) {
+    return `Broken placeholders: ${brokenPlaceholders.value.slice(0, 3).join(", ")}`;
+  }
+  if (!seedConfig.value?.enabled) {
+    return "Create Data is disabled for this project — ask Admin to enable it";
+  }
+  if (!effectiveDb.value?.enabled) {
+    return "Seed Connect DB is not configured or not active";
+  }
+  return "";
+});
+
+const executeDisabledReason = computed(() => {
+  if (!planSteps.value.length) return "Generate a plan first";
+  if (brokenPlaceholders.value.length) {
+    return "Plan has broken placeholders — regenerate before execute";
+  }
+  if (!canSavePreview.value) return saveDisabledReason.value;
+  if (activeBatch.value?.status === "running") return "Batch is already running";
+  return "";
+});
 
 const statusColor: Record<string, string> = {
   pending: "text-ink-muted",
@@ -116,6 +224,133 @@ function resultFor(stepId: string) {
   return activeBatch.value?.results.find((r) => r.step_id === stepId);
 }
 
+const IDENTITY_KEYS = [
+  "staff_code",
+  "staff_code_on_timekeeper",
+  "code",
+  "email",
+  "full_name",
+  "name",
+  "username",
+  "title",
+] as const;
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function pickIdentity(data: Record<string, unknown> | null | undefined) {
+  if (!data) return {} as Record<string, string>;
+  const out: Record<string, string> = {};
+  for (const key of IDENTITY_KEYS) {
+    const raw = data[key];
+    if (raw == null || raw === "") continue;
+    if (typeof raw === "string" || typeof raw === "number" || typeof raw === "boolean") {
+      out[key] = String(raw);
+    }
+  }
+  return out;
+}
+
+type SummaryRow = {
+  step_id: string;
+  op: string;
+  collection: string;
+  status: string;
+  createdId: string | null;
+  labels: string[];
+  error: string | null;
+};
+
+type CollectionCount = {
+  collection: string;
+  success: number;
+  failed: number;
+  skipped: number;
+  total: number;
+};
+
+const executionSummary = computed(() => {
+  const batch = activeBatch.value;
+  if (!batch) return null;
+  if (!["success", "partial", "failed", "rolled_back"].includes(batch.status)) {
+    return null;
+  }
+
+  const byCollection = new Map<string, CollectionCount>();
+  const rows: SummaryRow[] = [];
+  let success = 0;
+  let failed = 0;
+  let skipped = 0;
+
+  for (const step of batch.steps) {
+    const result = batch.results.find((r) => r.step_id === step.step_id);
+    const status = result?.status || "pending";
+    if (status === "success") success++;
+    else if (status === "failed") failed++;
+    else if (status === "skipped") skipped++;
+
+    const key = step.collection || "(unknown)";
+    const bucket = byCollection.get(key) || {
+      collection: key,
+      success: 0,
+      failed: 0,
+      skipped: 0,
+      total: 0,
+    };
+    bucket.total++;
+    if (status === "success") bucket.success++;
+    else if (status === "failed") bucket.failed++;
+    else if (status === "skipped") bucket.skipped++;
+    byCollection.set(key, bucket);
+
+    const response = asRecord(result?.response);
+    const document = asRecord(response?.document) || response;
+    const identity = {
+      ...pickIdentity(step.data),
+      ...pickIdentity(document),
+    };
+    const labels = IDENTITY_KEYS.map((k) => identity[k])
+      .filter(Boolean)
+      .filter((v, i, arr) => arr.indexOf(v) === i) as string[];
+
+    rows.push({
+      step_id: step.step_id,
+      op: step.op,
+      collection: step.collection,
+      status,
+      createdId: result?.createdId || null,
+      labels,
+      error: result?.error || null,
+    });
+  }
+
+  return {
+    batchId: batch.batchId,
+    status: batch.status,
+    prompt: batch.prompt,
+    total: batch.steps.length,
+    success,
+    failed,
+    skipped,
+    collections: [...byCollection.values()].sort((a, b) =>
+      a.collection.localeCompare(b.collection),
+    ),
+    rows,
+    error: batch.error || null,
+  };
+});
+
+const showStepsEditors = computed(
+  () =>
+    forceShowEditors.value ||
+    (planSteps.value.length > 0 &&
+      (!activeBatch.value ||
+        activeBatch.value.status === "preview" ||
+        activeBatch.value.status === "running")),
+);
+
 function syncEditors(steps: CreateDataStepPlan[]) {
   const dataNext: Record<string, string> = {};
   const filterNext: Record<string, string> = {};
@@ -125,6 +360,34 @@ function syncEditors(steps: CreateDataStepPlan[]) {
   }
   editingData.value = dataNext;
   editingFilter.value = filterNext;
+}
+
+function applyPlan(plan: {
+  steps?: CreateDataStepPlan[];
+  questions?: string[];
+  notes?: string[];
+  planner?: "ai" | "heuristic" | null;
+}) {
+  planSteps.value = plan.steps || [];
+  planQuestions.value = plan.questions || [];
+  planNotes.value = plan.notes || [];
+  planPlanner.value = plan.planner || null;
+  syncEditors(planSteps.value);
+  const key = `${planSteps.value.length}:${planQuestions.value.length}:${planPlanner.value}`;
+  if (key !== planToastKey.value) {
+    planToastKey.value = key;
+    if (!planSteps.value.length) {
+      message.warning("Planner needs more detail — see questions below");
+    } else {
+      const via = plan.planner === "heuristic" ? "heuristic" : "AI + source";
+      message.success(`Plan ready · ${planSteps.value.length} steps (${via})`);
+    }
+  }
+  void nextTick(() => {
+    stepsSectionRef.value?.scrollIntoView({ behavior: "smooth", block: "start" });
+  });
+  // Generate = plan + save: persist as a preview batch right away.
+  if (planSteps.value.length) void autoSaveBatch();
 }
 
 function applyEditedSteps(): CreateDataStepPlan[] | null {
@@ -155,29 +418,45 @@ function applyEditedSteps(): CreateDataStepPlan[] | null {
   return out;
 }
 
+function resetNewForm() {
+  if (planning.value) {
+    message.warning("Stop the planner before starting a new form");
+    return;
+  }
+  prompt.value = "";
+  activeBatch.value = null;
+  planSteps.value = [];
+  planQuestions.value = [];
+  planNotes.value = [];
+  planPlanner.value = null;
+  editingData.value = {};
+  editingFilter.value = {};
+  progressLines.value = [];
+  planToastKey.value = "";
+  showPlanNotes.value = false;
+  showPlannerLog.value = false;
+  forceShowEditors.value = false;
+}
+
 async function generatePlan() {
   if (!canGenerate.value || !ba.selectedProjectId) return;
   planning.value = true;
   activeBatch.value = null;
   progressLines.value = [];
+  planToastKey.value = "";
+  forceShowEditors.value = false;
+  showPlannerLog.value = true;
+  showPlanNotes.value = false;
   try {
     const res = await createDataApi.plan({
       prompt: prompt.value.trim(),
       baProjectId: ba.selectedProjectId,
-      environment: environment.value,
+      environment,
     });
-    planSteps.value = res.plan.steps || [];
-    planQuestions.value = res.plan.questions || [];
-    planNotes.value = res.plan.notes || [];
-    planPlanner.value = res.plan.planner || null;
-    syncEditors(planSteps.value);
-    if (!planSteps.value.length) {
-      message.warning("Planner needs more detail — see questions below");
-    } else {
-      const via = res.plan.planner === "ai" ? "AI + source" : "heuristic";
-      message.success(`Plan ready · ${planSteps.value.length} steps (${via})`);
-    }
+    applyPlan(res.plan);
   } catch (e) {
+    // SSE may have already delivered the plan after axios/proxy cut the HTTP wait.
+    if (planSteps.value.length || planQuestions.value.length) return;
     message.error(e instanceof Error ? e.message : String(e));
   } finally {
     planning.value = false;
@@ -194,23 +473,25 @@ async function stopPlan() {
   }
 }
 
-async function saveAndPreview() {
-  if (!ba.selectedProjectId || !canSavePreview.value) return;
+/** Auto-save the generated plan as a preview batch (Generate = plan + save). */
+async function autoSaveBatch() {
+  if (!ba.selectedProjectId || saving.value) return;
+  if (activeBatch.value) return;
+  if (!canSavePreview.value) return;
   const steps = applyEditedSteps();
-  if (!steps) return;
+  if (!steps?.length) return;
   saving.value = true;
   try {
     const res = await createDataApi.createBatch({
       baProjectId: ba.selectedProjectId,
       prompt: prompt.value.trim(),
-      environment: environment.value,
+      environment,
       steps,
       questions: planQuestions.value,
     });
     activeBatch.value = res.batch;
     planSteps.value = res.batch.steps;
     syncEditors(planSteps.value);
-    message.success(`Batch ${res.batch.batchId} saved — review then Execute`);
     await loadHistory();
   } catch (e) {
     message.error(e instanceof Error ? e.message : String(e));
@@ -219,17 +500,50 @@ async function saveAndPreview() {
   }
 }
 
+/**
+ * Execute = (re)save if steps were edited or nothing saved yet, then run.
+ * Keeps the UI flow at two buttons: Generate → Execute.
+ */
 async function executeBatch() {
-  if (!activeBatch.value) {
-    message.warning("Save the plan as a batch first");
-    return;
-  }
+  if (!ba.selectedProjectId || !canSavePreview.value) return;
+  const steps = applyEditedSteps();
+  if (!steps?.length) return;
   executing.value = true;
   try {
-    const res = await createDataApi.execute(activeBatch.value.id);
+    let batch = activeBatch.value;
+    const editsDiffer =
+      !batch ||
+      batch.status !== "preview" ||
+      JSON.stringify(steps) !== JSON.stringify(batch.steps);
+    if (editsDiffer) {
+      const saved = await createDataApi.createBatch({
+        baProjectId: ba.selectedProjectId,
+        prompt: prompt.value.trim(),
+        environment,
+        steps,
+        questions: planQuestions.value,
+      });
+      batch = saved.batch;
+      activeBatch.value = batch;
+    }
+    const res = await createDataApi.execute(batch!.id);
     activeBatch.value = res.batch;
-    message.success(`Batch ${res.batch.status}`);
+    const ok =
+      res.batch.results?.filter((r) => r.status === "success").length || 0;
+    const fail =
+      res.batch.results?.filter((r) => r.status === "failed").length || 0;
+    message.success(
+      fail
+        ? `Batch ${res.batch.status} · ${ok} ok · ${fail} failed`
+        : `Batch ${res.batch.status} · ${ok} records written`,
+    );
     await loadHistory();
+    void nextTick(() => {
+      summarySectionRef.value?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    });
   } catch (e) {
     message.error(e instanceof Error ? e.message : String(e));
   } finally {
@@ -281,8 +595,21 @@ async function openHistory(b: CreateDataBatch) {
     planSteps.value = res.batch.steps;
     planQuestions.value = res.batch.questions || [];
     prompt.value = res.batch.prompt;
-    environment.value = res.batch.environment;
+    forceShowEditors.value = false;
+    showPlanNotes.value = false;
     syncEditors(planSteps.value);
+    void nextTick(() => {
+      if (
+        ["success", "partial", "failed", "rolled_back"].includes(
+          res.batch.status,
+        )
+      ) {
+        summarySectionRef.value?.scrollIntoView({
+          behavior: "smooth",
+          block: "start",
+        });
+      }
+    });
   } catch (e) {
     message.error(e instanceof Error ? e.message : String(e));
   }
@@ -296,6 +623,10 @@ watch(
     planNotes.value = [];
     planQuestions.value = [];
     progressLines.value = [];
+    planToastKey.value = "";
+    forceShowEditors.value = false;
+    showPlannerLog.value = false;
+    showPlanNotes.value = false;
     void loadHistory();
   },
 );
@@ -308,6 +639,10 @@ onMounted(() => {
     onCreateDataProgress: (ev) => {
       if (ev.baProjectId !== ba.selectedProjectId) return;
       progressLines.value = [...progressLines.value.slice(-24), ev];
+      if (ev.plan && (ev.step === "done" || ev.step === "error")) {
+        applyPlan(ev.plan);
+        planning.value = false;
+      }
     },
   });
 });
@@ -326,6 +661,15 @@ onUnmounted(() => {
           AI Seed Planner → preview → insert/update Connect DB — never Production
         </div>
       </div>
+      <button
+        v-if="ba.selectedProjectId"
+        type="button"
+        class="faw-btn faw-btn--run faw-btn--tight text-xs shrink-0 self-center !flex-none !px-2 !py-0.5"
+        :disabled="planning || executing || saving || rollingBack"
+        @click="resetNewForm"
+      >
+        New
+      </button>
     </div>
 
     <div
@@ -345,38 +689,32 @@ onUnmounted(() => {
           <a-textarea
             v-model:value="prompt"
             :rows="3"
-            placeholder='e.g. "Tạo NV mới tên An" (AI tự điền field còn lại) hoặc "Tạo NV cccd 33333" (sai rule → báo lỗi)'
+            placeholder='e.g. "Create a new employee named An" (AI fills remaining fields) or "Create employee with CCCD 33333" (invalid rule → error)'
           />
         </label>
 
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <label class="flex flex-col gap-1 text-sm">
-            <span class="text-ink-muted">Environment label</span>
-            <a-select
-              v-model:value="environment"
-              :options="envOptions"
-              class="w-full"
-            />
-          </label>
-          <div class="flex flex-col gap-1 text-sm">
-            <span class="text-ink-muted">Seed Connect DB target</span>
-            <div
-              class="min-h-[32px] px-3 py-1.5 rounded border border-[var(--app-border)] text-[13px] font-mono"
-              :class="dbTargetLabel ? 'text-ink' : 'text-ink-muted'"
-            >
-              {{ dbTargetLabel || "Not configured" }}
-            </div>
+        <div class="flex flex-col gap-1 text-sm max-w-md">
+          <span class="text-ink-muted">Seed Connect DB target</span>
+          <div
+            class="min-h-[32px] px-3 py-1.5 rounded border border-[var(--app-border)] text-[13px] font-mono"
+            :class="dbTargetLabel ? 'text-ink' : 'text-ink-muted'"
+          >
+            {{ dbTargetLabel || "Not configured" }}
           </div>
         </div>
 
-        <p v-if="seedHint" class="text-[12px] text-ink-muted m-0">
+        <p
+          v-if="seedHint && (!dbTargetLabel || !seedConfig?.enabled)"
+          class="text-[12px] text-ink-muted m-0"
+        >
           {{ seedHint }}
         </p>
 
         <div class="flex flex-wrap gap-2">
           <button
             type="button"
-            class="faw-btn faw-btn--run"
+            class="faw-btn"
+            :class="{ 'faw-btn--run': !planSteps.length || planning }"
             :disabled="!canGenerate || planning"
             @click="generatePlan"
           >
@@ -390,22 +728,27 @@ onUnmounted(() => {
           >
             Stop
           </button>
-          <button
-            type="button"
-            class="faw-btn"
-            :disabled="!canSavePreview || saving"
-            @click="saveAndPreview"
-          >
-            {{ saving ? "Saving…" : "Save batch (preview)" }}
-          </button>
-          <button
-            type="button"
-            class="faw-btn faw-btn--run"
-            :disabled="!activeBatch || executing || activeBatch?.status === 'running'"
-            @click="executeBatch"
-          >
-            {{ executing ? "Executing…" : "Execute" }}
-          </button>
+          <a-tooltip :title="executeDisabledReason || undefined">
+            <span>
+              <button
+                type="button"
+                class="faw-btn"
+                :class="{
+                  'faw-btn--run': canSavePreview && !executing,
+                }"
+                :disabled="
+                  !canSavePreview ||
+                  executing ||
+                  saving ||
+                  planning ||
+                  activeBatch?.status === 'running'
+                "
+                @click="executeBatch"
+              >
+                {{ executing ? "Executing…" : saving ? "Saving…" : "Execute" }}
+              </button>
+            </span>
+          </a-tooltip>
           <button
             type="button"
             class="faw-btn"
@@ -421,18 +764,29 @@ onUnmounted(() => {
         </div>
 
         <a-alert
-          type="info"
+          v-if="nextAction"
+          :type="nextAction.type"
           show-icon
           class="text-xs"
-          message="Planner dùng Cursor + code map / schema (seed Connect RO khi plan). Execute ghi thẳng seed Connect DB — không dùng Sync system. Production bị chặn."
+          :message="nextAction.text"
         />
 
         <div
-          v-if="planning || progressLines.length"
+          v-if="planning || (progressLines.length && showPlannerLog)"
           class="rounded border border-[var(--app-border)] p-2 space-y-1 max-h-40 overflow-y-auto"
         >
-          <div class="text-[11px] font-medium text-ink-muted uppercase tracking-wide">
-            Planner activity
+          <div class="flex items-center justify-between gap-2">
+            <div class="text-[11px] font-medium text-ink-muted uppercase tracking-wide">
+              Planner activity
+            </div>
+            <button
+              v-if="!planning && progressLines.length"
+              type="button"
+              class="text-[11px] text-ink-muted underline"
+              @click="showPlannerLog = false"
+            >
+              Hide
+            </button>
           </div>
           <div
             v-for="(line, i) in progressLines"
@@ -447,17 +801,14 @@ onUnmounted(() => {
             Starting Cursor Seed Planner…
           </div>
         </div>
-
-        <div v-if="planPlanner" class="text-[12px] text-ink-muted">
-          Planner:
-          <span class="text-ink">{{
-            planPlanner === "ai" ? "AI (Cursor + source)" : "heuristic fallback"
-          }}</span>
-        </div>
-
-        <div v-if="planNotes.length" class="text-[12px] text-ink-muted space-y-1">
-          <div v-for="(n, i) in planNotes" :key="i">• {{ n }}</div>
-        </div>
+        <button
+          v-else-if="progressLines.length && !planning"
+          type="button"
+          class="text-[11px] text-ink-muted underline"
+          @click="showPlannerLog = true"
+        >
+          Show planner log ({{ progressLines.length }})
+        </button>
 
         <div v-if="planQuestions.length" class="space-y-1">
           <div class="text-sm font-medium text-orange-700">
@@ -468,21 +819,145 @@ onUnmounted(() => {
           </ul>
         </div>
 
-        <div v-if="activeBatch" class="text-[12px] text-ink-muted">
+        <div v-if="planNotes.length">
+          <button
+            type="button"
+            class="text-[12px] text-ink-muted underline"
+            @click="showPlanNotes = !showPlanNotes"
+          >
+            {{ showPlanNotes ? "Hide" : "Show" }} planner notes ({{ planNotes.length }})
+          </button>
+          <div
+            v-if="showPlanNotes"
+            class="mt-1 text-[12px] text-ink-muted space-y-1"
+          >
+            <div v-for="(n, i) in planNotes" :key="i">• {{ n }}</div>
+          </div>
+        </div>
+
+        <div
+          v-if="executionSummary"
+          ref="summarySectionRef"
+          class="rounded border border-[var(--app-border)] p-3 space-y-3 bg-[var(--app-panel,transparent)]"
+        >
+          <div class="flex flex-wrap items-baseline justify-between gap-2">
+            <div class="text-sm font-medium text-ink">Execution summary</div>
+            <div class="text-[12px] text-ink-muted">
+              <code class="text-ink">{{ executionSummary.batchId }}</code>
+              ·
+              <span :class="statusColor[executionSummary.status]">{{
+                executionSummary.status
+              }}</span>
+            </div>
+          </div>
+
+          <div class="flex flex-wrap gap-3 text-[13px]">
+            <span class="text-green-700 font-medium"
+              >{{ executionSummary.success }} success</span
+            >
+            <span v-if="executionSummary.failed" class="text-red-600 font-medium"
+              >{{ executionSummary.failed }} failed</span
+            >
+            <span v-if="executionSummary.skipped" class="text-ink-muted"
+              >{{ executionSummary.skipped }} skipped</span
+            >
+            <span class="text-ink-muted"
+              >{{ executionSummary.total }} steps total</span
+            >
+          </div>
+
+          <div
+            v-if="executionSummary.collections.length"
+            class="flex flex-wrap gap-2"
+          >
+            <span
+              v-for="c in executionSummary.collections"
+              :key="c.collection"
+              class="inline-flex items-center gap-1 rounded border border-[var(--app-border)] px-2 py-0.5 text-[12px] font-mono"
+            >
+              {{ c.collection }}
+              <span class="text-green-700">{{ c.success }}</span>
+              <span v-if="c.failed" class="text-red-600">/ {{ c.failed }} fail</span>
+            </span>
+          </div>
+
+          <p
+            v-if="executionSummary.error"
+            class="m-0 text-[12px] text-red-600"
+          >
+            {{ executionSummary.error }}
+          </p>
+
+          <div class="overflow-x-auto">
+            <table class="w-full text-left text-[12px] border-collapse">
+              <thead>
+                <tr class="text-ink-muted border-b border-[var(--app-border)]">
+                  <th class="py-1 pr-2 font-medium">#</th>
+                  <th class="py-1 pr-2 font-medium">Collection</th>
+                  <th class="py-1 pr-2 font-medium">Code / name</th>
+                  <th class="py-1 pr-2 font-medium">Id</th>
+                  <th class="py-1 font-medium">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr
+                  v-for="(row, idx) in executionSummary.rows"
+                  :key="row.step_id"
+                  class="border-b border-[var(--app-border)] align-top"
+                >
+                  <td class="py-1.5 pr-2 text-ink-faint">{{ idx + 1 }}</td>
+                  <td class="py-1.5 pr-2 font-mono">
+                    {{ row.op }} {{ row.collection }}
+                  </td>
+                  <td class="py-1.5 pr-2">
+                    <div v-if="row.labels.length" class="space-y-0.5">
+                      <div
+                        v-for="(lab, li) in row.labels"
+                        :key="li"
+                        class="font-mono text-ink"
+                      >
+                        {{ lab }}
+                      </div>
+                    </div>
+                    <span v-else class="text-ink-faint">{{ row.step_id }}</span>
+                  </td>
+                  <td class="py-1.5 pr-2 font-mono text-ink-muted break-all">
+                    {{ row.createdId || "—" }}
+                  </td>
+                  <td class="py-1.5">
+                    <span :class="statusColor[row.status]">{{ row.status }}</span>
+                    <div
+                      v-if="row.error"
+                      class="text-red-600 mt-0.5 max-w-[220px]"
+                    >
+                      {{ row.error }}
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div
+          v-else-if="activeBatch"
+          class="text-[12px] text-ink-muted"
+        >
           Active batch
           <code class="text-ink">{{ activeBatch.batchId }}</code>
           ·
-          <span :class="statusColor[activeBatch.status]">{{ activeBatch.status }}</span>
-          <span v-if="activeBatch.dbTarget">
-            · {{ activeBatch.dbTarget.dialect }}
-            {{ activeBatch.dbTarget.database }}
-          </span>
-          <span v-if="activeBatch.error"> — {{ activeBatch.error }}</span>
+          <span :class="statusColor[activeBatch.status]">{{
+            activeBatch.status
+          }}</span>
         </div>
 
-        <div v-if="planSteps.length" class="space-y-3">
+        <div
+          ref="stepsSectionRef"
+          v-if="showStepsEditors"
+          class="space-y-3"
+        >
           <div class="text-sm font-medium text-ink">
-            Steps (edit data/filter before save/execute)
+            Steps (edit data/filter before Execute)
           </div>
           <div
             v-for="(s, idx) in planSteps"
@@ -493,13 +968,6 @@ onUnmounted(() => {
               <div class="min-w-0">
                 <div class="text-[13px] font-medium text-ink">
                   {{ idx + 1 }}. {{ s.step_id }}
-                  <span
-                    v-if="resultFor(s.step_id)"
-                    class="ml-2 text-[11px] font-normal"
-                    :class="statusColor[resultFor(s.step_id)!.status]"
-                  >
-                    {{ resultFor(s.step_id)!.status }}
-                  </span>
                 </div>
                 <div class="text-[12px] text-ink-muted">{{ s.description }}</div>
                 <div class="text-[12px] font-mono mt-1">
@@ -528,20 +996,17 @@ onUnmounted(() => {
                 placeholder="WHERE / Mongo filter JSON"
               />
             </label>
-            <div
-              v-if="resultFor(s.step_id)?.error"
-              class="text-[12px] text-red-600"
-            >
-              {{ resultFor(s.step_id)?.error }}
-            </div>
-            <div
-              v-if="resultFor(s.step_id)?.createdId"
-              class="text-[12px] text-green-700"
-            >
-              created id: {{ resultFor(s.step_id)?.createdId }}
-            </div>
           </div>
         </div>
+
+        <button
+          v-else-if="planSteps.length && executionSummary"
+          type="button"
+          class="text-[12px] text-ink-muted underline"
+          @click="forceShowEditors = true"
+        >
+          Show step JSON ({{ planSteps.length }})
+        </button>
       </div>
 
       <div class="min-h-0 overflow-y-auto p-4 space-y-3">
@@ -561,7 +1026,7 @@ onUnmounted(() => {
           v-if="!history.length"
           class="text-[13px] text-ink-muted py-6"
         >
-          No batches yet. Generate a plan, save preview, then execute.
+          No batches yet. Generate a plan, then Execute.
         </div>
 
         <button
@@ -584,7 +1049,7 @@ onUnmounted(() => {
             {{ b.prompt }}
           </div>
           <div class="text-[11px] text-ink-faint mt-1">
-            {{ b.environment }} · {{ b.steps.length }} steps ·
+            {{ b.steps.length }} steps ·
             {{ new Date(b.createdAt).toLocaleString() }}
           </div>
         </button>
