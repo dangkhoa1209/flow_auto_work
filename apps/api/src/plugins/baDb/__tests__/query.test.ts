@@ -80,7 +80,7 @@ describe("assertReadonlySql database lock", () => {
 });
 
 describe("buildMongoUri", () => {
-  it("forces directConnection so SSH/replica-set hostnames are not rediscovered", () => {
+  it("forces directConnection and authSource=admin (Sync-compatible)", () => {
     const uri = buildMongoUri({
       dialect: "mongodb",
       host: "127.0.0.1",
@@ -93,6 +93,22 @@ describe("buildMongoUri", () => {
     });
     expect(uri).toContain("127.0.0.1:27019/");
     expect(uri).toMatch(/[?&]directConnection=true/);
+    expect(uri).toMatch(/authSource=admin/);
+    expect(uri).not.toMatch(/authSource=app/);
+  });
+
+  it("respects explicit authSource", () => {
+    const uri = buildMongoUri({
+      dialect: "mongodb",
+      host: "127.0.0.1",
+      port: 27017,
+      database: "app",
+      username: "u",
+      password: "p",
+      ssl: false,
+      authSource: "app",
+      ssh: null,
+    });
     expect(uri).toMatch(/authSource=app/);
   });
 });

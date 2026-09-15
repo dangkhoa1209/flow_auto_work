@@ -637,7 +637,10 @@ export async function runSyncDbJob(
       if (restorePassCfg) {
         restoreArgs.push("--config", restorePassCfg.path);
       }
-      restoreArgs.push("--authenticationDatabase", "admin");
+      restoreArgs.push(
+        "--authenticationDatabase",
+        (target.authSource || "").trim() || "admin",
+      );
     }
 
     // CRITICAL: never pass source credentials to mongorestore; never put passwords on argv

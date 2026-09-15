@@ -97,6 +97,7 @@ function parseDbPatch(raw: unknown): BaDbConnectionPatch | undefined {
   }
   if (b.database !== undefined) patch.database = String(b.database);
   if (b.username !== undefined) patch.username = String(b.username);
+  if (b.authSource !== undefined) patch.authSource = String(b.authSource);
   if (b.password !== undefined && String(b.password).length > 0) {
     patch.password = String(b.password);
   }

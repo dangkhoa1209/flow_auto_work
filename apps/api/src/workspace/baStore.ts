@@ -63,6 +63,12 @@ export type BaDbConnection = {
   port: number;
   database: string;
   username: string;
+  /**
+   * MongoDB authentication database (URI authSource).
+   * Same as Sync DB `sourceAuthSource` / mongorestore `--authenticationDatabase`.
+   * Defaults to `admin` when unset — NOT the data database name.
+   */
+  authSource?: string;
   /** AES-GCM ciphertext via encryptSecret — never return to clients. Optional for MongoDB without auth. */
   passwordEnc?: string;
   ssl?: boolean;
@@ -79,6 +85,8 @@ export type BaDbConnectionPublic = {
   port: number | null;
   database: string | null;
   username: string | null;
+  /** Mongo auth DB; null for non-mongo. Default admin when configured mongo. */
+  authSource: string | null;
   ssl: boolean;
   ssh: BaDbSshPublic | null;
   updatedAt: string | null;
@@ -93,6 +101,8 @@ export type BaDbConnectionResolved = {
   username: string;
   password: string;
   ssl: boolean;
+  /** Mongo authSource; always set for mongodb (default admin). */
+  authSource?: string;
   /** When set + enabled, open SSH tunnel then connect to 127.0.0.1:tunnelLocalPort. */
   ssh?: BaDbSshResolved | null;
 };
@@ -268,6 +278,8 @@ export type BaDbConnectionPatch = {
   port?: number;
   database?: string;
   username?: string;
+  /** Mongo authentication database (authSource). Empty → admin. */
+  authSource?: string;
   /** New password; empty/undefined keeps existing. */
   password?: string;
   ssl?: boolean;
@@ -276,6 +288,14 @@ export type BaDbConnectionPatch = {
   /** Remove entire DB config. */
   clear?: boolean;
 };
+
+/** Mongo auth DB — match Sync (`admin`), never fall back to data database name. */
+export function normalizeMongoAuthSource(
+  raw: string | null | undefined,
+): string {
+  const t = (raw || "").trim();
+  return t || "admin";
+}
 
 const DEFAULT_SSH_TUNNEL_PORTS: Record<BaDbDialect, number> = {
   mysql: 13306,
@@ -531,6 +551,10 @@ export async function resolveBaCreateDataDb(
     username: db.username,
     password,
     ssl: Boolean(db.ssl),
+    authSource:
+      db.dialect === "mongodb"
+        ? normalizeMongoAuthSource(db.authSource)
+        : undefined,
     ssh: resolveSsh(db.ssh),
   };
 }
@@ -551,6 +575,10 @@ export async function resolveBaCreateDataDbForTest(
     username: db.username,
     password: db.passwordEnc ? decryptSecret(db.passwordEnc) : "",
     ssl: Boolean(db.ssl),
+    authSource:
+      db.dialect === "mongodb"
+        ? normalizeMongoAuthSource(db.authSource)
+        : undefined,
     ssh: resolveSsh(db.ssh),
   };
 }
@@ -591,6 +619,7 @@ export function toPublicBaDb(db: BaDbConnection | null | undefined): BaDbConnect
       port: null,
       database: null,
       username: null,
+      authSource: null,
       ssl: false,
       ssh: null,
       updatedAt: null,
@@ -599,6 +628,8 @@ export function toPublicBaDb(db: BaDbConnection | null | undefined): BaDbConnect
   const configured = Boolean(
     db.passwordEnc || db.dialect === "mongodb",
   );
+  const authSource =
+    db.dialect === "mongodb" ? normalizeMongoAuthSource(db.authSource) : null;
   if (!configured) {
     return {
       configured: false,
@@ -608,6 +639,7 @@ export function toPublicBaDb(db: BaDbConnection | null | undefined): BaDbConnect
       port: db.port ?? null,
       database: db.database || null,
       username: db.username || null,
+      authSource,
       ssl: Boolean(db.ssl),
       ssh: toPublicBaDbSsh(db.ssh),
       updatedAt: db.updatedAt || null,
@@ -621,6 +653,7 @@ export function toPublicBaDb(db: BaDbConnection | null | undefined): BaDbConnect
     port: db.port ?? null,
     database: db.database || null,
     username: db.username || null,
+    authSource,
     ssl: Boolean(db.ssl),
     ssh: toPublicBaDbSsh(db.ssh),
     updatedAt: db.updatedAt || null,
@@ -731,6 +764,10 @@ function applyDbPatch(
   const username = (
     patch.username !== undefined ? patch.username : existing?.username || ""
   ).trim();
+  const authSourceRaw =
+    patch.authSource !== undefined
+      ? patch.authSource
+      : existing?.authSource || "";
   const portRaw =
     patch.port !== undefined ? Number(patch.port) : existing?.port;
   const port =
@@ -769,6 +806,9 @@ function applyDbPatch(
     ssl,
     updatedAt: new Date().toISOString(),
   };
+  if (dialect === "mongodb") {
+    doc.authSource = normalizeMongoAuthSource(authSourceRaw);
+  }
   if (passwordEnc) doc.passwordEnc = passwordEnc;
   if (ssh) doc.ssh = ssh;
   return doc;
@@ -862,6 +902,10 @@ export async function resolveBaProjectDb(
     username: p.db.username,
     password,
     ssl: Boolean(p.db.ssl),
+    authSource:
+      p.db.dialect === "mongodb"
+        ? normalizeMongoAuthSource(p.db.authSource)
+        : undefined,
   };
 }
 
@@ -880,6 +924,10 @@ export async function resolveBaProjectDbForTest(
     username: p.db.username,
     password: p.db.passwordEnc ? decryptSecret(p.db.passwordEnc) : "",
     ssl: Boolean(p.db.ssl),
+    authSource:
+      p.db.dialect === "mongodb"
+        ? normalizeMongoAuthSource(p.db.authSource)
+        : undefined,
   };
 }
 
