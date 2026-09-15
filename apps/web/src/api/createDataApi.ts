@@ -81,6 +81,13 @@ export const createDataApi = {
     baProjectId: string;
     environment: CreateDataEnvironment;
     heuristicOnly?: boolean;
+    /** Refine turn: follow-up message + previous plan (continuous interaction). */
+    followUp?: string;
+    previousPlan?: {
+      steps: CreateDataStepPlan[];
+      questions: string[];
+      notes: string[];
+    };
   }) {
     return api<{ plan: CreateDataPlan }>(API.ba.createData.plan, {
       method: "POST",

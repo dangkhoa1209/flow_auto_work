@@ -31,12 +31,27 @@ export const createDataController = {
     const baProjectId = requireProjectId(
       req.body?.baProjectId || req.body?.projectId,
     );
+    const followUp = String(req.body?.followUp || "").trim();
+    const prevRaw = req.body?.previousPlan;
+    const previousPlan =
+      prevRaw && typeof prevRaw === "object"
+        ? {
+            steps: Array.isArray(prevRaw.steps) ? prevRaw.steps : [],
+            questions: Array.isArray(prevRaw.questions)
+              ? prevRaw.questions.map(String)
+              : [],
+            notes: Array.isArray(prevRaw.notes)
+              ? prevRaw.notes.map(String)
+              : [],
+          }
+        : null;
     const plan = await createDataPlan({
       userId: userId(),
       prompt,
       baProjectId,
       environment: req.body?.environment,
       heuristicOnly: Boolean(req.body?.heuristicOnly),
+      ...(followUp && previousPlan ? { followUp, previousPlan } : {}),
     });
     res.formatter.ok({ plan });
   }),

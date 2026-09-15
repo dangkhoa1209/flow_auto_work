@@ -44,6 +44,10 @@ export const API = {
       `/api/admin/ba-projects/${encodeURIComponent(id)}/test-db`,
     baTestCreateDataDb: (id: string) =>
       `/api/admin/ba-projects/${encodeURIComponent(id)}/test-create-data-db`,
+    baCreateDataKnowledge: (id: string) =>
+      `/api/admin/ba-projects/${encodeURIComponent(id)}/create-data-knowledge`,
+    baRefreshCreateDataKnowledge: (id: string) =>
+      `/api/admin/ba-projects/${encodeURIComponent(id)}/create-data-knowledge/refresh`,
     cursorSettings: "/api/admin/settings/cursor",
     cursorModels: "/api/admin/settings/cursor-models",
     cursorPats: "/api/admin/settings/cursor-pats",

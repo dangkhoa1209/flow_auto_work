@@ -88,6 +88,8 @@ const dbForm = reactive({
 const seedEditingId = ref<string | null>(null);
 const seedSaving = ref(false);
 const seedTesting = ref(false);
+const seedKnowledgeRefreshing = ref(false);
+const seedKnowledgeSummary = ref("");
 const seedForm = reactive({
   enabled: false,
   dialect: "mysql" as "mysql" | "postgres" | "mongodb",
@@ -277,6 +279,7 @@ function openDb(p: BaProject) {
 function openSeed(p: BaProject) {
   resetDbForm();
   seedEditingId.value = p.id;
+  seedKnowledgeSummary.value = "";
   const c = p.createData;
   const d = c?.db;
   const ssh = d?.ssh;
@@ -690,6 +693,28 @@ async function testSeedDb() {
     message.error(e instanceof Error ? e.message : String(e));
   } finally {
     seedTesting.value = false;
+  }
+}
+
+async function refreshSeedKnowledge() {
+  if (!seedEditingId.value) return;
+  seedKnowledgeRefreshing.value = true;
+  try {
+    const res = await api<{
+      ok: boolean;
+      rules: number;
+      edges: number;
+      glossary: number;
+    }>(API.admin.baRefreshCreateDataKnowledge(seedEditingId.value), {
+      method: "POST",
+      body: "{}",
+    });
+    seedKnowledgeSummary.value = `${res.rules} rules · ${res.edges} side-effect edges · ${res.glossary} glossary terms`;
+    message.success(`Seed knowledge refreshed — ${seedKnowledgeSummary.value}`);
+  } catch (e) {
+    message.error(e instanceof Error ? e.message : String(e));
+  } finally {
+    seedKnowledgeRefreshing.value = false;
   }
 }
 
@@ -1396,13 +1421,32 @@ onUnmounted(() => {
           {{ seedTesting ? "Testing…" : "Test connection" }}
         </button>
         <button
+          type="button"
+          class="px-3 py-1.5 text-sm border border-line rounded-md hover:border-accent"
+          :disabled="seedKnowledgeRefreshing"
+          @click="refreshSeedKnowledge"
+        >
+          {{
+            seedKnowledgeRefreshing
+              ? "Refreshing knowledge…"
+              : "Refresh seed knowledge"
+          }}
+        </button>
+        <button
           v-if="seedEditingProject?.createData?.db?.configured"
           type="button"
           class="px-3 py-1.5 text-sm text-red-600 border border-line rounded-md"
+          :disabled="seedSaving"
           @click="clearSeedDb"
         >
           Remove DB
         </button>
+        <p
+          v-if="seedKnowledgeSummary"
+          class="w-full text-[12px] text-ink-muted m-0 pt-1"
+        >
+          Knowledge: {{ seedKnowledgeSummary }}
+        </p>
         <button
           type="button"
           class="px-3 py-1.5 text-sm border border-line rounded-md hover:border-accent"

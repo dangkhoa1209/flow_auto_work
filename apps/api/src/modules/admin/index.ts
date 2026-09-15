@@ -35,6 +35,16 @@ import { testBaDbConnection } from "../../plugins/baDb/query.js";
 import { withBaDbResolvedConnection } from "../../plugins/baDb/withTunnel.js";
 import { listCursorModelsForApiKey } from "../../plugins/cursor/modelList.js";
 import { assertSafeCreateDataTarget } from "../createData/executor.js";
+import {
+  getCreateDataKnowledge,
+  refreshCreateDataKnowledgeFromHistory,
+  upsertCreateDataKnowledge,
+} from "../createData/knowledge/index.js";
+import type {
+  CreateDataGlossaryEntry,
+  CreateDataRule,
+  CreateDataSideEffectEdge,
+} from "../createData/knowledge/types.js";
 
 export async function adminListBaProjects() {
   return (await listBaProjects()).map(toPublicBaProject);
@@ -266,6 +276,56 @@ export async function adminTestBaCreateDataDb(idRaw: string) {
       "create_data_db_test_failed",
     );
   }
+}
+
+export async function adminGetCreateDataKnowledge(idRaw: string) {
+  const id = idRaw.trim();
+  const project = await getBaProject(id);
+  if (!project) throw new AppError("BA project not found", 404);
+  const knowledge = await getCreateDataKnowledge(id);
+  return {
+    knowledge: knowledge || {
+      baProjectId: id,
+      status: "empty" as const,
+      sourceSha: null,
+      rules: [],
+      sideEffectEdges: [],
+      glossary: [],
+    },
+  };
+}
+
+export async function adminRefreshCreateDataKnowledge(idRaw: string) {
+  const id = idRaw.trim();
+  const project = await getBaProject(id);
+  if (!project) throw new AppError("BA project not found", 404);
+  const result = await refreshCreateDataKnowledgeFromHistory(id);
+  const knowledge = await getCreateDataKnowledge(id);
+  return { ok: true as const, ...result, knowledge };
+}
+
+export async function adminPatchCreateDataKnowledge(
+  idRaw: string,
+  body: {
+    rules?: CreateDataRule[];
+    sideEffectEdges?: CreateDataSideEffectEdge[];
+    glossary?: CreateDataGlossaryEntry[];
+  },
+) {
+  const id = idRaw.trim();
+  const project = await getBaProject(id);
+  if (!project) throw new AppError("BA project not found", 404);
+  const knowledge = await upsertCreateDataKnowledge(id, {
+    ...(body.rules ? { rules: body.rules } : {}),
+    ...(body.sideEffectEdges
+      ? { sideEffectEdges: body.sideEffectEdges }
+      : {}),
+    ...(body.glossary ? { glossary: body.glossary } : {}),
+    status: "ready",
+    builtAt: new Date().toISOString(),
+    lastError: null,
+  });
+  return { knowledge };
 }
 
 export async function adminDeleteBaProject(idRaw: string) {

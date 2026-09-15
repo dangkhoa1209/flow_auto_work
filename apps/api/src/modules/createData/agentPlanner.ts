@@ -22,6 +22,7 @@ import {
   resolveSystemCursorModel,
   resolveSystemCursorModelSpec,
   toPublicBaCreateData,
+  getBaProjectGitlabToken,
 } from "../../workspace/baStore.js";
 import { cursorModelLogLabel } from "../../plugins/cursor/modelSpec.js";
 import { isGitRepo } from "../../workspace/clone.js";
@@ -32,6 +33,7 @@ import {
 } from "../../workspace/graphify.js";
 import { pullBaProjectLatest } from "../../plugins/git/ba-pull.js";
 import { redactGitCredentials } from "../../plugins/git/redact.js";
+import { loadBaGitlabTaskBlock } from "../../plugins/gitlab/ba-issue-read.js";
 import { buildBaDbCustomTools } from "../../plugins/baDb/tools.js";
 import {
   formatQueryResultForAgent,
@@ -46,6 +48,16 @@ import type {
   CreateDataEnvironment,
   CreateDataPlanResponse,
 } from "./types.js";
+import {
+  CREATE_DATA_KNOWLEDGE_DEFAULTS,
+  applySideEffectValidation,
+  buildProposeSeedKnowledgeTool,
+  detectCreateDataScope,
+  formatKnowledgePromptBlock,
+  getCreateDataKnowledge,
+  readProjectHeadSha,
+  type CreateDataPlanMetrics,
+} from "./knowledge/index.js";
 
 const PLAN_TIMEOUT_MS = 10 * 60 * 1000;
 
@@ -137,6 +149,36 @@ function publishProgress(opts: {
   });
 }
 
+const REFINE_PLAN_MAX_CHARS = 8_000;
+
+function buildRefineBlock(opts: {
+  followUp: string;
+  previousPlan: { steps: unknown[]; questions: string[]; notes: string[] };
+}): string {
+  const prevJson = JSON.stringify(
+    { steps: opts.previousPlan.steps, questions: opts.previousPlan.questions },
+    null,
+    1,
+  ).slice(0, REFINE_PLAN_MAX_CHARS);
+  return `
+## Refine (lượt tiếp theo của cùng scenario — KHÔNG phải plan mới từ đầu)
+Plan ngay trước đó (cùng scenario, cùng DB):
+\`\`\`json
+${prevJson}
+\`\`\`
+
+Phản hồi bổ sung của người dùng cho lượt này:
+"${opts.followUp}"
+
+Nhiệm vụ refine:
+- Cập nhật plan trên theo phản hồi bổ sung — KHÔNG trace lại từ đầu.
+- Giữ nguyên step/giá trị đã hợp lệ, đặc biệt các **literal FK id đã resolve** — không re-query phần không đổi.
+- Chỉ kiểm tra lại validate cho phần bị ảnh hưởng bởi phản hồi; nếu phản hồi giải quyết được question cũ thì bỏ question đó và sinh steps.
+- Nếu phản hồi vẫn chưa đủ/vẫn vi phạm validate → cập nhật questions (ngôn ngữ tự nhiên như quy định).
+- Output vẫn đầy đủ: prose + 1 JSON block plan HOÀN CHỈNH (toàn bộ steps, không chỉ phần sửa).
+`;
+}
+
 function buildSeedPlannerPrompt(opts: {
   displayName: string;
   mainBranch: string;
@@ -150,6 +192,9 @@ function buildSeedPlannerPrompt(opts: {
     host?: string;
   };
   graphifyBlock: string;
+  gitlabTaskBlock?: string;
+  knowledgeBlock?: string;
+  refineBlock?: string;
 }): string {
   const schemaSourceBlock = opts.dbAccess.allowed
     ? `- Connect DB ON (**${opts.dbAccess.dialect}**, database \`${opts.dbAccess.database}\`): dùng query_* (đọc) để xác nhận schema/FK/mẫu dữ liệu thật trước khi viết step. Kết nối do server quản lý — không cần/không có host, port hay credentials.`
@@ -168,13 +213,14 @@ function buildSeedPlannerPrompt(opts: {
 - Việc ghi DB thật (insert/update/delete) chỉ diễn ra ở giai đoạn EXECUTE riêng biệt, không thuộc turn này.
 - **EXECUTE ghi thẳng Connect DB** — không chạy Eloquent \`creating\`/\`created\`, không dispatch queue Job. Side-effect ghi DB mà app làm qua model event / Job **bắt buộc** có step insert riêng (không được ghi notes "async, không seed tay").
 - Env nhãn: **${opts.environment}** (không bao giờ Production).
+- **GitLab đọc:** nếu Scenario / follow-up có link issue hoặc \`#id\` / \`issue 123\`, hệ thống đã kéo sẵn vào mục "GitLab task (chỉ đọc)" bên dưới — dùng block đó để hiểu yêu cầu seed. **Không** tự gọi GitLab API / MCP / \`glab\`.
 
 ## Ưu tiên tool
 1. \`code_map_query\` để định vị screen/feature/symbol liên quan đến yêu cầu.
 2. \`code_map_path\` / \`code_map_explain\` để nối UI ↔ BE ↔ model.
 3. Grep/Shell CHỈ dùng khi đã biết path cụ thể cần đọc và code_map không đủ chi tiết (vd đọc nội dung 1 file đã xác định).
 
-${opts.graphifyBlock ? `${opts.graphifyBlock}\n` : ""}## Quy trình bắt buộc (UI → BE → data phát sinh)
+${opts.graphifyBlock ? `${opts.graphifyBlock}\n` : ""}${opts.knowledgeBlock ? `${opts.knowledgeBlock}\n` : ""}${opts.gitlabTaskBlock ? `${opts.gitlabTaskBlock}\n\n` : ""}## Quy trình bắt buộc (UI → BE → data phát sinh)
 1. Locator: rút yêu cầu thành screen/feature/symbol, tra bằng code_map_query trước.
 2. Trace flow thật: form (Vue/React) → route/API handler → service/use-case → model/repo.
 3. Validate: liệt kê rule bắt buộc/unique/format/FK/enum/default từ form + BE (DTO, validator, middleware).
@@ -213,6 +259,7 @@ ${notesLine}
 - Không hỏi lại field bắt buộc chỉ vì user chưa nêu — hãy auto-fill trừ khi không suy ra được rule/schema hợp lệ.
 - Không "sửa ngầm" giá trị user đưa sai cho khớp rule — phải báo lỗi trong questions.
 - **Không** dùng placeholder trỏ step không tồn tại (\`{{fk_catalog.*}}\`, \`{{catalog.*}}\`, …). FK master phải là literal id từ query_* hoặc từ step insert trước đó.
+- **Không** gọi GitLab API / MCP — chỉ dùng block "GitLab task (chỉ đọc)" nếu đã được nạp.
 
 ## Output bắt buộc
 Prose tiếng Việt, 3–6 câu: flow đã trace (UI → BE), validate chính, field nào auto-fill, field nào user cung cấp (hoặc lỗi validate nếu có).
@@ -256,7 +303,8 @@ Sau đó đúng 1 JSON block (\`\`\`json), theo schema:
 - Đã biết flow + schema → ưu tiên steps đầy đủ với auto-fill; questions chỉ khi thật sự không suy ra được.
 
 ## Yêu cầu người dùng
-${opts.prompt}`;
+${opts.prompt}
+${opts.gitlabTaskBlock ? `\n(Nếu có block GitLab task ở trên: coi mô tả / comment issue là một phần của yêu cầu seed — trích giá trị nghiệp vụ từ đó, không chỉ dựa vào câu Scenario ngắn.)\n` : ""}${opts.refineBlock || ""}`;
 }
 
 /** Collection names that usually hold master/catalog data (FK targets). */
@@ -264,17 +312,15 @@ const CATALOG_NAME_RE =
   /(structure|countr|position|level|layer|location|department|master|catalog|role|setting|currency|branch|title|grade|unit|type|config|holiday|shift|rule)/i;
 
 const SCHEMA_HINT_MAX_CHARS = 12_000;
-const SCHEMA_HINT_MAX_SAMPLES = 10;
 
 /**
- * MongoDB: list collections + one sample doc from likely catalog/master-data
- * collections (scored by name pattern + user-prompt keywords). Sample docs give
- * the agent real ObjectIds to use as literal FK values without extra query_*
- * round-trips.
+ * MongoDB: list collections + one sample doc from scoped / catalog collections.
+ * When `targetCollections` is set (Pass 1 scope), prefer those (+ catalog FKs).
  */
 async function fetchMongoSchemaHint(
   cfg: BaDbConnectionResolved,
   userPrompt: string,
+  targetCollections?: string[],
 ): Promise<string | null> {
   const list = await runBaReadonlyQuery(cfg, '{"op":"listCollections"}');
   const names = list.rows
@@ -283,25 +329,48 @@ async function fetchMongoSchemaHint(
     .sort();
   if (!names.length) return null;
 
+  const nameSet = new Set(names.map((n) => n.toLowerCase()));
+  const resolveName = (want: string) => {
+    const w = want.toLowerCase();
+    if (nameSet.has(w)) return names.find((n) => n.toLowerCase() === w)!;
+    const plural = w.endsWith("s") ? w : `${w}s`;
+    if (nameSet.has(plural)) {
+      return names.find((n) => n.toLowerCase() === plural)!;
+    }
+    return names.find(
+      (n) =>
+        n.toLowerCase().includes(w) || w.includes(n.toLowerCase().replace(/s$/, "")),
+    );
+  };
+
   const promptTokens = new Set(
     userPrompt.toLowerCase().match(/[a-z_]{4,}/g) || [],
   );
-  const picked = names
-    .map((name) => {
-      const lower = name.toLowerCase();
-      let score = 0;
-      if (CATALOG_NAME_RE.test(lower)) score += 2;
-      for (const t of promptTokens) {
-        if (lower.includes(t) || t.includes(lower.replace(/s$/, ""))) {
-          score += 1;
-          break;
-        }
+  const forced = new Set<string>();
+  for (const t of targetCollections || []) {
+    const hit = resolveName(t);
+    if (hit) forced.add(hit);
+  }
+
+  const scored = names.map((name) => {
+    const lower = name.toLowerCase();
+    let score = 0;
+    if (forced.has(name)) score += 10;
+    if (CATALOG_NAME_RE.test(lower)) score += 2;
+    for (const t of promptTokens) {
+      if (lower.includes(t) || t.includes(lower.replace(/s$/, ""))) {
+        score += 1;
+        break;
       }
-      return { name, score };
-    })
+    }
+    return { name, score };
+  });
+
+  const maxSamples = CREATE_DATA_KNOWLEDGE_DEFAULTS.targetedSampleMax;
+  const picked = scored
     .filter((c) => c.score > 0)
     .sort((a, b) => b.score - a.score)
-    .slice(0, SCHEMA_HINT_MAX_SAMPLES);
+    .slice(0, maxSamples);
 
   const settled = await Promise.allSettled(
     picked.map(async ({ name }) => {
@@ -319,6 +388,11 @@ async function fetchMongoSchemaHint(
     .filter((v): v is string => Boolean(v));
 
   const parts = [`Collections (${names.length}): ${names.join(", ")}`];
+  if (targetCollections?.length) {
+    parts.push(
+      `Pass 1 scope (sample ưu tiên): ${[...forced].join(", ") || targetCollections.join(", ")}`,
+    );
+  }
   if (sampleBlocks.length) {
     parts.push(
       "Sample docs (1/collection — id/field là dữ liệu THẬT; dùng trực tiếp làm literal FK id, chỉ query_* thêm khi cần bản ghi khác hoặc xác nhận rule):\n" +
@@ -336,10 +410,11 @@ async function fetchMongoSchemaHint(
 async function fetchDbSchemaHint(
   cfg: BaDbConnectionResolved,
   userPrompt: string,
+  targetCollections?: string[],
 ): Promise<string | null> {
   try {
     if (cfg.dialect === "mongodb") {
-      return await fetchMongoSchemaHint(cfg, userPrompt);
+      return await fetchMongoSchemaHint(cfg, userPrompt, targetCollections);
     }
     const query =
       cfg.dialect === "postgres"
@@ -366,7 +441,19 @@ export async function runCreateDataPlannerAgent(opts: {
   baProjectId: string;
   prompt: string;
   environment: CreateDataEnvironment;
-}): Promise<CreateDataPlanResponse & { planner: "ai" | "heuristic" }> {
+  /** Refine turn: follow-up message + previous plan (stateless multi-turn). */
+  followUp?: string | null;
+  previousPlan?: {
+    steps: unknown[];
+    questions: string[];
+    notes: string[];
+  } | null;
+}): Promise<
+  CreateDataPlanResponse & {
+    planner: "ai" | "heuristic";
+    metrics?: CreateDataPlanMetrics;
+  }
+> {
   const project = await getBaProject(opts.baProjectId);
   if (!project) {
     const plan = buildSeedPlan(opts.prompt);
@@ -451,17 +538,115 @@ export async function runCreateDataPlannerAgent(opts: {
       label: "Code map (graphify)…",
     });
     session.check();
-    await ensureProjectGraphifyReady(project.localPath);
+    const pass1Started = Date.now();
+    const headSha = await readProjectHeadSha(project.localPath);
+    const knowledge = await getCreateDataKnowledge(project.id);
+    const scope = detectCreateDataScope({
+      texts: [opts.prompt, opts.followUp || ""],
+      knowledge,
+    });
+    const pass1Ms = Date.now() - pass1Started;
+
+    // Pass 1 early exit only when knowledge is ready but scope still ambiguous.
+    if (
+      knowledge?.status === "ready" &&
+      scope.ambiguous &&
+      !opts.followUp
+    ) {
+      const early = {
+        steps: [],
+        questions: [scope.reason],
+        notes: [
+          "Pass 1 (scope detection) could not map the scenario to collections — refine the scenario or refresh seed knowledge.",
+        ],
+        planner: "ai" as const,
+        metrics: {
+          pass1Ms,
+          pass2Ms: 0,
+          toolCalls: 0,
+          codeMapCache: "skip" as const,
+          knowledgeStatus: knowledge.status,
+          scopedCollections: [],
+        },
+      };
+      publishProgress({
+        userId: opts.userId,
+        baProjectId: opts.baProjectId,
+        step: "done",
+        label: "Needs clarification · scope",
+        plan: early,
+      });
+      return early;
+    }
+
+    const graphReadyBefore = await ensureProjectGraphifyReady(
+      project.localPath,
+    );
     session.check();
     const graphifyQuery = await queryProjectGraphify(
       project.localPath,
-      opts.prompt,
+      [
+        opts.prompt,
+        scope.collections.length
+          ? `collections: ${scope.collections.join(", ")}`
+          : "",
+      ]
+        .filter(Boolean)
+        .join(" | "),
     );
     const graphifyBlock = formatBaGraphifyPromptBlock({
       sourcePath: project.localPath,
       queryText: graphifyQuery,
     });
+    const codeMapCache: CreateDataPlanMetrics["codeMapCache"] = graphReadyBefore
+      ? "hit"
+      : "miss";
 
+    const knowledgeBlock = formatKnowledgePromptBlock({
+      knowledge,
+      scope,
+      headSha,
+      pass2ToolBudget: CREATE_DATA_KNOWLEDGE_DEFAULTS.pass2ToolBudget,
+    });
+
+    // Same as BA chat: Scenario / follow-up may include GitLab link or #id.
+    const gitlabTexts = [opts.prompt, opts.followUp || ""].filter((t) =>
+      t.trim(),
+    );
+    let gitlabTaskBlock = "";
+    if (gitlabTexts.length && project.gitlabHost && project.gitlabPath) {
+      publishProgress({
+        userId: opts.userId,
+        baProjectId: opts.baProjectId,
+        step: "read",
+        label: "Reading GitLab issue…",
+      });
+      session.check();
+      const gitlabToken = await getBaProjectGitlabToken(project.id);
+      const gitlab = await loadBaGitlabTaskBlock({
+        gitlabHost: project.gitlabHost,
+        gitlabPath: project.gitlabPath,
+        token: gitlabToken,
+        texts: gitlabTexts,
+      });
+      gitlabTaskBlock = gitlab.block;
+      if (gitlab.refs.length) {
+        publishProgress({
+          userId: opts.userId,
+          baProjectId: opts.baProjectId,
+          step: "read",
+          label: `GitLab #${gitlab.refs.map((r) => r.iid).join(", #")}`,
+        });
+      }
+    }
+
+    const refineBlock =
+      opts.followUp && opts.previousPlan
+        ? buildRefineBlock({
+            followUp: opts.followUp,
+            previousPlan: opts.previousPlan,
+          })
+        : "";
     const prompt = buildSeedPlannerPrompt({
       displayName: project.displayName,
       mainBranch: project.mainBranch || "main",
@@ -470,6 +655,9 @@ export async function runCreateDataPlannerAgent(opts: {
       seedNotes: seedCfg.notes,
       dbAccess,
       graphifyBlock,
+      knowledgeBlock,
+      gitlabTaskBlock,
+      refineBlock,
     });
 
     publishProgress({
@@ -482,12 +670,16 @@ export async function runCreateDataPlannerAgent(opts: {
         : modelLabel,
     });
 
+    let toolCalls = 0;
+    const toolBudget = CREATE_DATA_KNOWLEDGE_DEFAULTS.pass2ToolBudget;
+    const pass2Started = Date.now();
+
     const work = async (): Promise<string> => {
       session.check();
       const runAgent = async (
         toolsCfg: typeof dbCfg,
       ): Promise<string> => {
-        // Prefetch collection list so the agent skips its first discovery round-trip.
+        // Targeted prefetch: listCollections + samples for Pass 1 scope.
         let schemaHint: string | null = null;
         if (toolsCfg) {
           publishProgress({
@@ -496,16 +688,24 @@ export async function runCreateDataPlannerAgent(opts: {
             step: "tool",
             label: "Prefetching DB collections…",
           });
-          schemaHint = await fetchDbSchemaHint(toolsCfg, opts.prompt);
+          schemaHint = await fetchDbSchemaHint(
+            toolsCfg,
+            opts.prompt,
+            scope.collections,
+          );
         }
         const agentPrompt = schemaHint
           ? `${prompt}\n\n## DB context (pre-fetched, read-only — dùng ngay, không cần listCollections/SHOW TABLES lại)\n${schemaHint}`
           : prompt;
 
-        const customTools = mergeBaAgentCustomTools(
-          project.localPath,
-          toolsCfg ? (buildBaDbCustomTools(toolsCfg) as never) : null,
-        );
+        const dbTools = toolsCfg
+          ? (buildBaDbCustomTools(toolsCfg) as never)
+          : null;
+        const proposeTools = buildProposeSeedKnowledgeTool(project.id);
+        const customTools = {
+          ...mergeBaAgentCustomTools(project.localPath, dbTools),
+          ...proposeTools,
+        };
         const agent = await Agent.create({
           apiKey,
           model,
@@ -545,12 +745,18 @@ export async function runCreateDataPlannerAgent(opts: {
                 },
               );
               if (toolLabel) {
+                toolCalls += 1;
                 publishProgress({
                   userId: opts.userId,
                   baProjectId: opts.baProjectId,
                   step: "tool",
                   label: toolLabel,
                 });
+                if (toolCalls > toolBudget) {
+                  throw new Error(
+                    `Tool-call budget exceeded (${toolBudget}) — stopping Pass 2; refine the scenario or refresh seed knowledge`,
+                  );
+                }
               }
               if (!text) continue;
               if (text.startsWith(streamed) && text.length >= streamed.length) {
@@ -628,20 +834,51 @@ export async function runCreateDataPlannerAgent(opts: {
     while (true) {
       try {
         const answer = await withTimeout(work(), PLAN_TIMEOUT_MS, "Create Data");
+        const pass2Ms = Date.now() - pass2Started;
+        const metrics: CreateDataPlanMetrics = {
+          pass1Ms,
+          pass2Ms,
+          toolCalls,
+          codeMapCache,
+          knowledgeStatus: knowledge?.status ?? "absent",
+          scopedCollections: scope.collections,
+        };
+        logger.info("Create Data planner metrics", {
+          baProjectId: opts.baProjectId,
+          ...metrics,
+        });
         const parsed = parseSeedPlanFromAgent(answer);
         if (parsed) {
           if (dbAccess.allowed) {
             parsed.notes = [
               ...(parsed.notes || []),
-              `Connect DB target (${opts.environment}): ${dbAccess.dialect} ${dbAccess.host}/${dbAccess.database}`,
+              `Connect DB target (${opts.environment}): ${dbAccess.dialect} / ${dbAccess.database}`,
             ];
           }
-          const ready = { ...parsed, planner: "ai" as const };
+          const validated = applySideEffectValidation(
+            parsed,
+            knowledge?.sideEffectEdges || [],
+          );
+          const { sideEffectGaps, ...planBody } = validated;
+          if (sideEffectGaps.length) {
+            planBody.notes = [
+              ...(planBody.notes || []),
+              `metrics: pass1=${pass1Ms}ms pass2=${pass2Ms}ms tools=${toolCalls} codeMap=${codeMapCache}`,
+            ];
+          } else {
+            planBody.notes = [
+              ...(planBody.notes || []),
+              `metrics: pass1=${pass1Ms}ms pass2=${pass2Ms}ms tools=${toolCalls} codeMap=${codeMapCache}`,
+            ];
+          }
+          const ready = { ...planBody, planner: "ai" as const, metrics };
           publishProgress({
             userId: opts.userId,
             baProjectId: opts.baProjectId,
             step: "done",
-            label: `Plan ready · ${parsed.steps.length} steps`,
+            label: sideEffectGaps.length
+              ? `Needs side-effects · ${sideEffectGaps.length} gap(s)`
+              : `Plan ready · ${planBody.steps.length} steps`,
             plan: ready,
           });
           return ready;
@@ -653,8 +890,13 @@ export async function runCreateDataPlannerAgent(opts: {
         fallback.notes = [
           ...(fallback.notes || []),
           "AI replied but plan JSON was incomplete — heuristic fallback.",
+          `metrics: pass1=${pass1Ms}ms pass2=${pass2Ms}ms tools=${toolCalls} codeMap=${codeMapCache}`,
         ];
-        const heuristic = { ...fallback, planner: "heuristic" as const };
+        const heuristic = {
+          ...fallback,
+          planner: "heuristic" as const,
+          metrics,
+        };
         publishProgress({
           userId: opts.userId,
           baProjectId: opts.baProjectId,
@@ -666,6 +908,36 @@ export async function runCreateDataPlannerAgent(opts: {
       } catch (err) {
         const raw = err instanceof Error ? err.message : String(err);
         if (/Force-stopped|cancelled/i.test(raw)) throw err;
+        if (/Tool-call budget exceeded/i.test(raw)) {
+          const metrics: CreateDataPlanMetrics = {
+            pass1Ms,
+            pass2Ms: Date.now() - pass2Started,
+            toolCalls,
+            codeMapCache,
+            knowledgeStatus: knowledge?.status ?? "absent",
+            scopedCollections: scope.collections,
+          };
+          const budgetPlan = {
+            steps: [],
+            questions: [
+              "Planner stopped: tool-call budget reached before the plan was complete. Narrow the scenario, refresh seed knowledge, or Refine with more detail.",
+            ],
+            notes: [
+              raw.slice(0, 200),
+              `metrics: pass1=${pass1Ms}ms tools=${toolCalls} budget=${toolBudget}`,
+            ],
+            planner: "ai" as const,
+            metrics,
+          };
+          publishProgress({
+            userId: opts.userId,
+            baProjectId: opts.baProjectId,
+            step: "done",
+            label: "Budget exceeded · need clarification",
+            plan: budgetPlan,
+          });
+          return budgetPlan;
+        }
         if (
           isTransientCursorTransportError(err) &&
           attempt < maxRetries

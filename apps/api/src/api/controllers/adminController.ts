@@ -47,6 +47,33 @@ export const adminController = {
     );
   }),
 
+  getCreateDataKnowledge: asyncHandler(async (req: Request, res: Response) => {
+    res.formatter.ok(
+      await admin.adminGetCreateDataKnowledge(String(req.params.id || "")),
+    );
+  }),
+
+  refreshCreateDataKnowledge: asyncHandler(
+    async (req: Request, res: Response) => {
+      res.formatter.ok(
+        await admin.adminRefreshCreateDataKnowledge(
+          String(req.params.id || ""),
+        ),
+      );
+    },
+  ),
+
+  patchCreateDataKnowledge: asyncHandler(
+    async (req: Request, res: Response) => {
+      res.formatter.ok(
+        await admin.adminPatchCreateDataKnowledge(
+          String(req.params.id || ""),
+          req.body || {},
+        ),
+      );
+    },
+  ),
+
   getCursor: asyncHandler(async (_req: Request, res: Response) => {
     res.formatter.ok(await admin.adminGetCursorSettings());
   }),

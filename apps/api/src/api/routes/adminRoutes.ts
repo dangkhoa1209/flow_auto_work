@@ -20,6 +20,18 @@ export function createAdminRoutes(): Router {
     "/ba-projects/:id/test-create-data-db",
     adminController.testCreateDataDb,
   );
+  router.get(
+    "/ba-projects/:id/create-data-knowledge",
+    adminController.getCreateDataKnowledge,
+  );
+  router.post(
+    "/ba-projects/:id/create-data-knowledge/refresh",
+    adminController.refreshCreateDataKnowledge,
+  );
+  router.patch(
+    "/ba-projects/:id/create-data-knowledge",
+    adminController.patchCreateDataKnowledge,
+  );
 
   router.get("/settings/cursor", adminController.getCursor);
   router.get("/settings/cursor-models", adminController.cursorModels);

@@ -26,6 +26,7 @@ const rollingBack = ref(false);
 const loadingHistory = ref(false);
 
 const planSteps = ref<CreateDataStepPlan[]>([]);
+const followUp = ref("");
 const planQuestions = ref<string[]>([]);
 const planNotes = ref<string[]>([]);
 const planPlanner = ref<"ai" | "heuristic" | null>(null);
@@ -40,7 +41,225 @@ const summarySectionRef = ref<HTMLElement | null>(null);
 const planToastKey = ref("");
 const showPlanNotes = ref(false);
 const showPlannerLog = ref(false);
+/** Expand raw JSON editors for steps (cards are the default view). */
 const forceShowEditors = ref(false);
+/** Per-step expand of raw JSON when not using global forceShowEditors. */
+const expandedStepJson = ref<Record<string, boolean>>({});
+/** Planning mode: fresh generate vs refine (affects progress copy). */
+const planningMode = ref<"generate" | "refine">("generate");
+
+/** 6 fixed milestones for Generate progress %. */
+const PLAN_STAGES = [
+  { id: "source", label: "Reading project source code…", pct: 12 },
+  { id: "gitlab", label: "Loading GitLab issue…", pct: 28 },
+  { id: "prefetch", label: "Checking existing data in the database…", pct: 45 },
+  { id: "lookup", label: "Looking up related data…", pct: 62 },
+  { id: "draft", label: "Drafting the plan…", pct: 82 },
+  { id: "done", label: "Plan ready", pct: 100 },
+] as const;
+
+const planStageIndex = ref(0);
+
+function extractGitlabIid(label: string): string | null {
+  const m = label.match(/#(\d+)/);
+  return m?.[1] || null;
+}
+
+function mapProgressToStage(ev: RealtimeCreateDataProgress): {
+  index: number;
+  label: string;
+} {
+  const raw = `${ev.label || ""} ${ev.detail || ""}`.toLowerCase();
+  const step = ev.step;
+
+  if (step === "done" || step === "error") {
+    return {
+      index: 5,
+      label:
+        step === "error"
+          ? "Planner finished with issues — see details below"
+          : "Plan ready",
+    };
+  }
+  if (
+    /gitlab|issue\s*#|#\d+/.test(raw) ||
+    /reading gitlab/i.test(ev.label || "")
+  ) {
+    const iid = extractGitlabIid(ev.label || "") || extractGitlabIid(ev.detail || "");
+    return {
+      index: 1,
+      label: iid
+        ? `Loading GitLab issue #${iid}…`
+        : "Loading GitLab issue…",
+    };
+  }
+  if (
+    /prefetch|listcollections|collections|checking existing/i.test(raw) ||
+    /prefetching/i.test(ev.label || "")
+  ) {
+    return { index: 2, label: PLAN_STAGES[2].label };
+  }
+  if (
+    step === "tool" ||
+    /query_readonly|query_\*|code_map/i.test(raw)
+  ) {
+    return { index: 3, label: PLAN_STAGES[3].label };
+  }
+  if (step === "write" || /draft|soạn|writing plan/i.test(raw)) {
+    return { index: 4, label: PLAN_STAGES[4].label };
+  }
+  if (
+    step === "pull" ||
+    step === "start" ||
+    /sync|graphify|code map|source/i.test(raw)
+  ) {
+    return { index: 0, label: PLAN_STAGES[0].label };
+  }
+  // Default: stay on current stage label or lookup
+  const cur = planStageIndex.value;
+  return {
+    index: Math.max(cur, 3),
+    label: PLAN_STAGES[Math.min(Math.max(cur, 3), 4)].label,
+  };
+}
+
+const humanProgress = computed(() => {
+  if (!planning.value && planStageIndex.value < 5) return null;
+  if (!planning.value && !progressLines.value.length) return null;
+  const idx = Math.min(planStageIndex.value, PLAN_STAGES.length - 1);
+  const stage = PLAN_STAGES[idx];
+  const last = progressLines.value[progressLines.value.length - 1];
+  const mapped = last ? mapProgressToStage(last) : null;
+  return {
+    label:
+      planning.value && mapped
+        ? mapped.label
+        : planning.value
+          ? stage.label
+          : "Plan ready",
+    pct: planning.value ? stage.pct : 100,
+    stageIndex: idx,
+    totalStages: PLAN_STAGES.length,
+  };
+});
+
+function ingestProgress(ev: RealtimeCreateDataProgress) {
+  progressLines.value = [...progressLines.value.slice(-24), ev];
+  const mapped = mapProgressToStage(ev);
+  // Never go backwards except reset on new run.
+  if (mapped.index >= planStageIndex.value) {
+    planStageIndex.value = mapped.index;
+  }
+}
+
+const hasPlanSession = computed(
+  () => planSteps.value.length > 0 || planQuestions.value.length > 0,
+);
+
+function opCounts(steps: CreateDataStepPlan[]) {
+  let insert = 0;
+  let update = 0;
+  let del = 0;
+  for (const s of steps) {
+    if (s.op === "insert") insert++;
+    else if (s.op === "update") update++;
+    else if (s.op === "delete") del++;
+  }
+  return { insert, update, delete: del };
+}
+
+function batchPreviewLine(b: CreateDataBatch): string {
+  const counts = opCounts(b.steps);
+  const parts: string[] = [];
+  if (counts.insert) parts.push(`${counts.insert} insert`);
+  if (counts.update) parts.push(`${counts.update} update`);
+  if (counts.delete) parts.push(`${counts.delete} delete`);
+  const ops = parts.length ? parts.join(", ") : "0 steps";
+  const collections = [
+    ...new Set(b.steps.map((s) => s.collection).filter(Boolean)),
+  ].slice(0, 4);
+  const more =
+    new Set(b.steps.map((s) => s.collection).filter(Boolean)).size >
+    collections.length
+      ? "…"
+      : "";
+  return collections.length
+    ? `${ops} · ${collections.join(", ")}${more}`
+    : ops;
+}
+
+const executePreviewText = computed(() => {
+  const counts = opCounts(planSteps.value);
+  const target = dbTargetLabel.value || "seed Connect DB";
+  return `About to run: ${counts.insert} insert, ${counts.update} update, ${counts.delete} delete on ${target}`;
+});
+
+function formatFieldValue(value: unknown): string {
+  if (value == null) return "null";
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function stepFieldEntries(
+  data: Record<string, unknown> | null | undefined,
+): Array<{ key: string; value: string }> {
+  if (!data) return [];
+  return Object.entries(data).map(([key, value]) => ({
+    key,
+    value: formatFieldValue(value),
+  }));
+}
+
+function stepDataForDisplay(step: CreateDataStepPlan): Record<string, unknown> | null {
+  const raw = editingData.value[step.step_id];
+  if (raw?.trim()) {
+    try {
+      return JSON.parse(raw) as Record<string, unknown>;
+    } catch {
+      /* fall through */
+    }
+  }
+  return step.data;
+}
+
+function stepFilterForDisplay(
+  step: CreateDataStepPlan,
+): Record<string, unknown> | null {
+  const raw = editingFilter.value[step.step_id];
+  if (raw?.trim()) {
+    try {
+      return JSON.parse(raw) as Record<string, unknown>;
+    } catch {
+      /* fall through */
+    }
+  }
+  return step.filter;
+}
+
+function stepIdentityLabels(step: CreateDataStepPlan): string[] {
+  const fromData = pickIdentity(stepDataForDisplay(step));
+  const fromFilter = pickIdentity(stepFilterForDisplay(step));
+  const merged = { ...fromFilter, ...fromData };
+  return IDENTITY_KEYS.map((k) =>
+    merged[k] ? `${k}=${merged[k]}` : "",
+  ).filter(Boolean);
+}
+
+function toggleStepJson(stepId: string) {
+  expandedStepJson.value = {
+    ...expandedStepJson.value,
+    [stepId]: !expandedStepJson.value[stepId],
+  };
+}
+
+function isStepJsonOpen(stepId: string) {
+  return forceShowEditors.value || Boolean(expandedStepJson.value[stepId]);
+}
 
 const seedConfig = computed(() => ba.selectedProject?.createData || null);
 const seedDbPublic = computed(() => seedConfig.value?.db || null);
@@ -127,7 +346,7 @@ const nextAction = computed(() => {
   if (planSteps.value.length && !activeBatch.value) {
     return {
       type: "info" as const,
-      text: `Plan ready · ${planSteps.value.length} steps. Review the JSON below, then click Execute to write to the seed Connect DB.`,
+      text: `Plan ready · ${planSteps.value.length} steps. Review the steps below, then click Execute to write to the seed Connect DB.`,
     };
   }
   if (activeBatch.value?.status === "preview") {
@@ -358,14 +577,7 @@ const executionSummary = computed(() => {
   };
 });
 
-const showStepsEditors = computed(
-  () =>
-    forceShowEditors.value ||
-    (planSteps.value.length > 0 &&
-      (!activeBatch.value ||
-        activeBatch.value.status === "preview" ||
-        activeBatch.value.status === "running")),
-);
+const showStepsCards = computed(() => planSteps.value.length > 0);
 
 function syncEditors(steps: CreateDataStepPlan[]) {
   const dataNext: Record<string, string> = {};
@@ -389,6 +601,7 @@ function applyPlan(plan: {
   planNotes.value = plan.notes || [];
   planPlanner.value = plan.planner || null;
   syncEditors(planSteps.value);
+  planStageIndex.value = 5;
   const key = `${planSteps.value.length}:${planQuestions.value.length}:${planPlanner.value}`;
   if (key !== planToastKey.value) {
     planToastKey.value = key;
@@ -440,6 +653,7 @@ function resetNewForm() {
     return;
   }
   prompt.value = "";
+  followUp.value = "";
   activeBatch.value = null;
   planSteps.value = [];
   planQuestions.value = [];
@@ -452,16 +666,22 @@ function resetNewForm() {
   showPlanNotes.value = false;
   showPlannerLog.value = false;
   forceShowEditors.value = false;
+  expandedStepJson.value = {};
+  planStageIndex.value = 0;
+  planningMode.value = "generate";
 }
 
 async function generatePlan() {
   if (!canGenerate.value || !ba.selectedProjectId) return;
   planning.value = true;
+  planningMode.value = "generate";
   activeBatch.value = null;
   progressLines.value = [];
+  planStageIndex.value = 0;
   planToastKey.value = "";
   forceShowEditors.value = false;
-  showPlannerLog.value = true;
+  expandedStepJson.value = {};
+  showPlannerLog.value = false;
   showPlanNotes.value = false;
   try {
     const res = await createDataApi.plan({
@@ -472,7 +692,61 @@ async function generatePlan() {
     applyPlan(res.plan);
   } catch (e) {
     // SSE may have already delivered the plan after axios/proxy cut the HTTP wait.
-    if (planSteps.value.length || planQuestions.value.length) return;
+    if (planToastKey.value) return;
+    message.error(e instanceof Error ? e.message : String(e));
+  } finally {
+    planning.value = false;
+  }
+}
+
+const canRefine = computed(
+  () =>
+    Boolean(ba.selectedProjectId) &&
+    !planning.value &&
+    !executing.value &&
+    !saving.value &&
+    !featureDisabledReason.value &&
+    (planSteps.value.length > 0 || planQuestions.value.length > 0) &&
+    followUp.value.trim().length > 0,
+);
+
+/**
+ * Continuous interaction: send a follow-up on top of the current plan (e.g.
+ * answering validation questions) — planner updates the plan instead of
+ * starting over.
+ */
+async function refinePlan() {
+  if (!canRefine.value || !ba.selectedProjectId) return;
+  const previousPlan = {
+    steps: planSteps.value,
+    questions: planQuestions.value,
+    notes: planNotes.value,
+  };
+  planning.value = true;
+  planningMode.value = "refine";
+  activeBatch.value = null;
+  progressLines.value = [];
+  planStageIndex.value = 0;
+  planToastKey.value = "";
+  forceShowEditors.value = false;
+  expandedStepJson.value = {};
+  showPlannerLog.value = false;
+  try {
+    const res = await createDataApi.plan({
+      prompt: prompt.value.trim(),
+      baProjectId: ba.selectedProjectId,
+      environment,
+      followUp: followUp.value.trim(),
+      previousPlan,
+    });
+    applyPlan(res.plan);
+    followUp.value = "";
+  } catch (e) {
+    // SSE may have already delivered the refined plan.
+    if (planToastKey.value) {
+      followUp.value = "";
+      return;
+    }
     message.error(e instanceof Error ? e.message : String(e));
   } finally {
     planning.value = false;
@@ -517,9 +791,21 @@ async function autoSaveBatch() {
 }
 
 /**
- * Execute = (re)save if steps were edited or nothing saved yet, then run.
- * Keeps the UI flow at two buttons: Generate → Execute.
+ * Execute = confirm → (re)save if steps were edited → run.
  */
+function confirmExecute() {
+  if (!ba.selectedProjectId || !canSavePreview.value) return;
+  const steps = applyEditedSteps();
+  if (!steps?.length) return;
+  Modal.confirm({
+    title: "Write to seed Connect DB?",
+    content: executePreviewText.value,
+    okText: "Execute",
+    cancelText: "Cancel",
+    onOk: () => executeBatch(),
+  });
+}
+
 async function executeBatch() {
   if (!ba.selectedProjectId || !canSavePreview.value) return;
   const steps = applyEditedSteps();
@@ -613,6 +899,7 @@ async function openHistory(b: CreateDataBatch) {
     prompt.value = res.batch.prompt;
     forceShowEditors.value = false;
     showPlanNotes.value = false;
+    expandedStepJson.value = {};
     syncEditors(planSteps.value);
     void nextTick(() => {
       if (
@@ -643,6 +930,8 @@ watch(
     forceShowEditors.value = false;
     showPlannerLog.value = false;
     showPlanNotes.value = false;
+    expandedStepJson.value = {};
+    planStageIndex.value = 0;
     void loadHistory();
   },
 );
@@ -654,8 +943,9 @@ onMounted(() => {
   unsubRt = subscribeRealtime({
     onCreateDataProgress: (ev) => {
       if (ev.baProjectId !== ba.selectedProjectId) return;
-      progressLines.value = [...progressLines.value.slice(-24), ev];
+      ingestProgress(ev);
       if (ev.plan && (ev.step === "done" || ev.step === "error")) {
+        planStageIndex.value = 5;
         applyPlan(ev.plan);
         planning.value = false;
       }
@@ -713,7 +1003,7 @@ onUnmounted(() => {
             v-model:value="prompt"
             :rows="3"
             :disabled="Boolean(featureDisabledReason)"
-            placeholder='e.g. "Create a new employee named An" (AI fills remaining fields) or "Create employee with CCCD 33333" (invalid rule → error)'
+            placeholder='e.g. "Create a new employee named An", paste a GitLab issue link / #123, or "Create employee with CCCD 33333" (invalid rule → error)'
           />
         </label>
 
@@ -734,16 +1024,27 @@ onUnmounted(() => {
           {{ seedHint }}
         </p>
 
-        <div class="flex flex-wrap gap-2">
-          <button
-            type="button"
-            class="faw-btn"
-            :class="{ 'faw-btn--run': !planSteps.length || planning }"
-            :disabled="!canGenerate || planning"
-            @click="generatePlan"
-          >
-            {{ planning ? "Planning…" : "Generate plan (AI)" }}
-          </button>
+        <div class="flex flex-wrap items-center gap-2">
+          <template v-if="!hasPlanSession">
+            <button
+              type="button"
+              class="faw-btn faw-btn--run"
+              :disabled="!canGenerate || planning"
+              @click="generatePlan"
+            >
+              {{ planning ? "Planning…" : "Generate new plan" }}
+            </button>
+          </template>
+          <template v-else>
+            <button
+              type="button"
+              class="faw-btn text-xs !flex-none"
+              :disabled="!canGenerate || planning"
+              @click="generatePlan"
+            >
+              Regenerate from scratch
+            </button>
+          </template>
           <button
             v-if="planning"
             type="button"
@@ -758,7 +1059,7 @@ onUnmounted(() => {
                 type="button"
                 class="faw-btn"
                 :class="{
-                  'faw-btn--run': canSavePreview && !executing,
+                  'faw-btn--run': canSavePreview && !executing && hasPlanSession,
                 }"
                 :disabled="
                   !canSavePreview ||
@@ -767,7 +1068,7 @@ onUnmounted(() => {
                   planning ||
                   activeBatch?.status === 'running'
                 "
-                @click="executeBatch"
+                @click="confirmExecute"
               >
                 {{ executing ? "Executing…" : saving ? "Saving…" : "Execute" }}
               </button>
@@ -795,34 +1096,69 @@ onUnmounted(() => {
           :message="nextAction.text"
         />
 
+        <!-- Humanized progress (default) -->
         <div
-          v-if="planning || (progressLines.length && showPlannerLog)"
-          class="rounded border border-[var(--app-border)] p-2 space-y-1 max-h-40 overflow-y-auto"
+          v-if="planning || (humanProgress && progressLines.length)"
+          class="rounded border border-[var(--app-border)] p-3 space-y-2"
         >
-          <div class="flex items-center justify-between gap-2">
-            <div class="text-[11px] font-medium text-ink-muted uppercase tracking-wide">
-              Planner activity
+          <div class="flex items-start justify-between gap-2">
+            <div class="text-[13px] text-ink font-medium">
+              {{
+                planning
+                  ? planningMode === "refine"
+                    ? "Refining plan…"
+                    : "Generating plan…"
+                  : "Plan finished"
+              }}
             </div>
-            <button
-              v-if="!planning && progressLines.length"
-              type="button"
-              class="text-[11px] text-ink-muted underline"
-              @click="showPlannerLog = false"
-            >
-              Hide
-            </button>
+            <span class="text-[12px] text-ink-muted tabular-nums shrink-0">
+              {{ humanProgress?.pct ?? 0 }}%
+            </span>
           </div>
           <div
-            v-for="(line, i) in progressLines"
-            :key="`${line.step}-${i}-${line.label}`"
-            class="text-[12px] font-mono text-ink truncate"
+            class="h-1.5 w-full rounded-full bg-[var(--app-border)] overflow-hidden"
+            role="progressbar"
+            :aria-valuenow="humanProgress?.pct ?? 0"
+            aria-valuemin="0"
+            aria-valuemax="100"
           >
-            <span class="text-ink-faint">{{ line.step }}</span>
-            · {{ line.label }}
-            <span v-if="line.detail" class="text-ink-muted"> · {{ line.detail }}</span>
+            <div
+              class="h-full rounded-full bg-[var(--app-accent,#3b82f6)] transition-[width] duration-500 ease-out"
+              :style="{ width: `${humanProgress?.pct ?? 0}%` }"
+            />
           </div>
-          <div v-if="planning && !progressLines.length" class="text-[12px] text-ink-muted">
-            Starting Cursor Seed Planner…
+          <div class="text-[13px] text-ink-muted">
+            {{ humanProgress?.label || "Starting…" }}
+          </div>
+          <div class="text-[11px] text-ink-faint">
+            Step {{ (humanProgress?.stageIndex ?? 0) + 1 }} of
+            {{ humanProgress?.totalStages ?? 6 }}
+          </div>
+          <button
+            v-if="progressLines.length"
+            type="button"
+            class="text-[11px] text-ink-muted underline"
+            @click="showPlannerLog = !showPlannerLog"
+          >
+            {{ showPlannerLog ? "Hide" : "Show" }} planner activity ({{
+              progressLines.length
+            }})
+          </button>
+          <div
+            v-if="showPlannerLog && progressLines.length"
+            class="max-h-36 overflow-y-auto space-y-1 pt-1 border-t border-[var(--app-border)]"
+          >
+            <div
+              v-for="(line, i) in progressLines"
+              :key="`${line.step}-${i}-${line.label}`"
+              class="text-[12px] font-mono text-ink truncate"
+            >
+              <span class="text-ink-faint">{{ line.step }}</span>
+              · {{ line.label }}
+              <span v-if="line.detail" class="text-ink-muted">
+                · {{ line.detail }}</span
+              >
+            </div>
           </div>
         </div>
         <button
@@ -834,13 +1170,53 @@ onUnmounted(() => {
           Show planner log ({{ progressLines.length }})
         </button>
 
-        <div v-if="planQuestions.length" class="space-y-1">
-          <div class="text-sm font-medium text-orange-700">
-            Needs clarification / validation
+        <!-- Questions + Follow-up as one chat turn -->
+        <div
+          v-if="hasPlanSession"
+          class="rounded border border-[var(--app-border)] p-3 space-y-3"
+        >
+          <div class="text-sm font-medium text-ink">Conversation</div>
+          <div
+            v-if="planQuestions.length"
+            class="rounded-lg bg-orange-50/80 dark:bg-orange-950/20 border border-orange-200/60 px-3 py-2 space-y-1.5"
+          >
+            <div class="text-[11px] font-medium text-orange-700 uppercase tracking-wide">
+              Planner
+            </div>
+            <ul class="m-0 pl-4 text-[13px] text-ink space-y-1.5">
+              <li v-for="(q, i) in planQuestions" :key="i">{{ q }}</li>
+            </ul>
           </div>
-          <ul class="m-0 pl-4 text-[13px] text-ink-muted space-y-1">
-            <li v-for="(q, i) in planQuestions" :key="i">{{ q }}</li>
-          </ul>
+          <div
+            v-else-if="planSteps.length"
+            class="text-[12px] text-ink-muted"
+          >
+            Plan has {{ planSteps.length }} steps. Reply below to refine, or
+            Execute when ready.
+          </div>
+          <div class="space-y-1">
+            <div class="text-[11px] font-medium text-ink-muted uppercase tracking-wide">
+              Your reply
+            </div>
+            <div class="flex gap-2 items-end">
+              <a-textarea
+                v-model:value="followUp"
+                :rows="2"
+                class="flex-1"
+                :disabled="planning || Boolean(featureDisabledReason)"
+                placeholder='e.g. "Only 5 working days from Sep 1, skip Sep 15"'
+                @keydown.enter.exact.prevent="refinePlan"
+              />
+              <button
+                type="button"
+                class="faw-btn faw-btn--run !flex-none"
+                :disabled="!canRefine"
+                @click="refinePlan"
+              >
+                {{ planning && planningMode === "refine" ? "Refining…" : "Refine plan" }}
+              </button>
+            </div>
+          </div>
         </div>
 
         <div v-if="planNotes.length">
@@ -977,12 +1353,22 @@ onUnmounted(() => {
 
         <div
           ref="stepsSectionRef"
-          v-if="showStepsEditors"
+          v-if="showStepsCards"
           class="space-y-3"
         >
-          <div class="text-sm font-medium text-ink">
-            Steps (edit data/filter before Execute)
+          <div class="flex flex-wrap items-baseline justify-between gap-2">
+            <div class="text-sm font-medium text-ink">
+              Steps ({{ planSteps.length }})
+            </div>
+            <button
+              type="button"
+              class="text-[12px] text-ink-muted underline"
+              @click="forceShowEditors = !forceShowEditors"
+            >
+              {{ forceShowEditors ? "Hide all step JSON" : "Show all step JSON" }}
+            </button>
           </div>
+
           <div
             v-for="(s, idx) in planSteps"
             :key="s.step_id"
@@ -991,46 +1377,157 @@ onUnmounted(() => {
             <div class="flex items-start justify-between gap-2">
               <div class="min-w-0">
                 <div class="text-[13px] font-medium text-ink">
-                  {{ idx + 1 }}. {{ s.step_id }}
+                  {{ idx + 1 }}.
+                  <span
+                    class="uppercase tracking-wide text-[11px] px-1.5 py-0.5 rounded ml-1"
+                    :class="{
+                      'bg-green-50 text-green-800': s.op === 'insert',
+                      'bg-amber-50 text-amber-800': s.op === 'update',
+                      'bg-red-50 text-red-700': s.op === 'delete',
+                    }"
+                    >{{ s.op }}</span
+                  >
+                  <span class="font-mono ml-1">{{ s.collection }}</span>
                 </div>
-                <div class="text-[12px] text-ink-muted">{{ s.description }}</div>
-                <div class="text-[12px] font-mono mt-1">
-                  {{ s.op }} {{ s.collection }}
+                <div class="text-[12px] text-ink-muted mt-0.5">
+                  {{ s.description || s.step_id }}
                 </div>
               </div>
+              <button
+                type="button"
+                class="text-[11px] text-ink-muted underline shrink-0"
+                @click="toggleStepJson(s.step_id)"
+              >
+                {{ isStepJsonOpen(s.step_id) ? "Hide JSON" : "JSON" }}
+              </button>
             </div>
-            <label class="flex flex-col gap-1 text-[11px] text-ink-muted">
-              data
-              <a-textarea
-                v-model:value="editingData[s.step_id]"
-                :rows="4"
-                class="font-mono text-[12px]"
-                placeholder="null / JSON document or row"
-              />
-            </label>
-            <label
-              v-if="s.op !== 'insert'"
-              class="flex flex-col gap-1 text-[11px] text-ink-muted"
+
+            <!-- Insert: field cards -->
+            <div v-if="s.op === 'insert'" class="space-y-1">
+              <div class="text-[11px] text-ink-muted">Fields to create</div>
+              <dl
+                v-if="stepFieldEntries(stepDataForDisplay(s)).length"
+                class="grid grid-cols-[minmax(7rem,auto)_1fr] gap-x-3 gap-y-1 text-[12px]"
+              >
+                <template
+                  v-for="f in stepFieldEntries(stepDataForDisplay(s))"
+                  :key="f.key"
+                >
+                  <dt class="font-mono text-ink-muted truncate">{{ f.key }}</dt>
+                  <dd class="font-mono text-ink m-0 break-all">{{ f.value }}</dd>
+                </template>
+              </dl>
+              <div v-else class="text-[12px] text-ink-faint">No fields</div>
+            </div>
+
+            <!-- Update: target + changes -->
+            <div v-else-if="s.op === 'update'" class="space-y-2">
+              <div>
+                <div class="text-[11px] text-ink-muted mb-1">Match record (filter)</div>
+                <dl
+                  v-if="stepFieldEntries(stepFilterForDisplay(s)).length"
+                  class="grid grid-cols-[minmax(7rem,auto)_1fr] gap-x-3 gap-y-1 text-[12px]"
+                >
+                  <template
+                    v-for="f in stepFieldEntries(stepFilterForDisplay(s))"
+                    :key="f.key"
+                  >
+                    <dt class="font-mono text-ink-muted truncate">{{ f.key }}</dt>
+                    <dd class="font-mono text-ink m-0 break-all">{{ f.value }}</dd>
+                  </template>
+                </dl>
+                <div v-else class="text-[12px] text-ink-faint">Empty filter</div>
+              </div>
+              <div>
+                <div class="text-[11px] text-ink-muted mb-1">
+                  Fields that will change
+                </div>
+                <dl
+                  v-if="stepFieldEntries(stepDataForDisplay(s)).length"
+                  class="grid grid-cols-[minmax(7rem,auto)_1fr] gap-x-3 gap-y-1 text-[12px]"
+                >
+                  <template
+                    v-for="f in stepFieldEntries(stepDataForDisplay(s))"
+                    :key="f.key"
+                  >
+                    <dt class="font-mono text-amber-800/80 truncate">{{ f.key }}</dt>
+                    <dd class="font-mono text-ink m-0 break-all bg-amber-50/60 px-1 rounded">
+                      {{ f.value }}
+                    </dd>
+                  </template>
+                </dl>
+                <div v-else class="text-[12px] text-ink-faint">No changes</div>
+              </div>
+            </div>
+
+            <!-- Delete: identity -->
+            <div v-else class="space-y-1">
+              <div class="text-[11px] text-red-700">Record to delete</div>
+              <div
+                v-if="stepIdentityLabels(s).length"
+                class="text-[12px] font-mono text-ink space-y-0.5"
+              >
+                <div v-for="(lab, li) in stepIdentityLabels(s)" :key="li">
+                  {{ lab }}
+                </div>
+              </div>
+              <dl
+                v-else-if="stepFieldEntries(stepFilterForDisplay(s)).length"
+                class="grid grid-cols-[minmax(7rem,auto)_1fr] gap-x-3 gap-y-1 text-[12px]"
+              >
+                <template
+                  v-for="f in stepFieldEntries(stepFilterForDisplay(s))"
+                  :key="f.key"
+                >
+                  <dt class="font-mono text-ink-muted truncate">{{ f.key }}</dt>
+                  <dd class="font-mono text-ink m-0 break-all">{{ f.value }}</dd>
+                </template>
+              </dl>
+              <div v-else class="text-[12px] text-ink-faint">No filter</div>
+            </div>
+
+            <div
+              v-if="isStepJsonOpen(s.step_id)"
+              class="space-y-2 pt-2 border-t border-[var(--app-border)]"
             >
-              filter
-              <a-textarea
-                v-model:value="editingFilter[s.step_id]"
-                :rows="2"
-                class="font-mono text-[12px]"
-                placeholder="WHERE / Mongo filter JSON"
-              />
-            </label>
+              <label class="flex flex-col gap-1 text-[11px] text-ink-muted">
+                data
+                <a-textarea
+                  v-model:value="editingData[s.step_id]"
+                  :rows="4"
+                  class="font-mono text-[12px]"
+                  placeholder="null / JSON document or row"
+                />
+              </label>
+              <label
+                v-if="s.op !== 'insert'"
+                class="flex flex-col gap-1 text-[11px] text-ink-muted"
+              >
+                filter
+                <a-textarea
+                  v-model:value="editingFilter[s.step_id]"
+                  :rows="2"
+                  class="font-mono text-[12px]"
+                  placeholder="WHERE / Mongo filter JSON"
+                />
+              </label>
+            </div>
+
+            <div
+              v-if="resultFor(s.step_id)"
+              class="text-[12px]"
+              :class="statusColor[resultFor(s.step_id)!.status]"
+            >
+              Result: {{ resultFor(s.step_id)!.status }}
+              <span
+                v-if="resultFor(s.step_id)!.createdId"
+                class="font-mono text-ink-muted"
+              >
+                · {{ resultFor(s.step_id)!.createdId }}
+              </span>
+            </div>
           </div>
         </div>
-
-        <button
-          v-else-if="planSteps.length && executionSummary"
-          type="button"
-          class="text-[12px] text-ink-muted underline"
-          @click="forceShowEditors = true"
-        >
-          Show step JSON ({{ planSteps.length }})
-        </button>
       </div>
 
       <div class="min-h-0 overflow-y-auto p-4 space-y-3">
@@ -1069,11 +1566,13 @@ onUnmounted(() => {
               b.status
             }}</span>
           </div>
-          <div class="text-[12px] text-ink-muted mt-1 line-clamp-2">
+          <div class="text-[12px] text-ink-muted mt-1 line-clamp-1">
+            {{ batchPreviewLine(b) }}
+          </div>
+          <div class="text-[12px] text-ink-faint mt-0.5 line-clamp-2">
             {{ b.prompt }}
           </div>
           <div class="text-[11px] text-ink-faint mt-1">
-            {{ b.steps.length }} steps ·
             {{ new Date(b.createdAt).toLocaleString() }}
           </div>
         </button>

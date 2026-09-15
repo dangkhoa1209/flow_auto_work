@@ -202,6 +202,13 @@ export async function createDataPlan(opts: {
   environment?: string;
   /** Force heuristic only (tests / offline). */
   heuristicOnly?: boolean;
+  /** Refine turn: user's follow-up on top of the previous plan (no full restart). */
+  followUp?: string;
+  previousPlan?: {
+    steps: unknown[];
+    questions: string[];
+    notes: string[];
+  } | null;
 }): Promise<
   CreateDataPlanResponse & {
     planner: "ai" | "heuristic";
@@ -250,6 +257,8 @@ export async function createDataPlan(opts: {
     baProjectId: opts.baProjectId,
     prompt: opts.prompt,
     environment,
+    followUp: opts.followUp || null,
+    previousPlan: opts.previousPlan || null,
   });
   return { ...plan, suggestedDbTarget };
 }
