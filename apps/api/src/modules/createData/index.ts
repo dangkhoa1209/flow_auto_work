@@ -215,6 +215,13 @@ export async function createDataPlan(opts: {
   }
   const environment = assertSafeEnvironment(opts.environment || "staging");
   const seedCfg = toPublicBaCreateData(project.createData);
+  if (!seedCfg.enabled) {
+    throw new AppError(
+      "Create Data is not enabled for this project — ask Admin to enable it",
+      403,
+      "create_data_disabled",
+    );
+  }
   const projectDb = toPublicBaDb(project.db);
   const seedDb = seedCfg.db;
   const suggestedFrom =

@@ -88,8 +88,24 @@ const seedHint = computed(() => {
   return parts.join(" · ");
 });
 
+/** Create Data must be set up by Admin (feature toggle + seed DB) before QC can use it. */
+const featureDisabledReason = computed(() => {
+  if (!ba.selectedProjectId) return "";
+  if (!seedConfig.value?.enabled) {
+    return "Create Data is not set up for this project. Ask Admin to enable it on Admin → Projects.";
+  }
+  const db = effectiveDb.value;
+  if (!db?.configured || !db.enabled) {
+    return "Seed Connect DB is not configured or not active. Ask Admin to configure it on Admin → Projects.";
+  }
+  return "";
+});
+
 const canGenerate = computed(
-  () => Boolean(ba.selectedProjectId) && prompt.value.trim().length > 0,
+  () =>
+    Boolean(ba.selectedProjectId) &&
+    !featureDisabledReason.value &&
+    prompt.value.trim().length > 0,
 );
 
 const nextAction = computed(() => {
@@ -684,11 +700,19 @@ onUnmounted(() => {
       class="flex-1 min-h-0 overflow-hidden grid grid-cols-1 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]"
     >
       <div class="min-h-0 overflow-y-auto p-4 space-y-4 border-b lg:border-b-0 lg:border-r border-[var(--app-border)]">
+        <a-alert
+          v-if="featureDisabledReason"
+          type="warning"
+          show-icon
+          :message="featureDisabledReason"
+        />
+
         <label class="flex flex-col gap-1 text-sm">
           <span class="text-ink-muted">Scenario</span>
           <a-textarea
             v-model:value="prompt"
             :rows="3"
+            :disabled="Boolean(featureDisabledReason)"
             placeholder='e.g. "Create a new employee named An" (AI fills remaining fields) or "Create employee with CCCD 33333" (invalid rule → error)'
           />
         </label>
@@ -704,7 +728,7 @@ onUnmounted(() => {
         </div>
 
         <p
-          v-if="seedHint && (!dbTargetLabel || !seedConfig?.enabled)"
+          v-if="seedHint && !featureDisabledReason && !dbTargetLabel"
           class="text-[12px] text-ink-muted m-0"
         >
           {{ seedHint }}
