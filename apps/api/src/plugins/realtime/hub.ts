@@ -178,6 +178,13 @@ export type RealtimeEvent =
         | "error";
       label: string;
       detail?: string;
+      /** Present on done/error so the UI can render steps without waiting on the HTTP /plan response. */
+      plan?: {
+        steps: unknown[];
+        questions: string[];
+        notes: string[];
+        planner: "ai" | "heuristic";
+      };
     };
 
 type Listener = (event: RealtimeEvent) => void;

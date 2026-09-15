@@ -140,6 +140,7 @@ export async function api<T = unknown>(
     session?: Session;
     skipRefresh?: boolean;
     skipAuth?: boolean;
+    timeout?: number;
   } = {},
 ): Promise<T> {
   const method = (opts.method || "GET").toUpperCase();
@@ -158,6 +159,7 @@ export async function api<T = unknown>(
     data: method === "GET" || method === "HEAD" ? undefined : data,
     skipRefresh: opts.skipRefresh,
     skipAuth: opts.skipAuth,
+    ...(opts.timeout != null ? { timeout: opts.timeout } : {}),
   };
 
   // Allow caller to temporarily override identity headers via session
