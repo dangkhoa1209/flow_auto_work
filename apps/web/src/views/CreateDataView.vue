@@ -8,12 +8,137 @@ import {
   type CreateDataEnvironment,
   type CreateDataStepPlan,
 } from "@/api/createDataApi";
+import { ApiError } from "@/api/client";
 import {
   subscribeRealtime,
   type RealtimeCreateDataProgress,
 } from "@/realtime/client";
+import {
+  safeGetItem,
+  safeRemoveItem,
+  safeSetItem,
+} from "@/utils/safeStorage";
 
 const ba = useBaChatStore();
+
+const DRAFT_KEY = "faw.createData.draft.v1";
+/** Keep waiting for SSE after gateway/proxy cuts the HTTP /plan response. */
+const waitingForSse = ref(false);
+
+type CreateDataDraft = {
+  baProjectId: string;
+  prompt: string;
+  followUp: string;
+  planning: boolean;
+  waitingForSse: boolean;
+  planningMode: "generate" | "refine";
+  planStageIndex: number;
+  planToastKey: string;
+  planSteps: CreateDataStepPlan[];
+  planQuestions: string[];
+  planNotes: string[];
+  planPlanner: "ai" | "heuristic" | null;
+  progressLines: RealtimeCreateDataProgress[];
+  savedAt: number;
+};
+
+function normalizePlanQuestions(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  const out: string[] = [];
+  for (const item of raw) {
+    if (typeof item === "string") {
+      const t = item.trim();
+      if (t) out.push(t);
+      continue;
+    }
+    if (item && typeof item === "object") {
+      const row = item as Record<string, unknown>;
+      const field = String(row.field || "").trim();
+      const reason = String(row.reason || row.message || "").trim();
+      const line = field && reason ? `${field}: ${reason}` : reason || field;
+      if (line) out.push(line);
+    }
+  }
+  return out;
+}
+
+function isPlanHttpTimeout(err: unknown): boolean {
+  if (err instanceof ApiError) {
+    return err.status === 504 || err.status === 502 || err.status === 408;
+  }
+  const msg = err instanceof Error ? err.message : String(err);
+  return /504|502|408|timeout|timed out|gateway/i.test(msg);
+}
+
+function persistCreateDataDraft() {
+  const projectId = ba.selectedProjectId;
+  if (!projectId) return;
+  const draft: CreateDataDraft = {
+    baProjectId: projectId,
+    prompt: prompt.value,
+    followUp: followUp.value,
+    planning: planning.value,
+    waitingForSse: waitingForSse.value,
+    planningMode: planningMode.value,
+    planStageIndex: planStageIndex.value,
+    planToastKey: planToastKey.value,
+    planSteps: planSteps.value,
+    planQuestions: planQuestions.value,
+    planNotes: planNotes.value,
+    planPlanner: planPlanner.value,
+    progressLines: progressLines.value.slice(-24),
+    savedAt: Date.now(),
+  };
+  safeSetItem(DRAFT_KEY, JSON.stringify(draft));
+}
+
+function clearCreateDataDraft() {
+  safeRemoveItem(DRAFT_KEY);
+}
+
+function restoreCreateDataDraft(): boolean {
+  const raw = safeGetItem(DRAFT_KEY);
+  if (!raw) return false;
+  try {
+    const draft = JSON.parse(raw) as CreateDataDraft;
+    if (!draft?.baProjectId) return false;
+    // Stale after 30 minutes
+    if (Date.now() - (draft.savedAt || 0) > 30 * 60 * 1000) {
+      clearCreateDataDraft();
+      return false;
+    }
+    if (
+      ba.selectedProjectId &&
+      draft.baProjectId !== ba.selectedProjectId
+    ) {
+      return false;
+    }
+    prompt.value = draft.prompt || "";
+    followUp.value = draft.followUp || "";
+    planningMode.value = draft.planningMode || "generate";
+    planStageIndex.value = draft.planStageIndex || 0;
+    planToastKey.value = draft.planToastKey || "";
+    planSteps.value = Array.isArray(draft.planSteps) ? draft.planSteps : [];
+    planQuestions.value = normalizePlanQuestions(draft.planQuestions);
+    planNotes.value = Array.isArray(draft.planNotes) ? draft.planNotes : [];
+    planPlanner.value = draft.planPlanner || null;
+    progressLines.value = Array.isArray(draft.progressLines)
+      ? draft.progressLines
+      : [];
+    syncEditors(planSteps.value);
+    if (draft.planning || draft.waitingForSse) {
+      planning.value = true;
+      waitingForSse.value = true;
+      message.info(
+        "Restored planner session after reload — waiting for realtime updates…",
+      );
+    }
+    return true;
+  } catch {
+    clearCreateDataDraft();
+    return false;
+  }
+}
 
 const prompt = ref("");
 /** Fixed seed label — Production is blocked server-side. */
@@ -149,6 +274,9 @@ function ingestProgress(ev: RealtimeCreateDataProgress) {
   // Never go backwards except reset on new run.
   if (mapped.index >= planStageIndex.value) {
     planStageIndex.value = mapped.index;
+  }
+  if (planning.value || waitingForSse.value) {
+    persistCreateDataDraft();
   }
 }
 
@@ -597,23 +725,32 @@ function applyPlan(plan: {
   planner?: "ai" | "heuristic" | null;
 }) {
   planSteps.value = plan.steps || [];
-  planQuestions.value = plan.questions || [];
+  planQuestions.value = normalizePlanQuestions(plan.questions);
   planNotes.value = plan.notes || [];
   planPlanner.value = plan.planner || null;
   syncEditors(planSteps.value);
   planStageIndex.value = 5;
+  waitingForSse.value = false;
   const key = `${planSteps.value.length}:${planQuestions.value.length}:${planPlanner.value}`;
   if (key !== planToastKey.value) {
     planToastKey.value = key;
     if (!planSteps.value.length) {
-      message.warning("Planner needs more detail — see questions below");
+      message.warning(
+        planQuestions.value.length
+          ? "Planner needs clarification — see Conversation below"
+          : "Planner returned no steps",
+      );
     } else {
       const via = plan.planner === "heuristic" ? "heuristic" : "AI + source";
       message.success(`Plan ready · ${planSteps.value.length} steps (${via})`);
     }
   }
+  persistCreateDataDraft();
   void nextTick(() => {
-    stepsSectionRef.value?.scrollIntoView({ behavior: "smooth", block: "start" });
+    const el = planQuestions.value.length
+      ? document.querySelector(".faw-create-data-conversation")
+      : stepsSectionRef.value;
+    el?.scrollIntoView({ behavior: "smooth", block: "start" });
   });
   // Generate = plan + save: persist as a preview batch right away.
   if (planSteps.value.length) void autoSaveBatch();
@@ -669,11 +806,14 @@ function resetNewForm() {
   expandedStepJson.value = {};
   planStageIndex.value = 0;
   planningMode.value = "generate";
+  waitingForSse.value = false;
+  clearCreateDataDraft();
 }
 
 async function generatePlan() {
   if (!canGenerate.value || !ba.selectedProjectId) return;
   planning.value = true;
+  waitingForSse.value = false;
   planningMode.value = "generate";
   activeBatch.value = null;
   progressLines.value = [];
@@ -683,6 +823,7 @@ async function generatePlan() {
   expandedStepJson.value = {};
   showPlannerLog.value = false;
   showPlanNotes.value = false;
+  persistCreateDataDraft();
   try {
     const res = await createDataApi.plan({
       prompt: prompt.value.trim(),
@@ -692,10 +833,25 @@ async function generatePlan() {
     applyPlan(res.plan);
   } catch (e) {
     // SSE may have already delivered the plan after axios/proxy cut the HTTP wait.
-    if (planToastKey.value) return;
+    if (planToastKey.value || planSteps.value.length || planQuestions.value.length) {
+      return;
+    }
+    if (isPlanHttpTimeout(e)) {
+      // Agent often still finishes server-side; keep UI in planning and wait for SSE.
+      waitingForSse.value = true;
+      planning.value = true;
+      persistCreateDataDraft();
+      message.warning(
+        "Request timed out (gateway). Waiting for planner result via realtime — do not close this tab.",
+      );
+      return;
+    }
     message.error(e instanceof Error ? e.message : String(e));
   } finally {
-    planning.value = false;
+    if (!waitingForSse.value) {
+      planning.value = false;
+      persistCreateDataDraft();
+    }
   }
 }
 
@@ -723,6 +879,7 @@ async function refinePlan() {
     notes: planNotes.value,
   };
   planning.value = true;
+  waitingForSse.value = false;
   planningMode.value = "refine";
   activeBatch.value = null;
   progressLines.value = [];
@@ -731,6 +888,7 @@ async function refinePlan() {
   forceShowEditors.value = false;
   expandedStepJson.value = {};
   showPlannerLog.value = false;
+  persistCreateDataDraft();
   try {
     const res = await createDataApi.plan({
       prompt: prompt.value.trim(),
@@ -742,14 +900,29 @@ async function refinePlan() {
     applyPlan(res.plan);
     followUp.value = "";
   } catch (e) {
-    // SSE may have already delivered the refined plan.
-    if (planToastKey.value) {
+    if (
+      planToastKey.value ||
+      planSteps.value.length ||
+      planQuestions.value.length
+    ) {
       followUp.value = "";
+      return;
+    }
+    if (isPlanHttpTimeout(e)) {
+      waitingForSse.value = true;
+      planning.value = true;
+      persistCreateDataDraft();
+      message.warning(
+        "Request timed out (gateway). Waiting for refined plan via realtime…",
+      );
       return;
     }
     message.error(e instanceof Error ? e.message : String(e));
   } finally {
-    planning.value = false;
+    if (!waitingForSse.value) {
+      planning.value = false;
+      persistCreateDataDraft();
+    }
   }
 }
 
@@ -757,6 +930,9 @@ async function stopPlan() {
   if (!ba.selectedProjectId) return;
   try {
     await createDataApi.stopPlan(ba.selectedProjectId);
+    waitingForSse.value = false;
+    planning.value = false;
+    persistCreateDataDraft();
     message.info("Stop requested");
   } catch (e) {
     message.error(e instanceof Error ? e.message : String(e));
@@ -932,28 +1108,40 @@ watch(
     showPlanNotes.value = false;
     expandedStepJson.value = {};
     planStageIndex.value = 0;
+    waitingForSse.value = false;
+    planning.value = false;
+    followUp.value = "";
     void loadHistory();
+    restoreCreateDataDraft();
   },
 );
 
 let unsubRt: (() => void) | undefined;
 
 onMounted(() => {
+  restoreCreateDataDraft();
   void loadHistory();
   unsubRt = subscribeRealtime({
     onCreateDataProgress: (ev) => {
       if (ev.baProjectId !== ba.selectedProjectId) return;
+      // Resume waiting UI if we reconnected mid-plan.
+      if (waitingForSse.value) planning.value = true;
       ingestProgress(ev);
       if (ev.plan && (ev.step === "done" || ev.step === "error")) {
         planStageIndex.value = 5;
         applyPlan(ev.plan);
         planning.value = false;
+        waitingForSse.value = false;
+        persistCreateDataDraft();
       }
     },
   });
 });
 
 onUnmounted(() => {
+  if (planning.value || waitingForSse.value || hasPlanSession.value) {
+    persistCreateDataDraft();
+  }
   unsubRt?.();
 });
 </script>
@@ -994,6 +1182,7 @@ onUnmounted(() => {
           v-if="featureDisabledReason"
           type="warning"
           show-icon
+          class="faw-create-data-alert faw-create-data-alert--warning"
           :message="featureDisabledReason"
         />
 
@@ -1092,8 +1281,21 @@ onUnmounted(() => {
           v-if="nextAction"
           :type="nextAction.type"
           show-icon
-          class="text-xs"
+          class="text-xs faw-create-data-alert"
+          :class="{
+            'faw-create-data-alert--warning': nextAction.type === 'warning',
+            'faw-create-data-alert--info': nextAction.type === 'info',
+            'faw-create-data-alert--error': nextAction.type === 'error',
+          }"
           :message="nextAction.text"
+        />
+
+        <a-alert
+          v-if="waitingForSse && planning"
+          type="info"
+          show-icon
+          class="text-xs faw-create-data-alert faw-create-data-alert--info"
+          message="HTTP timed out — still waiting for the planner over realtime. Keep this tab open."
         />
 
         <!-- Humanized progress (default) -->
@@ -1173,17 +1375,17 @@ onUnmounted(() => {
         <!-- Questions + Follow-up as one chat turn -->
         <div
           v-if="hasPlanSession"
-          class="rounded border border-[var(--app-border)] p-3 space-y-3"
+          class="faw-create-data-conversation rounded border border-[var(--app-border)] p-3 space-y-3"
         >
           <div class="text-sm font-medium text-ink">Conversation</div>
           <div
             v-if="planQuestions.length"
-            class="rounded-lg bg-orange-50/80 dark:bg-orange-950/20 border border-orange-200/60 px-3 py-2 space-y-1.5"
+            class="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 space-y-1.5"
           >
-            <div class="text-[11px] font-medium text-orange-700 uppercase tracking-wide">
-              Planner
+            <div class="text-[11px] font-semibold text-amber-950 uppercase tracking-wide">
+              Needs clarification / validation
             </div>
-            <ul class="m-0 pl-4 text-[13px] text-ink space-y-1.5">
+            <ul class="m-0 pl-4 text-[13px] text-amber-950 space-y-1.5 leading-snug">
               <li v-for="(q, i) in planQuestions" :key="i">{{ q }}</li>
             </ul>
           </div>
@@ -1580,3 +1782,32 @@ onUnmounted(() => {
     </div>
   </div>
 </template>
+
+<style scoped>
+.faw-create-data-alert :deep(.ant-alert) {
+  color: #1c1917;
+  align-items: flex-start;
+}
+.faw-create-data-alert :deep(.ant-alert-message) {
+  color: inherit;
+  font-weight: 500;
+}
+.faw-create-data-alert--warning :deep(.ant-alert) {
+  background: #fffbeb;
+  border-color: #f59e0b;
+  color: #78350f;
+}
+.faw-create-data-alert--info :deep(.ant-alert) {
+  background: #eff6ff;
+  border-color: #3b82f6;
+  color: #1e3a8a;
+}
+.faw-create-data-alert--error :deep(.ant-alert) {
+  background: #fef2f2;
+  border-color: #ef4444;
+  color: #7f1d1d;
+}
+.faw-create-data-alert :deep(.ant-alert-icon) {
+  color: inherit;
+}
+</style>
