@@ -1,5 +1,11 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { existsSync, unlinkSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  readdirSync,
+  readFileSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { AppError } from "../../utils/AppError.js";
@@ -17,6 +23,92 @@ export type SshTunnelParams = {
   /** Prefix for temp key files / error context (e.g. create-data, sync-db). */
   label?: string;
 };
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * True when argv/cmdline looks like ssh or sshpass with local-forward `-L <port>:…`.
+ * Accepts both NUL-separated `/proc/.../cmdline` and space-separated process listings.
+ */
+export function isSshLocalForwardCmdline(cmdline: string, port: number): boolean {
+  if (!Number.isInteger(port) || port < 1 || port > 65535) return false;
+  const norm = cmdline.replace(/\0/g, " ").trim();
+  if (!norm) return false;
+  if (!/(?:^|[\s/])(?:ssh|sshpass)(?:\s|$)/.test(norm)) return false;
+  return new RegExp(`(?:^|\\s)-L\\s*${port}:`).test(norm);
+}
+
+function findSshTunnelPidsForPort(port: number): number[] {
+  const pids: number[] = [];
+  try {
+    for (const ent of readdirSync("/proc")) {
+      if (!/^\d+$/.test(ent)) continue;
+      const pid = Number(ent);
+      if (!pid || pid === process.pid) continue;
+      let cmdline = "";
+      try {
+        cmdline = readFileSync(`/proc/${pid}/cmdline`, "utf8");
+      } catch {
+        continue;
+      }
+      if (isSshLocalForwardCmdline(cmdline, port)) pids.push(pid);
+    }
+  } catch {
+    /* non-Linux or /proc unavailable */
+  }
+  return pids;
+}
+
+/** SIGTERM → SIGKILL leftover ssh/sshpass local-forwards holding `port`. */
+async function reclaimLeftoverSshTunnelPort(port: number): Promise<boolean> {
+  const pids = findSshTunnelPidsForPort(port);
+  if (!pids.length) return false;
+  for (const pid of pids) {
+    try {
+      process.kill(-pid, "SIGTERM");
+    } catch {
+      try {
+        process.kill(pid, "SIGTERM");
+      } catch {
+        /* already gone */
+      }
+    }
+  }
+  await sleep(800);
+  for (const pid of pids) {
+    try {
+      process.kill(-pid, "SIGKILL");
+    } catch {
+      try {
+        process.kill(pid, "SIGKILL");
+      } catch {
+        /* already gone */
+      }
+    }
+  }
+  await sleep(400);
+  return true;
+}
+
+async function probeTunnelPort(port: number): Promise<"free" | "busy"> {
+  const net = await import("node:net");
+  return new Promise((resolve, reject) => {
+    const server = net.createServer();
+    server.once("error", (err: NodeJS.ErrnoException) => {
+      if (err.code === "EADDRINUSE") {
+        resolve("busy");
+        return;
+      }
+      reject(err);
+    });
+    server.once("listening", () => {
+      server.close(() => resolve("free"));
+    });
+    server.listen(port, "127.0.0.1");
+  });
+}
 
 function killProcessTree(child: ChildProcess, signal: NodeJS.Signals): void {
   const pid = child.pid;
@@ -84,28 +176,21 @@ function forceKillProcessTreeAndWait(
 export async function assertTunnelPortFree(
   port: number,
   context = "Admin",
+  errorCode = "ssh_tunnel_port_busy",
 ): Promise<void> {
-  const net = await import("node:net");
-  await new Promise<void>((resolve, reject) => {
-    const server = net.createServer();
-    server.once("error", (err: NodeJS.ErrnoException) => {
-      if (err.code === "EADDRINUSE") {
-        reject(
-          new AppError(
-            `SSH tunnel port ${port} already in use — leftover tunnel from a prior run? Free the port or change tunnelLocalPort in ${context}`,
-            409,
-            "ssh_tunnel_port_busy",
-          ),
-        );
-        return;
-      }
-      reject(err);
-    });
-    server.once("listening", () => {
-      server.close(() => resolve());
-    });
-    server.listen(port, "127.0.0.1");
-  });
+  let status = await probeTunnelPort(port);
+  if (status === "busy") {
+    // Prior Create Data / Sync DB runs can leave detached ssh/sshpass holding the port.
+    const reclaimed = await reclaimLeftoverSshTunnelPort(port);
+    if (reclaimed) status = await probeTunnelPort(port);
+  }
+  if (status === "busy") {
+    throw new AppError(
+      `SSH tunnel port ${port} already in use — leftover tunnel from a prior run? Free the port or change tunnelLocalPort in ${context}`,
+      409,
+      errorCode,
+    );
+  }
 }
 
 export function formatSshTunnelExitMessage(
@@ -327,5 +412,10 @@ export async function withSshTunnel<T>(
     return await fn({ host: "127.0.0.1", port: params.tunnelLocalPort });
   } finally {
     await tunnel.cleanup().catch(() => undefined);
+    // OS may keep the listen port briefly after ssh exits; avoid next-job race.
+    for (let i = 0; i < 15; i++) {
+      if ((await probeTunnelPort(params.tunnelLocalPort)) === "free") break;
+      await sleep(100);
+    }
   }
 }

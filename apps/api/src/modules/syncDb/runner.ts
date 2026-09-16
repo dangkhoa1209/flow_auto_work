@@ -6,6 +6,7 @@ import { MongoClient } from "mongodb";
 import { getConfig } from "../../config.js";
 import { logger } from "../../logger.js";
 import { AppError } from "../../utils/AppError.js";
+import { assertTunnelPortFree } from "../../plugins/sshTunnel/tunnel.js";
 import type { BaDbConnectionResolved } from "../../workspace/baStore.js";
 import { partitionSyncCollections, SYNC_DB_SKIP_COLLECTIONS } from "./excludedCollections.js";
 import { publishSyncDbEvent } from "./events.js";
@@ -126,30 +127,6 @@ function forceKillProcessTreeAndWait(
     const hardTimer = setTimeout(done, timeoutMs);
     killTimer.unref?.();
     hardTimer.unref?.();
-  });
-}
-
-async function assertTunnelPortFree(port: number): Promise<void> {
-  const net = await import("node:net");
-  await new Promise<void>((resolve, reject) => {
-    const server = net.createServer();
-    server.once("error", (err: NodeJS.ErrnoException) => {
-      if (err.code === "EADDRINUSE") {
-        reject(
-          new AppError(
-            `SSH tunnel port ${port} already in use — leftover tunnel from a prior run? Free the port or change tunnelLocalPort in Admin Sync DB`,
-            409,
-            "sync_db_tunnel_port_busy",
-          ),
-        );
-        return;
-      }
-      reject(err);
-    });
-    server.once("listening", () => {
-      server.close(() => resolve());
-    });
-    server.listen(port, "127.0.0.1");
   });
 }
 
@@ -531,7 +508,11 @@ export async function runSyncDbJob(
 
     await publishProgress(tracker.setPhase("connecting"), true);
 
-    await assertTunnelPortFree(source.tunnelLocalPort);
+    await assertTunnelPortFree(
+      source.tunnelLocalPort,
+      "Admin → Sync DB",
+      "sync_db_tunnel_port_busy",
+    );
     const tunnel = openSshTunnel(source);
     tunnelCleanup = tunnel.cleanup;
     children.push(tunnel.child);
