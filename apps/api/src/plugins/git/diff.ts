@@ -1,10 +1,7 @@
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
 import { resolveRepoPath } from "../../workspace/creds.js";
 import { detectDefaultBranch } from "./prep.js";
-import { gitExecOptions, gitStdout } from "./exec.js";
-
-const execFileAsync = promisify(execFile);
+import { gitStdout } from "./exec.js";
+import { fetchWithPat } from "./remote-auth.js";
 
 async function git(args: string[]): Promise<string> {
   const repoPath = resolveRepoPath();
@@ -193,17 +190,15 @@ export async function listJobCommits(opts: {
 
   // Fetch tip + base so new GitLab API commits appear locally
   if (tipName) {
-    await execFileAsync(
-      "git",
-      ["fetch", "origin", `+refs/heads/${tipName}:refs/remotes/origin/${tipName}`, "--quiet"],
-      gitExecOptions(repoPath),
-    ).catch(() => undefined);
+    await fetchWithPat(repoPath, [
+      `+refs/heads/${tipName}:refs/remotes/origin/${tipName}`,
+      "--quiet",
+    ]).catch(() => undefined);
   }
-  await execFileAsync(
-    "git",
-    ["fetch", "origin", baseName, "--quiet"],
-    gitExecOptions(repoPath),
-  ).catch(() => undefined);
+  await fetchWithPat(repoPath, [
+    `+refs/heads/${baseName}:refs/remotes/origin/${baseName}`,
+    "--quiet",
+  ]).catch(() => undefined);
 
   // Prefer remote tip when available
   let tipRef = tip;
@@ -254,7 +249,7 @@ export async function listJobCommits(opts: {
   for (const sha of stored.slice(0, limit)) {
     if (bySha.has(sha)) continue;
     if (!(await revExists(sha))) {
-      await gitOk(["fetch", "origin", sha]).catch(() => null);
+      await fetchWithPat(repoPath, [sha]).catch(() => null);
     }
     if (!(await revExists(sha))) continue;
     const one = await gitOk(["log", "-1", logFmt, sha]);
@@ -335,7 +330,7 @@ export async function getReviewDiff(opts?: {
 
   if (single) {
     if (!(await revExists(single))) {
-      await gitOk(["fetch", "origin", single]);
+      await fetchWithPat(repoPath, [single]);
     }
     if (!(await revExists(single))) {
       throw new Error(`Commit not found locally: ${single.slice(0, 12)}`);
@@ -373,16 +368,10 @@ export async function getReviewDiff(opts?: {
 
   const tipBranch = (opts?.branch || "").replace(/^origin\//, "").trim();
   if (tipBranch) {
-    await execFileAsync(
-      "git",
-      [
-        "fetch",
-        "origin",
-        `+refs/heads/${tipBranch}:refs/remotes/origin/${tipBranch}`,
-        "--quiet",
-      ],
-      gitExecOptions(repoPath),
-    ).catch(() => undefined);
+    await fetchWithPat(repoPath, [
+      `+refs/heads/${tipBranch}:refs/remotes/origin/${tipBranch}`,
+      "--quiet",
+    ]).catch(() => undefined);
   }
 
   const headSha = (await gitOk(["rev-parse", "HEAD"]))?.trim() || "";
@@ -397,11 +386,10 @@ export async function getReviewDiff(opts?: {
   const comparedLabel = range;
 
   const baseName = base.replace(/^origin\//, "");
-  await execFileAsync(
-    "git",
-    ["fetch", "origin", baseName, "--quiet"],
-    gitExecOptions(repoPath),
-  ).catch(() => undefined);
+  await fetchWithPat(repoPath, [
+    `+refs/heads/${baseName}:refs/remotes/origin/${baseName}`,
+    "--quiet",
+  ]).catch(() => undefined);
 
   let { files, summary, rangeDiff } = await buildFileStats(range);
   if (!rangeDiff.trim() && tipRef !== "HEAD") {

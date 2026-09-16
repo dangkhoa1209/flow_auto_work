@@ -3,6 +3,7 @@ import path from "node:path";
 import type { GitlabCommitAction } from "../gitlab/commits.js";
 import { logger } from "../../logger.js";
 import { git } from "./exec.js";
+import { fetchWithPat } from "./remote-auth.js";
 
 function isBinaryBuffer(buf: Buffer): boolean {
   return buf.includes(0);
@@ -123,10 +124,10 @@ export async function syncLocalToRemoteCommit(
 ): Promise<void> {
   const refspec = `+refs/heads/${branch}:refs/remotes/origin/${branch}`;
   try {
-    await git(repoPath, ["fetch", "origin", refspec]);
+    await fetchWithPat(repoPath, [refspec]);
   } catch (err) {
     try {
-      await git(repoPath, ["fetch", "origin", sha]);
+      await fetchWithPat(repoPath, [sha]);
     } catch {
       throw new Error(
         `Could not fetch GitLab commit ${sha.slice(0, 12)} for branch ${branch}: ${String(err)}`,

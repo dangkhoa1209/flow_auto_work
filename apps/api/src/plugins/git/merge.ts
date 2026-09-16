@@ -1,6 +1,7 @@
 import { logger } from "../../logger.js";
 import { git } from "./exec.js";
 import { detectDefaultBranch, getHeadSha } from "./prep.js";
+import { fetchWithPat } from "./remote-auth.js";
 
 async function branchExists(repoPath: string, name: string): Promise<boolean> {
   try {
@@ -183,9 +184,7 @@ export async function attemptMergeIntoBase(opts: {
   // Fetch the source tip FIRST — the chosen branch may be stale locally or
   // exist only on origin (never checked out on this machine).
   try {
-    await git(opts.repoPath, [
-      "fetch",
-      "origin",
+    await fetchWithPat(opts.repoPath, [
       `+refs/heads/${source}:refs/remotes/origin/${source}`,
     ]);
   } catch (err) {
@@ -221,7 +220,10 @@ export async function attemptMergeIntoBase(opts: {
 
   // Soft refresh of target tip if remote exists (ignore failures)
   try {
-    await git(opts.repoPath, ["fetch", "origin", target, "--depth=50"]);
+    await fetchWithPat(opts.repoPath, [
+      `+refs/heads/${target}:refs/remotes/origin/${target}`,
+      "--depth=50",
+    ]);
     await git(opts.repoPath, ["merge", "--ff-only", `origin/${target}`]);
   } catch {
     // offline / no remote / diverged — continue with local target
