@@ -173,17 +173,26 @@ function forceKillProcessTreeAndWait(
   });
 }
 
-export async function assertTunnelPortFree(
-  port: number,
-  context = "Admin",
-  errorCode = "ssh_tunnel_port_busy",
-): Promise<void> {
+/**
+ * Try to free `port` (reclaim leftover ssh/sshpass -L), then probe.
+ * Returns "free" | "busy".
+ */
+async function tryFreeTunnelPort(port: number): Promise<"free" | "busy"> {
   let status = await probeTunnelPort(port);
   if (status === "busy") {
     // Prior Create Data / Sync DB runs can leave detached ssh/sshpass holding the port.
     const reclaimed = await reclaimLeftoverSshTunnelPort(port);
     if (reclaimed) status = await probeTunnelPort(port);
   }
+  return status;
+}
+
+export async function assertTunnelPortFree(
+  port: number,
+  context = "Admin",
+  errorCode = "ssh_tunnel_port_busy",
+): Promise<void> {
+  const status = await tryFreeTunnelPort(port);
   if (status === "busy") {
     throw new AppError(
       `SSH tunnel port ${port} already in use — leftover tunnel from a prior run? Free the port or change tunnelLocalPort in ${context}`,
@@ -191,6 +200,54 @@ export async function assertTunnelPortFree(
       errorCode,
     );
   }
+}
+
+/** Candidates: preferred, then +1…+maxOffset (skip invalid / privileged). */
+export function tunnelPortFallbackCandidates(
+  preferredPort: number,
+  maxOffset = 32,
+): number[] {
+  const preferred = Math.floor(preferredPort);
+  if (!Number.isFinite(preferred) || preferred < 1 || preferred > 65535) {
+    return [];
+  }
+  const out: number[] = [preferred];
+  const offsetCap = Math.max(0, Math.min(Math.floor(maxOffset), 64));
+  for (let i = 1; i <= offsetCap; i++) {
+    const next = preferred + i;
+    if (next > 65535) break;
+    if (next < 1024) continue;
+    out.push(next);
+  }
+  return out;
+}
+
+/**
+ * Prefer configured tunnelLocalPort; if still busy after reclaiming leftover
+ * SSH tunnels, automatically pick the next free local port.
+ */
+export async function resolveTunnelLocalPort(
+  preferredPort: number,
+  context = "Admin",
+  errorCode = "ssh_tunnel_port_busy",
+  maxOffset = 32,
+): Promise<number> {
+  const candidates = tunnelPortFallbackCandidates(preferredPort, maxOffset);
+  if (!candidates.length) {
+    throw new AppError(
+      `Invalid tunnelLocalPort ${preferredPort} — set a port 1–65535 in ${context}`,
+      400,
+      errorCode,
+    );
+  }
+  for (const port of candidates) {
+    if ((await tryFreeTunnelPort(port)) === "free") return port;
+  }
+  throw new AppError(
+    `SSH tunnel ports ${candidates[0]}–${candidates[candidates.length - 1]} are busy — free a port or change tunnelLocalPort in ${context}`,
+    409,
+    errorCode,
+  );
 }
 
 export function formatSshTunnelExitMessage(
@@ -400,21 +457,23 @@ export async function withSshTunnel<T>(
       : params.label === "sync-db"
         ? "Admin → Sync DB"
         : "Admin";
-  await assertTunnelPortFree(params.tunnelLocalPort, context);
-  const tunnel = openSshTunnel(params);
+  const localPort = await resolveTunnelLocalPort(
+    params.tunnelLocalPort,
+    context,
+  );
+  const effective: SshTunnelParams = {
+    ...params,
+    tunnelLocalPort: localPort,
+  };
+  const tunnel = openSshTunnel(effective);
   try {
-    await waitTunnelReady(
-      tunnel.child,
-      params.tunnelLocalPort,
-      20_000,
-      context,
-    );
-    return await fn({ host: "127.0.0.1", port: params.tunnelLocalPort });
+    await waitTunnelReady(tunnel.child, localPort, 20_000, context);
+    return await fn({ host: "127.0.0.1", port: localPort });
   } finally {
     await tunnel.cleanup().catch(() => undefined);
     // OS may keep the listen port briefly after ssh exits; avoid next-job race.
     for (let i = 0; i < 15; i++) {
-      if ((await probeTunnelPort(params.tunnelLocalPort)) === "free") break;
+      if ((await probeTunnelPort(localPort)) === "free") break;
       await sleep(100);
     }
   }

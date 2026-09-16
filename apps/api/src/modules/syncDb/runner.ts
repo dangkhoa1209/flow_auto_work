@@ -6,7 +6,7 @@ import { MongoClient } from "mongodb";
 import { getConfig } from "../../config.js";
 import { logger } from "../../logger.js";
 import { AppError } from "../../utils/AppError.js";
-import { assertTunnelPortFree } from "../../plugins/sshTunnel/tunnel.js";
+import { resolveTunnelLocalPort } from "../../plugins/sshTunnel/tunnel.js";
 import type { BaDbConnectionResolved } from "../../workspace/baStore.js";
 import { partitionSyncCollections, SYNC_DB_SKIP_COLLECTIONS } from "./excludedCollections.js";
 import { publishSyncDbEvent } from "./events.js";
@@ -508,12 +508,27 @@ export async function runSyncDbJob(
 
     await publishProgress(tracker.setPhase("connecting"), true);
 
-    await assertTunnelPortFree(
-      source.tunnelLocalPort,
+    const preferredPort = source.tunnelLocalPort;
+    const localPort = await resolveTunnelLocalPort(
+      preferredPort,
       "Admin → Sync DB",
       "sync_db_tunnel_port_busy",
     );
-    const tunnel = openSshTunnel(source);
+    const sourceTunneled: SyncDbSystemConfigResolved = {
+      ...source,
+      tunnelLocalPort: localPort,
+    };
+    // Re-check after auto-fallback: loopback target must not equal the live tunnel port.
+    assertSafeRestoreTarget(target, sourceTunneled);
+    if (localPort !== preferredPort) {
+      emitLog(
+        job,
+        log,
+        "system",
+        `SSH tunnel port ${preferredPort} busy — using ${localPort} for this run`,
+      );
+    }
+    const tunnel = openSshTunnel(sourceTunneled);
     tunnelCleanup = tunnel.cleanup;
     children.push(tunnel.child);
     tunnel.child.stderr?.on("data", (chunk: Buffer) => {
@@ -521,18 +536,18 @@ export async function runSyncDbJob(
       if (line) emitLog(job!, log, "stderr", `ssh: ${line}`);
     });
 
-    await waitTunnelReady(tunnel.child, source.tunnelLocalPort, 20_000);
-    emitLog(job, log, "system", `SSH tunnel ready on 127.0.0.1:${source.tunnelLocalPort}`);
+    await waitTunnelReady(tunnel.child, localPort, 20_000);
+    emitLog(job, log, "system", `SSH tunnel ready on 127.0.0.1:${localPort}`);
 
     await publishProgress(tracker.setPhase("listing"), true);
     emitLog(job, log, "system", "Verifying source Mongo user is read-only…");
-    await assertSourceReadonlyViaTunnel(source, job.dbName);
+    await assertSourceReadonlyViaTunnel(sourceTunneled, job.dbName);
     emitLog(job, log, "system", "Source user privilege check OK (no write on live)");
 
     let collections: string[] = [];
     let skippedCollections: string[] = [];
     try {
-      const listed = await listSourceCollections(source, job.dbName);
+      const listed = await listSourceCollections(sourceTunneled, job.dbName);
       const parted = partitionSyncCollections(listed);
       collections = parted.included;
       skippedCollections = parted.skipped;
@@ -570,7 +585,7 @@ export async function runSyncDbJob(
       "--host",
       "127.0.0.1",
       "--port",
-      String(source.tunnelLocalPort),
+      String(localPort),
       "--db",
       job.dbName,
       "--username",
