@@ -1,3 +1,4 @@
+import { spawn, type ChildProcess } from "node:child_process";
 import { createServer, type Server } from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
 import {
@@ -60,8 +61,16 @@ describe("tunnelPortFallbackCandidates", () => {
 
 describe("resolveTunnelLocalPort", () => {
   const holders: Server[] = [];
+  const children: ChildProcess[] = [];
 
   afterEach(async () => {
+    for (const child of children.splice(0)) {
+      try {
+        child.kill("SIGKILL");
+      } catch {
+        /* */
+      }
+    }
     await Promise.all(
       holders.splice(0).map(
         (s) =>
@@ -81,10 +90,67 @@ describe("resolveTunnelLocalPort", () => {
     holders.push(server);
   }
 
+  /** Child process listens so last-resort kill can free preferred without killing vitest. */
+  async function holdPortInChild(port: number): Promise<ChildProcess> {
+    const child = spawn(
+      process.execPath,
+      [
+        "-e",
+        `require("net").createServer().listen(${port},"127.0.0.1",()=>process.stdout.write("ok"))`,
+      ],
+      { stdio: ["ignore", "pipe", "pipe"] },
+    );
+    children.push(child);
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(
+        () => reject(new Error(`child did not bind ${port}`)),
+        5000,
+      );
+      child.stdout?.once("data", () => {
+        clearTimeout(timer);
+        resolve();
+      });
+      child.once("exit", (code) => {
+        clearTimeout(timer);
+        reject(new Error(`child exited early code=${code}`));
+      });
+      child.once("error", (err) => {
+        clearTimeout(timer);
+        reject(err);
+      });
+    });
+    return child;
+  }
+
   it("falls back to the next free port when preferred is busy", async () => {
     const base = 37100 + Math.floor(Math.random() * 400);
     await holdPort(base);
     const chosen = await resolveTunnelLocalPort(base, "test", "busy", 4);
     expect(chosen).toBe(base + 1);
   });
+
+  it("force-kills preferred listeners when the whole fallback window is busy", async () => {
+    const base = 37500 + Math.floor(Math.random() * 400);
+    const maxOffset = 3;
+    await holdPortInChild(base);
+    for (let i = 1; i <= maxOffset; i++) {
+      await holdPort(base + i);
+    }
+    const chosen = await resolveTunnelLocalPort(base, "test", "busy", maxOffset);
+    expect(chosen).toBe(base);
+  }, 15_000);
+
+  it("throws when preferred is held by this process and the fallback window is busy", async () => {
+    const base = 37900 + Math.floor(Math.random() * 400);
+    const maxOffset = 2;
+    for (let i = 0; i <= maxOffset; i++) {
+      await holdPort(base + i);
+    }
+    await expect(
+      resolveTunnelLocalPort(base, "test", "busy", maxOffset),
+    ).rejects.toMatchObject({
+      status: 409,
+      message: expect.stringContaining("could not free"),
+    });
+  }, 15_000);
 });

@@ -3,6 +3,7 @@ import {
   existsSync,
   readdirSync,
   readFileSync,
+  readlinkSync,
   unlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -61,11 +62,39 @@ function findSshTunnelPidsForPort(port: number): number[] {
   return pids;
 }
 
-/** SIGTERM → SIGKILL leftover ssh/sshpass local-forwards holding `port`. */
-async function reclaimLeftoverSshTunnelPort(port: number): Promise<boolean> {
-  const pids = findSshTunnelPidsForPort(port);
-  if (!pids.length) return false;
-  for (const pid of pids) {
+/** SIGTERM → SIGKILL exact PIDs only (safer for arbitrary listeners). */
+async function signalExactPidsTermThenKill(pids: number[]): Promise<void> {
+  const targets = [...new Set(pids)].filter(
+    (pid) => pid > 0 && pid !== process.pid,
+  );
+  if (!targets.length) return;
+  for (const pid of targets) {
+    try {
+      process.kill(pid, "SIGTERM");
+    } catch {
+      /* already gone */
+    }
+  }
+  await sleep(800);
+  for (const pid of targets) {
+    try {
+      process.kill(pid, "SIGKILL");
+    } catch {
+      /* already gone */
+    }
+  }
+  await sleep(400);
+}
+
+/**
+ * SIGTERM → SIGKILL foreign PIDs; try process-group `-pid` first (ssh/sshpass trees).
+ */
+async function signalPidsTermThenKill(pids: number[]): Promise<void> {
+  const targets = [...new Set(pids)].filter(
+    (pid) => pid > 0 && pid !== process.pid,
+  );
+  if (!targets.length) return;
+  for (const pid of targets) {
     try {
       process.kill(-pid, "SIGTERM");
     } catch {
@@ -77,7 +106,7 @@ async function reclaimLeftoverSshTunnelPort(port: number): Promise<boolean> {
     }
   }
   await sleep(800);
-  for (const pid of pids) {
+  for (const pid of targets) {
     try {
       process.kill(-pid, "SIGKILL");
     } catch {
@@ -89,6 +118,89 @@ async function reclaimLeftoverSshTunnelPort(port: number): Promise<boolean> {
     }
   }
   await sleep(400);
+}
+
+/** SIGTERM → SIGKILL leftover ssh/sshpass local-forwards holding `port`. */
+async function reclaimLeftoverSshTunnelPort(port: number): Promise<boolean> {
+  const pids = findSshTunnelPidsForPort(port);
+  if (!pids.length) return false;
+  await signalPidsTermThenKill(pids);
+  return true;
+}
+
+/** Inodes of sockets in LISTEN state bound to `port` (IPv4/IPv6 via /proc). */
+function findListenSocketInodesForPort(port: number): Set<string> {
+  const inodes = new Set<string>();
+  if (!Number.isInteger(port) || port < 1 || port > 65535) return inodes;
+  for (const file of ["/proc/net/tcp", "/proc/net/tcp6"]) {
+    let text = "";
+    try {
+      text = readFileSync(file, "utf8");
+    } catch {
+      continue;
+    }
+    for (const line of text.split("\n").slice(1)) {
+      const parts = line.trim().split(/\s+/);
+      if (parts.length < 10) continue;
+      const local = parts[1];
+      const state = parts[3];
+      const inode = parts[9];
+      // 0A = TCP_LISTEN
+      if (state !== "0A" || !inode || inode === "0") continue;
+      const colon = local.lastIndexOf(":");
+      if (colon < 0) continue;
+      const portHex = local.slice(colon + 1);
+      if (Number.parseInt(portHex, 16) === port) inodes.add(inode);
+    }
+  }
+  return inodes;
+}
+
+/** Foreign PIDs that own a LISTEN socket on `port` (excludes this process). */
+export function findListenerPidsForPort(port: number): number[] {
+  const inodes = findListenSocketInodesForPort(port);
+  if (!inodes.size) return [];
+  const pids: number[] = [];
+  try {
+    for (const ent of readdirSync("/proc")) {
+      if (!/^\d+$/.test(ent)) continue;
+      const pid = Number(ent);
+      if (!pid || pid === process.pid) continue;
+      let fds: string[] = [];
+      try {
+        fds = readdirSync(`/proc/${pid}/fd`);
+      } catch {
+        continue;
+      }
+      for (const fd of fds) {
+        let target = "";
+        try {
+          target = readlinkSync(`/proc/${pid}/fd/${fd}`);
+        } catch {
+          continue;
+        }
+        const m = /^socket:\[(\d+)\]$/.exec(target);
+        if (m && inodes.has(m[1])) {
+          pids.push(pid);
+          break;
+        }
+      }
+    }
+  } catch {
+    /* non-Linux or /proc unavailable */
+  }
+  return pids;
+}
+
+/**
+ * Last resort: SIGTERM/SIGKILL any foreign process listening on `port`
+ * (not limited to ssh/sshpass). Exact PID only — never process-group kill.
+ * Never signals our own PID.
+ */
+async function forceKillPortListeners(port: number): Promise<boolean> {
+  const pids = findListenerPidsForPort(port);
+  if (!pids.length) return false;
+  await signalExactPidsTermThenKill(pids);
   return true;
 }
 
@@ -224,7 +336,9 @@ export function tunnelPortFallbackCandidates(
 
 /**
  * Prefer configured tunnelLocalPort; if still busy after reclaiming leftover
- * SSH tunnels, automatically pick the next free local port.
+ * SSH tunnels, automatically pick the next free local port. If the whole
+ * +offset window is busy, force-kill foreign listeners on the preferred port
+ * and retry that port once.
  */
 export async function resolveTunnelLocalPort(
   preferredPort: number,
@@ -243,8 +357,18 @@ export async function resolveTunnelLocalPort(
   for (const port of candidates) {
     if ((await tryFreeTunnelPort(port)) === "free") return port;
   }
+
+  const preferred = candidates[0];
+  // Exhausted preferred…+maxOffset: last resort — kill whatever holds preferred.
+  const killed = await forceKillPortListeners(preferred);
+  if ((await probeTunnelPort(preferred)) === "free") return preferred;
+
+  const range = `${candidates[0]}–${candidates[candidates.length - 1]}`;
+  const detail = killed
+    ? `killed listener(s) on ${preferred} but it is still in use`
+    : `could not free ${preferred} (held by this process, no killable listener found, or insufficient permission)`;
   throw new AppError(
-    `SSH tunnel ports ${candidates[0]}–${candidates[candidates.length - 1]} are busy — free a port or change tunnelLocalPort in ${context}`,
+    `SSH tunnel ports ${range} are busy — ${detail}; change tunnelLocalPort in ${context}`,
     409,
     errorCode,
   );
