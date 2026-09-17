@@ -76,6 +76,12 @@ type QueueItem = {
   askOnlyMessage?: string;
   /** Generate QC testcases + comment on GitLab issue */
   generateTestcases?: boolean;
+  /** Sync base into work branch (git + optional AI conflict resolve) */
+  syncBase?: boolean;
+  /** Merge work branch into base (MR accept or local git) */
+  mergeBranch?: boolean;
+  /** Optional base/target branch override for sync-base / merge */
+  mergeTargetBranch?: string;
   /** Status before this follow-up/ask was queued (restore if no code change) */
   followUpRestoreStatus?: JobStatus;
 };
@@ -222,7 +228,26 @@ export class JobQueue {
       this.activeIssueKeys.add(key);
       this.rememberJobScope(job);
       const pendingMsg = job.pendingFollowUpMessage?.trim();
-      if (pendingMsg && job.pendingFollowUpKind === "ask") {
+      const pendingMerge = job.pendingMergeOp;
+      if (pendingMerge?.kind === "sync-base") {
+        this.queue.push({
+          job,
+          source: "restore_sync_base",
+          syncBase: true,
+          mergeTargetBranch: pendingMerge.targetBranch,
+          followUpRestoreStatus:
+            pendingMerge.restoreStatus || job.followUpRestoreStatus,
+        });
+      } else if (pendingMerge?.kind === "merge") {
+        this.queue.push({
+          job,
+          source: "restore_merge",
+          mergeBranch: true,
+          mergeTargetBranch: pendingMerge.targetBranch,
+          followUpRestoreStatus:
+            pendingMerge.restoreStatus || job.followUpRestoreStatus,
+        });
+      } else if (pendingMsg && job.pendingFollowUpKind === "ask") {
         this.queue.push({
           job,
           source: "restore_ask",
@@ -243,7 +268,11 @@ export class JobQueue {
       logger.info("Restored queued job after restart", {
         jobId: job.id,
         iid: job.issue.issueIid,
-        kind: pendingMsg ? job.pendingFollowUpKind || "send" : "run",
+        kind: pendingMerge
+          ? pendingMerge.kind
+          : pendingMsg
+            ? job.pendingFollowUpKind || "send"
+            : "run",
       });
     }
     if (restored > 0) {
@@ -933,6 +962,258 @@ export class JobQueue {
   }
 
   /**
+   * Enqueue Sync base (pull base → work). HTTP returns immediately; History
+   * shows a processing row until the worker finishes.
+   */
+  async enqueueSyncBase(
+    jobId: string,
+    input: { targetBranch?: string } = {},
+  ): Promise<{
+    ok: boolean;
+    queued?: boolean;
+    job: JobRecord;
+    kind: string;
+  }> {
+    const loaded = await loadJob(jobId);
+    if (!loaded) throw new Error("Job not found");
+    let job: JobRecord = loaded;
+
+    if (isJobBusy(job.status) && !hasActiveAgentRun(jobId)) {
+      const keyBusy = busyIssueKeyForJob(job);
+      // Live queue/worker — not an orphan (sync/merge often has no Cursor agent)
+      if (this.isCurrent(jobId) || this.activeIssueKeys.has(keyBusy)) {
+        throw new Error(
+          "Agent is running on this job — wait for it to finish or Force Stop, then try again",
+        );
+      }
+      const reclaimTo: JobStatus = job.handedOffAt
+        ? "succeeded"
+        : job.completedAt
+          ? "awaiting_handoff"
+          : "draft";
+      if (job.pendingMergeOp) {
+        const { pushMergeOpHistory } = await import("./modules/job/merge.js");
+        pushMergeOpHistory(job, {
+          kind: job.pendingMergeOp.kind,
+          status: "error",
+          message: "Cancelled — job was stuck busy and reclaimed",
+        });
+      }
+      job.status = reclaimTo;
+      job.pendingFollowUpMessage = undefined;
+      job.pendingMergeOp = undefined;
+      await saveJob(job);
+      if (this.isCurrent(jobId)) {
+        this.clearCurrent(jobId);
+        this.publishStatus();
+      }
+    }
+
+    if (hasActiveAgentRun(jobId) || isJobBusy(job.status)) {
+      throw new Error(
+        "Agent is running on this job — wait for it to finish or Force Stop, then try again",
+      );
+    }
+
+    const key = busyIssueKeyForJob(job);
+    if (
+      this.activeIssueKeys.has(key) ||
+      this.queue.some((q) => q.job.id === job.id)
+    ) {
+      throw new Error(
+        "Agent is running on this job — wait for it to finish or Force Stop, then try again",
+      );
+    }
+
+    const source = (job.branch || job.workBranch || "").trim();
+    if (!source) {
+      throw new Error("Job has no work branch to sync");
+    }
+
+    const rt = getRuntimeContext();
+    const target =
+      input.targetBranch?.trim() || rt?.baseBranch?.trim() || "";
+    if (!target) {
+      throw new Error(
+        "BASE_BRANCH_NOT_SET: Project main branch is not set — pick a source branch to pull",
+      );
+    }
+    if (target === source) {
+      throw new Error("Work branch IS the base branch — nothing to sync");
+    }
+
+    const { pushMergeOpHistory } = await import("./modules/job/merge.js");
+    pushMergeOpHistory(job, {
+      kind: "sync-base",
+      status: "processing",
+      source,
+      target,
+      message: `Syncing ${target} → ${source}…`,
+    });
+
+    const restoreStatus = job.status;
+    job.pendingMergeOp = {
+      kind: "sync-base",
+      targetBranch: target,
+      restoreStatus,
+    };
+    job.followUpRestoreStatus = restoreStatus;
+    job.status = "queued";
+    job.error = undefined;
+    await saveJob(job);
+
+    this.activeIssueKeys.add(key);
+    this.rememberJobScope(job);
+    this.sources.set(job.id, "sync_base");
+    this.queue.push({
+      job,
+      source: "sync_base",
+      syncBase: true,
+      mergeTargetBranch: target,
+      followUpRestoreStatus: restoreStatus,
+    });
+    this.publishStatus("enqueue-sync-base");
+    appendJobProgress(job.id, "status", "Sync base queued");
+    publishRealtime({ type: "jobs", reason: "sync-base-queued" });
+
+    logger.info("Enqueued sync-base", {
+      jobId: job.id,
+      iid: job.issue.issueIid,
+      source,
+      target,
+      queueLength: this.queue.length,
+    });
+    void this.pump();
+    return { ok: true, queued: true, job, kind: "queued" };
+  }
+
+  /**
+   * Enqueue Merge work→base. HTTP returns immediately; History shows processing.
+   */
+  async enqueueMerge(
+    jobId: string,
+    input: { targetBranch?: string } = {},
+  ): Promise<{
+    ok: boolean;
+    queued?: boolean;
+    job: JobRecord;
+    kind: string;
+  }> {
+    const loaded = await loadJob(jobId);
+    if (!loaded) throw new Error("Job not found");
+    let job: JobRecord = loaded;
+
+    if (isJobBusy(job.status) && !hasActiveAgentRun(jobId)) {
+      const keyBusy = busyIssueKeyForJob(job);
+      if (this.isCurrent(jobId) || this.activeIssueKeys.has(keyBusy)) {
+        throw new Error(
+          "Agent is running on this job — wait for it to finish or Force Stop, then try again",
+        );
+      }
+      const reclaimTo: JobStatus = job.handedOffAt
+        ? "succeeded"
+        : job.completedAt
+          ? "awaiting_handoff"
+          : "draft";
+      if (job.pendingMergeOp) {
+        const { pushMergeOpHistory } = await import("./modules/job/merge.js");
+        pushMergeOpHistory(job, {
+          kind: job.pendingMergeOp.kind,
+          status: "error",
+          message: "Cancelled — job was stuck busy and reclaimed",
+        });
+      }
+      job.status = reclaimTo;
+      job.pendingFollowUpMessage = undefined;
+      job.pendingMergeOp = undefined;
+      await saveJob(job);
+      if (this.isCurrent(jobId)) {
+        this.clearCurrent(jobId);
+        this.publishStatus();
+      }
+    }
+
+    if (hasActiveAgentRun(jobId) || isJobBusy(job.status)) {
+      throw new Error(
+        "Agent is running on this job — wait for it to finish or Force Stop, then try again",
+      );
+    }
+
+    if (job.status !== "awaiting_handoff" && job.status !== "succeeded") {
+      throw new Error("Merge only for awaiting_handoff or succeeded jobs");
+    }
+
+    const key = busyIssueKeyForJob(job);
+    if (
+      this.activeIssueKeys.has(key) ||
+      this.queue.some((q) => q.job.id === job.id)
+    ) {
+      throw new Error(
+        "Agent is running on this job — wait for it to finish or Force Stop, then try again",
+      );
+    }
+
+    const source = (job.branch || job.workBranch || "").trim();
+    if (!source) {
+      throw new Error("Job has no work branch to merge");
+    }
+
+    const rt = getRuntimeContext();
+    const target =
+      input.targetBranch?.trim() ||
+      job.baseBranch?.trim() ||
+      rt?.baseBranch?.trim() ||
+      "";
+
+    const { pushMergeOpHistory } = await import("./modules/job/merge.js");
+    pushMergeOpHistory(job, {
+      kind: "merge",
+      status: "processing",
+      source,
+      target: target || undefined,
+      message: target
+        ? `Merging ${source} → ${target}…`
+        : `Merging ${source} → base…`,
+    });
+
+    const restoreStatus = job.status;
+    job.pendingMergeOp = {
+      kind: "merge",
+      ...(target ? { targetBranch: target } : {}),
+      restoreStatus,
+    };
+    job.followUpRestoreStatus = restoreStatus;
+    job.status = "queued";
+    job.error = undefined;
+    job.mergeError = undefined;
+    await saveJob(job);
+
+    this.activeIssueKeys.add(key);
+    this.rememberJobScope(job);
+    this.sources.set(job.id, "merge_branch");
+    this.queue.push({
+      job,
+      source: "merge_branch",
+      mergeBranch: true,
+      mergeTargetBranch: target || undefined,
+      followUpRestoreStatus: restoreStatus,
+    });
+    this.publishStatus("enqueue-merge");
+    appendJobProgress(job.id, "status", "Merge queued");
+    publishRealtime({ type: "jobs", reason: "merge-queued" });
+
+    logger.info("Enqueued merge", {
+      jobId: job.id,
+      iid: job.issue.issueIid,
+      source,
+      target: target || "(default)",
+      queueLength: this.queue.length,
+    });
+    void this.pump();
+    return { ok: true, queued: true, job, kind: "queued" };
+  }
+
+  /**
    * Run a queued chat follow-up (called from pump — not from HTTP).
    */
   private async executeFollowUpChat(
@@ -1560,6 +1841,266 @@ export class JobQueue {
     }
   }
 
+  /** Run queued Sync base from pump. */
+  private async executeSyncBase(
+    jobIn: JobRecord,
+    opts?: { restoreStatus?: JobStatus; targetBranch?: string },
+  ): Promise<void> {
+    const loaded = await loadJob(jobIn.id);
+    if (!loaded) throw new Error("Job not found");
+    let job: JobRecord = loaded;
+
+    const prevStatus: JobStatus =
+      opts?.restoreStatus ||
+      job.pendingMergeOp?.restoreStatus ||
+      job.followUpRestoreStatus ||
+      (job.handedOffAt
+        ? "succeeded"
+        : job.completedAt
+          ? "awaiting_handoff"
+          : "draft");
+    const targetBranch =
+      opts?.targetBranch || job.pendingMergeOp?.targetBranch;
+    const key = busyIssueKeyForJob(job);
+
+    this.activeIssueKeys.add(key);
+    this.setCurrent(job);
+    this.publishStatus();
+    job.status = "running";
+    job.error = undefined;
+    await saveJob(job);
+    appendJobProgress(job.id, "status", "Sync base running…");
+
+    const runSync = async (): Promise<void> => {
+      this.assertNotKilled(job);
+      const { syncJobBranchWithBase } = await import("./modules/job/merge.js");
+      const result = await syncJobBranchWithBase(
+        job.id,
+        { targetBranch },
+        { fromQueue: true },
+      );
+      // Force Stop may have already restored status + History — do not clobber
+      if (this.killedJobs.has(job.id)) {
+        const fresh = await loadJob(job.id);
+        if (fresh) job = fresh;
+        return;
+      }
+      this.assertNotKilled(job);
+      const freshAfter = await loadJob(job.id);
+      if (freshAfter && !isJobBusy(freshAfter.status) && !freshAfter.pendingMergeOp) {
+        // Kill (or reclaim) already finalized this job
+        job = freshAfter;
+        return;
+      }
+      job = result.job;
+      job.status = prevStatus;
+      job.pendingMergeOp = undefined;
+      job.followUpRestoreStatus = undefined;
+      job.error = undefined;
+      await saveJob(job);
+      logger.info("Queued sync-base finished", {
+        jobId: job.id,
+        status: job.status,
+        needsChat: Boolean(result.sync?.needsChatResolve),
+      });
+    };
+
+    try {
+      if (job.ownerUsername && job.workspaceProjectId) {
+        await withWorkspaceContext(
+          job.ownerUsername,
+          job.workspaceProjectId,
+          runSync,
+        );
+      } else {
+        await runSync();
+      }
+    } catch (err) {
+      const errMsg = safeErrorMessage(err);
+      if (/Force-stopped|force stop|cancelled \(force/i.test(errMsg)) {
+        const fresh = await loadJob(job.id);
+        if (fresh && !isJobBusy(fresh.status)) {
+          job = fresh;
+        } else {
+          const { pushMergeOpHistory } = await import("./modules/job/merge.js");
+          pushMergeOpHistory(job, {
+            kind: "sync-base",
+            status: "error",
+            message: "Force-stopped from UI",
+          });
+          job.status = prevStatus;
+          job.error = "Force-stopped from UI";
+          job.pendingMergeOp = undefined;
+          job.followUpRestoreStatus = undefined;
+          await saveJob(job);
+        }
+        return;
+      }
+      try {
+        const fresh = await loadJob(job.id);
+        if (fresh) job = fresh;
+      } catch {
+        /* keep */
+      }
+      const { pushMergeOpHistory } = await import("./modules/job/merge.js");
+      const stillProcessing = (job.mergeOpHistory ?? []).some(
+        (h) => h.status === "processing" && h.kind === "sync-base",
+      );
+      if (stillProcessing) {
+        pushMergeOpHistory(job, {
+          kind: "sync-base",
+          status: "error",
+          message: errMsg,
+        });
+      }
+      job.status = prevStatus;
+      job.error = errMsg;
+      job.pendingMergeOp = undefined;
+      job.followUpRestoreStatus = undefined;
+      await saveJob(job).catch(() => undefined);
+      logger.error("Queued sync-base failed", { jobId: job.id, err: errMsg });
+    } finally {
+      this.activeIssueKeys.delete(key);
+      if (this.isCurrent(job.id)) {
+        this.clearCurrent(job.id);
+        this.publishStatus();
+      }
+      this.killedJobs.delete(job.id);
+      const { clearJobKillRequested } = await import("./plugins/agent/run.js");
+      clearJobKillRequested(job.id);
+      publishRealtime({ type: "jobs", reason: "sync-base-done" });
+    }
+  }
+
+  /** Run queued Merge from pump. */
+  private async executeMerge(
+    jobIn: JobRecord,
+    opts?: { restoreStatus?: JobStatus; targetBranch?: string },
+  ): Promise<void> {
+    const loaded = await loadJob(jobIn.id);
+    if (!loaded) throw new Error("Job not found");
+    let job: JobRecord = loaded;
+
+    const prevStatus: JobStatus =
+      opts?.restoreStatus ||
+      job.pendingMergeOp?.restoreStatus ||
+      job.followUpRestoreStatus ||
+      (job.handedOffAt
+        ? "succeeded"
+        : job.completedAt
+          ? "awaiting_handoff"
+          : "draft");
+    const targetBranch =
+      opts?.targetBranch || job.pendingMergeOp?.targetBranch;
+    const key = busyIssueKeyForJob(job);
+
+    this.activeIssueKeys.add(key);
+    this.setCurrent(job);
+    this.publishStatus();
+    job.status = "running";
+    job.error = undefined;
+    await saveJob(job);
+    appendJobProgress(job.id, "status", "Merge running…");
+
+    const runMerge = async (): Promise<void> => {
+      this.assertNotKilled(job);
+      const { mergeJobBranch } = await import("./modules/job/merge.js");
+      const result = await mergeJobBranch(
+        job.id,
+        { targetBranch },
+        { fromQueue: true },
+      );
+      if (this.killedJobs.has(job.id)) {
+        const fresh = await loadJob(job.id);
+        if (fresh) job = fresh;
+        return;
+      }
+      this.assertNotKilled(job);
+      const freshAfter = await loadJob(job.id);
+      if (freshAfter && !isJobBusy(freshAfter.status) && !freshAfter.pendingMergeOp) {
+        job = freshAfter;
+        return;
+      }
+      job = result.job;
+      job.status = prevStatus;
+      job.pendingMergeOp = undefined;
+      job.followUpRestoreStatus = undefined;
+      job.error = undefined;
+      await saveJob(job);
+      logger.info("Queued merge finished", {
+        jobId: job.id,
+        status: job.status,
+        needsChat: Boolean(result.merge?.needsChatResolve),
+      });
+    };
+
+    try {
+      if (job.ownerUsername && job.workspaceProjectId) {
+        await withWorkspaceContext(
+          job.ownerUsername,
+          job.workspaceProjectId,
+          runMerge,
+        );
+      } else {
+        await runMerge();
+      }
+    } catch (err) {
+      const errMsg = safeErrorMessage(err);
+      if (/Force-stopped|force stop|cancelled \(force/i.test(errMsg)) {
+        const fresh = await loadJob(job.id);
+        if (fresh && !isJobBusy(fresh.status)) {
+          job = fresh;
+        } else {
+          const { pushMergeOpHistory } = await import("./modules/job/merge.js");
+          pushMergeOpHistory(job, {
+            kind: "merge",
+            status: "error",
+            message: "Force-stopped from UI",
+          });
+          job.status = prevStatus;
+          job.error = "Force-stopped from UI";
+          job.pendingMergeOp = undefined;
+          job.followUpRestoreStatus = undefined;
+          await saveJob(job);
+        }
+        return;
+      }
+      try {
+        const fresh = await loadJob(job.id);
+        if (fresh) job = fresh;
+      } catch {
+        /* keep */
+      }
+      const { pushMergeOpHistory } = await import("./modules/job/merge.js");
+      const stillProcessing = (job.mergeOpHistory ?? []).some(
+        (h) => h.status === "processing" && h.kind === "merge",
+      );
+      if (stillProcessing) {
+        pushMergeOpHistory(job, {
+          kind: "merge",
+          status: "error",
+          message: errMsg,
+        });
+      }
+      job.status = prevStatus;
+      job.error = errMsg;
+      job.pendingMergeOp = undefined;
+      job.followUpRestoreStatus = undefined;
+      await saveJob(job).catch(() => undefined);
+      logger.error("Queued merge failed", { jobId: job.id, err: errMsg });
+    } finally {
+      this.activeIssueKeys.delete(key);
+      if (this.isCurrent(job.id)) {
+        this.clearCurrent(job.id);
+        this.publishStatus();
+      }
+      this.killedJobs.delete(job.id);
+      const { clearJobKillRequested } = await import("./plugins/agent/run.js");
+      clearJobKillRequested(job.id);
+      publishRealtime({ type: "jobs", reason: "merge-done" });
+    }
+  }
+
   /**
    * Force-stop: cancel Cursor run, reject waiters, mark failed, free queue slot.
    */
@@ -1583,7 +2124,14 @@ export class JobQueue {
       const key = busyIssueKeyForJob(item.job);
       const restore =
         item.followUpRestoreStatus || item.job.followUpRestoreStatus;
-      if ((item.followUpMessage || item.askOnlyMessage || item.generateTestcases) && restore) {
+      if (
+        (item.followUpMessage ||
+          item.askOnlyMessage ||
+          item.generateTestcases ||
+          item.syncBase ||
+          item.mergeBranch) &&
+        restore
+      ) {
         item.job.status = restore;
         item.job.error = reason;
       } else {
@@ -1594,6 +2142,18 @@ export class JobQueue {
       item.job.pendingFollowUpMessage = undefined;
       item.job.pendingFollowUpKind = undefined;
       item.job.followUpRestoreStatus = undefined;
+      if (item.syncBase || item.mergeBranch || item.job.pendingMergeOp) {
+        const kind =
+          item.job.pendingMergeOp?.kind ||
+          (item.mergeBranch ? "merge" : "sync-base");
+        const { pushMergeOpHistory } = await import("./modules/job/merge.js");
+        pushMergeOpHistory(item.job, {
+          kind,
+          status: "error",
+          message: reason,
+        });
+        item.job.pendingMergeOp = undefined;
+      }
       await saveJob(item.job);
       await this.notifyJobChat(
         item.job,
@@ -1601,7 +2161,11 @@ export class JobQueue {
           ? `Đã hủy Ask only trong hàng chờ:\n${reason}`
           : item.followUpMessage
             ? `Đã hủy lệnh chat trong hàng chờ:\n${reason}`
-            : `Đã hủy job trong hàng chờ:\n${reason}`,
+            : item.syncBase
+              ? `Đã hủy Sync base trong hàng chờ:\n${reason}`
+              : item.mergeBranch
+                ? `Đã hủy Merge trong hàng chờ:\n${reason}`
+                : `Đã hủy job trong hàng chờ:\n${reason}`,
       );
       this.activeIssueKeys.delete(key);
       this.killedJobs.delete(jobId);
@@ -1631,8 +2195,12 @@ export class JobQueue {
         job.status === "awaiting_docs_approval" ||
         job.status === "awaiting_plan_approval"
       ) {
-        // Follow-up kill on already-done work → restore handoff/done, don't force failed
-        if (job.handedOffAt) {
+        // Follow-up / sync / merge kill → restore prior status when known
+        if (job.pendingMergeOp?.restoreStatus) {
+          job.status = job.pendingMergeOp.restoreStatus;
+        } else if (job.followUpRestoreStatus) {
+          job.status = job.followUpRestoreStatus;
+        } else if (job.handedOffAt) {
           job.status = "succeeded";
         } else if (job.completedAt) {
           job.status = "awaiting_handoff";
@@ -1640,8 +2208,17 @@ export class JobQueue {
           job.status = "failed";
         }
         job.error = reason;
-        // Detach Cursor window — resume after Force Stop often fails
         job.agentId = undefined;
+        if (job.pendingMergeOp) {
+          const { pushMergeOpHistory } = await import("./modules/job/merge.js");
+          pushMergeOpHistory(job, {
+            kind: job.pendingMergeOp.kind,
+            status: "error",
+            message: reason,
+          });
+          job.pendingMergeOp = undefined;
+        }
+        job.followUpRestoreStatus = undefined;
         await saveJob(job);
         this.activeIssueKeys.delete(busyIssueKeyForJob(job));
       }
@@ -2040,6 +2617,16 @@ export class JobQueue {
           await this.executeGenerateTestcases(item.job, {
             restoreStatus: item.followUpRestoreStatus,
           });
+        } else if (item.syncBase) {
+          await this.executeSyncBase(item.job, {
+            restoreStatus: item.followUpRestoreStatus,
+            targetBranch: item.mergeTargetBranch,
+          });
+        } else if (item.mergeBranch) {
+          await this.executeMerge(item.job, {
+            restoreStatus: item.followUpRestoreStatus,
+            targetBranch: item.mergeTargetBranch,
+          });
         } else if (item.askOnlyMessage) {
           await this.executeAskOnlyChat(item.job, item.askOnlyMessage, {
             restoreStatus: item.followUpRestoreStatus,
@@ -2065,6 +2652,50 @@ export class JobQueue {
           remaining: this.queue.length,
         });
         const key = busyIssueKeyForJob(item.job);
+        if (item.syncBase || item.mergeBranch) {
+          try {
+            const fresh = await loadJob(item.job.id);
+            if (fresh) {
+              const restore =
+                item.followUpRestoreStatus ||
+                fresh.pendingMergeOp?.restoreStatus ||
+                fresh.followUpRestoreStatus ||
+                (fresh.handedOffAt
+                  ? "succeeded"
+                  : fresh.completedAt
+                    ? "awaiting_handoff"
+                    : "draft");
+              const kind =
+                fresh.pendingMergeOp?.kind ||
+                (item.mergeBranch ? "merge" : "sync-base");
+              const { pushMergeOpHistory } = await import(
+                "./modules/job/merge.js"
+              );
+              const stillProcessing = (fresh.mergeOpHistory ?? []).some(
+                (h) => h.status === "processing" && h.kind === kind,
+              );
+              if (stillProcessing) {
+                pushMergeOpHistory(fresh, {
+                  kind,
+                  status: "error",
+                  message:
+                    err instanceof Error ? err.message : String(err),
+                });
+              }
+              fresh.status = restore;
+              fresh.pendingMergeOp = undefined;
+              fresh.followUpRestoreStatus = undefined;
+              fresh.error =
+                err instanceof Error ? err.message : String(err);
+              await saveJob(fresh);
+            }
+          } catch (cleanupErr) {
+            logger.warn("pump sync/merge cleanup failed", {
+              jobId: item.job.id,
+              err: String(cleanupErr),
+            });
+          }
+        }
         this.activeIssueKeys.delete(key);
         this.clearCurrent(item.job.id);
       }

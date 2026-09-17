@@ -116,7 +116,7 @@ export type Job = {
   /** Sync base / Merge attempts (newest first); messages already redacted */
   mergeOpHistory?: Array<{
     kind: "sync-base" | "merge" | string;
-    status: "ok" | "up_to_date" | "conflict" | "error" | string;
+    status: "ok" | "up_to_date" | "conflict" | "error" | "processing" | string;
     at: string;
     message: string;
     source?: string;
@@ -125,6 +125,11 @@ export type Job = {
     /** AI conflict-resolve summary (View detail) */
     detail?: string;
   }>;
+  pendingMergeOp?: {
+    kind?: "sync-base" | "merge" | string;
+    targetBranch?: string;
+    restoreStatus?: string;
+  };
 };
 
 export function isAdhocJob(job: Job | null | undefined): boolean {

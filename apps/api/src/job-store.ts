@@ -431,9 +431,11 @@ export async function failInterruptedJobs(): Promise<number> {
     logger.warn("Re-queued interrupted job after restart", {
       jobId: job.id,
       iid: job.issue.issueIid,
-      kind: job.pendingFollowUpMessage
-        ? job.pendingFollowUpKind || "send"
-        : "run",
+      kind: job.pendingMergeOp
+        ? job.pendingMergeOp.kind
+        : job.pendingFollowUpMessage
+          ? job.pendingFollowUpKind || "send"
+          : "run",
     });
   }
   return recovered;

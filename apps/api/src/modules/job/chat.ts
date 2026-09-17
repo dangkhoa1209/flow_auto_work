@@ -79,6 +79,58 @@ export async function enqueueJobTestcases(jobId: string) {
   }
 }
 
+/** Sync base via job queue — HTTP returns immediately (avoids gateway 504). */
+export async function enqueueJobSyncBase(
+  jobId: string,
+  input: { targetBranch?: string } = {},
+) {
+  const job = await requireJobDoc(jobId);
+  if (job.workspaceProjectId) {
+    await requireProjectLocalClone(job.workspaceProjectId);
+  }
+  try {
+    return await jobQueue.enqueueSyncBase(job.id, {
+      targetBranch: input.targetBranch,
+    });
+  } catch (err) {
+    if (err instanceof AppError) throw err;
+    const msg = err instanceof Error ? err.message : String(err);
+    logger.error("Sync base enqueue failed", { jobId: job.id, err: msg });
+    throw new AppError(
+      msg,
+      /running|Force Stop|hàng chờ|BASE_BRANCH|no work branch/i.test(msg)
+        ? 409
+        : 500,
+    );
+  }
+}
+
+/** Merge work→base via job queue — HTTP returns immediately (avoids gateway 504). */
+export async function enqueueJobMerge(
+  jobId: string,
+  input: { targetBranch?: string } = {},
+) {
+  const job = await requireJobDoc(jobId);
+  if (job.workspaceProjectId) {
+    await requireProjectLocalClone(job.workspaceProjectId);
+  }
+  try {
+    return await jobQueue.enqueueMerge(job.id, {
+      targetBranch: input.targetBranch,
+    });
+  } catch (err) {
+    if (err instanceof AppError) throw err;
+    const msg = err instanceof Error ? err.message : String(err);
+    logger.error("Merge enqueue failed", { jobId: job.id, err: msg });
+    throw new AppError(
+      msg,
+      /running|Force Stop|hàng chờ|awaiting_handoff|succeeded/i.test(msg)
+        ? 409
+        : 500,
+    );
+  }
+}
+
 export async function getJobChat(jobId: string) {
   const job = await requireJobDoc(jobId);
   const chat = await listChatMessages({ jobId: job.id, limit: 200 });

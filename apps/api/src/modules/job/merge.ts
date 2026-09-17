@@ -14,6 +14,22 @@ const MERGE_OP_HISTORY_MAX = 30;
 
 type MergeOpHistoryEntry = NonNullable<JobRecord["mergeOpHistory"]>[number];
 
+/**
+ * Before finalizing Sync/Merge from the queue: if Force Stop (or reclaim) already
+ * cleared pendingMergeOp, abort so we do not overwrite kill status / History.
+ */
+async function assertQueuedMergeOpStillActive(
+  jobId: string,
+  kind: "sync-base" | "merge",
+  fromQueue?: boolean,
+): Promise<void> {
+  if (!fromQueue) return;
+  const fresh = await requireJobDoc(jobId);
+  if (!fresh.pendingMergeOp || fresh.pendingMergeOp.kind !== kind) {
+    throw new AppError("Force-stopped from UI", 409);
+  }
+}
+
 /** Append Sync base / Merge outcome for /work Issue tab (redact secrets). */
 export function pushMergeOpHistory(
   job: JobRecord,
@@ -41,6 +57,27 @@ export function pushMergeOpHistory(
         }
       : {}),
   };
+  // Finalize in place: replace the queued "processing" row so History does not
+  // keep a stale processing line after the op completes.
+  if (entry.status !== "processing") {
+    const hist = job.mergeOpHistory ?? [];
+    // Prefer same kind; otherwise any processing (MR-conflict may log as sync-base
+    // while the queued op was merge).
+    let idx = hist.findIndex(
+      (h) => h.status === "processing" && h.kind === entry.kind,
+    );
+    if (idx < 0) {
+      idx = hist.findIndex((h) => h.status === "processing");
+    }
+    if (idx >= 0) {
+      job.mergeOpHistory = [
+        ...hist.slice(0, idx),
+        row,
+        ...hist.slice(idx + 1),
+      ].slice(0, MERGE_OP_HISTORY_MAX);
+      return;
+    }
+  }
   job.mergeOpHistory = [row, ...(job.mergeOpHistory ?? [])].slice(
     0,
     MERGE_OP_HISTORY_MAX,
@@ -458,12 +495,16 @@ Then briefly summarize what you resolved.
 export async function syncJobBranchWithBase(
   jobId: string,
   input: { targetBranch?: string },
+  opts?: { fromQueue?: boolean },
 ) {
   const job = await requireJobDoc(jobId);
   let source = "";
   let target = "";
   try {
-    if (job.status === "running" || job.status === "queued") {
+    if (
+      !opts?.fromQueue &&
+      (job.status === "running" || job.status === "queued")
+    ) {
       throw new AppError("Job is running — stop it or wait before syncing base", 409);
     }
     source = (job.branch || job.workBranch || "").trim();
@@ -524,6 +565,7 @@ export async function syncJobBranchWithBase(
     });
 
     if (result.needsChatResolve) {
+      await assertQueuedMergeOpStillActive(job.id, "sync-base", opts?.fromQueue);
       // pending: source=base (incoming), target=work (checked out)
       await markJobNeedsChatConflictResolve(
         job,
@@ -560,6 +602,8 @@ export async function syncJobBranchWithBase(
       job.pendingConflictResolve = undefined;
       job.mergeError = undefined;
     }
+
+    await assertQueuedMergeOpStillActive(job.id, "sync-base", opts?.fromQueue);
 
     const status = result.alreadyUpToDate ? "up_to_date" : "ok";
     const message = result.alreadyUpToDate
@@ -602,8 +646,22 @@ export async function syncJobBranchWithBase(
     };
   } catch (err) {
     const msg = safeErrorMessage(err);
+    if (
+      opts?.fromQueue &&
+      (msg.includes("Force-stopped") ||
+        (err instanceof AppError && err.message.includes("Force-stopped")))
+    ) {
+      throw err instanceof AppError ? err : new AppError(msg, 409);
+    }
     // Skip noisy history when user must pick a branch (modal flow)
     if (!msg.includes("BASE_BRANCH_NOT_SET")) {
+      if (opts?.fromQueue) {
+        try {
+          await assertQueuedMergeOpStillActive(job.id, "sync-base", true);
+        } catch (stopped) {
+          throw stopped;
+        }
+      }
       pushMergeOpHistory(job, {
         kind: "sync-base",
         status: "error",
@@ -627,9 +685,16 @@ export async function syncJobBranchWithBase(
 export async function mergeJobBranch(
   jobId: string,
   input: { targetBranch?: string },
+  opts?: { fromQueue?: boolean },
 ) {
   const job = await requireJobDoc(jobId);
-  if (job.status !== "awaiting_handoff" && job.status !== "succeeded") {
+  const statusOk =
+    job.status === "awaiting_handoff" ||
+    job.status === "succeeded" ||
+    (Boolean(opts?.fromQueue) &&
+      (job.pendingMergeOp?.restoreStatus === "awaiting_handoff" ||
+        job.pendingMergeOp?.restoreStatus === "succeeded"));
+  if (!statusOk) {
     throw new AppError("Merge only for awaiting_handoff or succeeded jobs", 409);
   }
   const source = (job.branch || job.workBranch || "").trim();
@@ -731,6 +796,7 @@ export async function mergeJobBranch(
           issue: job.issue,
         });
         if (fix.needsChatResolve) {
+          await assertQueuedMergeOpStillActive(job.id, "merge", opts?.fromQueue);
           await markJobNeedsChatConflictResolve(
             job,
             {
@@ -884,6 +950,7 @@ export async function mergeJobBranch(
         job.commitSha = mergeSha;
         job.commitShas = [...(job.commitShas ?? []), mergeSha].slice(-20);
       }
+      await assertQueuedMergeOpStillActive(job.id, "merge", opts?.fromQueue);
       pushMergeOpHistory(job, {
         kind: "merge",
         status: "ok",
@@ -984,6 +1051,7 @@ export async function mergeJobBranch(
             ai.files.length > 0
               ? ai.files
               : await listConflictedFiles(repoPath);
+          await assertQueuedMergeOpStillActive(job.id, "merge", opts?.fromQueue);
           await markJobNeedsChatConflictResolve(
             job,
             {
@@ -1051,6 +1119,7 @@ export async function mergeJobBranch(
         job.commitSha = commitSha;
         job.commitShas = [...(job.commitShas ?? []), commitSha].slice(-20);
       }
+      await assertQueuedMergeOpStillActive(job.id, "merge", opts?.fromQueue);
       pushMergeOpHistory(job, {
         kind: "merge",
         status: alreadyUpToDate ? "up_to_date" : "ok",
@@ -1110,9 +1179,23 @@ export async function mergeJobBranch(
     }
   } catch (err) {
     const msg = safeErrorMessage(err);
+    if (
+      opts?.fromQueue &&
+      (msg.includes("Force-stopped") ||
+        (err instanceof AppError && err.message.includes("Force-stopped")))
+    ) {
+      throw err instanceof AppError ? err : new AppError(msg, 409);
+    }
     job.mergeError = msg;
     // Conflict already logged via markJobNeedsChatConflictResolve — don't double-write
     if (!job.pendingConflictResolve) {
+      if (opts?.fromQueue) {
+        try {
+          await assertQueuedMergeOpStillActive(job.id, "merge", true);
+        } catch (stopped) {
+          throw stopped;
+        }
+      }
       pushMergeOpHistory(job, {
         kind: "merge",
         status: "error",

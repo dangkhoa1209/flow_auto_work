@@ -30,7 +30,8 @@ import {
   killJob,
   killAllJobs,
   listJobsForUi,
-  mergeJobBranch,
+  enqueueJobMerge,
+  enqueueJobSyncBase,
   readJobFile,
   rerunJobDocs,
   rerunJobPlan,
@@ -39,7 +40,6 @@ import {
   setJobCommitMode,
   setJobStatus,
   startJobs,
-  syncJobBranchWithBase,
   updateDevNotes,
   writeJobFile,
   type AdhocJobInput,
@@ -153,10 +153,10 @@ export const jobController = {
     );
   }),
 
-  /** POST /api/jobs/:id/merge */
+  /** POST /api/jobs/:id/merge — enqueue merge work→base (async queue) */
   merge: asyncHandler(async (req: Request, res: Response) => {
     res.formatter.ok(
-      await mergeJobBranch(jobId(req), body<{ targetBranch?: string }>(req)),
+      await enqueueJobMerge(jobId(req), body<{ targetBranch?: string }>(req)),
     );
   }),
 
@@ -170,10 +170,10 @@ export const jobController = {
     );
   }),
 
-  /** POST /api/jobs/:id/sync-base — pull base into work branch (AI fixes conflicts) */
+  /** POST /api/jobs/:id/sync-base — enqueue pull base into work (async queue) */
   syncBase: asyncHandler(async (req: Request, res: Response) => {
     res.formatter.ok(
-      await syncJobBranchWithBase(
+      await enqueueJobSyncBase(
         jobId(req),
         body<{ targetBranch?: string }>(req),
       ),

@@ -453,6 +453,7 @@ function mergeOpStatusLabel(status: string): string {
   if (status === "up_to_date") return "Up to date";
   if (status === "conflict") return "Conflict";
   if (status === "error") return "Error";
+  if (status === "processing") return "Processing";
   return status || "—";
 }
 
@@ -460,6 +461,7 @@ function mergeOpStatusClass(status: string): string {
   if (status === "ok" || status === "up_to_date") return "text-emerald-600";
   if (status === "conflict") return "text-amber-600";
   if (status === "error") return "text-red-600";
+  if (status === "processing") return "text-sky-600";
   return "text-ink-muted";
 }
 

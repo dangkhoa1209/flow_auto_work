@@ -264,7 +264,7 @@ export type JobRecord = {
    */
   mergeOpHistory?: Array<{
     kind: "sync-base" | "merge";
-    status: "ok" | "up_to_date" | "conflict" | "error";
+    status: "ok" | "up_to_date" | "conflict" | "error" | "processing";
     at: string;
     message: string;
     source?: string;
@@ -277,6 +277,16 @@ export type JobRecord = {
      */
     detail?: string;
   }>;
+  /**
+   * Sync base / Merge waiting in the job queue (HTTP returns immediately).
+   * Kept while running so a process restart can re-queue; cleared when done.
+   */
+  pendingMergeOp?: {
+    kind: "sync-base" | "merge";
+    targetBranch?: string;
+    /** Status to restore after the op finishes / is cancelled */
+    restoreStatus: JobStatus;
+  };
   createdAt: string;
   updatedAt: string;
 };
