@@ -8,7 +8,6 @@ import { useBaGitPat } from "@/composables/useBaGitPat";
 import BaChatSidebar from "@/components/ba/BaChatSidebar.vue";
 import BaMessageList from "@/components/ba/BaMessageList.vue";
 import BaComposer from "@/components/ba/BaComposer.vue";
-import BaProgressRail from "@/components/ba/BaProgressRail.vue";
 import BaTaskFormModal from "@/components/ba/BaTaskFormModal.vue";
 
 const ba = useBaChatStore();
@@ -328,8 +327,6 @@ function onTaskPublish(payload: {
           </span>
         </div>
       </div>
-
-      <BaProgressRail />
 
       <div
         v-if="!ba.projects.length"

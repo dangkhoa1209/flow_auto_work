@@ -3282,85 +3282,6 @@ a.faw-mseg__btn {
   }
 }
 
-.faw-ba-progress {
-  flex-shrink: 0;
-  border-bottom: 1px solid var(--app-border);
-  background: var(--app-panel);
-  padding: 0 0 8px;
-}
-.faw-ba-progress.is-error .faw-ba-progress__fill {
-  background: var(--bug);
-}
-.faw-ba-progress__bar {
-  height: 2px;
-  background: var(--app-border);
-  overflow: hidden;
-}
-.faw-ba-progress__fill {
-  height: 100%;
-  background: var(--done);
-  transition: width 0.25s ease;
-}
-.faw-ba-progress__row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 8px 12px 0;
-}
-.faw-ba-progress__live {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  flex: 1;
-}
-.faw-ba-progress__label {
-  font-size: 12px;
-  font-weight: 650;
-  color: var(--app-ink);
-  white-space: nowrap;
-}
-.faw-ba-progress__detail {
-  font-size: 11px;
-  color: var(--app-faint);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  min-width: 0;
-}
-.faw-ba-progress__stop {
-  flex: none;
-  height: 28px;
-  padding: 0 10px;
-  font-size: 11px;
-}
-.faw-ba-progress__steps {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-.faw-ba-progress__chip {
-  font-size: 9.5px;
-  font-weight: 650;
-  padding: 2px 7px;
-  border-radius: 999px;
-  border: 1px solid var(--app-border);
-  color: var(--app-faint);
-  background: transparent;
-}
-.faw-ba-progress__chip.is-done {
-  color: var(--done);
-  border-color: rgba(52, 211, 153, 0.35);
-  background: rgba(52, 211, 153, 0.1);
-}
-.faw-ba-progress__chip.is-active {
-  color: var(--app-accent);
-  border-color: rgba(91, 141, 239, 0.45);
-  background: var(--app-accent-soft);
-}
-
 .faw-ba-input-row {
   align-items: center;
   justify-content: space-between;
@@ -3445,12 +3366,6 @@ a.faw-mseg__btn {
   }
   .faw-ba-shell.is-side-open .faw-ba-side {
     transform: translateX(0);
-  }
-  .faw-ba-progress__row {
-    padding: 8px 10px 0;
-  }
-  .faw-ba-progress__steps {
-    width: 100%;
   }
   .faw-ba-input-hint {
     display: none;
