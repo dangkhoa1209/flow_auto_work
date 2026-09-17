@@ -26,7 +26,7 @@ export async function resolveMergeConflictsWithAi(opts: {
     : await listConflictedFiles(repoPath);
 
   if (!files.length) {
-    return { text: "(no conflicts)", remaining: [] };
+    return { text: "(không còn conflict)", remaining: [] };
   }
 
   const issueBit = opts.issue
@@ -51,7 +51,23 @@ ${files.map((f) => `- ${f}`).join("\n")}
 7. Prefer small, correct resolutions over large rewrites.
 8. Finish ALL listed files in this turn — do not stop after one file.
 
-When done, reply with a short summary of how you resolved each file.`;
+## Reply format (REQUIRED — for History UI)
+After resolving, reply in **Vietnamese only** (keep file paths / branch names / symbols in original English).
+Use this exact shape — short, scannable, no English paragraphs:
+
+**Tóm tắt:** 1–2 câu (merge gì, bao nhiêu file).
+
+Với **mỗi** file conflicted:
+
+### \`path/to/file\`
+- **Giữ:** … (nhánh nào / phần nào)
+- **Bỏ:** … (nếu có)
+- **Lý do:** … (một câu)
+
+Rules for the reply:
+- Plain short bullets only — no long English design notes.
+- Do not paste code blocks unless a one-liner is essential.
+- Do not say "File staged; merge commit left for the orchestrator" — orchestrator handles that.`;
 
   const model = resolveCursorModelSpec();
   const modelLabel = cursorModelLogLabel(resolveCursorModel());
@@ -86,7 +102,7 @@ When done, reply with a short summary of how you resolved each file.`;
     model: resolveCursorModel(),
   });
   return {
-    text: (result.result ?? "").trim() || "(done)",
+    text: (result.result ?? "").trim() || "(đã xử lý)",
     remaining,
   };
 }

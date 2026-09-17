@@ -230,7 +230,9 @@ async function tryAiClearConflicts(opts: {
         conflictedFiles: files,
         issue: opts.issue,
       });
-      text = text ? `${text}\n---\n${resolved.text}` : resolved.text;
+      text = text
+        ? `${text}\n\n---\n\n**Vòng ${round + 1}**\n\n${resolved.text}`
+        : resolved.text;
       // Orchestrator stages files whose markers are gone (AI often forgets git add).
       const stillMarked = await stageClearedConflictFiles(opts.repoPath, files);
       const unmerged = await listConflictedFiles(opts.repoPath);
@@ -248,13 +250,15 @@ async function tryAiClearConflicts(opts: {
     return {
       cleared: false,
       files: remaining.length ? remaining : files,
-      summary: text ? `${text}\n---\nAI error: ${msg}` : `AI error: ${msg}`,
+      summary: text
+        ? `${text}\n\n---\n\n**Lỗi AI:** ${msg}`
+        : `**Lỗi AI:** ${msg}`,
     };
   }
   if (files.length) {
-    return { cleared: false, files, summary: text || "(unresolved)" };
+    return { cleared: false, files, summary: text || "(chưa xử lý hết conflict)" };
   }
-  return { cleared: true, summary: text || "(resolved)" };
+  return { cleared: true, summary: text || "(đã xử lý conflict)" };
 }
 
 /**
@@ -585,10 +589,10 @@ export async function syncJobBranchWithBase(
 
     const status = result.alreadyUpToDate ? "up_to_date" : "ok";
     const message = result.alreadyUpToDate
-      ? `${source} already up to date with ${target}`
+      ? `${source} đã đồng bộ với ${target}`
       : result.aiResolved
-        ? `Pulled ${target} into ${source} — AI resolved conflicts`
-        : `Pulled ${target} into ${source}`;
+        ? `Đã kéo ${target} vào ${source} — AI đã xử lý conflict`
+        : `Đã kéo ${target} vào ${source}`;
     pushMergeOpHistory(job, {
       kind: "sync-base",
       status,
@@ -870,10 +874,10 @@ export async function mergeJobBranch(
         aiResolved: aiConflictResolved || undefined,
         message:
           (merged.alreadyMerged
-            ? `Already merged ${source} → ${target} (MR !${existingMr.iid})`
-            : `Merged ${source} → ${target} via MR !${existingMr.iid}`) +
-          (aiConflictResolved ? " — AI resolved conflicts" : "") +
-          (syncError ? ` · local sync warning: ${syncError}` : ""),
+            ? `Đã merge sẵn ${source} → ${target} (MR !${existingMr.iid})`
+            : `Đã merge ${source} → ${target} qua MR !${existingMr.iid}`) +
+          (aiConflictResolved ? " — AI đã xử lý conflict" : "") +
+          (syncError ? ` · cảnh báo sync local: ${syncError}` : ""),
         detail:
           aiConflictResolved && aiSummary?.trim() ? aiSummary : undefined,
       });
@@ -1009,9 +1013,9 @@ export async function mergeJobBranch(
         aiResolved: aiResolved || undefined,
         message:
           (alreadyUpToDate
-            ? `${source} already up to date with ${target}`
-            : `Merged ${source} → ${target}`) +
-          (aiResolved ? " — AI resolved conflicts" : "") +
+            ? `${source} đã đồng bộ với ${target}`
+            : `Đã merge ${source} → ${target}`) +
+          (aiResolved ? " — AI đã xử lý conflict" : "") +
           (wipWarning ? ` · ${wipWarning}` : ""),
         detail:
           aiResolved && aiSummary?.trim() ? aiSummary : undefined,

@@ -450,10 +450,10 @@ function mergeOpKindLabel(kind: string): string {
 
 function mergeOpStatusLabel(status: string): string {
   if (status === "ok") return "OK";
-  if (status === "up_to_date") return "Up to date";
+  if (status === "up_to_date") return "Đã đồng bộ";
   if (status === "conflict") return "Conflict";
-  if (status === "error") return "Error";
-  if (status === "processing") return "Processing";
+  if (status === "error") return "Lỗi";
+  if (status === "processing") return "Đang xử lý";
   return status || "—";
 }
 
@@ -491,13 +491,13 @@ const mergeOpDetailBody = computed(() => {
   if (h.aiResolved) {
     return (
       redactSecrets(h.message || "") ||
-      "AI resolved conflicts, but no per-file summary was stored for this attempt."
+      "AI đã xử lý conflict nhưng lần này chưa lưu tóm tắt theo từng file."
     );
   }
   if (h.status === "conflict") {
     return (
       redactSecrets(h.message || "") ||
-      "Conflict left open for Chat — no AI notes stored."
+      "Conflict còn mở — chưa có ghi chú AI."
     );
   }
   return redactSecrets(h.message || "");
@@ -505,11 +505,11 @@ const mergeOpDetailBody = computed(() => {
 
 const mergeOpDetailTitle = computed(() => {
   const h = mergeOpDetailRow.value;
-  if (!h) return "Merge / Sync detail";
+  if (!h) return "Chi tiết Sync / Merge";
   const kind = mergeOpKindLabel(h.kind);
-  if (h.aiResolved) return `${kind} — AI resolve detail`;
-  if (h.status === "conflict") return `${kind} — conflict notes`;
-  return `${kind} — detail`;
+  if (h.aiResolved) return `${kind} — Chi tiết AI xử lý conflict`;
+  if (h.status === "conflict") return `${kind} — Ghi chú conflict`;
+  return `${kind} — Chi tiết`;
 });
 </script>
 
@@ -1088,7 +1088,7 @@ const mergeOpDetailTitle = computed(() => {
                 class="mt-4 rounded-lg border border-[var(--app-border)] bg-[var(--app-panel-soft)] px-3 py-2.5"
               >
                 <div class="text-[12px] text-ink-soft font-medium">
-                  Sync base / Merge - History
+                  Sync base / Merge — Lịch sử
                 </div>
                 <ul
                   v-if="mergeOpHistory.length"
@@ -1116,7 +1116,7 @@ const mergeOpDetailTitle = computed(() => {
                       <span
                         v-if="h.aiResolved"
                         class="text-sky-700 font-medium"
-                        >AI resolved</span
+                        >AI đã xử lý</span
                       >
                       <span
                         v-if="h.source || h.target"
@@ -1137,13 +1137,13 @@ const mergeOpDetailTitle = computed(() => {
                         class="text-[11px] font-medium text-sky-600 hover:underline"
                         @click="openMergeOpDetail(h)"
                       >
-                        View detail
+                        Xem chi tiết
                       </button>
                     </div>
                   </li>
                 </ul>
                 <div v-else class="text-[11px] text-ink-faint mt-2">
-                  No Sync base / Merge attempts on this job yet.
+                  Chưa có lần Sync base / Merge nào trên job này.
                 </div>
               </div>
             </div>
@@ -1345,7 +1345,7 @@ const mergeOpDetailTitle = computed(() => {
       :title="mergeOpDetailTitle"
       :footer="null"
       destroy-on-close
-      width="640px"
+      width="720px"
     >
       <div
         v-if="mergeOpDetailRow"
@@ -1360,6 +1360,11 @@ const mergeOpDetailTitle = computed(() => {
             mergeOpStatusLabel(mergeOpDetailRow.status)
           }}</span>
           <span
+            v-if="mergeOpDetailRow.aiResolved"
+            class="text-sky-700 font-medium"
+            >AI đã xử lý</span
+          >
+          <span
             v-if="mergeOpDetailRow.source || mergeOpDetailRow.target"
             class="truncate"
           >
@@ -1368,9 +1373,9 @@ const mergeOpDetailTitle = computed(() => {
           </span>
         </div>
         <div
-          class="rounded-md border border-[var(--app-border)] bg-[var(--app-panel-soft)] px-3 py-2.5 whitespace-pre-wrap break-words text-ink max-h-[60vh] overflow-y-auto"
+          class="rounded-md border border-[var(--app-border)] bg-[var(--app-panel-soft)] px-3 py-2.5 text-ink max-h-[60vh] overflow-y-auto merge-op-detail-md"
         >
-          {{ mergeOpDetailBody }}
+          <ChatMessageBody :body="mergeOpDetailBody" :markdown="true" />
         </div>
       </div>
     </a-modal>
