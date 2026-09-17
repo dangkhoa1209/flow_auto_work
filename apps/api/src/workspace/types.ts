@@ -176,6 +176,11 @@ export type WorkspaceProject = {
    */
   defaultCommitMode?: "manual" | "auto";
   /**
+   * Override GIT_AUTHOR_NAME / GIT_COMMITTER_NAME for local commits.
+   * Empty / missing → use logged-in GitLab username (default).
+   */
+  commitAuthorName?: string;
+  /**
    * When non-empty, Workbench Open tasks only show issues whose
    * milestone title is in this list. Empty / missing → no restriction.
    */

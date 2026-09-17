@@ -10,12 +10,16 @@ export type GitIdentity = {
   email: string;
 };
 
-/** PAT sessions have no global git config — derive identity from logged-in GitLab user. */
+/**
+ * PAT sessions have no global git config — derive identity from logged-in GitLab user.
+ * Project `commitAuthorName` (when set) overrides the display name only.
+ */
 export function resolveGitIdentity(): GitIdentity {
   const rt = getRuntimeContext();
   const username = rt?.gitlabUsername?.trim().replace(/^@/, "") || "flow-auto-work";
+  const override = rt?.commitAuthorName?.trim();
   return {
-    name: username,
+    name: override || username,
     email: `${username}@users.noreply.gitlab`,
   };
 }

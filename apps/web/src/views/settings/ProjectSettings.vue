@@ -29,6 +29,8 @@ type ProjectPublic = {
   mainBranch?: string | null;
   workingBranch?: string | null;
   defaultCommitMode?: "manual" | "auto" | null;
+  /** Override commit author name; empty → GitLab username */
+  commitAuthorName?: string | null;
   allowedMilestones?: string[];
   isActive?: boolean;
   cloneStatus?: string;
@@ -48,6 +50,8 @@ const form = reactive({
   localPath: "",
   /** Project default for new jobs — per-job toggle can still override */
   defaultCommitMode: "auto" as "manual" | "auto",
+  /** Empty = use Flow/GitLab username as commit author */
+  commitAuthorName: "",
   /** Empty = no Workbench milestone restriction */
   allowedMilestones: [] as string[],
 });
@@ -158,6 +162,7 @@ function resetWizard() {
   form.workingBranch = "";
   form.localPath = "";
   form.defaultCommitMode = "auto";
+  form.commitAuthorName = "";
   form.allowedMilestones = [];
   gitlabProjects.value = [];
   branches.value = [];
@@ -200,6 +205,7 @@ function openEdit(row: (typeof tableRows.value)[0]) {
   form.localPath = (p?.localPath || p?.repoPath || "") as string;
   form.defaultCommitMode =
     p?.defaultCommitMode === "manual" ? "manual" : "auto";
+  form.commitAuthorName = (p?.commitAuthorName || "").trim();
   form.allowedMilestones = Array.isArray(p?.allowedMilestones)
     ? [...p.allowedMilestones]
     : [];
@@ -473,6 +479,7 @@ async function saveWizard() {
           baseBranch: form.mainBranch || "",
           workBranch: form.workingBranch || "",
           defaultCommitMode: form.defaultCommitMode,
+          commitAuthorName: form.commitAuthorName.trim(),
           allowedMilestones: form.allowedMilestones,
           localPath: renaming ? undefined : resolvedPath || undefined,
           gitlabToken: form.gitlabToken || undefined,
@@ -545,6 +552,7 @@ async function saveWizard() {
         mainBranch: form.mainBranch || undefined,
         workingBranch: form.workingBranch || undefined,
         defaultCommitMode: form.defaultCommitMode,
+        commitAuthorName: form.commitAuthorName.trim() || undefined,
         allowedMilestones: form.allowedMilestones,
         displayName: flowName,
         activate: true,
@@ -1009,6 +1017,19 @@ onMounted(async () => {
                 (form.defaultCommitMode = v ? 'auto' : 'manual')
             "
           />
+        </div>
+        <div>
+          <label class="text-sm text-slate-600">Commit author name</label>
+          <a-input
+            v-model:value="form.commitAuthorName"
+            class="mt-1"
+            allow-clear
+            :placeholder="`Leave empty → ${session.me?.gitlabUsername || session.session.username || 'GitLab username'}`"
+          />
+          <p class="text-xs text-ink-muted mt-1 mb-0">
+            Tên hiện trên commit (GIT_AUTHOR_NAME). Để trống thì dùng user
+            Flow/GitLab đang đăng nhập. Không lấy từ GHP/PAT.
+          </p>
         </div>
         <div>
           <label class="text-sm text-slate-600">Allowed milestones</label>
