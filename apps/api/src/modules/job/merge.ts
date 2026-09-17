@@ -180,6 +180,32 @@ export async function abortPendingConflictOnRepo(
   return { wipWarning };
 }
 
+/**
+ * After prepareRepoForIssue may have aborted a wrong-branch MERGE_HEAD, drop a
+ * stale chat-resolve handoff so Chat/Run do not keep conflict UI/state.
+ * Returns true when pending was cleared.
+ */
+export async function clearStalePendingConflictIfNeeded(
+  job: JobRecord,
+  repoPath: string,
+): Promise<boolean> {
+  if (!job.pendingConflictResolve) return false;
+  const { isMergeInProgress } = await import("../../plugins/git/merge.js");
+  const mergeOpen = await isMergeInProgress(repoPath);
+  const pendingTarget = (job.pendingConflictResolve.target || "").trim();
+  const expected = (job.branch || job.workBranch || "").trim();
+  if (
+    !mergeOpen ||
+    (pendingTarget && expected && pendingTarget !== expected)
+  ) {
+    await abortPendingConflictOnRepo(repoPath, job.pendingConflictResolve);
+    job.pendingConflictResolve = undefined;
+    job.mergeError = undefined;
+    return true;
+  }
+  return false;
+}
+
 async function tryAiClearConflicts(opts: {
   repoPath: string;
   sourceBranch: string;
