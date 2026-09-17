@@ -219,12 +219,47 @@ export async function attemptMergeIntoBase(opts: {
     throw err;
   }
 
-  // Soft refresh of target tip if remote exists (ignore failures)
+  // Soft refresh of target tip if remote exists.
+  // Prefer ff-only; if diverged, merge remote tip (no force) so we do not
+  // build on a stale local target and then hit non-fast-forward on push.
   try {
     await git(opts.repoPath, ["fetch", "origin", target, "--depth=50"]);
-    await git(opts.repoPath, ["merge", "--ff-only", `origin/${target}`]);
   } catch {
-    // offline / no remote / diverged — continue with local target
+    // offline / no remote — continue with local target
+  }
+  if (await branchExists(opts.repoPath, `origin/${target}`)) {
+    try {
+      await git(opts.repoPath, ["merge", "--ff-only", `origin/${target}`]);
+    } catch {
+      try {
+        await git(opts.repoPath, [
+          "merge",
+          "-m",
+          `Merge remote-tracking branch 'origin/${target}'`,
+          `origin/${target}`,
+        ]);
+        logger.info("Merged diverged origin tip into local target before merge", {
+          target,
+        });
+      } catch (err) {
+        const files = await listConflictedFiles(opts.repoPath);
+        await abortMerge(opts.repoPath);
+        if (files.length > 0) {
+          await tryCheckoutBranch(
+            opts.repoPath,
+            previousBranch || source,
+          );
+          await restoreWipAfterMerge(opts.repoPath, wipStashMarker);
+          throw new Error(
+            `Local ${target} diverged from origin/${target} with conflicts (${files.slice(0, 8).join(", ")}). Resolve or reset local tip, then retry.`,
+          );
+        }
+        logger.warn("Could not merge origin tip into local target — continuing", {
+          target,
+          err: String(err),
+        });
+      }
+    }
   }
 
   // Point local source at the freshly fetched origin tip (creates the local
