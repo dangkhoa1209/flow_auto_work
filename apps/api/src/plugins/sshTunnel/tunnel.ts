@@ -1,5 +1,12 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { existsSync, unlinkSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  readdirSync,
+  readFileSync,
+  readlinkSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { AppError } from "../../utils/AppError.js";
@@ -17,6 +24,203 @@ export type SshTunnelParams = {
   /** Prefix for temp key files / error context (e.g. create-data, sync-db). */
   label?: string;
 };
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * True when argv/cmdline looks like ssh or sshpass with local-forward `-L <port>:…`.
+ * Accepts both NUL-separated `/proc/.../cmdline` and space-separated process listings.
+ */
+export function isSshLocalForwardCmdline(cmdline: string, port: number): boolean {
+  if (!Number.isInteger(port) || port < 1 || port > 65535) return false;
+  const norm = cmdline.replace(/\0/g, " ").trim();
+  if (!norm) return false;
+  if (!/(?:^|[\s/])(?:ssh|sshpass)(?:\s|$)/.test(norm)) return false;
+  return new RegExp(`(?:^|\\s)-L\\s*${port}:`).test(norm);
+}
+
+function findSshTunnelPidsForPort(port: number): number[] {
+  const pids: number[] = [];
+  try {
+    for (const ent of readdirSync("/proc")) {
+      if (!/^\d+$/.test(ent)) continue;
+      const pid = Number(ent);
+      if (!pid || pid === process.pid) continue;
+      let cmdline = "";
+      try {
+        cmdline = readFileSync(`/proc/${pid}/cmdline`, "utf8");
+      } catch {
+        continue;
+      }
+      if (isSshLocalForwardCmdline(cmdline, port)) pids.push(pid);
+    }
+  } catch {
+    /* non-Linux or /proc unavailable */
+  }
+  return pids;
+}
+
+/** SIGTERM → SIGKILL exact PIDs only (safer for arbitrary listeners). */
+async function signalExactPidsTermThenKill(pids: number[]): Promise<void> {
+  const targets = [...new Set(pids)].filter(
+    (pid) => pid > 0 && pid !== process.pid,
+  );
+  if (!targets.length) return;
+  for (const pid of targets) {
+    try {
+      process.kill(pid, "SIGTERM");
+    } catch {
+      /* already gone */
+    }
+  }
+  await sleep(800);
+  for (const pid of targets) {
+    try {
+      process.kill(pid, "SIGKILL");
+    } catch {
+      /* already gone */
+    }
+  }
+  await sleep(400);
+}
+
+/**
+ * SIGTERM → SIGKILL foreign PIDs; try process-group `-pid` first (ssh/sshpass trees).
+ */
+async function signalPidsTermThenKill(pids: number[]): Promise<void> {
+  const targets = [...new Set(pids)].filter(
+    (pid) => pid > 0 && pid !== process.pid,
+  );
+  if (!targets.length) return;
+  for (const pid of targets) {
+    try {
+      process.kill(-pid, "SIGTERM");
+    } catch {
+      try {
+        process.kill(pid, "SIGTERM");
+      } catch {
+        /* already gone */
+      }
+    }
+  }
+  await sleep(800);
+  for (const pid of targets) {
+    try {
+      process.kill(-pid, "SIGKILL");
+    } catch {
+      try {
+        process.kill(pid, "SIGKILL");
+      } catch {
+        /* already gone */
+      }
+    }
+  }
+  await sleep(400);
+}
+
+/** SIGTERM → SIGKILL leftover ssh/sshpass local-forwards holding `port`. */
+async function reclaimLeftoverSshTunnelPort(port: number): Promise<boolean> {
+  const pids = findSshTunnelPidsForPort(port);
+  if (!pids.length) return false;
+  await signalPidsTermThenKill(pids);
+  return true;
+}
+
+/** Inodes of sockets in LISTEN state bound to `port` (IPv4/IPv6 via /proc). */
+function findListenSocketInodesForPort(port: number): Set<string> {
+  const inodes = new Set<string>();
+  if (!Number.isInteger(port) || port < 1 || port > 65535) return inodes;
+  for (const file of ["/proc/net/tcp", "/proc/net/tcp6"]) {
+    let text = "";
+    try {
+      text = readFileSync(file, "utf8");
+    } catch {
+      continue;
+    }
+    for (const line of text.split("\n").slice(1)) {
+      const parts = line.trim().split(/\s+/);
+      if (parts.length < 10) continue;
+      const local = parts[1];
+      const state = parts[3];
+      const inode = parts[9];
+      // 0A = TCP_LISTEN
+      if (state !== "0A" || !inode || inode === "0") continue;
+      const colon = local.lastIndexOf(":");
+      if (colon < 0) continue;
+      const portHex = local.slice(colon + 1);
+      if (Number.parseInt(portHex, 16) === port) inodes.add(inode);
+    }
+  }
+  return inodes;
+}
+
+/** Foreign PIDs that own a LISTEN socket on `port` (excludes this process). */
+export function findListenerPidsForPort(port: number): number[] {
+  const inodes = findListenSocketInodesForPort(port);
+  if (!inodes.size) return [];
+  const pids: number[] = [];
+  try {
+    for (const ent of readdirSync("/proc")) {
+      if (!/^\d+$/.test(ent)) continue;
+      const pid = Number(ent);
+      if (!pid || pid === process.pid) continue;
+      let fds: string[] = [];
+      try {
+        fds = readdirSync(`/proc/${pid}/fd`);
+      } catch {
+        continue;
+      }
+      for (const fd of fds) {
+        let target = "";
+        try {
+          target = readlinkSync(`/proc/${pid}/fd/${fd}`);
+        } catch {
+          continue;
+        }
+        const m = /^socket:\[(\d+)\]$/.exec(target);
+        if (m && inodes.has(m[1])) {
+          pids.push(pid);
+          break;
+        }
+      }
+    }
+  } catch {
+    /* non-Linux or /proc unavailable */
+  }
+  return pids;
+}
+
+/**
+ * Last resort: SIGTERM/SIGKILL any foreign process listening on `port`
+ * (not limited to ssh/sshpass). Exact PID only — never process-group kill.
+ * Never signals our own PID.
+ */
+async function forceKillPortListeners(port: number): Promise<boolean> {
+  const pids = findListenerPidsForPort(port);
+  if (!pids.length) return false;
+  await signalExactPidsTermThenKill(pids);
+  return true;
+}
+
+async function probeTunnelPort(port: number): Promise<"free" | "busy"> {
+  const net = await import("node:net");
+  return new Promise((resolve, reject) => {
+    const server = net.createServer();
+    server.once("error", (err: NodeJS.ErrnoException) => {
+      if (err.code === "EADDRINUSE") {
+        resolve("busy");
+        return;
+      }
+      reject(err);
+    });
+    server.once("listening", () => {
+      server.close(() => resolve("free"));
+    });
+    server.listen(port, "127.0.0.1");
+  });
+}
 
 function killProcessTree(child: ChildProcess, signal: NodeJS.Signals): void {
   const pid = child.pid;
@@ -81,31 +285,93 @@ function forceKillProcessTreeAndWait(
   });
 }
 
+/**
+ * Try to free `port` (reclaim leftover ssh/sshpass -L), then probe.
+ * Returns "free" | "busy".
+ */
+async function tryFreeTunnelPort(port: number): Promise<"free" | "busy"> {
+  let status = await probeTunnelPort(port);
+  if (status === "busy") {
+    // Prior Create Data / Sync DB runs can leave detached ssh/sshpass holding the port.
+    const reclaimed = await reclaimLeftoverSshTunnelPort(port);
+    if (reclaimed) status = await probeTunnelPort(port);
+  }
+  return status;
+}
+
 export async function assertTunnelPortFree(
   port: number,
   context = "Admin",
+  errorCode = "ssh_tunnel_port_busy",
 ): Promise<void> {
-  const net = await import("node:net");
-  await new Promise<void>((resolve, reject) => {
-    const server = net.createServer();
-    server.once("error", (err: NodeJS.ErrnoException) => {
-      if (err.code === "EADDRINUSE") {
-        reject(
-          new AppError(
-            `SSH tunnel port ${port} already in use — leftover tunnel from a prior run? Free the port or change tunnelLocalPort in ${context}`,
-            409,
-            "ssh_tunnel_port_busy",
-          ),
-        );
-        return;
-      }
-      reject(err);
-    });
-    server.once("listening", () => {
-      server.close(() => resolve());
-    });
-    server.listen(port, "127.0.0.1");
-  });
+  const status = await tryFreeTunnelPort(port);
+  if (status === "busy") {
+    throw new AppError(
+      `SSH tunnel port ${port} already in use — leftover tunnel from a prior run? Free the port or change tunnelLocalPort in ${context}`,
+      409,
+      errorCode,
+    );
+  }
+}
+
+/** Candidates: preferred, then +1…+maxOffset (skip invalid / privileged). */
+export function tunnelPortFallbackCandidates(
+  preferredPort: number,
+  maxOffset = 32,
+): number[] {
+  const preferred = Math.floor(preferredPort);
+  if (!Number.isFinite(preferred) || preferred < 1 || preferred > 65535) {
+    return [];
+  }
+  const out: number[] = [preferred];
+  const offsetCap = Math.max(0, Math.min(Math.floor(maxOffset), 64));
+  for (let i = 1; i <= offsetCap; i++) {
+    const next = preferred + i;
+    if (next > 65535) break;
+    if (next < 1024) continue;
+    out.push(next);
+  }
+  return out;
+}
+
+/**
+ * Prefer configured tunnelLocalPort; if still busy after reclaiming leftover
+ * SSH tunnels, automatically pick the next free local port. If the whole
+ * +offset window is busy, force-kill foreign listeners on the preferred port
+ * and retry that port once.
+ */
+export async function resolveTunnelLocalPort(
+  preferredPort: number,
+  context = "Admin",
+  errorCode = "ssh_tunnel_port_busy",
+  maxOffset = 32,
+): Promise<number> {
+  const candidates = tunnelPortFallbackCandidates(preferredPort, maxOffset);
+  if (!candidates.length) {
+    throw new AppError(
+      `Invalid tunnelLocalPort ${preferredPort} — set a port 1–65535 in ${context}`,
+      400,
+      errorCode,
+    );
+  }
+  for (const port of candidates) {
+    if ((await tryFreeTunnelPort(port)) === "free") return port;
+  }
+
+  const preferred = candidates[0];
+  // Exhausted preferred…+maxOffset: last resort — kill whatever holds preferred.
+  const killed = await forceKillPortListeners(preferred);
+  if ((await probeTunnelPort(preferred)) === "free") return preferred;
+
+  const range = `${candidates[0]}–${candidates[candidates.length - 1]}`;
+  const detail = killed
+    ? `killed listener(s) on ${preferred} but it is still in use`
+    : `could not free ${preferred} (held by this process, no killable listener found, or insufficient permission)`;
+  throw new AppError(
+    `SSH tunnel ports ${range} are busy — ${detail}; change tunnelLocalPort in ${context}`,
+    409,
+    errorCode,
+  );
 }
 
 export function formatSshTunnelExitMessage(
@@ -315,17 +581,24 @@ export async function withSshTunnel<T>(
       : params.label === "sync-db"
         ? "Admin → Sync DB"
         : "Admin";
-  await assertTunnelPortFree(params.tunnelLocalPort, context);
-  const tunnel = openSshTunnel(params);
+  const localPort = await resolveTunnelLocalPort(
+    params.tunnelLocalPort,
+    context,
+  );
+  const effective: SshTunnelParams = {
+    ...params,
+    tunnelLocalPort: localPort,
+  };
+  const tunnel = openSshTunnel(effective);
   try {
-    await waitTunnelReady(
-      tunnel.child,
-      params.tunnelLocalPort,
-      20_000,
-      context,
-    );
-    return await fn({ host: "127.0.0.1", port: params.tunnelLocalPort });
+    await waitTunnelReady(tunnel.child, localPort, 20_000, context);
+    return await fn({ host: "127.0.0.1", port: localPort });
   } finally {
     await tunnel.cleanup().catch(() => undefined);
+    // OS may keep the listen port briefly after ssh exits; avoid next-job race.
+    for (let i = 0; i < 15; i++) {
+      if ((await probeTunnelPort(localPort)) === "free") break;
+      await sleep(100);
+    }
   }
 }
