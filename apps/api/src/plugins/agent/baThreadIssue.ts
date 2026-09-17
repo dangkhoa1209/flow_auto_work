@@ -302,14 +302,24 @@ export function parseIssueDraftFromAgent(text: string): BaThreadIssueDraft | nul
   if (!trimmed) return null;
 
   const candidates: BaThreadIssueDraft[] = [];
-  for (const block of allCodeFenceBlocks(trimmed)) {
-    const parsed = tryParseIssueJson(repairJsonLoose(block));
+  const pushParsed = (raw: string) => {
+    const repaired = repairJsonLoose(raw);
+    const parsed =
+      tryParseIssueJson(repaired) || tryExtractIssueFieldsLoose(repaired);
     if (parsed) candidates.push(parsed);
+  };
+
+  for (const block of allCodeFenceBlocks(trimmed)) {
+    pushParsed(block);
   }
 
   for (const obj of extractJsonObjectsWithTitle(trimmed)) {
-    const parsed = tryParseIssueJson(repairJsonLoose(obj));
-    if (parsed) candidates.push(parsed);
+    pushParsed(obj);
+  }
+
+  // Whole text may be raw JSON / fence-less object with broken escapes.
+  if (!candidates.length) {
+    pushParsed(trimmed);
   }
 
   if (candidates.length) {
@@ -317,6 +327,55 @@ export function parseIssueDraftFromAgent(text: string): BaThreadIssueDraft | nul
   }
 
   return fallbackIssueDraftFromProse(trimmed);
+}
+
+/**
+ * Khi agent JSON hỏng hoàn toàn: dựng draft từ bản phân tích BA gần nhất trong chat.
+ */
+export function draftFromLatestBaAnalysis(
+  messages: BaMessage[],
+): BaThreadIssueDraft | null {
+  const latest = findLatestBaAnalysisMessage(messages);
+  if (!latest?.content?.trim()) return null;
+  const description = stripOpenQuestionsFromIssueDescription(
+    latest.content.trim(),
+  );
+  if (!description || description.length < 40) return null;
+
+  const title = titleFromBaAnalysis(description);
+  if (!title) return null;
+  return {
+    title: title.slice(0, 200),
+    description,
+    labels: [],
+    acceptanceCriteria: [],
+  };
+}
+
+function titleFromBaAnalysis(description: string): string {
+  const s1 = /#{1,3}\s*1[\.\)]?\s*Yêu cầu[^\n]*\n([\s\S]*?)(?=#{1,3}\s+\S|$)/i.exec(
+    description,
+  );
+  if (s1) {
+    const body = s1[1]
+      .replace(/\*\*/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (body.length >= 8) return body.slice(0, 120);
+  }
+  const heading = /^#{1,3}\s+(.+)$/m.exec(description);
+  if (heading) {
+    const h = heading[1]
+      .replace(/^\d+[\.\)]\s*/, "")
+      .replace(/^Yêu cầu khách hàng\s*[-–:]?\s*/i, "")
+      .trim();
+    if (h && !/^Nội dung phân tích/i.test(h)) return h.slice(0, 120);
+  }
+  const first = description
+    .split("\n")
+    .map((l) => l.trim())
+    .find((l) => l && !/^#{1,6}\s/.test(l));
+  return (first || "Task từ hội thoại BA").replace(/\*\*/g, "").slice(0, 120);
 }
 
 function allCodeFenceBlocks(text: string): string[] {
@@ -375,10 +434,116 @@ function extractBalancedJson(text: string, start: number): string | null {
 }
 
 function repairJsonLoose(raw: string): string {
-  return raw
-    .replace(/[\u201c\u201d]/g, '"')
-    .replace(/[\u2018\u2019]/g, "'")
-    .replace(/,\s*([}\]])/g, "$1");
+  return escapeRawControlsInJsonStrings(
+    raw
+      .replace(/[\u201c\u201d]/g, '"')
+      .replace(/[\u2018\u2019]/g, "'")
+      .replace(/,\s*([}\]])/g, "$1"),
+  );
+}
+
+/** LLM thường nhét markdown đa dòng vào JSON mà không escape \\n / \\t. */
+function escapeRawControlsInJsonStrings(raw: string): string {
+  let out = "";
+  let inString = false;
+  let escape = false;
+  for (let i = 0; i < raw.length; i++) {
+    const c = raw[i];
+    if (inString) {
+      if (escape) {
+        out += c;
+        escape = false;
+        continue;
+      }
+      if (c === "\\") {
+        out += c;
+        escape = true;
+        continue;
+      }
+      if (c === '"') {
+        inString = false;
+        out += c;
+        continue;
+      }
+      if (c === "\n") {
+        out += "\\n";
+        continue;
+      }
+      if (c === "\r") {
+        out += "\\r";
+        continue;
+      }
+      if (c === "\t") {
+        out += "\\t";
+        continue;
+      }
+      out += c;
+      continue;
+    }
+    if (c === '"') inString = true;
+    out += c;
+  }
+  return out;
+}
+
+/**
+ * Khi JSON.parse vẫn fail (vd. dấu " trong description không escape):
+ * lấy title/description theo field name + marker kết thúc.
+ */
+function tryExtractIssueFieldsLoose(raw: string): BaThreadIssueDraft | null {
+  const title = matchJsonStringField(raw, "title");
+  if (!title?.trim()) return null;
+  const description = matchJsonStringField(raw, "description") || "";
+  return {
+    title: title.trim().slice(0, 200),
+    description: description.trim(),
+    labels: [],
+    acceptanceCriteria: [],
+  };
+}
+
+function matchJsonStringField(raw: string, field: string): string | null {
+  const startRe = new RegExp(`"${field}"\\s*:\\s*"`);
+  const m = startRe.exec(raw);
+  if (!m) return null;
+  const start = m.index + m[0].length;
+  const rest = raw.slice(start);
+
+  if (field === "description") {
+    const endM =
+      /"\s*,\s*"(?:labels|acceptanceCriteria)"|"\s*\}\s*$|"\s*\}/.exec(rest);
+    if (endM && endM.index > 0) {
+      return unescapeJsonStringFragment(rest.slice(0, endM.index));
+    }
+  }
+
+  let out = "";
+  let escape = false;
+  for (let i = 0; i < rest.length; i++) {
+    const c = rest[i];
+    if (escape) {
+      out += c;
+      escape = false;
+      continue;
+    }
+    if (c === "\\") {
+      out += c;
+      escape = true;
+      continue;
+    }
+    if (c === '"') return unescapeJsonStringFragment(out);
+    out += c;
+  }
+  return out ? unescapeJsonStringFragment(out) : null;
+}
+
+function unescapeJsonStringFragment(s: string): string {
+  return s
+    .replace(/\\n/g, "\n")
+    .replace(/\\r/g, "\r")
+    .replace(/\\t/g, "\t")
+    .replace(/\\"/g, '"')
+    .replace(/\\\\/g, "\\");
 }
 
 function inferIssueLabel(_text: string): string[] {
@@ -386,15 +551,36 @@ function inferIssueLabel(_text: string): string[] {
 }
 
 function fallbackIssueDraftFromProse(text: string): BaThreadIssueDraft | null {
-  const body = text.replace(/```[\s\S]*?```/g, "").trim();
+  // Keep fence bodies that failed JSON parse — often still usable as markdown.
+  const body = text.trim();
   if (!body) return null;
   if (/^\{[\s\S]*\}$/.test(body) && !/"title"\s*:/.test(body)) return null;
+
+  // Full BA analysis as prose (common when agent ignores JSON-only instruction).
+  if (hasBaIssueHeadings(body) && hasIssueAnalysisSubstance(body)) {
+    const cleaned = stripOpenQuestionsFromIssueDescription(
+      body.replace(/```(?:json|JSON)?\s*/gi, "").replace(/```/g, ""),
+    );
+    const title = titleFromBaAnalysis(cleaned);
+    if (title) {
+      return {
+        title: title.slice(0, 200),
+        description: cleaned,
+        labels: [],
+        acceptanceCriteria: [],
+      };
+    }
+  }
+
+  const withoutFences = body.replace(/```[\s\S]*?```/g, "").trim();
+  const prose = withoutFences || body;
+  if (!prose) return null;
 
   let title = "";
   const descLines: string[] = [];
   const ac: string[] = [];
 
-  for (const line of body.split("\n")) {
+  for (const line of prose.split("\n")) {
     const trimmedLine = line.trim();
     if (!trimmedLine) continue;
     if (trimmedLine.startsWith("{") && trimmedLine.endsWith("}")) continue;
@@ -716,7 +902,18 @@ export async function runBaThreadIssueDraft(opts: {
         model: await resolveSystemCursorModel(),
       });
 
-      const parsed = parseIssueDraftFromAgent(finalText);
+      let parsed = parseIssueDraftFromAgent(finalText);
+      if (!parsed) {
+        parsed = draftFromLatestBaAnalysis(messages);
+        if (parsed) {
+          logger.warn("BA thread issue draft recovered from chat analysis", {
+            threadId: opts.threadId,
+            preview: finalText.slice(0, 400),
+            length: finalText.length,
+            title: parsed.title.slice(0, 80),
+          });
+        }
+      }
       if (!parsed) {
         logger.warn("BA thread issue draft parse failed", {
           threadId: opts.threadId,
