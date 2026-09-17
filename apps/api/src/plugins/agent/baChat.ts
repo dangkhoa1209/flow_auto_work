@@ -166,6 +166,17 @@ export function baPresentationRules(): string {
 - Liệt kê ngắn (≤3 mục) luôn dùng bullet. Ô bảng ngắn; đoạn dài để dưới bảng.`;
 }
 
+/**
+ * Phong cách viết — chỉ inject khi BA mode TẮT (chat hỏi đáp thường).
+ * Chặn narration stream / kết bài sáo / em-dash trong nội dung trả lời người dùng.
+ */
+export function baNormalChatStyleRules(): string {
+  return `## Phong cách viết (BẮT BUỘC — nội dung trả lời người dùng)
+1. **TRỰC DIỆN:** Đi thẳng vào câu trả lời. Tuyệt đối **KHÔNG** xuất các câu suy nghĩ nội bộ / tiến trình xử lý (ví dụ: "Tôi sẽ…", "Tôi đã thấy…", "Tiếp theo tôi đọc…", "Đang đối chiếu…"). Không dán nhật ký tra cứu vào tin nhắn cuối.
+2. **KHÔNG dùng dấu gạch ngang dài (\`—\`):** Trong câu trả lời, thay bằng dấu phẩy, ngoặc đơn \`()\`, hoặc tách câu ngắn. (Separator bảng Markdown \`| --- |\` vẫn dùng bình thường.)
+3. **KHÔNG tóm bài bằng "Tóm lại" / "Tổng kết" / "Tổng kết lại" / "Nhìn chung":** Trả lời ngắn gọn; phân đoạn bằng bullet hoặc bảng thay vì thêm đoạn kết luận lặp lại ý đã nói.`;
+}
+
 /** Chỉ dùng khi BA mode BẬT và user hỏi phân tích / spec. */
 export function baAnalysisModeInstructions(): string {
   return `## Chế độ: BA mode (BẬT) — chọn cách trả lời theo ý định câu hỏi
@@ -635,6 +646,7 @@ Thực hiện triage ngay trên tin nhắn của người dùng trước khi g�
 4. **Trả lời dứt khoát, đi thẳng vào kết quả:**
    - Đưa câu trả lời nghiệp vụ ngay ở câu đầu tiên.
    - Tuyệt đối không kết thúc lượt trả lời bằng các câu hứa hẹn/tường thuật thao tác như: *"Đang tra cứu...", "Sẽ kiểm tra...", "Đang lập kế hoạch..."*.
+   - Áp dụng đầy đủ mục **Phong cách viết** bên dưới (cấm narration "Tôi sẽ…", cấm \`—\`, cấm kết bài "Tóm lại" / "Tổng kết").
 
 ---
 
@@ -648,6 +660,10 @@ Thực hiện triage ngay trên tin nhắn của người dùng trước khi g�
 - **Lệnh hệ thống an toàn:** Chỉ dùng các thao tác đọc nhẹ (\`cat\`, \`head\`, \`ls\`) khi đã rõ đường dẫn cụ thể. Không chạy các lệnh cài đặt package, build, deploy, curl/wget hoặc lệnh phá hủy hệ thống.
 
 ${baLocalTaskCreateInstructions()}
+
+---
+
+${baNormalChatStyleRules()}
 
 ---
 

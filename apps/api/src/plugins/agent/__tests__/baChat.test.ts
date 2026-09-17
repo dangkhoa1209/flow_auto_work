@@ -6,6 +6,7 @@ import {
   baGitlabBoundaryInstructions,
   baIntentTriageGate,
   baLocalTaskCreateInstructions,
+  baNormalChatStyleRules,
   baPresentationRules,
   baReadOnlyWorkspaceRules,
   baSpecFormatInstructions,
@@ -38,6 +39,9 @@ describe("buildBaNormalChatPrompt", () => {
     expect(prompt).toMatch(/code_map_query/);
     expect(prompt).toMatch(/Chưa tìm thấy trên hệ thống/);
     expect(prompt).toMatch(/Đang lập kế hoạch/);
+    expect(prompt).toMatch(/Phong cách viết/);
+    expect(prompt).toMatch(/Tôi sẽ/);
+    expect(prompt).toMatch(/Tóm lại/);
     expect(prompt).toMatch(/Trình bày \(tự nhiên/);
     expect(prompt).toMatch(/bảng khi cùng cấu trúc cột/);
     expect(prompt).toMatch(/Câu hỏi của người dùng/);
@@ -71,6 +75,7 @@ describe("buildBaNormalChatPrompt", () => {
     expect(prompt).toMatch(/taskCreate/);
     expect(prompt).toMatch(/BỎ HẲN Mục 4/);
     expect(prompt).toMatch(/Câu hỏi của người dùng/);
+    expect(prompt).not.toMatch(/Phong cách viết \(BẮT BUỘC/);
     expect(prompt).not.toMatch(/trợ lý sản phẩm cho BA \/ PD \/ QC/);
     expect(prompt).not.toMatch(/INTENT TRIAGE & SANITY CHECK/);
     expect(prompt).not.toMatch(/Chế độ: BA mode \(BẬT\)/);
@@ -162,6 +167,20 @@ describe("baPresentationRules", () => {
     expect(text).not.toMatch(/user story|Given–When–Then/i);
     expect(text).toMatch(/bảng Markdown GFM/i);
     expect(text).toMatch(/Bắt buộc \(Y\/N\)/);
+  });
+});
+
+describe("baNormalChatStyleRules", () => {
+  it("forbids narration, em-dash, and summary closers in user-facing answers", () => {
+    const text = baNormalChatStyleRules();
+    expect(text).toMatch(/Phong cách viết/);
+    expect(text).toMatch(/TRỰC DIỆN/);
+    expect(text).toMatch(/Tôi sẽ/);
+    expect(text).toMatch(/Tôi đã thấy/);
+    expect(text).toMatch(/Tiếp theo tôi đọc/);
+    expect(text).toMatch(/gạch ngang dài/);
+    expect(text).toMatch(/Tóm lại/);
+    expect(text).toMatch(/Tổng kết/);
   });
 });
 
