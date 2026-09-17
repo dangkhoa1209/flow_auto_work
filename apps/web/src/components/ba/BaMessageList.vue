@@ -9,7 +9,6 @@ const props = defineProps<{
   messages: BaMessage[];
   streaming?: boolean;
   streamingMessageId?: string | null;
-  progressHint?: string;
   /** Change this when switching project/thread so we pin to latest again. */
   resetKey?: string | null;
 }>();
@@ -18,10 +17,11 @@ const props = defineProps<{
  * AgentConsole-style typing: stay until the turn finishes (`streaming`
  * goes false). Prefer nesting under the streaming reply so there is only
  * one assistant row (content + thinking), not a second bubble.
+ * Always "thinking…" — no per-step progress labels in the bubble.
  */
 const showTyping = computed(() => !!props.streaming);
 
-const typingHint = computed(() => props.progressHint || "thinking…");
+const typingHint = "thinking…";
 
 const streamingMessage = computed(() => {
   const id = props.streamingMessageId;
@@ -71,7 +71,6 @@ const { onScroll, onWheel, onTouchMove, resetPin, scrollToBottom } =
     [
       visibleMessages.value.map((m) => m.content).join(""),
       showTyping.value ? "t" : "",
-      typingHint.value,
       typingInsideStream.value ? "in" : "foot",
     ].join("|"),
   );

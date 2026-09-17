@@ -323,7 +323,7 @@ function onTaskPublish(payload: {
             class="faw-idle text-[11px]"
           >
             <span class="faw-idle__dot wip" />
-            {{ ba.currentProgressLabel || "Streaming" }}
+            thinking…
           </span>
         </div>
       </div>
@@ -340,7 +340,6 @@ function onTaskPublish(payload: {
           :messages="ba.messages"
           :streaming="ba.streaming"
           :streaming-message-id="ba.streamingMessageId"
-          :progress-hint="ba.currentProgressLabel"
           :reset-key="ba.activeThreadId"
         />
         <div
