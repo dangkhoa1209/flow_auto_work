@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from "vue";
+import { computed, ref, watch } from "vue";
 import ChatMessageBody from "@/components/ChatMessageBody.vue";
 import { useAutoScroll } from "@/composables/useAutoScroll";
 import { formatChatTime } from "@/utils/formatChatTime";
@@ -14,10 +14,38 @@ const props = defineProps<{
   resetKey?: string | null;
 }>();
 
+/**
+ * AgentConsole-style typing: stay under the streaming reply until the
+ * turn finishes (`streaming` goes false), not only before the first token.
+ */
+const showTypingFooter = computed(() => !!props.streaming);
+
+const typingHint = computed(() => props.progressHint || "thinking…");
+
+/** Avoid a blank assistant row while the footer typing bubble is shown. */
+const visibleMessages = computed(() =>
+  props.messages.filter((m) => {
+    if (m.content) return true;
+    if (m.role !== "assistant") return true;
+    if (
+      showTypingFooter.value &&
+      props.streamingMessageId &&
+      m.id === props.streamingMessageId
+    ) {
+      return false;
+    }
+    return true;
+  }),
+);
+
 const listRef = ref<HTMLElement | null>(null);
 const { onScroll, onWheel, onTouchMove, resetPin, scrollToBottom } =
   useAutoScroll(listRef, () =>
-    props.messages.map((m) => m.content).join(""),
+    [
+      visibleMessages.value.map((m) => m.content).join(""),
+      showTypingFooter.value ? "t" : "",
+      typingHint.value,
+    ].join("|"),
   );
 
 watch(
@@ -61,7 +89,7 @@ function whoLabel(role: string) {
     </div>
 
     <div
-      v-for="m in messages"
+      v-for="m in visibleMessages"
       :key="m.id"
       class="faw-msg"
       :class="
@@ -69,13 +97,7 @@ function whoLabel(role: string) {
       "
     >
       <div class="faw-msg__who">{{ whoLabel(m.role) }}</div>
-      <div
-        class="faw-msg__bubble"
-        :class="{
-          'faw-msg__bubble--typing':
-            !m.content && streaming && streamingMessageId === m.id,
-        }"
-      >
+      <div class="faw-msg__bubble">
         <ChatMessageBody
           v-if="m.content"
           :body="m.content"
@@ -92,14 +114,6 @@ function whoLabel(role: string) {
             </time>
           </template>
         </ChatMessageBody>
-        <template v-else-if="streaming && streamingMessageId === m.id">
-          <span class="chat-typing" aria-label="Đang suy nghĩ">
-            <span /><span /><span />
-          </span>
-          <span class="text-[11px] text-[var(--app-faint)] ml-1.5">{{
-            progressHint || "đang suy nghĩ…"
-          }}</span>
-        </template>
         <time
           v-else-if="formatChatTime(m.createdAt)"
           class="faw-msg__time"
@@ -107,6 +121,19 @@ function whoLabel(role: string) {
         >
           {{ formatChatTime(m.createdAt) }}
         </time>
+      </div>
+    </div>
+
+    <!-- Mirror AgentConsole: typing under the reply until the turn ends -->
+    <div v-if="showTypingFooter" class="faw-msg agent">
+      <div class="faw-msg__who">assistant</div>
+      <div class="faw-msg__bubble faw-msg__bubble--typing">
+        <span class="chat-typing" aria-label="Đang suy nghĩ">
+          <span /><span /><span />
+        </span>
+        <span class="text-[11px] text-[var(--app-faint)] ml-1.5">{{
+          typingHint
+        }}</span>
       </div>
     </div>
   </div>

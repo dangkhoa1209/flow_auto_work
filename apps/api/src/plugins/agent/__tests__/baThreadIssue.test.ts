@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildThreadIssuePrompt,
+  draftFromLatestBaAnalysis,
   enrichIssueDraftWithLatestAnalysis,
   findLatestBaAnalysisMessage,
   isThinIssueDescription,
@@ -250,6 +251,58 @@ User muốn thêm validation.
     expect(draft?.labels).toEqual(["bug"]);
   });
 
+  it("parses JSON with raw newlines inside description string", () => {
+    const text = `\`\`\`json
+{
+  "title": "Import OT nhóm",
+  "description": "## 1. Yêu cầu khách hàng
+Import OT cần chặn trùng giờ.
+
+## 3. Nội dung phân tích
+### 3.2. Logic xử lý
+Khi bật tự động tính tăng ca thì kiểm tra overlap.
+",
+  "labels": [],
+  "acceptanceCriteria": []
+}
+\`\`\``;
+    const draft = parseIssueDraftFromAgent(text);
+    expect(draft?.title).toBe("Import OT nhóm");
+    expect(draft?.description).toContain("Logic xử lý");
+    expect(draft?.description).toContain("overlap");
+  });
+
+  it("recovers description when unescaped quotes break JSON.parse", () => {
+    const text = `\`\`\`json
+{"title":"Nút Lưu","description":"Bấm "Lưu" trên form chi tiết rồi đợi thông báo thành công.
+
+## 3. Nội dung phân tích
+### 3.2. Logic xử lý
+Validate form trước khi gọi lưu.
+","labels":[],"acceptanceCriteria":[]}
+\`\`\``;
+    const draft = parseIssueDraftFromAgent(text);
+    expect(draft?.title).toBe("Nút Lưu");
+    expect(draft?.description).toContain("Lưu");
+    expect(draft?.description).toContain("Logic xử lý");
+  });
+
+  it("falls back to BA prose headings when JSON missing", () => {
+    const text = `## 1. Yêu cầu khách hàng
+Cần **export Excel** danh sách hợp đồng.
+
+## 3. Nội dung phân tích
+### 3.1. Màn hình Danh sách hợp đồng
+Thanh công cụ có nút Xuất file.
+
+### 3.2. Logic xử lý
+Khi bấm Xuất file thì tải file Excel theo bộ lọc hiện tại.`;
+    const draft = parseIssueDraftFromAgent(text);
+    expect(draft?.title).toMatch(/export Excel/i);
+    expect(draft?.description).toContain("Logic xử lý");
+    expect(draft?.description).toContain("Xuất file");
+  });
+
   it("prefers richer description among multiple JSON candidates", () => {
     const text = `\`\`\`json
 {"title":"OT","description":"Đã tổng hợp theo chat.","labels":[],"acceptanceCriteria":[]}
@@ -277,6 +330,29 @@ User cần kiểm tra email trước khi submit.
 
   it("returns null when title missing", () => {
     expect(parseIssueDraftFromAgent('{"description":"only desc"}')).toBeNull();
+  });
+});
+
+describe("draftFromLatestBaAnalysis", () => {
+  it("builds draft from latest analysis message", () => {
+    const messages = [
+      {
+        id: "1",
+        threadId: "t",
+        role: "assistant" as const,
+        content: `## 1. Yêu cầu khách hàng
+Cần chặn trùng giờ OT nhóm với công tác nhóm.
+
+## 3. Nội dung phân tích
+### 3.2. Logic xử lý
+Khi bật tự động tính tăng ca thì kiểm tra overlap theo khoảng giờ đã chọn.
+`,
+        createdAt: "2026-01-01T00:00:00.000Z",
+      },
+    ];
+    const draft = draftFromLatestBaAnalysis(messages);
+    expect(draft?.title).toMatch(/chặn trùng giờ/i);
+    expect(draft?.description).toContain("Logic xử lý");
   });
 });
 
