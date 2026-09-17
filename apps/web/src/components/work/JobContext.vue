@@ -450,10 +450,10 @@ function mergeOpKindLabel(kind: string): string {
 
 function mergeOpStatusLabel(status: string): string {
   if (status === "ok") return "OK";
-  if (status === "up_to_date") return "Đã đồng bộ";
+  if (status === "up_to_date") return "Up to date";
   if (status === "conflict") return "Conflict";
-  if (status === "error") return "Lỗi";
-  if (status === "processing") return "Đang xử lý";
+  if (status === "error") return "Error";
+  if (status === "processing") return "Processing";
   return status || "—";
 }
 
@@ -491,13 +491,13 @@ const mergeOpDetailBody = computed(() => {
   if (h.aiResolved) {
     return (
       redactSecrets(h.message || "") ||
-      "AI đã xử lý conflict nhưng lần này chưa lưu tóm tắt theo từng file."
+      "AI resolved conflicts, but no per-file summary was stored for this attempt."
     );
   }
   if (h.status === "conflict") {
     return (
       redactSecrets(h.message || "") ||
-      "Conflict còn mở — chưa có ghi chú AI."
+      "Conflict — no AI notes stored."
     );
   }
   return redactSecrets(h.message || "");
@@ -505,11 +505,11 @@ const mergeOpDetailBody = computed(() => {
 
 const mergeOpDetailTitle = computed(() => {
   const h = mergeOpDetailRow.value;
-  if (!h) return "Chi tiết Sync / Merge";
+  if (!h) return "Merge / Sync detail";
   const kind = mergeOpKindLabel(h.kind);
-  if (h.aiResolved) return `${kind} — Chi tiết AI xử lý conflict`;
-  if (h.status === "conflict") return `${kind} — Ghi chú conflict`;
-  return `${kind} — Chi tiết`;
+  if (h.aiResolved) return `${kind} — AI resolve detail`;
+  if (h.status === "conflict") return `${kind} — conflict notes`;
+  return `${kind} — detail`;
 });
 </script>
 
@@ -1088,7 +1088,7 @@ const mergeOpDetailTitle = computed(() => {
                 class="mt-4 rounded-lg border border-[var(--app-border)] bg-[var(--app-panel-soft)] px-3 py-2.5"
               >
                 <div class="text-[12px] text-ink-soft font-medium">
-                  Sync base / Merge — Lịch sử
+                  Sync base / Merge - History
                 </div>
                 <ul
                   v-if="mergeOpHistory.length"
@@ -1116,7 +1116,7 @@ const mergeOpDetailTitle = computed(() => {
                       <span
                         v-if="h.aiResolved"
                         class="text-sky-700 font-medium"
-                        >AI đã xử lý</span
+                        >AI resolved</span
                       >
                       <span
                         v-if="h.source || h.target"
@@ -1137,13 +1137,13 @@ const mergeOpDetailTitle = computed(() => {
                         class="text-[11px] font-medium text-sky-600 hover:underline"
                         @click="openMergeOpDetail(h)"
                       >
-                        Xem chi tiết
+                        View detail
                       </button>
                     </div>
                   </li>
                 </ul>
                 <div v-else class="text-[11px] text-ink-faint mt-2">
-                  Chưa có lần Sync base / Merge nào trên job này.
+                  No Sync base / Merge attempts on this job yet.
                 </div>
               </div>
             </div>
@@ -1362,7 +1362,7 @@ const mergeOpDetailTitle = computed(() => {
           <span
             v-if="mergeOpDetailRow.aiResolved"
             class="text-sky-700 font-medium"
-            >AI đã xử lý</span
+            >AI resolved</span
           >
           <span
             v-if="mergeOpDetailRow.source || mergeOpDetailRow.target"

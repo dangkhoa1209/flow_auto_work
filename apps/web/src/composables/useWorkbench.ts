@@ -880,7 +880,7 @@ export function useWorkbench() {
       }
       message.success(
         res.queued
-          ? "Merge queued — xem Sync base / Merge - History"
+          ? "Merge queued — see Sync base / Merge - History"
           : "Merge queued",
       );
       await work.loadJobs();
@@ -1028,7 +1028,7 @@ export function useWorkbench() {
       }
       message.success(
         res.queued
-          ? "Sync base queued — xem Sync base / Merge - History"
+          ? "Sync base queued — see Sync base / Merge - History"
           : "Sync base queued",
       );
       await work.loadJobs();
