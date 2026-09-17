@@ -310,7 +310,7 @@ export async function prepareRepoForIssue(opts: {
     if (desired && current && desired !== current) {
       throw new Error(
         `Merge conflict in progress on "${current}" but job expects "${desired}". ` +
-          `Use Chat to resolve conflict markers, or Sync base again to abort and retry.`,
+          `Retry Sync base / Merge (or Chat to request again). Sync base aborts and retries.`,
       );
     }
     const branch = current || desired || projectBranch;

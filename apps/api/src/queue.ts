@@ -1901,7 +1901,6 @@ export class JobQueue {
       logger.info("Queued sync-base finished", {
         jobId: job.id,
         status: job.status,
-        needsChat: Boolean(result.sync?.needsChatResolve),
       });
     };
 
@@ -2030,7 +2029,6 @@ export class JobQueue {
       logger.info("Queued merge finished", {
         jobId: job.id,
         status: job.status,
-        needsChat: Boolean(result.merge?.needsChatResolve),
       });
     };
 

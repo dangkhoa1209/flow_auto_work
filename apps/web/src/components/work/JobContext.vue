@@ -566,12 +566,12 @@ const mergeOpDetailTitle = computed(() => {
               type="warning"
               show-icon
               class="mb-3"
-              message="Merge conflict — Chat Send to resolve"
+              message="Merge conflict — retry Sync base / Merge"
               :description="
                 (currentJob.pendingConflictResolve.files?.length
                   ? `Files: ${currentJob.pendingConflictResolve.files.slice(0, 8).join(', ')}${currentJob.pendingConflictResolve.files.length > 8 ? '…' : ''}. `
                   : '') +
-                'Send a chat message to clear conflict markers. Sync base again aborts and retries.'
+                'Press Sync base / Merge again (or Chat to request a retry). Chat Send can still clear markers if a merge is open.'
               "
             />
 

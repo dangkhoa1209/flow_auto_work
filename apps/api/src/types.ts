@@ -244,8 +244,8 @@ export type JobRecord = {
   mergePushError?: string;
   mergeError?: string;
   /**
-   * Sync-base / merge left an open git merge with conflict markers.
-   * User can Chat Send to resolve; orchestrator finalizes when markers are gone.
+   * Leftover open merge (recovery / older runs). Prefer retry Sync base / Merge;
+   * Chat Send can still clear markers if MERGE_HEAD is open.
    */
   pendingConflictResolve?: {
     kind: "sync-base" | "merge";

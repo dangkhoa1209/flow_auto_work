@@ -1,6 +1,46 @@
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import { logger } from "../../logger.js";
 import { git } from "./exec.js";
 import { detectDefaultBranch, getHeadSha } from "./prep.js";
+
+/** True if file body still contains unresolved merge conflict markers. */
+export function fileHasConflictMarkers(content: string): boolean {
+  return content.includes("<<<<<<<");
+}
+
+/**
+ * After AI edits: stage files that no longer have markers so git drops them
+ * from the unmerged list. Returns paths that still have markers (or unreadable).
+ */
+export async function stageClearedConflictFiles(
+  repoPath: string,
+  files: string[],
+): Promise<string[]> {
+  const stillMarked: string[] = [];
+  const cleared: string[] = [];
+  for (const rel of files) {
+    const abs = path.join(repoPath, rel);
+    try {
+      const content = await readFile(abs, "utf8");
+      if (fileHasConflictMarkers(content)) {
+        stillMarked.push(rel);
+      } else {
+        cleared.push(rel);
+      }
+    } catch {
+      stillMarked.push(rel);
+    }
+  }
+  if (cleared.length) {
+    await git(repoPath, ["add", "--", ...cleared]);
+    logger.info("Staged AI-cleared conflict files", {
+      count: cleared.length,
+      files: cleared.slice(0, 20),
+    });
+  }
+  return stillMarked;
+}
 
 async function branchExists(repoPath: string, name: string): Promise<boolean> {
   try {
