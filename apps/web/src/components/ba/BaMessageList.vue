@@ -15,15 +15,10 @@ const props = defineProps<{
 }>();
 
 /**
- * AgentConsole-style typing while the agent is busy and has not started
- * writing tokens yet. Once the assistant bubble has content, hide dots.
+ * AgentConsole-style typing: stay under the streaming reply until the
+ * turn finishes (`streaming` goes false), not only before the first token.
  */
-const showTypingFooter = computed(() => {
-  if (!props.streaming) return false;
-  if (!props.streamingMessageId) return true;
-  const m = props.messages.find((x) => x.id === props.streamingMessageId);
-  return !m || !m.content;
-});
+const showTypingFooter = computed(() => !!props.streaming);
 
 const typingHint = computed(() => props.progressHint || "thinking…");
 
@@ -129,7 +124,7 @@ function whoLabel(role: string) {
       </div>
     </div>
 
-    <!-- Mirror AgentConsole: typing bubble while agent is answering -->
+    <!-- Mirror AgentConsole: typing under the reply until the turn ends -->
     <div v-if="showTypingFooter" class="faw-msg agent">
       <div class="faw-msg__who">assistant</div>
       <div class="faw-msg__bubble faw-msg__bubble--typing">
