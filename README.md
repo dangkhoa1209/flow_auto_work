@@ -2,7 +2,7 @@
 
 Orchestrator **local**: login password → GitLab projects (clone + PAT) → UI Run → Cursor SDK → **commit qua GitLab API** → **`awaiting_handoff`** → assign/labels → `succeeded`.
 
-> Chi tiết: [`docs/NOTES.md`](docs/NOTES.md) · Deploy: [`docs/DEPLOY.md`](docs/DEPLOY.md) · Roadmap: [`docs/ROADMAP.md`](docs/ROADMAP.md) · Mục lục: [`docs/README.md`](docs/README.md).
+> Chi tiết: [`docs/NOTES.md`](docs/NOTES.md) · Roles & features: [`docs/ROLES_AND_FEATURES.md`](docs/ROLES_AND_FEATURES.md) · Deploy: [`docs/DEPLOY.md`](docs/DEPLOY.md) · Roadmap: [`docs/ROADMAP.md`](docs/ROADMAP.md) · Mục lục: [`docs/README.md`](docs/README.md).
 
 ## Tính năng chính
 

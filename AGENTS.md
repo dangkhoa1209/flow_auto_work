@@ -23,10 +23,12 @@ Notable:
 
 Paths under `project/` are customer checkouts. Load that tree’s `.cursor/rules` and `AGENTS.md` when working there; do not assume WorkBench app rules alone.
 
-## Roles (Dev / Devops)
+## Roles
 
-- Console access: `admin` | `devops` | `dev`
-- Script config (create/edit/delete/toggle): `devops` | `admin` only
+- Platform roles: `dev` | `admin` | `qc` | `ba` | `pd` | `devops` (`admin` seed-only; others registerable)
+- Homes: admin → `/admin`, dev → `/dev`, devops → `/devops`, qc → `/qc`, ba/pd → `/ba`
+- Build console: `admin` | `devops` | `dev` (run); script CRUD: `devops` | `admin` only
+- Full matrix + feature inventory: `docs/ROLES_AND_FEATURES.md`
 
 ## graphify
 
