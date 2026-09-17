@@ -80,6 +80,7 @@ async function copyText() {
       :class="useMarkdown ? 'chat-md-rich' : 'chat-md-user'"
       v-html="html"
     />
+    <slot name="below" />
     <div v-if="showFoot" class="chat-md-foot">
       <div class="chat-md-foot__meta">
         <slot name="meta" />
