@@ -497,7 +497,7 @@ const mergeOpDetailBody = computed(() => {
   if (h.status === "conflict") {
     return (
       redactSecrets(h.message || "") ||
-      "Conflict left open for Chat — no AI notes stored."
+      "Conflict — no AI notes stored."
     );
   }
   return redactSecrets(h.message || "");
@@ -1345,7 +1345,7 @@ const mergeOpDetailTitle = computed(() => {
       :title="mergeOpDetailTitle"
       :footer="null"
       destroy-on-close
-      width="640px"
+      width="720px"
     >
       <div
         v-if="mergeOpDetailRow"
@@ -1360,6 +1360,11 @@ const mergeOpDetailTitle = computed(() => {
             mergeOpStatusLabel(mergeOpDetailRow.status)
           }}</span>
           <span
+            v-if="mergeOpDetailRow.aiResolved"
+            class="text-sky-700 font-medium"
+            >AI resolved</span
+          >
+          <span
             v-if="mergeOpDetailRow.source || mergeOpDetailRow.target"
             class="truncate"
           >
@@ -1368,9 +1373,9 @@ const mergeOpDetailTitle = computed(() => {
           </span>
         </div>
         <div
-          class="rounded-md border border-[var(--app-border)] bg-[var(--app-panel-soft)] px-3 py-2.5 whitespace-pre-wrap break-words text-ink max-h-[60vh] overflow-y-auto"
+          class="rounded-md border border-[var(--app-border)] bg-[var(--app-panel-soft)] px-3 py-2.5 text-ink max-h-[60vh] overflow-y-auto merge-op-detail-md"
         >
-          {{ mergeOpDetailBody }}
+          <ChatMessageBody :body="mergeOpDetailBody" :markdown="true" />
         </div>
       </div>
     </a-modal>

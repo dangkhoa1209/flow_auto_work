@@ -4,6 +4,7 @@ import { scheduleProjectGraphify } from "../../workspace/graphify.js";
 import { getRuntimeContext } from "../../workspace/runtime.js";
 import { autoWorkBranchName } from "./branch-name.js";
 import { git } from "./exec.js";
+import { redactGitCredentials } from "./redact.js";
 import { fetchWithPat, resolvePatGitAuth } from "./remote-auth.js";
 
 function isTransientGitNetworkError(err: unknown): boolean {
@@ -21,6 +22,53 @@ export function isNonFastForwardPushError(err: unknown): boolean {
   );
 }
 
+/**
+ * Stale MERGE_HEAD on another branch (e.g. leftover Sync/Merge on base) must
+ * not block Chat/Run that expects the job work branch.
+ */
+export function shouldAbortMergeForWorkBranch(
+  currentBranch: string,
+  desiredWorkBranch: string | undefined,
+): boolean {
+  const current = currentBranch.trim();
+  const desired = desiredWorkBranch?.trim() || "";
+  return Boolean(desired && current && desired !== current);
+}
+
+/**
+ * Rewrite opaque push/auth rejects into actionable Settings / policy hints.
+ * Leaves non-fast-forward and unrelated errors unchanged (aside from redact).
+ */
+export function clarifyGitRemoteError(err: unknown, branch?: string): Error {
+  const raw = err instanceof Error ? err.message : String(err);
+  const msg = redactGitCredentials(raw);
+  const branchHint = branch?.trim() ? ` (branch \`${branch.trim()}\`)` : "";
+
+  if (
+    /protected branch|You are not allowed to push|push is not permitted|pre-receive hook declined|GH006|cannot push.*protected|protected branches can only be/i.test(
+      msg,
+    )
+  ) {
+    return new Error(
+      `Push rejected by remote policy${branchHint} (protected branch or missing push permission). Use Merge via MR, or update PAT role / branch protection. ${msg.slice(0, 280)}`,
+    );
+  }
+  if (
+    /HTTP Basic:\s*Access denied|Authentication failed|could not read Username|Invalid username or password|terminal prompts disabled|401 Unauthorized|The requested URL returned error:\s*403/i.test(
+      msg,
+    )
+  ) {
+    return new Error(
+      `Git authentication failed${branchHint} — refresh the project PAT in Settings → Project (expired token or missing write/api scope). ${msg.slice(0, 280)}`,
+    );
+  }
+  if (err instanceof Error) {
+    err.message = msg;
+    return err;
+  }
+  return new Error(msg);
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -33,20 +81,10 @@ async function integrateRemoteBranchTip(
   repoPath: string,
   branch: string,
 ): Promise<void> {
-  const patUrl = resolvePatPushUrl();
-  const publicUrl = stripCloneUrlCredentials(patUrl);
-  const authEnv = gitHttpAuthEnvFromCloneUrl(patUrl);
   try {
-    await git(
-      repoPath,
-      [
-        "fetch",
-        publicUrl,
-        `+refs/heads/${branch}:refs/remotes/origin/${branch}`,
-      ],
-      undefined,
-      authEnv,
-    );
+    await fetchWithPat(repoPath, [
+      `+refs/heads/${branch}:refs/remotes/origin/${branch}`,
+    ]);
   } catch {
     await git(repoPath, [
       "fetch",
@@ -272,26 +310,40 @@ export async function prepareRepoForIssue(opts: {
     });
   }
 
-  // Open merge (e.g. Sync base left conflicts for chat) — do not checkout away.
-  const { isMergeInProgress, getCurrentBranch } = await import("./merge.js");
+  // Open merge: keep only when it is already on the job work branch (Chat
+  // recovery). Wrong-branch leftovers (e.g. MERGE_HEAD on main) → abort then
+  // continue with normal work checkout — do not block Chat/Run.
+  const { isMergeInProgress, getCurrentBranch, abortMerge } = await import(
+    "./merge.js"
+  );
   if (await isMergeInProgress(repoPath)) {
     const current = (await getCurrentBranch(repoPath))?.trim() || "";
     const desired =
       workBranch?.trim() ||
       (current ? "" : autoWorkBranchName(opts.issueIid, opts.title));
-    if (desired && current && desired !== current) {
-      throw new Error(
-        `Merge conflict in progress on "${current}" but job expects "${desired}". ` +
-          `Retry Sync base / Merge (or Chat to request again). Sync base aborts and retries.`,
-      );
+    if (shouldAbortMergeForWorkBranch(current, desired)) {
+      logger.warn("Aborting stale merge on wrong branch before work checkout", {
+        current,
+        desired,
+        issueIid: opts.issueIid,
+      });
+      await abortMerge(repoPath);
+      if (await isMergeInProgress(repoPath)) {
+        throw new Error(
+          `Stale merge on "${current}" (job expects "${desired}") could not be aborted. ` +
+            `In the clone run: git merge --abort, then retry Chat / Sync base.`,
+        );
+      }
+      // Fall through to normal checkout of desired work branch.
+    } else {
+      const branch = current || desired || projectBranch;
+      logger.info("Keeping open merge for chat conflict resolve", {
+        branch,
+        issueIid: opts.issueIid,
+      });
+      scheduleProjectGraphify(repoPath, "work-prep");
+      return { repoPath, branch, defaultBranch, autoCreated: false };
     }
-    const branch = current || desired || projectBranch;
-    logger.info("Keeping open merge for chat conflict resolve", {
-      branch,
-      issueIid: opts.issueIid,
-    });
-    scheduleProjectGraphify(repoPath, "work-prep");
-    return { repoPath, branch, defaultBranch, autoCreated: false };
   }
 
   let branch: string;
@@ -364,7 +416,7 @@ export async function pushBranch(
     } catch (err) {
       lastErr = err;
       if (!isNonFastForwardPushError(err) || attempt === maxAttempts) {
-        throw err;
+        throw clarifyGitRemoteError(err, branch);
       }
       logger.warn("git push non-fast-forward — integrating remote tip and retrying", {
         branch,
@@ -372,10 +424,14 @@ export async function pushBranch(
         maxAttempts,
         err: err instanceof Error ? err.message.slice(0, 240) : String(err),
       });
-      await integrateRemoteBranchTip(repoPath, branch);
+      try {
+        await integrateRemoteBranchTip(repoPath, branch);
+      } catch (integrateErr) {
+        throw clarifyGitRemoteError(integrateErr, branch);
+      }
     }
   }
-  throw lastErr;
+  throw clarifyGitRemoteError(lastErr, branch);
 }
 
 /** Force-push current HEAD using runtime GitLab PAT (history rewrite / squash). */
@@ -383,8 +439,12 @@ export async function forcePushBranch(
   repoPath: string,
   branch: string,
 ): Promise<void> {
-  await pushWithPatUrl(repoPath, branch, true);
-  await refreshOriginBranchRef(repoPath, branch);
+  try {
+    await pushWithPatUrl(repoPath, branch, true);
+    await refreshOriginBranchRef(repoPath, branch);
+  } catch (err) {
+    throw clarifyGitRemoteError(err, branch);
+  }
 }
 
 async function refreshOriginBranchRef(

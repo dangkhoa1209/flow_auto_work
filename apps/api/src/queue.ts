@@ -1363,6 +1363,13 @@ export class JobQueue {
       });
       job.branch = fixedWork || prepared.branch;
       if (fixedWork) job.workBranch = fixedWork;
+
+      // Prep may have aborted MERGE_HEAD on the wrong branch — drop stale
+      // chat-resolve handoff so we do not inject a conflict prompt for nothing.
+      const { clearStalePendingConflictIfNeeded } = await import(
+        "./modules/job/merge.js"
+      );
+      await clearStalePendingConflictIfNeeded(job, repoPath);
       await saveJob(job);
 
       const chatHistory = priorChat
@@ -1384,22 +1391,33 @@ export class JobQueue {
         ).conflictResolvePromptBlock(job.pendingConflictResolve);
       } else {
         // Recover stuck MERGE_HEAD from older failed Sync base (no pending saved)
-        const { isMergeInProgress, listConflictedFiles, getCurrentBranch } =
+        const { isMergeInProgress, listConflictedFiles, getCurrentBranch, abortMerge } =
           await import("./plugins/git/merge.js");
         if (await isMergeInProgress(repoPath)) {
-          const files = await listConflictedFiles(repoPath);
           const cur = (await getCurrentBranch(repoPath)) || "HEAD";
-          job.pendingConflictResolve = {
-            kind: "sync-base",
-            source: "(incoming)",
-            target: cur,
-            files,
-            startedAt: new Date().toISOString(),
-          };
-          await saveJob(job);
-          conflictBlock = (
-            await import("./modules/job/merge.js")
-          ).conflictResolvePromptBlock(job.pendingConflictResolve);
+          const expected = (job.branch || "").trim();
+          if (expected && cur && cur !== expected) {
+            // Defense: prep should already have aborted; do not hand Chat a
+            // conflict on the wrong branch.
+            logger.warn(
+              "Aborting leftover MERGE_HEAD on wrong branch during Chat prep",
+              { jobId: job.id, current: cur, expected },
+            );
+            await abortMerge(repoPath).catch(() => undefined);
+          } else {
+            const files = await listConflictedFiles(repoPath);
+            job.pendingConflictResolve = {
+              kind: "sync-base",
+              source: "(incoming)",
+              target: cur,
+              files,
+              startedAt: new Date().toISOString(),
+            };
+            await saveJob(job);
+            conflictBlock = (
+              await import("./modules/job/merge.js")
+            ).conflictResolvePromptBlock(job.pendingConflictResolve);
+          }
         }
       }
       const result = await this.runAgentWithRetry(job, () =>
@@ -3069,6 +3087,10 @@ export class JobQueue {
         repoPath,
       });
       job.branch = prepared.branch;
+      const { clearStalePendingConflictIfNeeded } = await import(
+        "./modules/job/merge.js"
+      );
+      await clearStalePendingConflictIfNeeded(job, repoPath);
       await saveJob(job);
 
       const headBefore = await getHeadSha(repoPath);
