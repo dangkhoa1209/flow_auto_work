@@ -15,12 +15,31 @@ const props = defineProps<{
 }>();
 
 /**
- * AgentConsole-style typing: stay under the streaming reply until the
- * turn finishes (`streaming` goes false), not only before the first token.
+ * AgentConsole-style typing: stay until the turn finishes (`streaming`
+ * goes false). Prefer nesting under the streaming reply so there is only
+ * one assistant row (content + thinking), not a second bubble.
  */
-const showTypingFooter = computed(() => !!props.streaming);
+const showTyping = computed(() => !!props.streaming);
 
 const typingHint = computed(() => props.progressHint || "thinking…");
+
+const streamingMessage = computed(() => {
+  const id = props.streamingMessageId;
+  if (!id) return null;
+  return props.messages.find((m) => m.id === id) || null;
+});
+
+/** Attach thinking under the reply when it already has tokens. */
+const typingInsideStream = computed(
+  () =>
+    showTyping.value &&
+    !!streamingMessage.value?.content?.trim(),
+);
+
+/** Standalone typing row only while waiting for the first token. */
+const showTypingFooter = computed(
+  () => showTyping.value && !typingInsideStream.value,
+);
 
 /** Avoid a blank assistant row while the footer typing bubble is shown. */
 const visibleMessages = computed(() =>
@@ -38,13 +57,22 @@ const visibleMessages = computed(() =>
   }),
 );
 
+function isStreamingMessage(m: BaMessage) {
+  return (
+    typingInsideStream.value &&
+    !!props.streamingMessageId &&
+    m.id === props.streamingMessageId
+  );
+}
+
 const listRef = ref<HTMLElement | null>(null);
 const { onScroll, onWheel, onTouchMove, resetPin, scrollToBottom } =
   useAutoScroll(listRef, () =>
     [
       visibleMessages.value.map((m) => m.content).join(""),
-      showTypingFooter.value ? "t" : "",
+      showTyping.value ? "t" : "",
       typingHint.value,
+      typingInsideStream.value ? "in" : "foot",
     ].join("|"),
   );
 
@@ -104,6 +132,20 @@ function whoLabel(role: string) {
           :role="m.role === 'user' ? 'user' : 'agent'"
           copyable
         >
+          <template #below>
+            <div
+              v-if="isStreamingMessage(m)"
+              class="faw-msg__typing-inline"
+              aria-label="Đang suy nghĩ"
+            >
+              <span class="chat-typing">
+                <span /><span /><span />
+              </span>
+              <span class="text-[11px] text-[var(--app-faint)] ml-1.5">{{
+                typingHint
+              }}</span>
+            </div>
+          </template>
           <template #meta>
             <time
               v-if="formatChatTime(m.createdAt)"
@@ -124,7 +166,7 @@ function whoLabel(role: string) {
       </div>
     </div>
 
-    <!-- Mirror AgentConsole: typing under the reply until the turn ends -->
+    <!-- Only before first token — one assistant row, no duplicate under content -->
     <div v-if="showTypingFooter" class="faw-msg agent">
       <div class="faw-msg__who">assistant</div>
       <div class="faw-msg__bubble faw-msg__bubble--typing">
@@ -138,3 +180,11 @@ function whoLabel(role: string) {
     </div>
   </div>
 </template>
+
+<style scoped>
+.faw-msg__typing-inline {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 8px;
+}
+</style>
