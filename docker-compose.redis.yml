@@ -1,0 +1,14 @@
+# Redis for BullMQ distributed queue (API producer + apps/worker consumers).
+# Usage: docker compose -f docker-compose.redis.yml up -d
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - flow_redis_data:/data
+    restart: unless-stopped
+
+volumes:
+  flow_redis_data:

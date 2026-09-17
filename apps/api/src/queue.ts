@@ -62,6 +62,10 @@ import type { CompletionActions, IssueJob, JobRecord, JobStatus } from "./types.
 import { busyIssueKey, busyIssueKeyForJob, isJobBusy, resolveDevNotes } from "./types.js";
 import { getRuntimeContext } from "./workspace/runtime.js";
 import { withWorkspaceContext } from "./workspace/context.js";
+import type { CodeAgentJobData, CodeAgentJobKind } from "@flow/shared";
+import { isDistributedQueueEnabled } from "./queue/setup.js";
+import { enqueueCodeAgentJob, removeCodeAgentBullJob } from "./queue/dispatch.js";
+import { publishJobAbort } from "./queue/abortSignal.js";
 
 type QueueItem = {
   job: JobRecord;
@@ -96,6 +100,10 @@ export class JobQueue {
   private currentByLane = new Map<string, string>();
   /** Jobs force-stopped — runJob should abort ASAP. */
   private killedJobs = new Set<string>();
+  /** Distributed mode: jobIds waiting in BullMQ (API-side mirror for SSE snapshot). */
+  private distributedQueuedIds = new Set<string>();
+  /** Distributed mode: jobIds active on a worker (updated via sseBridge). */
+  private distributedActiveIds = new Set<string>();
 
   /** Per user + project: A running on project X does not block B on the same project. */
   private laneKeyFor(
@@ -143,6 +151,174 @@ export class JobQueue {
     return true;
   }
 
+  /** API sseBridge: job moved to active on a worker. */
+  noteDistributedActive(jobId: string): void {
+    this.distributedQueuedIds.delete(jobId);
+    this.distributedActiveIds.add(jobId);
+    const scope = this.jobScopes.get(jobId);
+    if (scope) {
+      this.currentByLane.set(
+        this.laneKeyFor({
+          workspaceProjectId: scope.projectId,
+          ownerUsername: scope.owner,
+        }),
+        jobId,
+      );
+    }
+    this.publishStatus("distributed-active");
+  }
+
+  /** API sseBridge: job finished on a worker. */
+  noteDistributedDone(jobId: string): void {
+    this.distributedQueuedIds.delete(jobId);
+    this.distributedActiveIds.delete(jobId);
+    this.clearCurrent(jobId);
+    this.publishStatus("distributed-done");
+  }
+
+  private queueItemKind(item: QueueItem): CodeAgentJobKind {
+    if (item.followUpMessage) return "follow_up";
+    if (item.askOnlyMessage) return "ask";
+    if (item.generateTestcases) return "testcases";
+    if (item.syncBase) return "sync_base";
+    if (item.mergeBranch) return "merge";
+    return "run";
+  }
+
+  private toCodeAgentJobData(item: QueueItem): CodeAgentJobData {
+    return {
+      jobId: item.job.id,
+      projectId: (item.job.workspaceProjectId || "").trim(),
+      ownerUsername: (item.job.ownerUsername || "").trim(),
+      kind: this.queueItemKind(item),
+      taskIid: item.job.issue?.issueIid,
+      baseBranch: item.job.baseBranch,
+      workBranch: item.job.workBranch,
+      forceCodePhase: item.forceCodePhase,
+      forceAgentPhase: item.forceAgentPhase,
+      followUpMessage: item.followUpMessage,
+      askOnlyMessage: item.askOnlyMessage,
+      mergeTargetBranch: item.mergeTargetBranch,
+      followUpRestoreStatus: item.followUpRestoreStatus,
+      source: item.source,
+    };
+  }
+
+  /**
+   * Enqueue to BullMQ when DISTRIBUTED_QUEUE=1; otherwise in-memory pump.
+   * Rolls back distributedQueuedIds on failure (caller still owns activeIssueKeys).
+   */
+  private async scheduleItem(item: QueueItem): Promise<void> {
+    this.rememberJobScope(item.job);
+    if (isDistributedQueueEnabled()) {
+      const data = this.toCodeAgentJobData(item);
+      if (!data.ownerUsername || !data.projectId) {
+        throw new Error(
+          "Distributed queue requires ownerUsername + workspaceProjectId on the job",
+        );
+      }
+      try {
+        await enqueueCodeAgentJob(data);
+        this.distributedQueuedIds.add(item.job.id);
+      } catch (err) {
+        this.distributedQueuedIds.delete(item.job.id);
+        throw err;
+      }
+      return;
+    }
+    this.queue.push(item);
+    void this.pump();
+  }
+
+  /** Mark job killed on this process (worker must call on abort — M1). */
+  markJobKilled(jobId: string): void {
+    this.killedJobs.add(jobId);
+  }
+
+  clearJobKilled(jobId: string): void {
+    this.killedJobs.delete(jobId);
+  }
+
+  /**
+   * scheduleItem + rollback activeIssueKeys on failure.
+   */
+  private async scheduleItemOrRollback(
+    item: QueueItem,
+    busyKey: string,
+  ): Promise<void> {
+    try {
+      await this.scheduleItem(item);
+    } catch (err) {
+      this.activeIssueKeys.delete(busyKey);
+      this.distributedQueuedIds.delete(item.job.id);
+      throw err;
+    }
+  }
+
+  private isQueuedLocally(jobId: string): boolean {
+    return (
+      this.queue.some((q) => q.job.id === jobId) ||
+      this.distributedQueuedIds.has(jobId) ||
+      this.distributedActiveIds.has(jobId)
+    );
+  }
+
+  /**
+   * Worker entry — runs the same branches as pumpLane for one BullMQ payload.
+   */
+  async executeDistributedItem(opts: {
+    job: JobRecord;
+    kind: CodeAgentJobKind;
+    forceCodePhase?: boolean;
+    forceAgentPhase?: boolean;
+    followUpMessage?: string;
+    askOnlyMessage?: string;
+    mergeTargetBranch?: string;
+    followUpRestoreStatus?: JobStatus;
+    source?: string;
+  }): Promise<void> {
+    const { job, kind } = opts;
+    this.rememberJobScope(job);
+    this.distributedActiveIds.add(job.id);
+    this.distributedQueuedIds.delete(job.id);
+    this.setCurrent(job);
+    this.publishStatus("distributed-execute");
+
+    try {
+      if (kind === "follow_up" && opts.followUpMessage) {
+        await this.executeFollowUpChat(job, opts.followUpMessage, {
+          restoreStatus: opts.followUpRestoreStatus,
+        });
+      } else if (kind === "testcases") {
+        await this.executeGenerateTestcases(job, {
+          restoreStatus: opts.followUpRestoreStatus,
+        });
+      } else if (kind === "sync_base") {
+        await this.executeSyncBase(job, {
+          restoreStatus: opts.followUpRestoreStatus,
+          targetBranch: opts.mergeTargetBranch,
+        });
+      } else if (kind === "merge") {
+        await this.executeMerge(job, {
+          restoreStatus: opts.followUpRestoreStatus,
+          targetBranch: opts.mergeTargetBranch,
+        });
+      } else if (kind === "ask" && opts.askOnlyMessage) {
+        await this.executeAskOnlyChat(job, opts.askOnlyMessage, {
+          restoreStatus: opts.followUpRestoreStatus,
+        });
+      } else {
+        await this.runJob(job, {
+          forceCodePhase: opts.forceCodePhase,
+          forceAgentPhase: opts.forceAgentPhase,
+        });
+      }
+    } finally {
+      this.distributedActiveIds.delete(job.id);
+      this.distributedQueuedIds.delete(job.id);
+    }
+  }
+
   private get currentJobIds(): string[] {
     return [...this.currentByLane.values()];
   }
@@ -185,11 +361,17 @@ export class JobQueue {
     const queuedItems = this.queue.filter((q) =>
       inScope(q.job.id, q.job.ownerUsername, q.job.workspaceProjectId),
     );
+    const distributedQueued = [...this.distributedQueuedIds].filter((id) =>
+      inScope(id),
+    );
     return {
-      running: currentJobIds.length > 0,
-      queued: queuedItems.length,
-      currentJobId: currentJobIds[0] ?? null,
-      currentJobIds,
+      running: currentJobIds.length > 0 || [...this.distributedActiveIds].some((id) => inScope(id)),
+      queued: queuedItems.length + distributedQueued.length,
+      currentJobId: currentJobIds[0] ?? [...this.distributedActiveIds].find((id) => inScope(id)) ?? null,
+      currentJobIds:
+        currentJobIds.length > 0
+          ? currentJobIds
+          : [...this.distributedActiveIds].filter((id) => inScope(id)),
       activeIssues: [...this.activeIssueKeys],
     };
   }
@@ -221,7 +403,9 @@ export class JobQueue {
       const key = busyIssueKeyForJob(job);
       if (
         this.activeIssueKeys.has(key) ||
-        this.queue.some((q) => q.job.id === job.id)
+        this.queue.some((q) => q.job.id === job.id) ||
+        this.distributedQueuedIds.has(job.id) ||
+        this.distributedActiveIds.has(job.id)
       ) {
         continue;
       }
@@ -229,55 +413,65 @@ export class JobQueue {
       this.rememberJobScope(job);
       const pendingMsg = job.pendingFollowUpMessage?.trim();
       const pendingMerge = job.pendingMergeOp;
+      let item: QueueItem;
       if (pendingMerge?.kind === "sync-base") {
-        this.queue.push({
+        item = {
           job,
           source: "restore_sync_base",
           syncBase: true,
           mergeTargetBranch: pendingMerge.targetBranch,
           followUpRestoreStatus:
             pendingMerge.restoreStatus || job.followUpRestoreStatus,
-        });
+        };
       } else if (pendingMerge?.kind === "merge") {
-        this.queue.push({
+        item = {
           job,
           source: "restore_merge",
           mergeBranch: true,
           mergeTargetBranch: pendingMerge.targetBranch,
           followUpRestoreStatus:
             pendingMerge.restoreStatus || job.followUpRestoreStatus,
-        });
+        };
       } else if (pendingMsg && job.pendingFollowUpKind === "ask") {
-        this.queue.push({
+        item = {
           job,
           source: "restore_ask",
           askOnlyMessage: pendingMsg,
           followUpRestoreStatus: job.followUpRestoreStatus,
-        });
+        };
       } else if (pendingMsg) {
-        this.queue.push({
+        item = {
           job,
           source: "restore_followup",
           followUpMessage: pendingMsg,
           followUpRestoreStatus: job.followUpRestoreStatus,
-        });
+        };
       } else {
-        this.queue.push({ job, source: "restore" });
+        item = { job, source: "restore" };
       }
-      restored += 1;
-      logger.info("Restored queued job after restart", {
-        jobId: job.id,
-        iid: job.issue.issueIid,
-        kind: pendingMerge
-          ? pendingMerge.kind
-          : pendingMsg
-            ? job.pendingFollowUpKind || "send"
-            : "run",
-      });
+      try {
+        await this.scheduleItem(item);
+        restored += 1;
+        logger.info("Restored queued job after restart", {
+          jobId: job.id,
+          iid: job.issue.issueIid,
+          kind: pendingMerge
+            ? pendingMerge.kind
+            : pendingMsg
+              ? job.pendingFollowUpKind || "send"
+              : "run",
+          distributed: isDistributedQueueEnabled(),
+        });
+      } catch (err) {
+        this.activeIssueKeys.delete(key);
+        logger.error("Failed to restore queued job", {
+          jobId: job.id,
+          err: err instanceof Error ? err.message : String(err),
+        });
+      }
     }
     if (restored > 0) {
       this.publishStatus("restore");
-      void this.pump();
     }
     return restored;
   }
@@ -322,6 +516,14 @@ export class JobQueue {
       planFirst: opts?.planFirst,
     });
 
+    if (this.isQueuedLocally(job.id)) {
+      logger.warn("enqueue rejected — already in distributed queue", {
+        key,
+        jobId: job.id,
+        iid: issue.issueIid,
+      });
+      return { enqueued: false, reason: "Issue already queued or running" };
+    }
     if (
       rt?.projectId &&
       job.workspaceProjectId?.trim() &&
@@ -387,12 +589,12 @@ export class JobQueue {
     this.activeIssueKeys.add(busyIssueKeyForJob(job));
     this.rememberJobScope(job);
     if (opts?.source) this.sources.set(job.id, opts.source);
-    this.queue.push({
+    await this.scheduleItemOrRollback({
       job,
       source: opts?.source,
       forceCodePhase: opts?.forceCodePhase,
       forceAgentPhase: opts?.forceAgentPhase,
-    });
+    }, busyIssueKeyForJob(job));
     await saveJob(job, { source: opts?.source });
     this.publishStatus("enqueue");
     const snap = this.snapshot();
@@ -410,8 +612,8 @@ export class JobQueue {
       queueLength: snap.queued,
       pumpRunning: snap.running,
       currentJobId: snap.currentJobId,
+      distributed: isDistributedQueueEnabled(),
     });
-    void this.pump();
     return { enqueued: true, jobId: job.id };
   }
 
@@ -633,12 +835,12 @@ export class JobQueue {
     this.activeIssueKeys.add(key);
     this.rememberJobScope(job);
     this.sources.set(job.id, "chat_followup");
-    this.queue.push({
+    await this.scheduleItemOrRollback({
       job,
       source: "chat_followup",
       followUpMessage: msg,
       followUpRestoreStatus: restoreStatus,
-    });
+    }, key);
     this.publishStatus("enqueue-followup");
 
     appendJobProgress(job.id, "status", "Follow-up queued (chat Send)");
@@ -646,10 +848,9 @@ export class JobQueue {
     logger.info("Enqueued chat follow-up", {
       jobId: job.id,
       iid: job.issue.issueIid,
-      queueLength: this.queue.length,
+      queueLength: this.queue.length + this.distributedQueuedIds.size,
       msgPreview: msg.slice(0, 120),
     });
-    void this.pump();
     return { ok: true, queued: true, job, kind: "queued" };
   }
 
@@ -742,21 +943,21 @@ export class JobQueue {
     this.rememberJobScope(job);
     if (kind === "ask") {
       this.sources.set(job.id, "chat_ask_resume");
-      this.queue.push({
+      await this.scheduleItemOrRollback({
         job,
         source: "chat_ask_resume",
         askOnlyMessage: msg,
         followUpRestoreStatus: restoreStatus,
-      });
+      }, key);
       appendJobProgress(job.id, "status", "Ask resumed after auth / restart");
     } else {
       this.sources.set(job.id, "chat_followup_resume");
-      this.queue.push({
+      await this.scheduleItemOrRollback({
         job,
         source: "chat_followup_resume",
         followUpMessage: msg,
         followUpRestoreStatus: restoreStatus,
-      });
+      }, key);
       appendJobProgress(
         job.id,
         "status",
@@ -769,7 +970,6 @@ export class JobQueue {
       kind,
       msgPreview: msg.slice(0, 120),
     });
-    void this.pump();
     return { ok: true, enqueued: true, job };
   }
 
@@ -851,12 +1051,12 @@ export class JobQueue {
     this.activeIssueKeys.add(key);
     this.rememberJobScope(job);
     this.sources.set(job.id, "chat_ask");
-    this.queue.push({
+    await this.scheduleItemOrRollback({
       job,
       source: "chat_ask",
       askOnlyMessage: msg,
       followUpRestoreStatus: restoreStatus,
-    });
+    }, key);
     this.publishStatus("enqueue-ask");
 
     appendJobProgress(job.id, "status", "Ask only queued");
@@ -864,10 +1064,9 @@ export class JobQueue {
     logger.info("Enqueued chat ask-only", {
       jobId: job.id,
       iid: job.issue.issueIid,
-      queueLength: this.queue.length,
+      queueLength: this.queue.length + this.distributedQueuedIds.size,
       msgPreview: msg.slice(0, 120),
     });
-    void this.pump();
     return { ok: true, queued: true, job, kind: "queued" };
   }
 
@@ -943,21 +1142,20 @@ export class JobQueue {
     this.activeIssueKeys.add(key);
     this.rememberJobScope(job);
     this.sources.set(job.id, "generate_testcases");
-    this.queue.push({
+    await this.scheduleItemOrRollback({
       job,
       source: "generate_testcases",
       generateTestcases: true,
       followUpRestoreStatus: restoreStatus,
-    });
+    }, key);
     this.publishStatus("enqueue-testcases");
     appendJobProgress(job.id, "status", "Generate testcases queued");
 
     logger.info("Enqueued generate-testcases", {
       jobId: job.id,
       iid: job.issue.issueIid,
-      queueLength: this.queue.length,
+      queueLength: this.queue.length + this.distributedQueuedIds.size,
     });
-    void this.pump();
     return { ok: true, queued: true, job, kind: "queued" };
   }
 
@@ -1065,13 +1263,13 @@ export class JobQueue {
     this.activeIssueKeys.add(key);
     this.rememberJobScope(job);
     this.sources.set(job.id, "sync_base");
-    this.queue.push({
+    await this.scheduleItemOrRollback({
       job,
       source: "sync_base",
       syncBase: true,
       mergeTargetBranch: target,
       followUpRestoreStatus: restoreStatus,
-    });
+    }, key);
     this.publishStatus("enqueue-sync-base");
     appendJobProgress(job.id, "status", "Sync base queued");
     publishRealtime({ type: "jobs", reason: "sync-base-queued" });
@@ -1081,9 +1279,8 @@ export class JobQueue {
       iid: job.issue.issueIid,
       source,
       target,
-      queueLength: this.queue.length,
+      queueLength: this.queue.length + this.distributedQueuedIds.size,
     });
-    void this.pump();
     return { ok: true, queued: true, job, kind: "queued" };
   }
 
@@ -1191,13 +1388,13 @@ export class JobQueue {
     this.activeIssueKeys.add(key);
     this.rememberJobScope(job);
     this.sources.set(job.id, "merge_branch");
-    this.queue.push({
+    await this.scheduleItemOrRollback({
       job,
       source: "merge_branch",
       mergeBranch: true,
       mergeTargetBranch: target || undefined,
       followUpRestoreStatus: restoreStatus,
-    });
+    }, key);
     this.publishStatus("enqueue-merge");
     appendJobProgress(job.id, "status", "Merge queued");
     publishRealtime({ type: "jobs", reason: "merge-queued" });
@@ -1207,9 +1404,8 @@ export class JobQueue {
       iid: job.issue.issueIid,
       source,
       target: target || "(default)",
-      queueLength: this.queue.length,
+      queueLength: this.queue.length + this.distributedQueuedIds.size,
     });
-    void this.pump();
     return { ok: true, queued: true, job, kind: "queued" };
   }
 
@@ -2133,6 +2329,24 @@ export class JobQueue {
       "./plugins/agent/run.js"
     );
     markJobKillRequested(jobId);
+
+    // Distributed: remove waiting BullMQ job + PUBLISH + durable abort key (M1)
+    if (isDistributedQueueEnabled()) {
+      try {
+        await removeCodeAgentBullJob(jobId);
+      } catch (err) {
+        logger.warn("removeCodeAgentBullJob failed", {
+          jobId,
+          err: String(err),
+        });
+      }
+      try {
+        await publishJobAbort(jobId, reason);
+      } catch (err) {
+        logger.warn("publishJobAbort failed", { jobId, err: String(err) });
+      }
+      this.distributedQueuedIds.delete(jobId);
+    }
 
     const queuedIdx = this.queue.findIndex((q) => q.job.id === jobId);
     if (queuedIdx >= 0) {

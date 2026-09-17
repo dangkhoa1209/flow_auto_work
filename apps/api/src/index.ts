@@ -87,6 +87,18 @@ async function main() {
     logger.info(`Restored ${restoredSync} queued sync-db job(s) after restart`);
   }
 
+  const { isDistributedQueueEnabled, assertRedisReachable } = await import(
+    "./queue/setup.js"
+  );
+  if (isDistributedQueueEnabled()) {
+    await assertRedisReachable();
+    logger.info("Redis OK (DISTRIBUTED_QUEUE)");
+    const { startSseBridge } = await import("./services/sseBridge.js");
+    startSseBridge();
+  } else {
+    logger.info("DISTRIBUTED_QUEUE off — using in-process JobQueue pump");
+  }
+
   await startHttpServer();
 }
 

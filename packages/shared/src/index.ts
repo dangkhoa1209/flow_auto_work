@@ -40,3 +40,8 @@ export {
   sanitizeCommitSubject,
   shortCommitSubject,
 } from "./commit-message.js";
+export type {
+  CodeAgentJobData,
+  CodeAgentJobKind,
+  DevopsBuildJobData,
+} from "./types/queue.js";
