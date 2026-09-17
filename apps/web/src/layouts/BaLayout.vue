@@ -23,7 +23,7 @@ const sideOpen = ref(false);
 const statusDot = computed(() => (ba.streaming ? "wip" : "idle"));
 const statusText = computed(() =>
   ba.streaming
-    ? ba.currentProgressLabel || "Replying…"
+    ? "thinking…"
     : ba.selectedProject
       ? ba.selectedProject.displayName
       : "Select project",

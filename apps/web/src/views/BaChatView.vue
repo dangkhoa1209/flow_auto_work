@@ -8,7 +8,6 @@ import { useBaGitPat } from "@/composables/useBaGitPat";
 import BaChatSidebar from "@/components/ba/BaChatSidebar.vue";
 import BaMessageList from "@/components/ba/BaMessageList.vue";
 import BaComposer from "@/components/ba/BaComposer.vue";
-import BaProgressRail from "@/components/ba/BaProgressRail.vue";
 import BaTaskFormModal from "@/components/ba/BaTaskFormModal.vue";
 
 const ba = useBaChatStore();
@@ -324,12 +323,10 @@ function onTaskPublish(payload: {
             class="faw-idle text-[11px]"
           >
             <span class="faw-idle__dot wip" />
-            {{ ba.currentProgressLabel || "Streaming" }}
+            thinking…
           </span>
         </div>
       </div>
-
-      <BaProgressRail />
 
       <div
         v-if="!ba.projects.length"
@@ -343,7 +340,6 @@ function onTaskPublish(payload: {
           :messages="ba.messages"
           :streaming="ba.streaming"
           :streaming-message-id="ba.streamingMessageId"
-          :progress-hint="ba.currentProgressLabel"
           :reset-key="ba.activeThreadId"
         />
         <div

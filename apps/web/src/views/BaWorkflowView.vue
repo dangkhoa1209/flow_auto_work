@@ -213,11 +213,6 @@ const runFlowLabel = computed(() => {
 
 const canRunFlow = computed(() => !flowBlockedReason.value);
 
-const wfProgressLabel = computed(() => {
-  const last = wfProgress.value[wfProgress.value.length - 1];
-  return last?.label || (wfStreaming.value ? "Đang xử lý…" : "");
-});
-
 const composerDisabled = computed(
   () => !wfThreadId.value || !ba.projectReady,
 );
@@ -1153,7 +1148,7 @@ onUnmounted(() => {
               </div>
               <span v-if="wfStreaming" class="faw-idle text-[11px] shrink-0">
                 <span class="faw-idle__dot wip" />
-                {{ wfProgressLabel || "Streaming" }}
+                thinking…
               </span>
             </div>
 
@@ -1168,7 +1163,6 @@ onUnmounted(() => {
                 :messages="wfMessages"
                 :streaming="wfStreaming"
                 :streaming-message-id="wfStreamingMessageId"
-                :progress-hint="wfProgressLabel"
                 :reset-key="wfThreadId"
               />
               <div v-if="wfError" class="shrink-0 px-3 pb-1">
@@ -1480,7 +1474,6 @@ onUnmounted(() => {
               :messages="wfMessages"
               :streaming="wfStreaming"
               :streaming-message-id="wfStreamingMessageId"
-              :progress-hint="wfProgressLabel"
               :reset-key="wfThreadId"
             />
             <div v-if="wfError" class="shrink-0 px-3 pb-1">
