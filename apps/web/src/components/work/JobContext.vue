@@ -453,6 +453,7 @@ function mergeOpStatusLabel(status: string): string {
   if (status === "up_to_date") return "Up to date";
   if (status === "conflict") return "Conflict";
   if (status === "error") return "Error";
+  if (status === "processing") return "Processing";
   return status || "—";
 }
 
@@ -460,6 +461,7 @@ function mergeOpStatusClass(status: string): string {
   if (status === "ok" || status === "up_to_date") return "text-emerald-600";
   if (status === "conflict") return "text-amber-600";
   if (status === "error") return "text-red-600";
+  if (status === "processing") return "text-sky-600";
   return "text-ink-muted";
 }
 
@@ -564,12 +566,12 @@ const mergeOpDetailTitle = computed(() => {
               type="warning"
               show-icon
               class="mb-3"
-              message="Merge conflict — Chat Send to resolve"
+              message="Merge conflict — retry Sync base / Merge"
               :description="
                 (currentJob.pendingConflictResolve.files?.length
                   ? `Files: ${currentJob.pendingConflictResolve.files.slice(0, 8).join(', ')}${currentJob.pendingConflictResolve.files.length > 8 ? '…' : ''}. `
                   : '') +
-                'Send a chat message to clear conflict markers. Sync base again aborts and retries.'
+                'Press Sync base / Merge again (or Chat to request a retry). Chat Send can still clear markers if a merge is open.'
               "
             />
 

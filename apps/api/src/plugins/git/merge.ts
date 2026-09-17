@@ -1,7 +1,47 @@
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import { logger } from "../../logger.js";
 import { git } from "./exec.js";
 import { detectDefaultBranch, getHeadSha } from "./prep.js";
 import { fetchWithPat } from "./remote-auth.js";
+
+/** True if file body still contains unresolved merge conflict markers. */
+export function fileHasConflictMarkers(content: string): boolean {
+  return content.includes("<<<<<<<");
+}
+
+/**
+ * After AI edits: stage files that no longer have markers so git drops them
+ * from the unmerged list. Returns paths that still have markers (or unreadable).
+ */
+export async function stageClearedConflictFiles(
+  repoPath: string,
+  files: string[],
+): Promise<string[]> {
+  const stillMarked: string[] = [];
+  const cleared: string[] = [];
+  for (const rel of files) {
+    const abs = path.join(repoPath, rel);
+    try {
+      const content = await readFile(abs, "utf8");
+      if (fileHasConflictMarkers(content)) {
+        stillMarked.push(rel);
+      } else {
+        cleared.push(rel);
+      }
+    } catch {
+      stillMarked.push(rel);
+    }
+  }
+  if (cleared.length) {
+    await git(repoPath, ["add", "--", ...cleared]);
+    logger.info("Staged AI-cleared conflict files", {
+      count: cleared.length,
+      files: cleared.slice(0, 20),
+    });
+  }
+  return stillMarked;
+}
 
 async function branchExists(repoPath: string, name: string): Promise<boolean> {
   try {
@@ -218,15 +258,50 @@ export async function attemptMergeIntoBase(opts: {
     throw err;
   }
 
-  // Soft refresh of target tip if remote exists (ignore failures)
+  // Soft refresh of target tip if remote exists.
+  // Prefer ff-only; if diverged, merge remote tip (no force) so we do not
+  // build on a stale local target and then hit non-fast-forward on push.
   try {
     await fetchWithPat(opts.repoPath, [
       `+refs/heads/${target}:refs/remotes/origin/${target}`,
       "--depth=50",
     ]);
-    await git(opts.repoPath, ["merge", "--ff-only", `origin/${target}`]);
   } catch {
-    // offline / no remote / diverged — continue with local target
+    // offline / no remote — continue with local target
+  }
+  if (await branchExists(opts.repoPath, `origin/${target}`)) {
+    try {
+      await git(opts.repoPath, ["merge", "--ff-only", `origin/${target}`]);
+    } catch {
+      try {
+        await git(opts.repoPath, [
+          "merge",
+          "-m",
+          `Merge remote-tracking branch 'origin/${target}'`,
+          `origin/${target}`,
+        ]);
+        logger.info("Merged diverged origin tip into local target before merge", {
+          target,
+        });
+      } catch (err) {
+        const files = await listConflictedFiles(opts.repoPath);
+        await abortMerge(opts.repoPath);
+        if (files.length > 0) {
+          await tryCheckoutBranch(
+            opts.repoPath,
+            previousBranch || source,
+          );
+          await restoreWipAfterMerge(opts.repoPath, wipStashMarker);
+          throw new Error(
+            `Local ${target} diverged from origin/${target} with conflicts (${files.slice(0, 8).join(", ")}). Resolve or reset local tip, then retry.`,
+          );
+        }
+        logger.warn("Could not merge origin tip into local target — continuing", {
+          target,
+          err: String(err),
+        });
+      }
+    }
   }
 
   // Point local source at the freshly fetched origin tip (creates the local

@@ -855,7 +855,7 @@ export function useWorkbench() {
     }
   }
 
-  /** Quick merge work→base (AI auto-fix conflicts like Sync base). */
+  /** Quick merge work→base (queued — History shows Processing immediately). */
   async function quickMerge() {
     if (!selectedJobId.value || !canQuickMerge.value) return;
     if (!(await ensureWorkReady())) return;
@@ -864,13 +864,10 @@ export function useWorkbench() {
     try {
       const res = await projectClone.withCloneRetry(() =>
         api<{
-          merge?: {
-            aiResolved?: boolean;
-            source?: string;
-            target?: string;
-            wipWarning?: string;
-            needsChatResolve?: boolean;
-            conflictedFiles?: string[];
+          queued?: boolean;
+          job?: {
+            status?: string;
+            mergeOpHistory?: Array<Record<string, unknown>>;
           };
         }>(`/api/jobs/${selectedJobId.value}/merge`, {
           method: "POST",
@@ -878,32 +875,14 @@ export function useWorkbench() {
         }),
       );
       if (!res) return;
-      const m = res?.merge;
-      const mergeBranches =
-        m?.source && m?.target
-          ? `${m.source} → ${m.target}`
-          : m?.target || m?.source || "";
-      if (m?.needsChatResolve) {
-        message.warning(
-          `Merge conflict left open — use Chat Send to resolve` +
-            (m.conflictedFiles?.length
-              ? `: ${m.conflictedFiles.slice(0, 5).join(", ")}`
-              : ""),
-          10,
-        );
-        mobilePane.value = "chat";
-      } else if (m?.aiResolved) {
-        message.success(
-          mergeBranches
-            ? `Merged ${mergeBranches} — AI resolved conflicts`
-            : "Merge OK — AI resolved conflicts",
-        );
-      } else {
-        message.success(
-          mergeBranches ? `Merged ${mergeBranches}` : "Merge OK",
-        );
+      if (res.job && work.currentJob?.id === selectedJobId.value) {
+        work.currentJob = { ...work.currentJob, ...res.job } as typeof work.currentJob;
       }
-      if (m?.wipWarning) message.warning(m.wipWarning, 8);
+      message.success(
+        res.queued
+          ? "Merge queued — xem Sync base / Merge - History"
+          : "Merge queued",
+      );
       await work.loadJobs();
       if (selectedJobId.value) await work.selectJob(selectedJobId.value);
     } catch (e) {
@@ -1019,7 +998,7 @@ export function useWorkbench() {
     await syncBase(branch);
   }
 
-  /** Pull latest base into the job work branch (stash → merge → AI fix → unstash). */
+  /** Pull latest base into the job work branch (queued — History shows Processing). */
   async function syncBase(targetBranch?: string) {
     if (!selectedJobId.value || !canSyncBase.value) return;
     // Never pull from a guessed default — no Settings base = user picks
@@ -1029,17 +1008,14 @@ export function useWorkbench() {
     }
     if (!(await ensureWorkReady())) return;
     syncBaseBusy.value = true;
+    work.watchProgress();
     try {
       const res = await projectClone.withCloneRetry(() =>
         api<{
-          sync?: {
-            source?: string;
-            target?: string;
-            aiResolved?: boolean;
-            alreadyUpToDate?: boolean;
-            wipWarning?: string;
-            needsChatResolve?: boolean;
-            conflictedFiles?: string[];
+          queued?: boolean;
+          job?: {
+            status?: string;
+            mergeOpHistory?: Array<Record<string, unknown>>;
           };
         }>(`/api/jobs/${selectedJobId.value}/sync-base`, {
           method: "POST",
@@ -1047,38 +1023,14 @@ export function useWorkbench() {
         }),
       );
       if (!res) return;
-      const s = res?.sync;
-      const workBr = s?.source?.trim() || "";
-      const baseBr = s?.target?.trim() || "";
-      if (s?.needsChatResolve) {
-        message.warning(
-          `Conflict left open — use Chat Send to resolve` +
-            (s.conflictedFiles?.length
-              ? `: ${s.conflictedFiles.slice(0, 5).join(", ")}`
-              : ""),
-          10,
-        );
-        mobilePane.value = "chat";
-      } else if (s?.alreadyUpToDate) {
-        message.info(
-          workBr && baseBr
-            ? `${workBr} already up to date with ${baseBr} — nothing to pull`
-            : `Already up to date with ${baseBr || "base"} — nothing to pull`,
-        );
-      } else if (s?.aiResolved) {
-        message.success(
-          workBr && baseBr
-            ? `Pulled ${baseBr} into ${workBr} — AI resolved conflicts`
-            : `Pulled ${baseBr || "base"} — AI resolved conflicts`,
-        );
-      } else {
-        message.success(
-          workBr && baseBr
-            ? `Pulled ${baseBr} into ${workBr}`
-            : `Pulled ${baseBr || "base"} into job branch`,
-        );
+      if (res.job && work.currentJob?.id === selectedJobId.value) {
+        work.currentJob = { ...work.currentJob, ...res.job } as typeof work.currentJob;
       }
-      if (s?.wipWarning) message.warning(s.wipWarning, 8);
+      message.success(
+        res.queued
+          ? "Sync base queued — xem Sync base / Merge - History"
+          : "Sync base queued",
+      );
       await work.loadJobs();
       if (selectedJobId.value) await work.selectJob(selectedJobId.value);
     } catch (e) {

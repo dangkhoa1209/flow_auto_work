@@ -9,7 +9,7 @@ import {
 } from "../../workspace/creds.js";
 import { cursorModelLogLabel } from "../cursor/modelSpec.js";
 import { persistCursorUsage } from "../cursor/recordUsage.js";
-import { listConflictedFiles } from "../git/merge.js";
+import { listConflictedFiles, stageClearedConflictFiles } from "../git/merge.js";
 
 /**
  * Ask Cursor agent to resolve git merge conflict markers in-place.
@@ -44,11 +44,12 @@ ${files.map((f) => `- ${f}`).join("\n")}
 ## Your job
 1. Open each conflicted file and resolve EVERY conflict marker (\`<<<<<<<\`, \`=======\`, \`>>>>>>>\`).
 2. Keep the intended feature behavior from the source branch when it is the feature work; preserve necessary base-branch fixes.
-3. Do not leave any conflict markers.
+3. Do not leave any conflict markers — search the file for leftover \`<<<<<<<\` before finishing.
 4. Do not push, do not force-push, do not create MRs.
-5. Do not run \`git merge --abort\`. You may \`git add\` the resolved files.
+5. Do not run \`git merge --abort\`. After resolving each file, \`git add\` it.
 6. Do NOT create a merge commit yourself — the orchestrator will commit after you finish.
 7. Prefer small, correct resolutions over large rewrites.
+8. Finish ALL listed files in this turn — do not stop after one file.
 
 When done, reply with a short summary of how you resolved each file.`;
 
@@ -71,7 +72,12 @@ When done, reply with a short summary of how you resolved each file.`;
     throw new Error(`AI conflict resolve failed: ${result.id}`);
   }
 
-  const remaining = await listConflictedFiles(repoPath);
+  const remainingAfterAi = files;
+  // Stage files AI cleared but forgot to git-add (orchestrator also stages).
+  const stillMarked = await stageClearedConflictFiles(repoPath, remainingAfterAi);
+  const remaining = [
+    ...new Set([...(await listConflictedFiles(repoPath)), ...stillMarked]),
+  ];
   await persistCursorUsage({
     kind: "job_merge",
     result,

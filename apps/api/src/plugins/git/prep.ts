@@ -13,8 +13,101 @@ function isTransientGitNetworkError(err: unknown): boolean {
   );
 }
 
+/** Remote tip moved / diverged — push would rewrite history without --force. */
+export function isNonFastForwardPushError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /non-fast-forward|tip of your current branch is behind|\[rejected\].*\(fetch first\)/i.test(
+    msg,
+  );
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Fetch remote branch tip (PAT URL, same as push) and merge into HEAD.
+ * No force — creates a merge commit when histories diverged.
+ */
+async function integrateRemoteBranchTip(
+  repoPath: string,
+  branch: string,
+): Promise<void> {
+  const patUrl = resolvePatPushUrl();
+  const publicUrl = stripCloneUrlCredentials(patUrl);
+  const authEnv = gitHttpAuthEnvFromCloneUrl(patUrl);
+  try {
+    await git(
+      repoPath,
+      [
+        "fetch",
+        publicUrl,
+        `+refs/heads/${branch}:refs/remotes/origin/${branch}`,
+      ],
+      undefined,
+      authEnv,
+    );
+  } catch {
+    await git(repoPath, [
+      "fetch",
+      "origin",
+      `+refs/heads/${branch}:refs/remotes/origin/${branch}`,
+    ]);
+  }
+
+  try {
+    await git(repoPath, ["rev-parse", "--verify", `origin/${branch}`]);
+  } catch {
+    throw new Error(
+      `Push rejected (non-fast-forward) but origin/${branch} is missing after fetch`,
+    );
+  }
+
+  try {
+    await git(repoPath, [
+      "merge",
+      "-m",
+      `Merge remote-tracking branch 'origin/${branch}'`,
+      `origin/${branch}`,
+    ]);
+  } catch (err) {
+    const conflicted = await listConflictedFilesForPush(repoPath);
+    try {
+      await git(repoPath, ["merge", "--abort"]);
+    } catch {
+      /* no MERGE_HEAD */
+    }
+    const msg = err instanceof Error ? err.message : String(err);
+    if (conflicted.length > 0 || /CONFLICT|conflict/i.test(msg)) {
+      throw new Error(
+        `Push rejected (non-fast-forward). Merging origin/${branch} into local had conflicts` +
+          (conflicted.length
+            ? ` (${conflicted.slice(0, 8).join(", ")})`
+            : "") +
+          " — resolve via Sync base / Chat, then retry.",
+      );
+    }
+    throw new Error(
+      `Push rejected (non-fast-forward). Could not merge origin/${branch}: ${msg.slice(0, 400)}`,
+    );
+  }
+}
+
+async function listConflictedFilesForPush(repoPath: string): Promise<string[]> {
+  try {
+    const { stdout } = await git(repoPath, [
+      "diff",
+      "--name-only",
+      "--diff-filter=U",
+    ]);
+    return stdout
+      .trim()
+      .split("\n")
+      .map((s) => s.trim())
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
 }
 
 /** Push with PAT in env (not argv) + retry on transient GitHub/GitLab network errors. */
@@ -189,7 +282,7 @@ export async function prepareRepoForIssue(opts: {
     if (desired && current && desired !== current) {
       throw new Error(
         `Merge conflict in progress on "${current}" but job expects "${desired}". ` +
-          `Use Chat to resolve conflict markers, or Sync base again to abort and retry.`,
+          `Retry Sync base / Merge (or Chat to request again). Sync base aborts and retries.`,
       );
     }
     const branch = current || desired || projectBranch;
@@ -258,9 +351,31 @@ export async function pushBranch(
   repoPath: string,
   branch: string,
 ): Promise<void> {
-  // One-shot auth via env — do not `push -u` (would write token into branch.*.remote)
-  await pushWithPatUrl(repoPath, branch, false);
-  await refreshOriginBranchRef(repoPath, branch);
+  // One-shot auth via env — do not `push -u` (would write token into branch.*.remote).
+  // On non-fast-forward (remote moved / client pushed same branch), fetch + merge
+  // remote tip into HEAD (no force) and retry — covers Sync base, Merge, commit.
+  const maxAttempts = 3;
+  let lastErr: unknown;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      await pushWithPatUrl(repoPath, branch, false);
+      await refreshOriginBranchRef(repoPath, branch);
+      return;
+    } catch (err) {
+      lastErr = err;
+      if (!isNonFastForwardPushError(err) || attempt === maxAttempts) {
+        throw err;
+      }
+      logger.warn("git push non-fast-forward — integrating remote tip and retrying", {
+        branch,
+        attempt,
+        maxAttempts,
+        err: err instanceof Error ? err.message.slice(0, 240) : String(err),
+      });
+      await integrateRemoteBranchTip(repoPath, branch);
+    }
+  }
+  throw lastErr;
 }
 
 /** Force-push current HEAD using runtime GitLab PAT (history rewrite / squash). */
