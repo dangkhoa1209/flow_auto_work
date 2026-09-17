@@ -34,6 +34,8 @@ export type Membership = {
     mainBranch?: string | null;
     workingBranch?: string | null;
     defaultCommitMode?: "manual" | "auto" | null;
+    /** Override commit author name; empty → GitLab username */
+    commitAuthorName?: string | null;
     /** When non-empty, Open tasks limited to these milestone titles */
     allowedMilestones?: string[];
   };

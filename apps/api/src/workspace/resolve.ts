@@ -87,6 +87,7 @@ export async function resolveRuntimeContext(opts: {
     baseBranch: project.mainBranch || membership.baseBranch,
     workBranch: project.workingBranch || membership.workBranch,
     verifyCommand: project.verifyCommand?.trim() || undefined,
+    commitAuthorName: project.commitAuthorName?.trim() || undefined,
   };
 }
 

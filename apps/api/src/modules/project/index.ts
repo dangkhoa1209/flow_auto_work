@@ -60,6 +60,7 @@ export function publicProject(project: Awaited<ReturnType<typeof getProject>>) {
     workingBranch: project.workingBranch ?? null,
     defaultCommitMode:
       project.defaultCommitMode === "manual" ? "manual" : "auto",
+    commitAuthorName: project.commitAuthorName?.trim() || null,
     allowedMilestones: Array.isArray(project.allowedMilestones)
       ? project.allowedMilestones
           .map((t) => String(t).trim())
@@ -147,6 +148,8 @@ export type CreateProjectBody = {
   workingBranch?: string;
   defaultCommitMode?: "manual" | "auto";
   allowedMilestones?: string[];
+  /** Empty / omit → use GitLab username as commit author name */
+  commitAuthorName?: string | null;
   displayName?: string;
   activate?: boolean;
 };
@@ -199,6 +202,7 @@ export async function createProject(username: string, body: CreateProjectBody) {
       defaultCommitMode:
         body.defaultCommitMode === "manual" ? "manual" : "auto",
       allowedMilestones: normalizeAllowedMilestones(body.allowedMilestones),
+      commitAuthorName: body.commitAuthorName?.trim() || undefined,
       displayName: projectName,
       gitlabProjectId,
       isActive: body.activate !== false,
@@ -437,6 +441,8 @@ export type UpdateProjectBody = {
   defaultCommitMode?: "manual" | "auto";
   /** Milestone titles allowed in Workbench; empty clears restriction */
   allowedMilestones?: string[];
+  /** Commit author display name; empty clears → GitLab username */
+  commitAuthorName?: string | null;
 };
 
 /** Update branches / path / token / Flow name (+ rename folder) for owned project */
@@ -499,6 +505,14 @@ export async function updateOwnedProject(
             allowedMilestones: normalizeAllowedMilestones(
               body.allowedMilestones ?? [],
             ),
+          }
+        : {}),
+      ...(Object.prototype.hasOwnProperty.call(body, "commitAuthorName")
+        ? {
+            commitAuthorName:
+              body.commitAuthorName === null || body.commitAuthorName === ""
+                ? null
+                : String(body.commitAuthorName).trim() || null,
           }
         : {}),
       ...(body.gitlabToken?.trim()

@@ -729,6 +729,8 @@ export async function createUserProject(opts: {
   workingBranch?: string;
   defaultCommitMode?: "manual" | "auto";
   allowedMilestones?: string[];
+  /** Empty string clears override */
+  commitAuthorName?: string | null;
   displayName?: string;
   gitlabProjectId?: number;
   isActive?: boolean;
@@ -779,6 +781,7 @@ export async function createUserProject(opts: {
     allowedMilestones: opts.allowedMilestones?.length
       ? opts.allowedMilestones
       : undefined,
+    commitAuthorName: opts.commitAuthorName?.trim() || undefined,
     isActive: Boolean(opts.isActive),
     cloneStatus: "pending",
     gitlabProjectId: opts.gitlabProjectId,
@@ -863,6 +866,8 @@ export async function updateProjectFields(
     workingBranch: string;
     defaultCommitMode: "manual" | "auto";
     allowedMilestones?: string[];
+    /** Empty / null clears override */
+    commitAuthorName?: string | null;
     displayName: string;
     projectName: string;
     gitProvider: GitProvider;
@@ -921,6 +926,19 @@ export async function updateProjectFields(
     existing.defaultCommitMode =
       patch.defaultCommitMode === "manual" ? "manual" : "auto";
   }
+  const $unset: Record<string, ""> = {};
+  if (patch.commitAuthorName !== undefined) {
+    const name =
+      patch.commitAuthorName === null
+        ? ""
+        : String(patch.commitAuthorName).trim();
+    if (name) {
+      existing.commitAuthorName = name;
+    } else {
+      delete existing.commitAuthorName;
+      $unset.commitAuthorName = "";
+    }
+  }
   if (patch.allowedMilestones !== undefined) {
     const titles = [
       ...new Set(
@@ -929,7 +947,12 @@ export async function updateProjectFields(
           .filter(Boolean),
       ),
     ].sort((a, b) => a.localeCompare(b));
-    existing.allowedMilestones = titles.length ? titles : undefined;
+    if (titles.length) {
+      existing.allowedMilestones = titles;
+    } else {
+      delete existing.allowedMilestones;
+      $unset.allowedMilestones = "";
+    }
   }
   if (patch.displayName !== undefined) {
     existing.displayName = patch.displayName.trim() || existing.projectName;
@@ -951,6 +974,7 @@ export async function updateProjectFields(
   }
   if (patch.figmaToken === null || patch.figmaToken === "") {
     delete existing.figmaTokenEnc;
+    $unset.figmaTokenEnc = "";
   } else if (typeof patch.figmaToken === "string" && patch.figmaToken.trim()) {
     existing.figmaTokenEnc = encryptSecret(patch.figmaToken.trim());
   }
@@ -962,6 +986,7 @@ export async function updateProjectFields(
   }
   if (patch.cloneError === null) {
     delete existing.cloneError;
+    $unset.cloneError = "";
   } else if (patch.cloneError !== undefined) {
     existing.cloneError = patch.cloneError;
   }
@@ -975,10 +1000,11 @@ export async function updateProjectFields(
     existing.isActive = false;
   }
   existing.updatedAt = now;
-  await WorkspaceProjectModel.updateOne(
-    { id: projectId },
-    { $set: existing },
-  );
+  const update: { $set: typeof existing; $unset?: Record<string, ""> } = {
+    $set: existing,
+  };
+  if (Object.keys($unset).length) update.$unset = $unset;
+  await WorkspaceProjectModel.updateOne({ id: projectId }, update);
   return syncRepoPath(existing);
 }
 

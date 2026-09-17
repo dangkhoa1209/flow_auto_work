@@ -27,6 +27,11 @@ export type RuntimeContext = {
   workBranch?: string;
   /** Per-project verify command (typecheck/lint/build) — overrides VERIFY_COMMAND env */
   verifyCommand?: string;
+  /**
+   * Optional commit author display name from project settings.
+   * Empty / missing → resolveGitIdentity uses gitlabUsername.
+   */
+  commitAuthorName?: string;
 };
 
 const als = new AsyncLocalStorage<RuntimeContext>();
