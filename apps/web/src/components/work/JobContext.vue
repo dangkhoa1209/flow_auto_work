@@ -525,68 +525,109 @@ const canSyncIssue = computed(
     ),
 );
 
-/** Pull-to-refresh (FB-style): pull down past top edge to sync issue. */
+/** Pull-to-refresh (FB-style): pull down past top edge to sync issue (touch + mouse). */
 const PTR_THRESHOLD = 64;
 const PTR_MAX = 96;
+const PTR_ENGAGE = 8;
 const issueScrollEl = ref<HTMLElement | null>(null);
 const pullDistance = ref(0);
 const pullArmed = ref(false);
 let pullStartY = 0;
 let pullTracking = false;
+let pullUsingMouse = false;
+let lastTouchPullAt = 0;
 
-function onIssuePullStart(e: TouchEvent) {
-  if (!canSyncIssue.value || props.issueSyncBusy) return;
-  const el = issueScrollEl.value;
-  if (!el || el.scrollTop > 0) {
-    pullTracking = false;
-    return;
+function resetIssuePull() {
+  if (pullUsingMouse) {
+    window.removeEventListener("mousemove", onIssueMouseMove);
+    window.removeEventListener("mouseup", onIssueMouseUp);
+    window.removeEventListener("blur", onIssueMouseUp);
   }
-  pullTracking = true;
+  pullTracking = false;
   pullArmed.value = false;
-  pullStartY = e.touches[0]?.clientY ?? 0;
   pullDistance.value = 0;
+  pullUsingMouse = false;
 }
 
-function onIssuePullMove(e: TouchEvent) {
+function beginIssuePull(clientY: number) {
+  if (!canSyncIssue.value || props.issueSyncBusy) return false;
+  const el = issueScrollEl.value;
+  if (!el || el.scrollTop > 0) return false;
+  pullTracking = true;
+  pullArmed.value = false;
+  pullStartY = clientY;
+  pullDistance.value = 0;
+  return true;
+}
+
+function moveIssuePull(clientY: number, e?: Event) {
   if (!pullTracking || !canSyncIssue.value || props.issueSyncBusy) return;
   const el = issueScrollEl.value;
   if (!el) return;
   if (el.scrollTop > 0) {
-    pullTracking = false;
-    pullDistance.value = 0;
+    resetIssuePull();
     return;
   }
-  const y = e.touches[0]?.clientY ?? 0;
-  const delta = y - pullStartY;
+  const delta = clientY - pullStartY;
   if (delta <= 0) {
     pullDistance.value = 0;
     pullArmed.value = false;
     return;
   }
-  // Resist rubber-band; prevent browser overscroll while pulling
-  e.preventDefault();
+  // Engage only after a small drag so clicks / text select still work
+  if (delta < PTR_ENGAGE) return;
+  e?.preventDefault();
   const dist = Math.min(PTR_MAX, delta * 0.45);
   pullDistance.value = dist;
   pullArmed.value = dist >= PTR_THRESHOLD;
 }
 
-function onIssuePullEnd() {
+function endIssuePull() {
   if (!pullTracking) return;
-  pullTracking = false;
   const shouldSync = pullArmed.value && canSyncIssue.value && !props.issueSyncBusy;
-  pullArmed.value = false;
-  pullDistance.value = 0;
+  resetIssuePull();
   if (shouldSync) emit("refreshIssue");
+}
+
+function onIssuePullStart(e: TouchEvent) {
+  lastTouchPullAt = Date.now();
+  beginIssuePull(e.touches[0]?.clientY ?? 0);
+}
+
+function onIssuePullMove(e: TouchEvent) {
+  moveIssuePull(e.touches[0]?.clientY ?? 0, e);
+}
+
+function onIssuePullEnd() {
+  if (pullUsingMouse) return;
+  endIssuePull();
+}
+
+function onIssueMouseDown(e: MouseEvent) {
+  if (e.button !== 0) return;
+  // Ignore compatibility mouse events after touch
+  if (Date.now() - lastTouchPullAt < 500) return;
+  if (!beginIssuePull(e.clientY)) return;
+  pullUsingMouse = true;
+  window.addEventListener("mousemove", onIssueMouseMove);
+  window.addEventListener("mouseup", onIssueMouseUp);
+  window.addEventListener("blur", onIssueMouseUp);
+}
+
+function onIssueMouseMove(e: MouseEvent) {
+  if (!pullUsingMouse) return;
+  moveIssuePull(e.clientY, e);
+}
+
+function onIssueMouseUp() {
+  if (!pullUsingMouse) return;
+  endIssuePull();
 }
 
 watch(
   () => props.issueSyncBusy,
   (busy) => {
-    if (busy) {
-      pullDistance.value = 0;
-      pullArmed.value = false;
-      pullTracking = false;
-    }
+    if (busy) resetIssuePull();
   },
 );
 
@@ -597,6 +638,7 @@ watch(issueScrollEl, (el, prev) => {
 
 onUnmounted(() => {
   issueScrollEl.value?.removeEventListener("touchmove", onIssuePullMove);
+  resetIssuePull();
 });
 </script>
 
@@ -628,10 +670,14 @@ onUnmounted(() => {
         <div
           ref="issueScrollEl"
           class="faw-issue-scroll"
-          :class="hideStickyActions ? '' : 'pb-4'"
+          :class="[
+            hideStickyActions ? '' : 'pb-4',
+            pullDistance > 0 ? 'is-pulling' : '',
+          ]"
           @touchstart.passive="onIssuePullStart"
           @touchend="onIssuePullEnd"
           @touchcancel="onIssuePullEnd"
+          @mousedown="onIssueMouseDown"
         >
           <div
             v-if="canSyncIssue && (pullDistance > 0 || issueSyncBusy)"

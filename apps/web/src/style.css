@@ -2253,6 +2253,10 @@ a.faw-mseg__btn {
   overscroll-behavior-y: contain;
   -webkit-overflow-scrolling: touch;
 }
+.faw-issue-scroll.is-pulling {
+  user-select: none;
+  cursor: grabbing;
+}
 .faw-issue-head {
   display: flex;
   align-items: baseline;
