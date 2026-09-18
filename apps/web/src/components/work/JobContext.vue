@@ -525,10 +525,11 @@ const canSyncIssue = computed(
     ),
 );
 
-/** Pull-to-refresh (FB-style): pull down past top edge to sync issue (touch + mouse). */
+/** Sync issue when scroll hits top (scrollTop === 0); PTR kept for refresh while already at top. */
 const PTR_THRESHOLD = 64;
 const PTR_MAX = 96;
 const PTR_ENGAGE = 8;
+const TOP_SYNC_COOLDOWN_MS = 1500;
 const issueScrollEl = ref<HTMLElement | null>(null);
 const pullDistance = ref(0);
 const pullArmed = ref(false);
@@ -536,6 +537,27 @@ let pullStartY = 0;
 let pullTracking = false;
 let pullUsingMouse = false;
 let lastTouchPullAt = 0;
+let lastIssueScrollTop = 0;
+let lastTopSyncAt = 0;
+
+function requestIssueSync() {
+  if (!canSyncIssue.value || props.issueSyncBusy) return false;
+  const now = Date.now();
+  if (now - lastTopSyncAt < TOP_SYNC_COOLDOWN_MS) return false;
+  lastTopSyncAt = now;
+  emit("refreshIssue");
+  return true;
+}
+
+function onIssueScroll() {
+  const el = issueScrollEl.value;
+  if (!el) return;
+  const top = el.scrollTop;
+  const hitTop = lastIssueScrollTop > 0 && top <= 0;
+  lastIssueScrollTop = top;
+  if (!hitTop) return;
+  requestIssueSync();
+}
 
 function resetIssuePull() {
   if (pullUsingMouse) {
@@ -586,7 +608,7 @@ function endIssuePull() {
   if (!pullTracking) return;
   const shouldSync = pullArmed.value && canSyncIssue.value && !props.issueSyncBusy;
   resetIssuePull();
-  if (shouldSync) emit("refreshIssue");
+  if (shouldSync) requestIssueSync();
 }
 
 function onIssuePullStart(e: TouchEvent) {
@@ -631,9 +653,23 @@ watch(
   },
 );
 
+watch(
+  () =>
+    props.taskDetail?.issueIid ??
+    props.selectedTaskIid ??
+    props.currentJob?.issue?.issueIid ??
+    null,
+  () => {
+    lastIssueScrollTop = 0;
+  },
+);
+
 watch(issueScrollEl, (el, prev) => {
   if (prev) prev.removeEventListener("touchmove", onIssuePullMove);
-  if (el) el.addEventListener("touchmove", onIssuePullMove, { passive: false });
+  if (el) {
+    lastIssueScrollTop = el.scrollTop;
+    el.addEventListener("touchmove", onIssuePullMove, { passive: false });
+  }
 });
 
 onUnmounted(() => {
@@ -674,6 +710,7 @@ onUnmounted(() => {
             hideStickyActions ? '' : 'pb-4',
             pullDistance > 0 ? 'is-pulling' : '',
           ]"
+          @scroll.passive="onIssueScroll"
           @touchstart.passive="onIssuePullStart"
           @touchend="onIssuePullEnd"
           @touchcancel="onIssuePullEnd"
