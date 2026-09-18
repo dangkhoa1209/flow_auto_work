@@ -11,7 +11,6 @@ import {
 import type { RuntimeContext } from "./runtime.js";
 import { AppError } from "../utils/AppError.js";
 import { normalizeGitProvider } from "./types.js";
-import { getForcedRepoPath } from "./forceRepo.js";
 
 async function assertRepoPath(repoPath: string): Promise<void> {
   try {
@@ -61,8 +60,7 @@ export async function resolveRuntimeContext(opts: {
     );
   }
 
-  const forcedRepo = getForcedRepoPath();
-  const repoPath = forcedRepo || project.localPath || project.repoPath;
+  const repoPath = project.localPath || project.repoPath;
   if (!repoPath?.trim()) {
     throw new Error("Project local_path missing — fix project setup");
   }

@@ -113,29 +113,5 @@ Phù hợp demo / truy cập từ máy khác; vẫn chạy agent trên máy host
 ## Giới hạn deploy
 
 - Sau Run: commit lên GitLab qua API (PAT); sync local. Merge work→base vẫn local git + push target; không auto MR.
-- Job queue: mặc định **in-process** trên API. Bật phân tán: `DISTRIBUTED_QUEUE=1` + Redis + `npm run start:worker`.
-- Multi-user OK (Mongo + secrets mã hóa). Worker resolve Cursor/PAT tại runtime — **không** đưa secrets vào Redis payload.
-
-## Distributed Master–Worker (BullMQ / Redis)
-
-```
-apps/web → apps/api (enqueue) → Redis (code-agent-jobs)
-                              → apps/worker (concurrency 3, limiter 10/60s)
-Worker updateProgress → QueueEvents → sseBridge (mọi API node) → SSE /api/events
-Force Stop → BullMQ remove (waiting) + PUBLISH/SET job:abort:<jobId>
-```
-
-| Thành phần | Gợi ý scale ~20 Dev |
-|---|---|
-| API Master | 1+ host (HTTP/SSE/enqueue) — mỗi instance boot `sseBridge` |
-| Redis | 1 instance |
-| Worker | 6–7 process × concurrency 3 ≈ 21 job song song |
-
-```bash
-docker compose -f docker-compose.redis.yml up -d
-# .env: DISTRIBUTED_QUEUE=1 REDIS_HOST=127.0.0.1
-npm run start          # API
-npm run start:worker   # một hoặc nhiều worker process
-```
-
-Optional worktree: set `REPO_CACHE_ROOT` (layout `<slug>/source` + sibling `graphify-out`). Worker copy warm graphify + path-rewrite vào `/tmp/workspaces/job-<id>/`.
+- Job queue **serial** trên process hiện tại.
+- Multi-user OK (Mongo + secrets mã hóa), nhưng mỗi Run vẫn cần path repo trên máy chạy server (Cursor SDK).
