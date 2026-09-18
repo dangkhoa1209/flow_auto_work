@@ -529,6 +529,7 @@ const canSyncIssue = computed(
  * Issue sync via deliberate pull-to-refresh.
  * - Must already be at scrollTop === 0, then pull past PTR_THRESHOLD.
  * - Sync fires while holding once armed (no release / reverse required).
+ * - Release always collapses pull chrome to 0 (busy uses compact spinner).
  * - Wheel: sync when overscroll distance crosses the arm threshold.
  * - Idle at top or light flick → no sync; use Sync button instead.
  */
@@ -570,7 +571,7 @@ function updatePullVisual(rawDelta: number) {
   pullArmed.value = dist >= PTR_THRESHOLD;
 }
 
-function resetIssuePull(opts?: { keepBusyHint?: boolean }) {
+function resetIssuePull() {
   if (pullUsingMouse) {
     window.removeEventListener("mousemove", onIssueMouseMove);
     window.removeEventListener("mouseup", onIssueMouseUp);
@@ -578,7 +579,8 @@ function resetIssuePull(opts?: { keepBusyHint?: boolean }) {
   }
   pullTracking = false;
   pullArmed.value = false;
-  if (!opts?.keepBusyHint) pullDistance.value = 0;
+  // Always collapse pull chrome on end — busy state uses compact 44px via issueSyncBusy
+  pullDistance.value = 0;
   pullUsingMouse = false;
   pullFiredThisGesture = false;
   wheelOverscroll = 0;
@@ -620,10 +622,10 @@ function moveIssuePull(clientY: number, e?: Event) {
 }
 
 function endIssuePull() {
-  if (!pullTracking) return;
-  resetIssuePull({
-    keepBusyHint: pullFiredThisGesture || props.issueSyncBusy,
-  });
+  // Always snap pull UI back to 0 on release (even if sync already armed / busy).
+  // Busy watcher may have cleared pullTracking first — still collapse distance.
+  if (!pullTracking && pullDistance.value <= 0 && !pullUsingMouse) return;
+  resetIssuePull();
 }
 
 function onIssuePullStart(e: TouchEvent) {
@@ -682,11 +684,12 @@ function onIssueWheel(e: WheelEvent) {
     if (pullArmed.value) {
       e.preventDefault();
       if (commitIssuePullSync()) {
-        resetIssuePull({ keepBusyHint: true });
+        resetIssuePull();
       }
     }
     return;
   }
+  // Scroll back down (or stop overscrolling) → collapse unused pull chrome
   wheelOverscroll = 0;
   pullDistance.value = 0;
   pullArmed.value = false;
@@ -706,16 +709,15 @@ watch(
   () => props.issueSyncBusy,
   (busy) => {
     if (busy) {
-      if (pullUsingMouse) {
-        window.removeEventListener("mousemove", onIssueMouseMove);
-        window.removeEventListener("mouseup", onIssueMouseUp);
-        window.removeEventListener("blur", onIssueMouseUp);
-      }
-      pullTracking = false;
+      // Keep mouse listeners until mouseup so release can collapse pull chrome.
+      // Only clear armed/tracking flags; leave pullDistance until finger/mouse up
+      // (or snap now if gesture already ended).
       pullArmed.value = false;
-      pullUsingMouse = false;
       pullFiredThisGesture = false;
       wheelOverscroll = 0;
+      if (!pullTracking && !pullUsingMouse) {
+        pullDistance.value = 0;
+      }
     } else if (!pullTracking) {
       pullDistance.value = 0;
     }
@@ -788,7 +790,7 @@ onUnmounted(() => {
               'is-syncing': issueSyncBusy,
             }"
             :style="{
-              height: `${issueSyncBusy ? 44 : Math.max(28, pullDistance)}px`,
+              height: `${issueSyncBusy && pullDistance < 44 ? 44 : pullDistance}px`,
               opacity: issueSyncBusy ? 1 : 0.35 + pullProgress * 0.65,
             }"
             aria-hidden="true"
