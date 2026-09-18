@@ -57,6 +57,7 @@ export function useWorkbench() {
   const testcasesBusy = ref(false);
   const handoffBusy = ref(false);
   const syncBaseBusy = ref(false);
+  const issueSyncBusy = ref(false);
   const syncBaseOpen = ref(false);
   const syncBaseChoice = ref<string>("");
   const syncBaseBranches = ref<string[]>([]);
@@ -1109,6 +1110,28 @@ export function useWorkbench() {
     }
   }
 
+  /** Force re-load current GitLab issue (description + comments) without F5. */
+  async function refreshIssueDetail() {
+    const iid =
+      selectedTaskIid.value ||
+      currentJob.value?.issue?.issueIid ||
+      taskDetail.value?.issueIid;
+    if (!iid || iid <= 0 || isCurrentAdhoc.value) {
+      message.info("No GitLab issue to sync");
+      return;
+    }
+    if (issueSyncBusy.value) return;
+    issueSyncBusy.value = true;
+    try {
+      await work.refreshIssueDetail();
+      message.success(`Issue #${iid} synced`);
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : String(e));
+    } finally {
+      issueSyncBusy.value = false;
+    }
+  }
+
   function jobDisplayIid(j: { issue?: { issueIid?: number }; kind?: string }) {
     const iid = j.issue?.issueIid;
     if (!iid || iid <= 0 || j.kind === "adhoc") return "Session";
@@ -1314,6 +1337,7 @@ export function useWorkbench() {
     canQuickHandoff,
     canSyncBase,
     syncBaseBusy,
+    issueSyncBusy,
     runBlockedReason,
     openTaskByIid,
     openRelatedPreview,
@@ -1344,6 +1368,7 @@ export function useWorkbench() {
     syncBaseBranchesLoading,
     confirmSyncBase,
     refreshTasks,
+    refreshIssueDetail,
     jobDisplayIid,
     jobBranch,
     copyJobBranch,
