@@ -4,41 +4,7 @@ import type {
   SDKMessage,
 } from "@cursor/sdk";
 import { publishRealtime } from "../realtime/hub.js";
-
-/** Optional hook — worker bridges progress → BullMQ updateProgress → API sseBridge. */
-type ProgressForwarder = (
-  jobId: string,
-  line: { id: number; at: string; kind: string; text: string },
-) => void;
-
-const progressForwarders = new Map<string, ProgressForwarder>();
-
-export function setJobProgressForwarder(
-  jobId: string,
-  fn: ProgressForwarder | null,
-): void {
-  const id = jobId.trim();
-  if (!id) return;
-  if (!fn) progressForwarders.delete(id);
-  else progressForwarders.set(id, fn);
-}
-
-function emitProgress(
-  jobId: string,
-  line: { id: number; at: string; kind: string; text: string },
-): void {
-  publishRealtime({
-    type: "progress",
-    jobId,
-    line: { ...line },
-    live: true,
-  });
-  try {
-    progressForwarders.get(jobId)?.(jobId, { ...line });
-  } catch {
-    /* ignore bridge errors */
-  }
-}import { workSubagentLabel } from "../cursor/workSubagents.js";
+import { workSubagentLabel } from "../cursor/workSubagents.js";
 
 /** Fixed estimate for context % UI (SDK has no remaining-% API). */
 const CONTEXT_WINDOW_TOKENS = 200_000;
@@ -98,7 +64,12 @@ function flushPendingPublish(jobId: string): void {
   const list = buffers.get(jobId);
   const last = list?.[list.length - 1];
   if (!last) return;
-  emitProgress(jobId, { ...last });
+  publishRealtime({
+    type: "progress",
+    jobId,
+    line: { ...last },
+    live: true,
+  });
 }
 
 function scheduleCoalescedPublish(jobId: string, line: ProgressLine): void {
@@ -107,7 +78,12 @@ function scheduleCoalescedPublish(jobId: string, line: ProgressLine): void {
     jobId,
     setTimeout(() => {
       pendingPublish.delete(jobId);
-      emitProgress(jobId, { ...line });
+      publishRealtime({
+        type: "progress",
+        jobId,
+        line: { ...line },
+        live: true,
+      });
     }, PROGRESS_PUBLISH_MS),
   );
 }
@@ -249,7 +225,12 @@ export function appendJobProgress(
   if (list.length > EVICT_AT) {
     list.splice(0, list.length - MAX_LINES);
   }
-  emitProgress(jobId, { ...entry });
+  publishRealtime({
+    type: "progress",
+    jobId,
+    line: { ...entry },
+    live: true,
+  });
 }
 
 /** Log full prompt being sent to Cursor (Progress tab). */

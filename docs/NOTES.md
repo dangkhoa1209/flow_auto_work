@@ -248,11 +248,7 @@ Markdown GitLab thường có `![…](/uploads/<secret>/image.png)`. Browser **k
 | `src/db/` + `job-store.ts` | Persistence (thay cho “models” Mongoose) |
 | `src/api/middleware/` | security, workspaceAuth, errorHandler |
 | `src/plugins/gitlab/uploads.ts` | Download markdown upload qua API v4 |
-| `src/queue.ts` | JobQueue facade — in-process pump **hoặc** BullMQ producer (`DISTRIBUTED_QUEUE`) |
-| `src/queue/setup.ts` | Redis connection + `code-agent-jobs` / `devops-build-jobs` |
-| `src/queue/abortSignal.ts` | Cross-process Force Stop (`job:abort:<id>` Pub/Sub + durable key) |
-| `src/services/sseBridge.ts` | QueueEvents → `publishRealtime` (multi-API) |
-| `apps/worker` | BullMQ consumer — Cursor SDK + optional git worktree |
+| `src/queue.ts` | Serial in-process job queue |
 | `src/plugins/agent/run.ts` | Cursor SDK + `buildMissionPrompt` |
 | `src/plugins/agent/prompt.ts` | MISSION prompts |
 | `src/plugins/agent/context-quality.ts` | Good / Searchable / Bad gate |
@@ -277,7 +273,7 @@ Browser EventSource → GET /api/events
 
 - Không thêm dependency (`EventSource` + `hono/streaming`).
 - Proxy: disable buffering trên `/api/events`.
-- Khi `DISTRIBUTED_QUEUE=1`: progress từ worker đi Redis QueueEvents → `sseBridge` trên **mọi** API node (không cần sticky session). Chat/final status vẫn ghi Mongo; UI reconnect nên refetch REST.
+
 ### Agent window
 
 | Action | API | Ý |
