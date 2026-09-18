@@ -571,12 +571,12 @@ export const useWorkStore = defineStore("work", () => {
     return pending.length ? [...server, ...pending] : server;
   }
 
-  async function loadIssueForJob(job: Job) {
+  async function loadIssueForJob(job: Job, opts?: { force?: boolean }) {
     const iid = job?.issue?.issueIid;
     if (iid && iid > 0 && !isAdhocJob(job)) {
       selectedTaskIid.value = iid;
       // Keep current issue if same iid — avoid redundant GitLab fetch
-      if (taskDetail.value?.issueIid === iid) return;
+      if (!opts?.force && taskDetail.value?.issueIid === iid) return;
       const res = await api<{ detail: TaskDetail }>(`/api/tasks/${iid}`);
       if (selectedTaskIid.value !== iid) return;
       taskDetail.value = res.detail;
@@ -584,6 +584,29 @@ export const useWorkStore = defineStore("work", () => {
       selectedTaskIid.value = null;
       taskDetail.value = null;
     }
+  }
+
+  /**
+   * Force re-fetch GitLab issue detail (title, description, comments, related).
+   * Needed because loadIssueForJob skips when the same iid is already cached.
+   */
+  async function refreshIssueDetail() {
+    const iid =
+      selectedTaskIid.value ||
+      currentJob.value?.issue?.issueIid ||
+      taskDetail.value?.issueIid ||
+      null;
+    if (!iid || iid <= 0) return null;
+    if (currentJob.value && isAdhocJob(currentJob.value)) return null;
+    const res = await api<{ detail: TaskDetail }>(`/api/tasks/${iid}`);
+    const stillOn =
+      selectedTaskIid.value === iid ||
+      currentJob.value?.issue?.issueIid === iid ||
+      taskDetail.value?.issueIid === iid;
+    if (!stillOn) return null;
+    taskDetail.value = res.detail;
+    selectedTaskIid.value = iid;
+    return res.detail;
   }
 
   async function selectJob(id: string) {
@@ -1209,6 +1232,7 @@ export const useWorkStore = defineStore("work", () => {
     selectJob,
     selectTask,
     refreshJobChat,
+    refreshIssueDetail,
     fetchTaskDetail,
     saveDevNotes,
     pollProgress,

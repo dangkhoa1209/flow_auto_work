@@ -156,6 +156,7 @@ function confirmMergeFromMenu() {
               :testcases-busy="wb.testcasesBusy"
               :handoff-busy="wb.handoffBusy"
               :sync-base-busy="wb.syncBaseBusy"
+              :issue-sync-busy="wb.issueSyncBusy"
               @update:mid-tab="wb.midTab = $event"
               @update:notes-draft="wb.notesDraft = $event"
               @update:require-docs-first="wb.requireDocsFirst = $event"
@@ -174,6 +175,7 @@ function confirmMergeFromMenu() {
               @diff-updated="wb.onDiffUpdated"
               @quick-handoff="wb.quickHandoff"
               @sync-base="wb.syncBase"
+              @refresh-issue="wb.refreshIssueDetail"
             />
           </div>
         </Pane>
@@ -353,6 +355,7 @@ function confirmMergeFromMenu() {
           :testcases-busy="wb.testcasesBusy"
           :handoff-busy="wb.handoffBusy"
           :sync-base-busy="wb.syncBaseBusy"
+          :issue-sync-busy="wb.issueSyncBusy"
           @update:mid-tab="wb.midTab = $event"
           @update:notes-draft="wb.notesDraft = $event"
           @update:require-docs-first="wb.requireDocsFirst = $event"
@@ -371,6 +374,7 @@ function confirmMergeFromMenu() {
           @diff-updated="wb.onDiffUpdated"
           @quick-handoff="wb.quickHandoff"
           @sync-base="wb.syncBase"
+          @refresh-issue="wb.refreshIssueDetail"
         />
         <AgentConsole
           v-show="wb.mobilePane === 'chat'"

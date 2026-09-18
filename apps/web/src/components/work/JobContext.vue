@@ -2,7 +2,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { RouterLink } from "vue-router";
 import { message } from "ant-design-vue";
-import { CopyOutlined, ExclamationCircleOutlined } from "@ant-design/icons-vue";
+import { CopyOutlined, ExclamationCircleOutlined, ReloadOutlined } from "@ant-design/icons-vue";
 import ChatMessageBody from "@/components/ChatMessageBody.vue";
 import IssueIidLink from "@/components/IssueIidLink.vue";
 import GitlabLabelChip from "@/components/GitlabLabelChip.vue";
@@ -54,6 +54,8 @@ const props = defineProps<{
   testcasesBusy: boolean;
   handoffBusy: boolean;
   syncBaseBusy: boolean;
+  /** Reloading GitLab issue detail (description / comments) */
+  issueSyncBusy?: boolean;
   /** Larger touch targets + gap for mobile sticky bar */
   mobileTouch?: boolean;
   /** Hide internal sticky (WorkView owns mobile action dock) */
@@ -78,6 +80,7 @@ const emit = defineEmits<{
   generateTestcases: [];
   quickHandoff: [];
   syncBase: [];
+  refreshIssue: [];
   diffUpdated: [];
 }>();
 
@@ -511,6 +514,132 @@ const mergeOpDetailTitle = computed(() => {
   if (h.status === "conflict") return `${kind} — conflict notes`;
   return `${kind} — detail`;
 });
+
+const canSyncIssue = computed(
+  () =>
+    !props.isCurrentAdhoc &&
+    Boolean(
+      props.taskDetail?.issueIid ||
+        props.selectedTaskIid ||
+        props.currentJob?.issue?.issueIid,
+    ),
+);
+
+/** Pull-to-refresh (FB-style): pull down past top edge to sync issue (touch + mouse). */
+const PTR_THRESHOLD = 64;
+const PTR_MAX = 96;
+const PTR_ENGAGE = 8;
+const issueScrollEl = ref<HTMLElement | null>(null);
+const pullDistance = ref(0);
+const pullArmed = ref(false);
+let pullStartY = 0;
+let pullTracking = false;
+let pullUsingMouse = false;
+let lastTouchPullAt = 0;
+
+function resetIssuePull() {
+  if (pullUsingMouse) {
+    window.removeEventListener("mousemove", onIssueMouseMove);
+    window.removeEventListener("mouseup", onIssueMouseUp);
+    window.removeEventListener("blur", onIssueMouseUp);
+  }
+  pullTracking = false;
+  pullArmed.value = false;
+  pullDistance.value = 0;
+  pullUsingMouse = false;
+}
+
+function beginIssuePull(clientY: number) {
+  if (!canSyncIssue.value || props.issueSyncBusy) return false;
+  const el = issueScrollEl.value;
+  if (!el || el.scrollTop > 0) return false;
+  pullTracking = true;
+  pullArmed.value = false;
+  pullStartY = clientY;
+  pullDistance.value = 0;
+  return true;
+}
+
+function moveIssuePull(clientY: number, e?: Event) {
+  if (!pullTracking || !canSyncIssue.value || props.issueSyncBusy) return;
+  const el = issueScrollEl.value;
+  if (!el) return;
+  if (el.scrollTop > 0) {
+    resetIssuePull();
+    return;
+  }
+  const delta = clientY - pullStartY;
+  if (delta <= 0) {
+    pullDistance.value = 0;
+    pullArmed.value = false;
+    return;
+  }
+  // Engage only after a small drag so clicks / text select still work
+  if (delta < PTR_ENGAGE) return;
+  e?.preventDefault();
+  const dist = Math.min(PTR_MAX, delta * 0.45);
+  pullDistance.value = dist;
+  pullArmed.value = dist >= PTR_THRESHOLD;
+}
+
+function endIssuePull() {
+  if (!pullTracking) return;
+  const shouldSync = pullArmed.value && canSyncIssue.value && !props.issueSyncBusy;
+  resetIssuePull();
+  if (shouldSync) emit("refreshIssue");
+}
+
+function onIssuePullStart(e: TouchEvent) {
+  lastTouchPullAt = Date.now();
+  beginIssuePull(e.touches[0]?.clientY ?? 0);
+}
+
+function onIssuePullMove(e: TouchEvent) {
+  moveIssuePull(e.touches[0]?.clientY ?? 0, e);
+}
+
+function onIssuePullEnd() {
+  if (pullUsingMouse) return;
+  endIssuePull();
+}
+
+function onIssueMouseDown(e: MouseEvent) {
+  if (e.button !== 0) return;
+  // Ignore compatibility mouse events after touch
+  if (Date.now() - lastTouchPullAt < 500) return;
+  if (!beginIssuePull(e.clientY)) return;
+  pullUsingMouse = true;
+  window.addEventListener("mousemove", onIssueMouseMove);
+  window.addEventListener("mouseup", onIssueMouseUp);
+  window.addEventListener("blur", onIssueMouseUp);
+}
+
+function onIssueMouseMove(e: MouseEvent) {
+  if (!pullUsingMouse) return;
+  moveIssuePull(e.clientY, e);
+}
+
+function onIssueMouseUp() {
+  if (!pullUsingMouse) return;
+  endIssuePull();
+}
+
+watch(
+  () => props.issueSyncBusy,
+  (busy) => {
+    if (busy) resetIssuePull();
+  },
+);
+
+watch(issueScrollEl, (el, prev) => {
+  if (prev) prev.removeEventListener("touchmove", onIssuePullMove);
+  if (el) el.addEventListener("touchmove", onIssuePullMove, { passive: false });
+});
+
+onUnmounted(() => {
+  issueScrollEl.value?.removeEventListener("touchmove", onIssuePullMove);
+  resetIssuePull();
+});
 </script>
 
 <template>
@@ -539,9 +668,41 @@ const mergeOpDetailTitle = computed(() => {
     >
       <a-tab-pane key="detail" tab="Issue">
         <div
+          ref="issueScrollEl"
           class="faw-issue-scroll"
-          :class="hideStickyActions ? '' : 'pb-4'"
+          :class="[
+            hideStickyActions ? '' : 'pb-4',
+            pullDistance > 0 ? 'is-pulling' : '',
+          ]"
+          @touchstart.passive="onIssuePullStart"
+          @touchend="onIssuePullEnd"
+          @touchcancel="onIssuePullEnd"
+          @mousedown="onIssueMouseDown"
         >
+          <div
+            v-if="canSyncIssue && (pullDistance > 0 || issueSyncBusy)"
+            class="faw-issue-ptr"
+            :class="{
+              'is-armed': pullArmed,
+              'is-syncing': issueSyncBusy,
+            }"
+            :style="{
+              height: `${issueSyncBusy ? 40 : pullDistance}px`,
+              opacity: issueSyncBusy ? 1 : Math.min(1, pullDistance / PTR_THRESHOLD),
+            }"
+            aria-hidden="true"
+          >
+            <ReloadOutlined class="faw-issue-ptr__icon" :spin="Boolean(issueSyncBusy)" />
+            <span class="faw-issue-ptr__label">
+              {{
+                issueSyncBusy
+                  ? "Syncing…"
+                  : pullArmed
+                    ? "Release to sync"
+                    : "Pull to sync"
+              }}
+            </span>
+          </div>
           <template v-if="taskDetail || currentJob">
             <a-alert
               v-if="isCurrentAdhoc"
@@ -751,6 +912,16 @@ const mergeOpDetailTitle = computed(() => {
                   />
                 </span>
                 <h1 class="faw-issue-head__title">{{ detailTitle }}</h1>
+                <button
+                  v-if="canSyncIssue"
+                  type="button"
+                  class="faw-icon-btn faw-issue-head__sync"
+                  title="Sync issue from GitLab (description & comments)"
+                  :disabled="issueSyncBusy"
+                  @click="emit('refreshIssue')"
+                >
+                  <ReloadOutlined :spin="Boolean(issueSyncBusy)" />
+                </button>
               </template>
             </div>
 

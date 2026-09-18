@@ -2250,6 +2250,12 @@ a.faw-mseg__btn {
   flex: 1;
   min-height: 0;
   padding: 16px 20px 40px;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+}
+.faw-issue-scroll.is-pulling {
+  user-select: none;
+  cursor: grabbing;
 }
 .faw-issue-head {
   display: flex;
@@ -2257,6 +2263,34 @@ a.faw-mseg__btn {
   gap: 9px;
   flex-wrap: wrap;
   margin-bottom: 6px;
+}
+.faw-issue-head__sync {
+  margin-left: auto;
+  flex-shrink: 0;
+  align-self: center;
+}
+.faw-issue-ptr {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  overflow: hidden;
+  color: var(--app-muted);
+  font-size: 12px;
+  transition: height 0.12s ease-out;
+  user-select: none;
+  pointer-events: none;
+}
+.faw-issue-ptr.is-armed,
+.faw-issue-ptr.is-syncing {
+  color: var(--ant-color-primary, var(--app-accent));
+}
+.faw-issue-ptr__icon {
+  font-size: 14px;
+}
+.faw-issue-ptr__label {
+  font-size: 11.5px;
+  letter-spacing: 0.01em;
 }
 .faw-issue-head__num {
   font-family: var(--font-mono);
