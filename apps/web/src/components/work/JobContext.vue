@@ -525,17 +525,44 @@ const canSyncIssue = computed(
     ),
 );
 
-/** Pull-to-refresh (FB-style): pull down past top edge to sync issue (touch + mouse). */
-const PTR_THRESHOLD = 64;
+/**
+ * Issue sync via overscroll past the top — not merely scrollTop === 0.
+ * - Drag/touch/wheel past PTR_THRESHOLD → sync immediately (no release needed).
+ * - Native bounce (scrollTop <= -OVERSCROLL_PX) → sync when crossing threshold.
+ * - Standing still at scrollTop === 0 does nothing; use Sync button or overscroll again.
+ */
+const PTR_THRESHOLD = 48;
 const PTR_MAX = 96;
 const PTR_ENGAGE = 8;
+const OVERSCROLL_PX = 24;
+const SYNC_COOLDOWN_MS = 1500;
 const issueScrollEl = ref<HTMLElement | null>(null);
 const pullDistance = ref(0);
 const pullArmed = ref(false);
 let pullStartY = 0;
 let pullTracking = false;
 let pullUsingMouse = false;
+let pullFiredThisGesture = false;
 let lastTouchPullAt = 0;
+let lastSyncAt = 0;
+let lastScrollTop = 0;
+let wheelOverscroll = 0;
+
+function requestIssueSync() {
+  if (!canSyncIssue.value || props.issueSyncBusy) return false;
+  const now = Date.now();
+  if (now - lastSyncAt < SYNC_COOLDOWN_MS) return false;
+  lastSyncAt = now;
+  emit("refreshIssue");
+  return true;
+}
+
+function tryOverscrollSync() {
+  if (pullFiredThisGesture) return false;
+  if (!requestIssueSync()) return false;
+  pullFiredThisGesture = true;
+  return true;
+}
 
 function resetIssuePull() {
   if (pullUsingMouse) {
@@ -547,6 +574,8 @@ function resetIssuePull() {
   pullArmed.value = false;
   pullDistance.value = 0;
   pullUsingMouse = false;
+  pullFiredThisGesture = false;
+  wheelOverscroll = 0;
 }
 
 function beginIssuePull(clientY: number) {
@@ -555,8 +584,10 @@ function beginIssuePull(clientY: number) {
   if (!el || el.scrollTop > 0) return false;
   pullTracking = true;
   pullArmed.value = false;
+  pullFiredThisGesture = false;
   pullStartY = clientY;
   pullDistance.value = 0;
+  wheelOverscroll = 0;
   return true;
 }
 
@@ -580,13 +611,13 @@ function moveIssuePull(clientY: number, e?: Event) {
   const dist = Math.min(PTR_MAX, delta * 0.45);
   pullDistance.value = dist;
   pullArmed.value = dist >= PTR_THRESHOLD;
+  // Sync as soon as overscroll crosses threshold — no release needed
+  if (pullArmed.value) tryOverscrollSync();
 }
 
 function endIssuePull() {
   if (!pullTracking) return;
-  const shouldSync = pullArmed.value && canSyncIssue.value && !props.issueSyncBusy;
   resetIssuePull();
-  if (shouldSync) emit("refreshIssue");
 }
 
 function onIssuePullStart(e: TouchEvent) {
@@ -624,6 +655,51 @@ function onIssueMouseUp() {
   endIssuePull();
 }
 
+/** iOS / rubber-band: fire when scrollTop crosses past a slight negative threshold. */
+function onIssueScroll() {
+  const el = issueScrollEl.value;
+  if (!el) return;
+  const st = el.scrollTop;
+  const crossed =
+    st <= -OVERSCROLL_PX && lastScrollTop > -OVERSCROLL_PX;
+  lastScrollTop = st;
+  if (!crossed || !canSyncIssue.value || props.issueSyncBusy) return;
+  // Only count as overscroll sync when coming from below the top (not idle at 0)
+  pullFiredThisGesture = false;
+  tryOverscrollSync();
+}
+
+/** Desktop wheel: accumulate upward overscroll while pinned at top. */
+function onIssueWheel(e: WheelEvent) {
+  if (!canSyncIssue.value || props.issueSyncBusy) return;
+  const el = issueScrollEl.value;
+  if (!el) return;
+  if (el.scrollTop > 0) {
+    wheelOverscroll = 0;
+    pullDistance.value = 0;
+    pullArmed.value = false;
+    return;
+  }
+  // deltaY < 0 = scroll toward content above = overscroll at top
+  if (e.deltaY >= 0) {
+    wheelOverscroll = 0;
+    if (!pullTracking) {
+      pullDistance.value = 0;
+      pullArmed.value = false;
+    }
+    return;
+  }
+  wheelOverscroll += Math.abs(e.deltaY);
+  const dist = Math.min(PTR_MAX, wheelOverscroll * 0.35);
+  pullDistance.value = dist;
+  pullArmed.value = dist >= PTR_THRESHOLD;
+  if (pullArmed.value) {
+    e.preventDefault();
+    tryOverscrollSync();
+    wheelOverscroll = 0;
+  }
+}
+
 watch(
   () => props.issueSyncBusy,
   (busy) => {
@@ -632,12 +708,26 @@ watch(
 );
 
 watch(issueScrollEl, (el, prev) => {
-  if (prev) prev.removeEventListener("touchmove", onIssuePullMove);
-  if (el) el.addEventListener("touchmove", onIssuePullMove, { passive: false });
+  if (prev) {
+    prev.removeEventListener("touchmove", onIssuePullMove);
+    prev.removeEventListener("scroll", onIssueScroll);
+    prev.removeEventListener("wheel", onIssueWheel);
+  }
+  if (el) {
+    lastScrollTop = el.scrollTop;
+    el.addEventListener("touchmove", onIssuePullMove, { passive: false });
+    el.addEventListener("scroll", onIssueScroll, { passive: true });
+    el.addEventListener("wheel", onIssueWheel, { passive: false });
+  }
 });
 
 onUnmounted(() => {
-  issueScrollEl.value?.removeEventListener("touchmove", onIssuePullMove);
+  const el = issueScrollEl.value;
+  if (el) {
+    el.removeEventListener("touchmove", onIssuePullMove);
+    el.removeEventListener("scroll", onIssueScroll);
+    el.removeEventListener("wheel", onIssueWheel);
+  }
   resetIssuePull();
 });
 </script>
@@ -698,8 +788,8 @@ onUnmounted(() => {
                 issueSyncBusy
                   ? "Syncing…"
                   : pullArmed
-                    ? "Release to sync"
-                    : "Pull to sync"
+                    ? "Syncing…"
+                    : "Pull past top to sync"
               }}
             </span>
           </div>
