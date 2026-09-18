@@ -526,17 +526,16 @@ const canSyncIssue = computed(
 );
 
 /**
- * Issue sync via deliberate pull-to-refresh (classic PTR).
+ * Issue sync via deliberate pull-to-refresh.
  * - Must already be at scrollTop === 0, then pull past PTR_THRESHOLD.
- * - Sync only on release while armed (not mid-gesture / not mere scroll-to-top).
- * - Wheel: visual overscroll only; sync when reverse-scroll while armed ("release").
+ * - Sync fires while holding once armed (no release / reverse required).
+ * - Release always collapses pull chrome to 0 (busy uses compact spinner).
+ * - Wheel: sync when overscroll distance crosses the arm threshold.
  * - Idle at top or light flick → no sync; use Sync button instead.
  */
 const PTR_THRESHOLD = 80;
 const PTR_MAX = 128;
 const PTR_ENGAGE = 16;
-/** Extra wheel travel after arm before reverse counts as intentional release. */
-const PTR_WHEEL_ARM_EXTRA = 40;
 const PTR_RESISTANCE = 0.38;
 const SYNC_COOLDOWN_MS = 1500;
 const issueScrollEl = ref<HTMLElement | null>(null);
@@ -549,7 +548,6 @@ let pullFiredThisGesture = false;
 let lastTouchPullAt = 0;
 let lastSyncAt = 0;
 let wheelOverscroll = 0;
-let wheelArmedExtra = 0;
 
 function requestIssueSync() {
   if (!canSyncIssue.value || props.issueSyncBusy) return false;
@@ -573,7 +571,7 @@ function updatePullVisual(rawDelta: number) {
   pullArmed.value = dist >= PTR_THRESHOLD;
 }
 
-function resetIssuePull(opts?: { keepBusyHint?: boolean }) {
+function resetIssuePull() {
   if (pullUsingMouse) {
     window.removeEventListener("mousemove", onIssueMouseMove);
     window.removeEventListener("mouseup", onIssueMouseUp);
@@ -581,11 +579,11 @@ function resetIssuePull(opts?: { keepBusyHint?: boolean }) {
   }
   pullTracking = false;
   pullArmed.value = false;
-  if (!opts?.keepBusyHint) pullDistance.value = 0;
+  // Always collapse pull chrome on end — busy state uses compact 44px via issueSyncBusy
+  pullDistance.value = 0;
   pullUsingMouse = false;
   pullFiredThisGesture = false;
   wheelOverscroll = 0;
-  wheelArmedExtra = 0;
 }
 
 function beginIssuePull(clientY: number) {
@@ -598,7 +596,6 @@ function beginIssuePull(clientY: number) {
   pullStartY = clientY;
   pullDistance.value = 0;
   wheelOverscroll = 0;
-  wheelArmedExtra = 0;
   return true;
 }
 
@@ -620,13 +617,15 @@ function moveIssuePull(clientY: number, e?: Event) {
   if (delta < PTR_ENGAGE) return;
   e?.preventDefault();
   updatePullVisual(delta);
+  // Fire while holding once past threshold — no release required
+  if (pullArmed.value) commitIssuePullSync();
 }
 
 function endIssuePull() {
-  if (!pullTracking) return;
-  const shouldSync = pullArmed.value && !pullFiredThisGesture;
-  if (shouldSync) commitIssuePullSync();
-  resetIssuePull({ keepBusyHint: shouldSync || props.issueSyncBusy });
+  // Always snap pull UI back to 0 on release (even if sync already armed / busy).
+  // Busy watcher may have cleared pullTracking first — still collapse distance.
+  if (!pullTracking && pullDistance.value <= 0 && !pullUsingMouse) return;
+  resetIssuePull();
 }
 
 function onIssuePullStart(e: TouchEvent) {
@@ -666,8 +665,7 @@ function onIssueMouseUp() {
 
 /**
  * Desktop wheel: show PTR feedback while overscrolling at top.
- * Sync only when armed and user reverse-scrolls (deliberate "release") —
- * a single upward flick must not fire.
+ * Sync when pull distance crosses the arm threshold (same as touch hold).
  */
 function onIssueWheel(e: WheelEvent) {
   if (!canSyncIssue.value || props.issueSyncBusy || pullTracking) return;
@@ -675,7 +673,6 @@ function onIssueWheel(e: WheelEvent) {
   if (!el) return;
   if (el.scrollTop > 0) {
     wheelOverscroll = 0;
-    wheelArmedExtra = 0;
     pullDistance.value = 0;
     pullArmed.value = false;
     return;
@@ -686,25 +683,14 @@ function onIssueWheel(e: WheelEvent) {
     updatePullVisual(wheelOverscroll);
     if (pullArmed.value) {
       e.preventDefault();
-      wheelArmedExtra += Math.abs(e.deltaY);
-    } else {
-      wheelArmedExtra = 0;
+      if (commitIssuePullSync()) {
+        resetIssuePull();
+      }
     }
     return;
   }
-  // Reverse while armed (+ a bit of extra pull) = intentional release
-  if (
-    pullArmed.value &&
-    !pullFiredThisGesture &&
-    wheelArmedExtra >= PTR_WHEEL_ARM_EXTRA
-  ) {
-    e.preventDefault();
-    commitIssuePullSync();
-    resetIssuePull({ keepBusyHint: true });
-    return;
-  }
+  // Scroll back down (or stop overscrolling) → collapse unused pull chrome
   wheelOverscroll = 0;
-  wheelArmedExtra = 0;
   pullDistance.value = 0;
   pullArmed.value = false;
 }
@@ -718,28 +704,20 @@ const pullIconStyle = computed(() => {
   const scale = pullArmed.value ? 1.08 : 0.92 + pullProgress.value * 0.08;
   return { transform: `rotate(${rot}deg) scale(${scale})` };
 });
-const pullHint = computed(() => {
-  if (props.issueSyncBusy) return "Syncing…";
-  if (pullArmed.value) return "Release to sync";
-  if (pullDistance.value > 0) return "Keep pulling…";
-  return "Pull to sync";
-});
 
 watch(
   () => props.issueSyncBusy,
   (busy) => {
     if (busy) {
-      if (pullUsingMouse) {
-        window.removeEventListener("mousemove", onIssueMouseMove);
-        window.removeEventListener("mouseup", onIssueMouseUp);
-        window.removeEventListener("blur", onIssueMouseUp);
-      }
-      pullTracking = false;
+      // Keep mouse listeners until mouseup so release can collapse pull chrome.
+      // Only clear armed/tracking flags; leave pullDistance until finger/mouse up
+      // (or snap now if gesture already ended).
       pullArmed.value = false;
-      pullUsingMouse = false;
       pullFiredThisGesture = false;
       wheelOverscroll = 0;
-      wheelArmedExtra = 0;
+      if (!pullTracking && !pullUsingMouse) {
+        pullDistance.value = 0;
+      }
     } else if (!pullTracking) {
       pullDistance.value = 0;
     }
@@ -812,7 +790,7 @@ onUnmounted(() => {
               'is-syncing': issueSyncBusy,
             }"
             :style="{
-              height: `${issueSyncBusy ? 44 : Math.max(28, pullDistance)}px`,
+              height: `${issueSyncBusy && pullDistance < 44 ? 44 : pullDistance}px`,
               opacity: issueSyncBusy ? 1 : 0.35 + pullProgress * 0.65,
             }"
             aria-hidden="true"
@@ -829,7 +807,6 @@ onUnmounted(() => {
               :spin="Boolean(issueSyncBusy)"
               :style="pullIconStyle"
             />
-            <span class="faw-issue-ptr__label">{{ pullHint }}</span>
           </div>
           <template v-if="taskDetail || currentJob">
             <a-alert
