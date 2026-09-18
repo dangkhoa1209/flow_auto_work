@@ -2253,10 +2253,6 @@ a.faw-mseg__btn {
   overscroll-behavior-y: contain;
   -webkit-overflow-scrolling: touch;
 }
-.faw-issue-scroll.is-pulling {
-  user-select: none;
-  cursor: grabbing;
-}
 .faw-issue-head {
   display: flex;
   align-items: baseline;
@@ -2268,54 +2264,6 @@ a.faw-mseg__btn {
   margin-left: auto;
   flex-shrink: 0;
   align-self: center;
-}
-.faw-issue-ptr {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-  color: var(--app-muted);
-  transition: height 0.18s ease-out, opacity 0.12s ease-out, color 0.15s ease;
-  user-select: none;
-  pointer-events: none;
-}
-.faw-issue-scroll.is-pulling .faw-issue-ptr {
-  transition: none;
-}
-.faw-issue-ptr.is-armed {
-  color: var(--ant-color-primary, var(--app-accent));
-}
-.faw-issue-ptr.is-syncing {
-  color: var(--ant-color-primary, var(--app-accent));
-}
-.faw-issue-ptr__ring {
-  position: absolute;
-  width: 28px;
-  height: 28px;
-  border-radius: 999px;
-  border: 1.5px solid currentColor;
-  pointer-events: none;
-  transition: transform 0.05s linear, opacity 0.1s ease;
-}
-.faw-issue-ptr.is-armed .faw-issue-ptr__ring {
-  border-width: 2px;
-  animation: faw-issue-ptr-pulse 0.9s ease-in-out infinite;
-}
-.faw-issue-ptr__icon {
-  position: relative;
-  z-index: 1;
-  font-size: 15px;
-  transition: transform 0.05s linear;
-}
-@keyframes faw-issue-ptr-pulse {
-  0%,
-  100% {
-    opacity: 0.35;
-  }
-  50% {
-    opacity: 0.85;
-  }
 }
 .faw-issue-head__num {
   font-family: var(--font-mono);
