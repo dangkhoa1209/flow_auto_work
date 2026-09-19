@@ -142,9 +142,40 @@ export function createQueuedBuildJob(opts: {
 }
 
 /**
+ * Put a single `running` job back to `queued` (FIFO via queuedAt).
+ * Used by graceful shutdown (nodemon/deploy) and boot recovery.
+ */
+export async function requeueRunningBuildJob(
+  jobId: string,
+): Promise<BuildJob | null> {
+  const now = new Date().toISOString();
+  const c = await col();
+  const res = await c.findOneAndUpdate(
+    withActive({ id: jobId, status: "running" }),
+    {
+      $set: {
+        status: "queued",
+        updatedAt: now,
+      },
+      $unset: {
+        startedAt: "",
+        finishedAt: "",
+        durationMs: "",
+        exitCode: "",
+        errorMessage: "",
+        warningMessage: "",
+        cancelRequested: "",
+      },
+    },
+    { returnDocument: "after" },
+  );
+  return res ?? null;
+}
+
+/**
  * Boot recovery: builds left `running` when Node died → `queued` so the pump
  * can claim and re-run the script from scratch. Keeps queuedAt for FIFO.
- * Jobs already cancel-requested stay cancelled (user / shutdown intent).
+ * Jobs already cancel-requested stay cancelled (user cancel intent).
  */
 export async function requeueInterruptedBuildJobs(): Promise<number> {
   const running = await listRunningBuildJobs();
@@ -168,25 +199,7 @@ export async function requeueInterruptedBuildJobs(): Promise<number> {
       );
       continue;
     }
-    const res = await c.findOneAndUpdate(
-      withActive({ id: job.id, status: "running" }),
-      {
-        $set: {
-          status: "queued",
-          updatedAt: now,
-        },
-        $unset: {
-          startedAt: "",
-          finishedAt: "",
-          durationMs: "",
-          exitCode: "",
-          errorMessage: "",
-          warningMessage: "",
-          cancelRequested: "",
-        },
-      },
-      { returnDocument: "after" },
-    );
+    const res = await requeueRunningBuildJob(job.id);
     if (!res) continue;
     try {
       const { openBuildLog } = await import("./logFile.js");

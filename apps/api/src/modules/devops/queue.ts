@@ -3,7 +3,12 @@ import { logger } from "../../logger.js";
 import { AppError } from "../../utils/AppError.js";
 import { requireWhitelistedScript } from "./catalog.js";
 import { publishBuildEvent } from "./events.js";
-import { cancelRunningBuild, isBuildRunning, runBuildJob } from "./runner.js";
+import {
+  cancelRunningBuild,
+  isBuildRunning,
+  runBuildJob,
+  stopRunningBuildForRestart,
+} from "./runner.js";
 import {
   createQueuedBuildJob,
   insertBuildJob,
@@ -30,6 +35,8 @@ export type TriggerBuildInput = {
 export type BuildQueueDeps = {
   run?: (jobId: string) => Promise<unknown>;
   cancelRun?: (jobId: string, reason: string) => Promise<boolean>;
+  /** Stop running build for API restart (re-queue, do not cancel). */
+  stopForRestart?: (jobId: string) => Promise<boolean>;
   isRunning?: (jobId: string) => boolean;
   requireScript?: (
     scriptId: string,
@@ -61,6 +68,7 @@ export class BuildQueue {
     jobId: string,
     reason: string,
   ) => Promise<boolean>;
+  private readonly stopForRestart: (jobId: string) => Promise<boolean>;
   private readonly isRunning: (jobId: string) => boolean;
   private readonly requireScript: (
     scriptId: string,
@@ -79,6 +87,7 @@ export class BuildQueue {
   constructor(deps?: BuildQueueDeps) {
     this.run = deps?.run ?? runBuildJob;
     this.cancelRun = deps?.cancelRun ?? cancelRunningBuild;
+    this.stopForRestart = deps?.stopForRestart ?? stopRunningBuildForRestart;
     this.isRunning = deps?.isRunning ?? isBuildRunning;
     this.requireScript = deps?.requireScript ?? requireWhitelistedScript;
     this.insert = deps?.insert ?? insertBuildJob;
@@ -219,34 +228,34 @@ export class BuildQueue {
     return restored;
   }
 
+  /**
+   * Prepare for process exit (nodemon / deploy recycle).
+   * Queued jobs stay `queued`; the running job is stopped and re-queued
+   * (not cancelled) so the next boot resumes via restoreQueued.
+   */
   async gracefulShutdown(timeoutMs = 15_000): Promise<void> {
     this.shuttingDown = true;
-    const reason = "Cancelled — server shutting down";
-    const waiting = [...this.queuedIds];
+    // Drop in-memory ids only — Mongo rows stay `queued` for the next process.
+    const waiting = this.queuedIds.length;
     this.queuedIds.length = 0;
-    for (const id of waiting) {
-      try {
-        await this.update(id, {
-          status: "cancelled",
-          finishedAt: new Date().toISOString(),
-          durationMs: 0,
-          exitCode: null,
-          errorMessage: reason,
-          cancelRequested: true,
-        });
-      } catch (err) {
-        logger.warn("Could not cancel queued build on shutdown", {
-          id,
-          err: String(err),
-        });
-      }
+    if (waiting > 0) {
+      logger.info("Shutdown — leaving queued builds for next boot", {
+        count: waiting,
+      });
     }
     this.publishSnapshot();
 
     const current = this.currentBuildId;
     if (!current) return;
 
-    await this.cancelRun(current, reason);
+    const stopped = await this.stopForRestart(current);
+    if (!stopped) {
+      logger.info(
+        "Shutdown — no active process for current build (boot recovery will re-queue if still running)",
+        { jobId: current },
+      );
+      return;
+    }
     const deadline = Date.now() + timeoutMs;
     while (this.currentBuildId && Date.now() < deadline) {
       await new Promise((r) => setTimeout(r, 150));

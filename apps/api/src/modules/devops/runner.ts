@@ -11,7 +11,11 @@ import {
   resolveBuildStatusFromLogKeywords,
   warningMessageFromLogLines,
 } from "./logWarnings.js";
-import { getBuildJob, updateBuildJob } from "./store.js";
+import {
+  getBuildJob,
+  requeueRunningBuildJob,
+  updateBuildJob,
+} from "./store.js";
 import type { BuildJob, BuildLogStream, BuildStatus } from "./types.js";
 
 export type BuildRunResult = {
@@ -25,6 +29,8 @@ type ActiveRun = {
   child: ChildProcess;
   jobId: string;
   cancel: (reason: string) => void;
+  /** Kill for API restart — job is re-queued, not cancelled. */
+  stopForRestart: () => void;
   writeStdin: (chunk: string, secret?: boolean) => void;
 };
 
@@ -131,6 +137,14 @@ export async function cancelRunningBuild(
   return true;
 }
 
+/** Stop a running build so the API can exit; job stays eligible for auto re-queue. */
+export async function stopRunningBuildForRestart(jobId: string): Promise<boolean> {
+  const run = active.get(jobId);
+  if (!run) return false;
+  run.stopForRestart();
+  return true;
+}
+
 /** Write a line to the running job's stdin (appends newline if missing). */
 export function writeBuildStdin(
   jobId: string,
@@ -208,6 +222,7 @@ export async function runBuildJob(jobId: string): Promise<BuildRunResult> {
   return new Promise<BuildRunResult>((resolve) => {
     let settled = false;
     let cancelReason: string | null = null;
+    let restartInterrupt = false;
     let timedOut = false;
     let timeoutTimer: ReturnType<typeof setTimeout> | null = null;
     let killTimer: ReturnType<typeof setTimeout> | null = null;
@@ -374,11 +389,8 @@ export async function runBuildJob(jobId: string): Promise<BuildRunResult> {
       );
     };
 
-    const requestCancel = (reason: string) => {
-      if (settled) return;
-      cancelReason = reason;
-      void updateBuildJob(jobId, { cancelRequested: true }).catch(() => undefined);
-      emitLog(job, log, "system", `cancel requested: ${reason}`);
+    const beginKill = (systemLine: string) => {
+      emitLog(job, log, "system", systemLine);
       killProcessTree(child, "SIGTERM");
       if (killTimer) return;
       killTimer = setTimeout(() => {
@@ -389,7 +401,28 @@ export async function runBuildJob(jobId: string): Promise<BuildRunResult> {
       killTimer.unref?.();
     };
 
-    active.set(jobId, { child, jobId, cancel: requestCancel, writeStdin });
+    const requestCancel = (reason: string) => {
+      if (settled || restartInterrupt) return;
+      cancelReason = reason;
+      void updateBuildJob(jobId, { cancelRequested: true }).catch(() => undefined);
+      beginKill(`cancel requested: ${reason}`);
+    };
+
+    const requestStopForRestart = () => {
+      if (settled || cancelReason) return;
+      restartInterrupt = true;
+      beginKill(
+        "server shutting down — stopping process; will re-queue automatically",
+      );
+    };
+
+    active.set(jobId, {
+      child,
+      jobId,
+      cancel: requestCancel,
+      stopForRestart: requestStopForRestart,
+      writeStdin,
+    });
 
     child.stdout?.on("data", (chunk) => stdoutSplit.push(chunk));
     child.stderr?.on("data", (chunk) => stderrSplit.push(chunk));
@@ -429,6 +462,53 @@ export async function runBuildJob(jobId: string): Promise<BuildRunResult> {
           exitCode,
           cancelReason + (signal ? ` (signal ${signal})` : ""),
         );
+        return;
+      }
+      if (restartInterrupt) {
+        void (async () => {
+          if (settled) return;
+          settled = true;
+          if (timeoutTimer) clearTimeout(timeoutTimer);
+          if (killTimer) clearTimeout(killTimer);
+          active.delete(jobId);
+          stdoutSplit.flush();
+          stderrSplit.flush();
+          await warningPublishChain.catch(() => undefined);
+          emitLog(
+            job,
+            log,
+            "system",
+            "re-queued after server shutdown — will retry when API is back",
+          );
+          await log.close().catch(() => undefined);
+          try {
+            const requeued = await requeueRunningBuildJob(jobId);
+            if (requeued) {
+              job = requeued;
+              publishBuildEvent({ type: "job", job });
+              resolve({
+                job,
+                status: "queued",
+                exitCode,
+                durationMs: Math.max(0, Date.now() - startedAt.getTime()),
+              });
+              return;
+            }
+          } catch (err) {
+            logger.warn("Could not re-queue build on shutdown", {
+              jobId,
+              err: String(err),
+            });
+          }
+          // Process died mid-shutdown without a requeue write — leave as
+          // running so boot recovery can pick it up.
+          resolve({
+            job,
+            status: "running",
+            exitCode,
+            durationMs: Math.max(0, Date.now() - startedAt.getTime()),
+          });
+        })();
         return;
       }
       if (exitCode === 0) {
