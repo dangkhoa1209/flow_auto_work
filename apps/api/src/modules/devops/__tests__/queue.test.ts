@@ -162,6 +162,7 @@ describe("BuildQueue FIFO concurrency=1", () => {
       requireJob: store.requireJob,
       isRunning: () => false,
       cancelRun: async () => true,
+      stopForRestart: async () => false,
       ...helpers,
       run: async () => undefined,
     });
@@ -169,6 +170,47 @@ describe("BuildQueue FIFO concurrency=1", () => {
     await expect(
       queue.trigger({ scriptId: "echo", triggeredBy: "u" }),
     ).rejects.toMatchObject({ code: "build_shutting_down" });
+  });
+
+  it("leaves queued builds for next boot instead of cancelling on shutdown", async () => {
+    const store = memoryStore();
+    const helpers = memoryQueueHelpers(store);
+    let release!: () => void;
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    const queue = new BuildQueue({
+      queueMax: 10,
+      requireScript: () => echoScript,
+      insert: store.insert,
+      update: store.update,
+      requireJob: store.requireJob,
+      isRunning: () => false,
+      cancelRun: async () => true,
+      stopForRestart: async () => {
+        release();
+        return true;
+      },
+      ...helpers,
+      run: async (jobId) => {
+        await gate;
+        await store.update(jobId, {
+          status: "queued",
+          startedAt: undefined,
+        });
+      },
+    });
+
+    const running = await queue.trigger({ scriptId: "echo", triggeredBy: "u" });
+    const waiting = await queue.trigger({ scriptId: "echo", triggeredBy: "u" });
+    await new Promise((r) => setTimeout(r, 20));
+
+    await queue.gracefulShutdown(500);
+
+    expect(store.jobs.get(waiting.id)?.status).toBe("queued");
+    expect(store.jobs.get(waiting.id)?.errorMessage).toBeUndefined();
+    expect(store.jobs.get(running.id)?.status).toBe("queued");
+    expect(queue.snapshot().shuttingDown).toBe(true);
   });
 
   it("FIFO is global across devops users (not per triggeredBy)", async () => {
