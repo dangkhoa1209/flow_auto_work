@@ -11,11 +11,7 @@ import {
 
 export const gitlabController = {
   file: asyncHandler(async (req: Request, res: Response) => {
-    const username =
-      headerUserFromExpress(req) ||
-      String(req.query.user || "")
-        .trim()
-        .replace(/^@/, "");
+    const username = headerUserFromExpress(req);
     const projectId =
       headerProjectFromExpress(req) || String(req.query.project || "").trim();
     const { buffer, contentType } = await proxyGitlabUpload({

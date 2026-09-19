@@ -30,7 +30,6 @@ function gitlabProjectBase(issueUrl: string): string | null {
 function toGitlabFileProxy(absoluteUrl: string): string {
   const persisted = loadPersistedAuth();
   const qs = new URLSearchParams({ u: absoluteUrl });
-  if (persisted.username) qs.set("user", persisted.username);
   if (persisted.projectId) qs.set("project", persisted.projectId);
   const access = getAccessToken();
   if (access) qs.set("access_token", access);

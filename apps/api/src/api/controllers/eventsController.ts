@@ -1,5 +1,6 @@
 import type { Request, Response } from "express";
 import { asyncHandler } from "../../utils/asyncHandler.js";
+import { AppError } from "../../utils/AppError.js";
 import { setupSse } from "../sseHelper.js";
 import { jobQueue } from "../../queue.js";
 import { subscribeRealtime } from "../../plugins/realtime/hub.js";
@@ -11,12 +12,20 @@ import {
 /**
  * GET /api/events — Server-Sent Events for UI realtime.
  * Status / job / progress / chat are scoped to the connected user + project.
+ * Requires JWT via ?access_token= (EventSource cannot set Authorization).
  */
 export const eventsController = {
   stream: asyncHandler(async (req: Request, res: Response) => {
-    const client = setupSse(req, res, { heartbeatMs: 15_000 });
     const ownerUsername = headerUserFromExpress(req);
+    if (!ownerUsername) {
+      throw new AppError(
+        "access_token query (or Bearer) required for SSE",
+        401,
+        "unauthorized",
+      );
+    }
     const workspaceProjectId = headerProjectFromExpress(req);
+    const client = setupSse(req, res, { heartbeatMs: 15_000 });
     const viewer = { ownerUsername, workspaceProjectId };
 
     const sendStatus = () => {

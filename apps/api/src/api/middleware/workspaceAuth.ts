@@ -31,30 +31,32 @@ function isPublicApiPath(path: string): boolean {
   return false;
 }
 
+/**
+ * Resolve authenticated username from JWT only.
+ * Accepts Authorization: Bearer … or ?access_token=… (EventSource / img proxy).
+ * Does NOT trust X-Flow-User or ?u= / ?user= (spoofable).
+ */
 export function headerUserFromExpress(req: Request): string {
   const bearer = (req.get("Authorization") || "").trim();
   if (bearer.toLowerCase().startsWith("bearer ")) {
     const token = bearer.slice(7).trim();
     if (token) {
       try {
-        return verifyAccessToken(token).sub;
+        return verifyAccessToken(token).sub.replace(/^@/, "");
       } catch {
-        /* fall through */
+        return "";
       }
     }
   }
   const qAccess = String(req.query.access_token || "").trim();
   if (qAccess) {
     try {
-      return verifyAccessToken(qAccess).sub;
+      return verifyAccessToken(qAccess).sub.replace(/^@/, "");
     } catch {
-      /* fall through */
+      return "";
     }
   }
-  return (
-    (req.get("X-Flow-User") || "").trim() ||
-    String(req.query.u || req.query.user || "").trim()
-  ).replace(/^@/, "");
+  return "";
 }
 
 export function headerProjectFromExpress(req: Request): string {
@@ -85,7 +87,10 @@ export function requireWorkspace(
       let username = "";
       if (bearer.toLowerCase().startsWith("bearer ")) {
         try {
-          username = verifyAccessToken(bearer.slice(7).trim()).sub;
+          username = verifyAccessToken(bearer.slice(7).trim()).sub.replace(
+            /^@/,
+            "",
+          );
         } catch (err) {
           next(
             new AppError(
@@ -98,13 +103,15 @@ export function requireWorkspace(
           );
           return;
         }
+      } else {
+        // EventSource / non-header clients: ?access_token= only (no X-Flow-User spoof)
+        username = headerUserFromExpress(req);
       }
-      if (!username) username = headerUserFromExpress(req);
       const projectId = headerProjectFromExpress(req);
       if (!username || !projectId) {
         next(
           new AppError(
-            "Bearer access token + X-Flow-Project required — login and select a project",
+            "Bearer access token (or access_token query) + X-Flow-Project required — login and select a project",
             401,
             "unauthorized",
           ),

@@ -708,7 +708,6 @@ export function googleOAuthCallbackHtml(result: {
           for (var i = 0; i < origins.length; i++) {
             try { window.opener.postMessage(payload, origins[i]); } catch (e) {}
           }
-          try { window.opener.postMessage(payload, "*"); } catch (e2) {}
         }
       } catch (e) {}
       setTimeout(function () { try { window.close(); } catch (e3) {} }, 400);

@@ -61,8 +61,8 @@ const envSchema = z.object({
   PROJECT_ROOT: z.string().optional(),
   NODE_ENV: z.string().optional(),
   /**
-   * Comma-separated browser origins allowed for CORS (Vue UI).
-   * Default: Vite dev + API same-origin ports.
+   * Comma-separated browser origins allowed for Express CORS and Google OAuth postMessage.
+   * Default: https://auto.aihr.vn + Vite 5173 (127.0.0.1 + localhost).
    */
   CORS_ORIGINS: z.string().optional(),
   /** express-rate-limit window ms (default 15m) */
@@ -146,11 +146,12 @@ export function getConfig(): AppConfig {
   const isProd =
     (env.NODE_ENV || process.env.NODE_ENV || "").toLowerCase() === "production";
 
+  // Production UI + Vite loopback (127.0.0.1 and localhost). Override via CORS_ORIGINS
+  // (same list drives Google OAuth postMessage targetOrigin).
   const defaultCors = [
+    "https://auto.aihr.vn",
     "http://127.0.0.1:5173",
     "http://localhost:5173",
-    "http://127.0.0.1:8787",
-    "http://localhost:8787",
   ];
   const corsOrigins = (env.CORS_ORIGINS ?? "")
     .split(",")
