@@ -23,10 +23,17 @@ export function applyGlobalMiddleware(app: Express): void {
     }),
   );
 
-  // Open CORS (reflect any Origin; required when credentials: true — literal "*" is invalid)
+  // Allowlist only — credentials: true cannot use "*". Origins from CORS_ORIGINS / config.corsOrigins.
   app.use(
     cors({
-      origin: true,
+      origin(origin, callback) {
+        // Same-origin / curl / non-browser: no Origin header
+        if (!origin) {
+          callback(null, true);
+          return;
+        }
+        callback(null, config.corsOrigins.includes(origin));
+      },
       credentials: true,
       methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
       allowedHeaders: [

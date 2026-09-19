@@ -194,7 +194,6 @@ type Handlers = RealtimeHandlers;
 function eventsUrl(): string {
   const persisted = loadPersistedAuth();
   const qs = new URLSearchParams();
-  if (persisted.username) qs.set("u", persisted.username);
   if (persisted.projectId) qs.set("p", persisted.projectId);
   const access = getAccessToken();
   if (access) qs.set("access_token", access);
@@ -289,6 +288,10 @@ async function connect() {
   try {
     await ensureFreshAccessToken();
     if (stopped || subscribers.size === 0) return;
+    if (!getAccessToken()) {
+      // Do not open EventSource without JWT — server returns 401 and would loop
+      return;
+    }
     es?.close();
     es = new EventSource(eventsUrl());
     bind(es);
