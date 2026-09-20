@@ -3468,7 +3468,10 @@ a.faw-mseg__btn {
   padding: 0;
 }
 .faw-ba-empty__tip {
-  display: block;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
   width: 100%;
   margin: 0;
   padding: 8px 11px;
@@ -3483,10 +3486,22 @@ a.faw-mseg__btn {
   cursor: pointer;
   transition: border-color 0.15s ease, color 0.15s ease, background-color 0.15s ease;
 }
+.faw-ba-empty__tip-title {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--app-muted);
+}
+.faw-ba-empty__tip-prompt {
+  color: inherit;
+}
 .faw-ba-empty__tip:hover {
   border-color: color-mix(in srgb, var(--app-accent) 45%, var(--app-border));
   color: var(--app-ink);
   background: color-mix(in srgb, var(--app-accent) 8%, var(--app-panel-soft));
+}
+.faw-ba-empty__tip:hover .faw-ba-empty__tip-title {
+  color: color-mix(in srgb, var(--app-accent) 70%, var(--app-ink));
 }
 .faw-ba-empty__tip:focus-visible {
   outline: 2px solid var(--app-accent);

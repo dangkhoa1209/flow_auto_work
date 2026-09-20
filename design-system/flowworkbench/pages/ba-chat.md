@@ -19,6 +19,8 @@
 ## Conversation UX
 
 - Empty state: short title + description + **clickable** prompt tips → fill composer.
+  - Tip cards: English category title + domain prompt (Vietnamese product questions).
+  - Domains: annual leave / leave config · attendance import Loại & Lý do · staff column update (blank cells).
 - User messages right-aligned / accent soft; assistant full-width with left border.
 - One typing indicator; streaming caret; `aria-busy` / `aria-live` while streaming.
 - Hover: Copy MD / Copy text; last assistant: **Regenerate**; stream/send error: **Retry**.

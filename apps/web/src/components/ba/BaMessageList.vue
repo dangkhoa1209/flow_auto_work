@@ -5,10 +5,21 @@ import { useAutoScroll } from "@/composables/useAutoScroll";
 import { formatChatTime } from "@/utils/formatChatTime";
 import type { BaFailedSend, BaMessage } from "@/stores/baChat";
 
+/** Clickable empty-state tips — prompt fills the composer. */
 const EMPTY_TIPS = [
-  "How does the attendance rules screen validate shifts?",
-  "Summarize this page: https://…",
-  "Draft an issue for the bug I described",
+  {
+    title: "Annual leave & leave config",
+    prompt: "Phép năm tính thế nào khi nhân viên còn thử việc?",
+  },
+  {
+    title: "Attendance data & adjustment reason",
+    prompt: "Import chấm công xong, cột Loại và Lý do hiện gì trên danh sách?",
+  },
+  {
+    title: "Staff profile update by column",
+    prompt:
+      "Import cập nhật thông tin nhân viên theo cột, ô trống thì hệ thống xử lý ra sao?",
+  },
 ] as const;
 
 const props = defineProps<{
@@ -203,13 +214,14 @@ function onTip(prompt: string) {
             or UI anchor (menu, button, screen) so answers match the real system.
           </p>
           <ul class="faw-ba-empty__tips" aria-label="Example prompts">
-            <li v-for="tip in EMPTY_TIPS" :key="tip">
+            <li v-for="tip in EMPTY_TIPS" :key="tip.prompt">
               <button
                 type="button"
                 class="faw-ba-empty__tip"
-                @click="onTip(tip)"
+                @click="onTip(tip.prompt)"
               >
-                {{ tip }}
+                <span class="faw-ba-empty__tip-title">{{ tip.title }}</span>
+                <span class="faw-ba-empty__tip-prompt">{{ tip.prompt }}</span>
               </button>
             </li>
           </ul>
