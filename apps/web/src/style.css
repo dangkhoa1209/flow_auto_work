@@ -2316,7 +2316,7 @@ a.faw-mseg__btn {
   }
   .faw-app-shell .faw-console-input .ant-input,
   .faw-app-shell .faw-console-input textarea.ant-input {
-    /* Keep dense IDE type on narrow desktop; iOS zoom handled below */
+    /* Keep dense IDE type on narrow desktop */
     padding: 6px 8px !important;
   }
   .faw-app-shell .faw-console-input__row {
@@ -4232,16 +4232,6 @@ a.faw-mseg__btn {
   /* Main already clears bottom nav — avoid double safe-area on composer */
   .faw-ba-shell .faw-console-input {
     padding: 8px 10px 10px;
-  }
-}
-
-/* iOS Safari zooms inputs <16px — only real phones, not narrow desktop windows */
-@media (max-width: 767px) and (pointer: coarse) {
-  .faw-app-shell .faw-console-input .ant-input,
-  .faw-app-shell .faw-console-input textarea.ant-input,
-  .faw-ba-shell .faw-console-input .ant-input,
-  .faw-ba-shell .faw-console-input textarea.ant-input {
-    font-size: 16px !important;
   }
 }
 
