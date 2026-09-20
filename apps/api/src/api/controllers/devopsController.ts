@@ -81,20 +81,32 @@ export const devopsController = {
   }),
 
   listBuilds: asyncHandler(async (req: Request, res: Response) => {
-    const limit = Number(req.query.limit || 50);
+    const rawLimit = Number(req.query.limit || 50);
+    const limit = Number.isFinite(rawLimit)
+      ? Math.min(200, Math.max(1, rawLimit))
+      : 50;
     const offset = Number(req.query.offset || 0);
+    const lastId = String(req.query.lastId || "").trim() || undefined;
     const status = asStatus(req.query.status);
     const scriptId = String(req.query.scriptId || "").trim() || undefined;
-    const [builds, total] = await Promise.all([
+    const [rows, total] = await Promise.all([
       listBuilds({
-        limit: Number.isFinite(limit) ? limit : 50,
-        offset: Number.isFinite(offset) ? offset : 0,
+        limit: limit + 1,
+        offset: lastId ? 0 : Number.isFinite(offset) ? offset : 0,
+        lastId,
         status,
         scriptId,
       }),
       countBuilds({ status, scriptId }),
     ]);
-    res.formatter.ok({ queue: getBuildQueueSnapshot(), builds, total });
+    const hasMore = rows.length > limit;
+    const builds = hasMore ? rows.slice(0, limit) : rows;
+    res.formatter.ok({
+      queue: getBuildQueueSnapshot(),
+      builds,
+      total,
+      hasMore,
+    });
   }),
 
   getBuild: asyncHandler(async (req: Request, res: Response) => {

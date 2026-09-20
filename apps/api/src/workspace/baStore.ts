@@ -1435,10 +1435,19 @@ export type BaMessage = {
 };
 
 
+export type ListBaThreadsOpts = {
+  limit?: number;
+  /** Cursor: return threads after this id in pin + updatedAt order. */
+  lastId?: string;
+};
+
+const BA_THREADS_PAGE_MAX = 200;
+
 export async function listBaThreads(
   userId: string,
   baProjectId?: string,
-): Promise<BaThread[]> {
+  opts?: ListBaThreadsOpts,
+): Promise<{ threads: BaThread[]; hasMore: boolean }> {
   const uid = userId.toLowerCase();
   const filter: Record<string, unknown> = {
     userId: uid,
@@ -1467,12 +1476,30 @@ export async function listBaThreads(
     sort: { updatedAt: -1 },
   });
   // Pinned first, then most recently updated.
-  return threads.sort((a, b) => {
+  const sorted = threads.sort((a, b) => {
     const ap = a.pinned ? 1 : 0;
     const bp = b.pinned ? 1 : 0;
     if (ap !== bp) return bp - ap;
-    return (b.updatedAt || "").localeCompare(a.updatedAt || "");
+    const byUpdated = (b.updatedAt || "").localeCompare(a.updatedAt || "");
+    if (byUpdated !== 0) return byUpdated;
+    return (b.id || "").localeCompare(a.id || "");
   });
+
+  const rawLimit = opts?.limit ?? 40;
+  const limit = Math.min(Math.max(rawLimit, 1), BA_THREADS_PAGE_MAX);
+  const lastId = opts?.lastId?.trim();
+  let start = 0;
+  if (lastId) {
+    const idx = sorted.findIndex((t) => t.id === lastId);
+    if (idx < 0) return { threads: [], hasMore: false };
+    start = idx + 1;
+  }
+  const slice = sorted.slice(start, start + limit + 1);
+  const hasMore = slice.length > limit;
+  return {
+    threads: hasMore ? slice.slice(0, limit) : slice,
+    hasMore,
+  };
 }
 
 export async function getBaThread(id: string): Promise<BaThread | null> {

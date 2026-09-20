@@ -70,13 +70,15 @@ function queryString(value: unknown): string | undefined {
  * No business logic here (queue / GitLab / Mongo stay in modules).
  */
 export const jobController = {
-  /** GET /api/jobs?limit=&status= */
+  /** GET /api/jobs?limit=&status=&lastId= */
   list: asyncHandler(async (req: Request, res: Response) => {
     const status = req.query.status as JobStatus | undefined;
-    const limit = Number(req.query.limit ?? "50");
+    const limit = Number(req.query.limit ?? "40");
+    const lastId = String(req.query.lastId || "").trim() || undefined;
     const data = await listJobsForUi({
       status,
-      limit: Number.isFinite(limit) ? limit : 50,
+      limit: Number.isFinite(limit) ? limit : 40,
+      lastId,
     });
     res.formatter.ok(data);
   }),

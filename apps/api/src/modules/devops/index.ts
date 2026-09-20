@@ -90,6 +90,7 @@ export async function getBuild(jobId: string): Promise<BuildJob> {
 export async function listBuilds(opts?: {
   limit?: number;
   offset?: number;
+  lastId?: string;
   status?: BuildJob["status"];
   scriptId?: string;
 }): Promise<BuildJob[]> {

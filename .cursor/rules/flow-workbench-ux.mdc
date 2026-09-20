@@ -39,3 +39,7 @@ Three columns: **TaskList** (~3/12) | **JobContext** (~5/12) | **AgentConsole** 
 ## BA Chat
 
 Sidebar (threads) + message list + composer. Dense conversation UI: clear empty state with **clickable prompt tips**, focus ring + elevation on composer, one typing indicator (not duplicate bubbles), streaming caret, Jump to latest when scrolled up, context strip (project · path · BA mode · draft), thread relative time + filter + **inline rename** + **pin**, hover copy + **Regenerate** / **Retry** on failed send or stream error, skeleton on thread switch, Esc stop / Enter·⌘↵ send. English copy. Respect `prefers-reduced-motion` for typing/caret/skeleton.
+
+## DevOps Build
+
+Scripts sidebar + queue strip + feed cards. CI console density: empty CTA (Run / Config), feed All·Running·Failed + `lastId` scroll (page 40), card meta `@user · relative · duration`, SSE soft flash, Jump to latest on log scroll-up, Errors only / Expand / Copy visible, Re-run + Open in terminal, script pin + queued/running pills + last result, sticky stdin with focus elevation, History relative time + skeleton. Shortcuts: `/` search · `R` run · `Esc` cancel. English copy. Keep run-green + `--app-*`; no purple. Respect `prefers-reduced-motion` for pulse/caret/flash.

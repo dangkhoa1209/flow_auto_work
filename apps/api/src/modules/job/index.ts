@@ -36,20 +36,30 @@ export * from "./create-mr.js";
 export type ListJobsQuery = {
   status?: JobStatus;
   limit?: number;
+  /** Cursor pagination — id of the last job already shown. */
+  lastId?: string;
 };
 
+const JOBS_PAGE_MAX = 200;
+
 export async function listJobsForUi(query: ListJobsQuery = {}) {
-  const limit = Number.isFinite(query.limit) ? (query.limit as number) : 50;
+  const rawLimit = Number.isFinite(query.limit) ? (query.limit as number) : 40;
+  const limit = Math.min(Math.max(rawLimit, 1), JOBS_PAGE_MAX);
+  const lastId = query.lastId?.trim() || undefined;
   const rt = getRuntimeContext();
-  const jobs = await listJobDocs({
+  const rows = await listJobDocs({
     status: query.status,
-    limit,
+    limit: limit + 1,
+    lastId,
     workspaceProjectId: rt?.projectId,
     ownerUsername: rt?.gitlabUsername,
   });
+  const hasMore = rows.length > limit;
+  const page = hasMore ? rows.slice(0, limit) : rows;
   const { redactJobGoogleAuthForClient } = await import("../google/index.js");
   return {
-    jobs: jobs.map((j) => redactJobGoogleAuthForClient(j)),
+    jobs: page.map((j) => redactJobGoogleAuthForClient(j)),
+    hasMore,
     pendingDiffApprovals: listPendingDiffApprovals(),
   };
 }

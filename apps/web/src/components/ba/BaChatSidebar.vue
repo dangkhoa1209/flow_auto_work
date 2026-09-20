@@ -19,6 +19,7 @@ const threadQuery = ref("");
 const renamingId = ref<string | null>(null);
 const renameDraft = ref("");
 const renameInputEl = ref<HTMLInputElement | null>(null);
+const threadListEl = ref<HTMLElement | null>(null);
 
 const showSearch = computed(() => ba.threads.length >= 8);
 
@@ -113,13 +114,25 @@ function onDelete(id: string, title: string) {
     },
   });
 }
+
+function onThreadListScroll() {
+  const el = threadListEl.value;
+  if (!el || ba.threadsLoadingMore || !ba.threadsHasMore) return;
+  // Load next page when within ~80px of the bottom.
+  if (el.scrollTop + el.clientHeight >= el.scrollHeight - 80) {
+    void ba.loadMoreThreads();
+  }
+}
 </script>
 
 <template>
   <aside class="faw-col faw-ba-side flex flex-col min-h-0 overflow-hidden h-full">
     <div class="faw-col-head">
       <h2>Chats</h2>
-      <span class="faw-count">{{ ba.threads.length }}</span>
+      <span class="faw-count"
+        >{{ ba.threads.length
+        }}{{ ba.threadsHasMore ? "+" : "" }}</span
+      >
     </div>
 
     <div class="faw-filters faw-ba-filters">
@@ -153,7 +166,11 @@ function onDelete(id: string, title: string) {
       </div>
     </div>
 
-    <div class="flex-1 min-h-0 overflow-y-auto">
+    <div
+      ref="threadListEl"
+      class="flex-1 min-h-0 overflow-y-auto"
+      @scroll.passive="onThreadListScroll"
+    >
       <div
         v-if="!ba.threads.length"
         class="px-3 py-10 text-center text-[11px] text-[var(--app-faint)]"
@@ -253,6 +270,19 @@ function onDelete(id: string, title: string) {
             <DeleteOutlined />
           </button>
         </div>
+      </div>
+      <div
+        v-if="ba.threadsLoadingMore"
+        class="px-3 py-3 text-center text-[11px] text-[var(--app-faint)]"
+        aria-live="polite"
+      >
+        Loading more…
+      </div>
+      <div
+        v-else-if="ba.threadsHasMore && ba.threads.length"
+        class="px-3 py-2 text-center text-[10px] text-[var(--app-faint)]"
+      >
+        Scroll for more
       </div>
     </div>
   </aside>

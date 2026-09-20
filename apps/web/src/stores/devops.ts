@@ -27,6 +27,38 @@ export const useDevopsStore = defineStore("devops", () => {
   const activeTab = ref<DevopsTab>("build");
   const scripts = ref<BuildScript[]>([]);
   const builds = ref<BuildJob[]>([]);
+  const buildsHasMore = ref(false);
+  const buildsLoadingMore = ref(false);
+  const BUILDS_PAGE = 40;
+  /** Last cursor id for the next loadMore page. */
+  let buildsNextCursor: string | null = null;
+  let buildsFetchSeq = 0;
+  /** Soft highlight job ids when SSE status changes. */
+  const flashBuildIds = ref<Record<string, number>>({});
+  const PREV_STATUS = new Map<string, BuildStatus>();
+
+  function oldestBuildId(list: BuildJob[]): string | null {
+    if (!list.length) return null;
+    const oldest = [...list].sort((a, b) => {
+      const ca = Date.parse(a.createdAt || "") || 0;
+      const cb = Date.parse(b.createdAt || "") || 0;
+      if (ca !== cb) return ca - cb;
+      return (a.id || "").localeCompare(b.id || "");
+    })[0];
+    return oldest?.id ?? null;
+  }
+
+  function markFlash(id: string) {
+    const token = Date.now();
+    flashBuildIds.value = { ...flashBuildIds.value, [id]: token };
+    window.setTimeout(() => {
+      if (flashBuildIds.value[id] !== token) return;
+      const next = { ...flashBuildIds.value };
+      delete next[id];
+      flashBuildIds.value = next;
+    }, 1200);
+  }
+
   const queue = ref<BuildQueueSnapshot>({
     concurrency: 1,
     running: false,
@@ -114,6 +146,10 @@ export const useDevopsStore = defineStore("devops", () => {
   }
 
   function upsertBuild(job: BuildJob) {
+    const prev = PREV_STATUS.get(job.id);
+    if (prev && prev !== job.status) markFlash(job.id);
+    PREV_STATUS.set(job.id, job.status);
+
     const idx = builds.value.findIndex((b) => b.id === job.id);
     if (idx >= 0) builds.value[idx] = job;
     else builds.value = [job, ...builds.value];
@@ -416,14 +452,15 @@ export const useDevopsStore = defineStore("devops", () => {
     historyLoading.value = true;
     try {
       const limit = historyPageSize.value;
+      const offset = Math.max(0, (page - 1) * limit);
       const res = await devopsApi.listBuilds({
         limit,
-        offset: 0,
+        offset,
         status: historyStatus.value,
       });
-      history.value = res.builds.slice(0, limit);
-      historyTotal.value = Math.min(limit, res.total ?? res.builds.length);
-      historyPage.value = 1;
+      history.value = res.builds;
+      historyTotal.value = res.total ?? res.builds.length;
+      historyPage.value = page;
       applyQueue(res.queue);
     } finally {
       historyLoading.value = false;
@@ -443,13 +480,22 @@ export const useDevopsStore = defineStore("devops", () => {
   async function refresh() {
     loading.value = true;
     errorText.value = "";
+    const seq = ++buildsFetchSeq;
     try {
+      const limit = Math.min(
+        200,
+        Math.max(BUILDS_PAGE, builds.value.length || BUILDS_PAGE),
+      );
       const [s, list] = await Promise.all([
         devopsApi.listScripts(),
-        devopsApi.listBuilds({ limit: 80 }),
+        devopsApi.listBuilds({ limit }),
       ]);
+      if (seq !== buildsFetchSeq) return;
       scripts.value = s.scripts;
       builds.value = list.builds;
+      buildsHasMore.value = Boolean(list.hasMore);
+      buildsNextCursor = oldestBuildId(builds.value);
+      for (const b of list.builds) PREV_STATUS.set(b.id, b.status);
       queue.value = list.queue;
       const running = resolveRunningBuildId();
       if (running) lastLiveBuildId.value = running;
@@ -460,6 +506,33 @@ export const useDevopsStore = defineStore("devops", () => {
       throw err;
     } finally {
       loading.value = false;
+    }
+  }
+
+  async function loadMoreBuilds() {
+    if (buildsLoadingMore.value || !buildsHasMore.value) return;
+    const lastId = buildsNextCursor || oldestBuildId(builds.value);
+    if (!lastId) return;
+    buildsLoadingMore.value = true;
+    const seq = buildsFetchSeq;
+    try {
+      const data = await devopsApi.listBuilds({
+        limit: BUILDS_PAGE,
+        lastId,
+      });
+      if (seq !== buildsFetchSeq) return;
+      const incoming = data.builds || [];
+      const pageLast = incoming[incoming.length - 1]?.id;
+      if (pageLast) buildsNextCursor = pageLast;
+      const seen = new Set(builds.value.map((b) => b.id));
+      const appended = incoming.filter((b) => !seen.has(b.id));
+      if (appended.length) {
+        builds.value = [...builds.value, ...appended];
+        for (const b of appended) PREV_STATUS.set(b.id, b.status);
+      }
+      buildsHasMore.value = Boolean(data.hasMore);
+    } finally {
+      buildsLoadingMore.value = false;
     }
   }
 
@@ -635,6 +708,9 @@ export const useDevopsStore = defineStore("devops", () => {
     activeTab,
     scripts,
     builds,
+    buildsHasMore,
+    buildsLoadingMore,
+    flashBuildIds,
     queue,
     selectedId,
     selected,
@@ -657,6 +733,7 @@ export const useDevopsStore = defineStore("devops", () => {
     deletingScriptId,
     errorText,
     refresh,
+    loadMoreBuilds,
     trigger,
     cancel,
     sendStdin,

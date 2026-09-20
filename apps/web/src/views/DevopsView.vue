@@ -1,14 +1,17 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 import { message } from "ant-design-vue";
 import { devopsApi } from "@/api/devopsApi";
 import type { BuildJob, BuildLogLine, BuildScript, BuildStatus } from "@/api/devopsApi";
-import { SearchOutlined } from "@ant-design/icons-vue";
+import { SearchOutlined, StarFilled, StarOutlined } from "@ant-design/icons-vue";
 import BuildFeedCard from "@/components/devops/BuildFeedCard.vue";
 import BuildTerminal from "@/components/devops/BuildTerminal.vue";
 import { useDevopsStore } from "@/stores/devops";
 import { useSessionStore } from "@/stores/session";
 import { formatBuildDurationMs } from "@/utils/formatBuildDuration";
+import { formatRelativeTime } from "@/utils/formatChatTime";
+
+const FAVORITES_KEY = "faw.devops.scriptFavorites";
 
 const devops = useDevopsStore();
 const session = useSessionStore();
@@ -27,12 +30,55 @@ const stdinSecret = ref(false);
 const lastFailedToastId = ref<string | null>(null);
 const lastWarningToastId = ref<string | null>(null);
 const scriptSearch = ref("");
+const scriptSearchEl = ref<HTMLInputElement | null>(null);
+const focusedScriptId = ref<string | null>(null);
 const expandedBuildId = ref<string | null>(null);
 const logCache = ref<Record<string, BuildLogLine[]>>({});
+const feedEl = ref<HTMLElement | null>(null);
+type FeedFilter = "all" | "running" | "failed";
+const feedFilter = ref<FeedFilter>("all");
+const favoriteIds = ref<string[]>(loadFavorites());
+/** Recently finished failed builds — short linger in queue strip. */
+const recentFailed = ref<BuildJob[]>([]);
+let recentFailedTimers = new Map<string, ReturnType<typeof setTimeout>>();
 /** Mobile: collapse scripts list to free feed space. */
 const scriptsCollapsed = ref(
   typeof window !== "undefined" ? window.matchMedia("(max-width: 900px)").matches : false,
 );
+
+function loadFavorites(): string[] {
+  try {
+    const raw = localStorage.getItem(FAVORITES_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed)
+      ? parsed.filter((x): x is string => typeof x === "string")
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function persistFavorites() {
+  try {
+    localStorage.setItem(FAVORITES_KEY, JSON.stringify(favoriteIds.value));
+  } catch {
+    /* ignore */
+  }
+}
+
+function isFavorite(id: string) {
+  return favoriteIds.value.includes(id);
+}
+
+function toggleFavorite(id: string) {
+  if (isFavorite(id)) {
+    favoriteIds.value = favoriteIds.value.filter((x) => x !== id);
+  } else {
+    favoriteIds.value = [...favoriteIds.value, id];
+  }
+  persistFavorites();
+}
 
 /** Confirm re-run when the same script already has a queued/running job. */
 const dupConfirm = reactive({
@@ -86,7 +132,8 @@ const activeScripts = computed(() =>
 
 const filteredScripts = computed(() => {
   const q = scriptSearch.value.trim().toLowerCase();
-  return activeScripts.value.filter((s) => {
+  const fav = new Set(favoriteIds.value);
+  const list = activeScripts.value.filter((s) => {
     if (!q) return true;
     return (
       s.label.toLowerCase().includes(q) ||
@@ -94,9 +141,174 @@ const filteredScripts = computed(() => {
       s.id.toLowerCase().includes(q)
     );
   });
+  return [...list].sort((a, b) => {
+    const fa = fav.has(a.id) ? 0 : 1;
+    const fb = fav.has(b.id) ? 0 : 1;
+    if (fa !== fb) return fa - fb;
+    return a.label.localeCompare(b.label);
+  });
 });
 
-const feedBuilds = computed(() => devops.builds);
+const feedBuilds = computed(() => {
+  const all = devops.builds;
+  if (feedFilter.value === "running") {
+    return all.filter(
+      (b) => b.status === "running" || b.status === "queued",
+    );
+  }
+  if (feedFilter.value === "failed") {
+    return all.filter(
+      (b) => b.status === "failed" || b.status === "timeout",
+    );
+  }
+  return all;
+});
+
+function lastTerminalForScript(scriptId: string): BuildJob | null {
+  for (const b of devops.builds) {
+    if (b.scriptId !== scriptId) continue;
+    if (
+      b.status === "success" ||
+      b.status === "failed" ||
+      b.status === "timeout" ||
+      b.status === "cancelled"
+    ) {
+      return b;
+    }
+  }
+  return null;
+}
+
+function scriptLastHint(scriptId: string) {
+  void nowTick.value;
+  const job = lastTerminalForScript(scriptId);
+  if (!job) return "";
+  const when =
+    formatRelativeTime(job.finishedAt || job.startedAt || job.createdAt) ||
+    "";
+  const label =
+    job.status === "success"
+      ? "ok"
+      : job.status === "cancelled"
+        ? "cancelled"
+        : "fail";
+  return when ? `${label} · ${when}` : label;
+}
+
+function onFeedScroll() {
+  const el = feedEl.value;
+  if (!el || devops.buildsLoadingMore || !devops.buildsHasMore) return;
+  if (el.scrollTop + el.clientHeight >= el.scrollHeight - 80) {
+    void devops.loadMoreBuilds();
+  }
+}
+
+/** When a filter list is short (no scrollbar), keep fetching until filled or exhausted. */
+watch(
+  [feedBuilds, () => devops.buildsHasMore, () => devops.buildsLoadingMore, feedFilter],
+  async () => {
+    if (feedFilter.value === "all") return;
+    if (!devops.buildsHasMore || devops.buildsLoadingMore) return;
+    await nextTick();
+    const el = feedEl.value;
+    if (!el) return;
+    if (el.scrollHeight <= el.clientHeight + 40 || feedBuilds.value.length < 8) {
+      void devops.loadMoreBuilds();
+    }
+  },
+);
+
+function rememberRecentFailed(job: BuildJob) {
+  if (job.status !== "failed" && job.status !== "timeout") return;
+  const existing = recentFailed.value.findIndex((j) => j.id === job.id);
+  if (existing >= 0) {
+    recentFailed.value[existing] = job;
+  } else {
+    recentFailed.value = [job, ...recentFailed.value].slice(0, 3);
+  }
+  const prev = recentFailedTimers.get(job.id);
+  if (prev) clearTimeout(prev);
+  recentFailedTimers.set(
+    job.id,
+    setTimeout(() => {
+      recentFailed.value = recentFailed.value.filter((j) => j.id !== job.id);
+      recentFailedTimers.delete(job.id);
+    }, 20_000),
+  );
+}
+
+function failChipTime(job: BuildJob) {
+  void nowTick.value;
+  return (
+    formatRelativeTime(job.finishedAt || job.startedAt || job.createdAt) ||
+    "just now"
+  );
+}
+
+function emptyRunFirst() {
+  const first = filteredScripts.value[0] || activeScripts.value[0];
+  if (first) onRun(first);
+}
+
+function emptyOpenConfig() {
+  if (canConfigure.value) devops.activeTab = "config";
+}
+
+function onRerun(job: BuildJob) {
+  const script = devops.scripts.find((s) => s.id === job.scriptId);
+  if (!script || script.active === false) {
+    message.error("Script is missing or inactive");
+    return;
+  }
+  onRun(script);
+}
+
+async function onOpenTerminal(job: BuildJob) {
+  await openHistoryJob(job);
+}
+
+function isFlash(id: string) {
+  return Boolean(devops.flashBuildIds[id]);
+}
+
+function onKeydown(e: KeyboardEvent) {
+  if (devops.activeTab !== "build") return;
+  const t = e.target as HTMLElement | null;
+  const tag = t?.tagName?.toLowerCase();
+  const typing =
+    tag === "input" ||
+    tag === "textarea" ||
+    tag === "select" ||
+    t?.isContentEditable;
+
+  if (e.key === "Escape") {
+    const runId = devops.queue.currentBuildId;
+    if (runId && devops.queue.running) {
+      e.preventDefault();
+      void onCancel(runId);
+    }
+    return;
+  }
+
+  if (typing) return;
+
+  if (e.key === "/" && !e.metaKey && !e.ctrlKey && !e.altKey) {
+    e.preventDefault();
+    scriptSearchEl.value?.focus();
+    return;
+  }
+
+  if ((e.key === "r" || e.key === "R") && !e.metaKey && !e.ctrlKey && !e.altKey) {
+    const id = focusedScriptId.value;
+    const s =
+      (id && filteredScripts.value.find((x) => x.id === id)) ||
+      filteredScripts.value[0];
+    if (s) {
+      e.preventDefault();
+      onRun(s);
+    }
+  }
+}
 
 const queueActive = computed(() => {
   const runId = devops.queue.running ? devops.queue.currentBuildId : null;
@@ -120,6 +332,13 @@ const queueActive = computed(() => {
     }
   }
   return out;
+});
+
+const queueStripJobs = computed(() => {
+  const active = queueActive.value;
+  const activeIds = new Set(active.map((j) => j.id));
+  const failed = recentFailed.value.filter((j) => !activeIds.has(j.id));
+  return { active, failed };
 });
 
 function linesForJob(job: BuildJob): BuildLogLine[] {
@@ -162,6 +381,16 @@ async function toggleBuildCard(job: BuildJob) {
 function copyCommand(job: BuildJob) {
   void navigator.clipboard?.writeText(job.command).then(() => {
     message.success("Command copied");
+  });
+}
+
+function copyVisibleLog(text: string) {
+  if (!text.trim()) {
+    message.info("Nothing to copy");
+    return;
+  }
+  void navigator.clipboard?.writeText(text).then(() => {
+    message.success("Log copied");
   });
 }
 
@@ -474,6 +703,19 @@ watch(
     if (!job) return;
     const warn = job.warningMessage?.trim();
 
+    if (
+      (job.status === "failed" || job.status === "timeout") &&
+      prev?.id === job.id &&
+      prev.status !== job.status
+    ) {
+      rememberRecentFailed(job);
+    } else if (
+      (job.status === "failed" || job.status === "timeout") &&
+      (!prev || prev.id !== job.id)
+    ) {
+      rememberRecentFailed(job);
+    }
+
     // One warning toast per job when the keyword section first appears (mid-build).
     if (
       warn &&
@@ -521,6 +763,7 @@ onMounted(async () => {
   tickTimer = setInterval(() => {
     nowTick.value = Date.now();
   }, 1000);
+  window.addEventListener("keydown", onKeydown);
   try {
     await devops.refresh();
   } catch (e) {
@@ -543,6 +786,9 @@ onUnmounted(() => {
     configMq.removeEventListener("change", syncConfigCompact);
   }
   if (tickTimer) clearInterval(tickTimer);
+  window.removeEventListener("keydown", onKeydown);
+  for (const t of recentFailedTimers.values()) clearTimeout(t);
+  recentFailedTimers.clear();
   // Keep Build queue/job SSE + live logs across Chat/Work navigation.
 });
 </script>
@@ -571,10 +817,12 @@ onUnmounted(() => {
           <div class="faw-build-search">
             <SearchOutlined class="faw-build-search__icon" />
             <input
+              ref="scriptSearchEl"
               v-model="scriptSearch"
               type="search"
               class="faw-build-search__input"
-              placeholder="Search scripts…"
+              placeholder="Search scripts… (/)"
+              aria-label="Search scripts"
             />
           </div>
         </div>
@@ -583,11 +831,17 @@ onUnmounted(() => {
           <div v-if="devops.loading" class="faw-build-empty">Loading scripts…</div>
           <div
             v-else-if="!activeScripts.length"
-            class="faw-build-empty"
+            class="faw-build-empty faw-build-empty--cta"
           >
             <template v-if="canConfigure">
-              No active scripts. Open the
-              <strong>Config</strong> tab to add or enable one.
+              <p class="m-0">No active scripts.</p>
+              <button
+                type="button"
+                class="faw-build-empty__btn"
+                @click="emptyOpenConfig"
+              >
+                Open Config to add one
+              </button>
             </template>
             <template v-else>
               No active scripts. Ask devops to configure scripts.
@@ -604,12 +858,50 @@ onUnmounted(() => {
               v-for="s in filteredScripts"
               :key="s.id"
               class="faw-build-script-row"
-              :class="{ 'is-running': scriptQueueState(s.id).running > 0 }"
+              :class="{
+                'is-running': scriptQueueState(s.id).running > 0,
+                'is-focused': focusedScriptId === s.id,
+                'is-fav': isFavorite(s.id),
+              }"
+              tabindex="0"
+              @focus="focusedScriptId = s.id"
+              @click="focusedScriptId = s.id"
+              @keydown.enter.prevent="onRun(s)"
             >
               <div class="faw-build-script-row__swatch" />
+              <button
+                type="button"
+                class="faw-build-script-row__fav"
+                :aria-label="isFavorite(s.id) ? 'Unpin script' : 'Pin script'"
+                :title="isFavorite(s.id) ? 'Unpin' : 'Pin to top'"
+                @click.stop="toggleFavorite(s.id)"
+              >
+                <StarFilled v-if="isFavorite(s.id)" />
+                <StarOutlined v-else />
+              </button>
               <div class="faw-build-script-row__body">
                 <div class="faw-build-script-row__name">{{ s.label }}</div>
                 <div class="faw-build-script-row__cmd">{{ s.command }}</div>
+                <div class="faw-build-script-row__meta">
+                  <span
+                    v-if="scriptQueueState(s.id).running"
+                    class="faw-build-script-pill faw-build-script-pill--run"
+                  >
+                    running
+                  </span>
+                  <span
+                    v-else-if="scriptQueueState(s.id).queued"
+                    class="faw-build-script-pill faw-build-script-pill--queued"
+                  >
+                    queued {{ scriptQueueState(s.id).queued }}
+                  </span>
+                  <span
+                    v-if="scriptLastHint(s.id)"
+                    class="faw-build-script-row__last"
+                  >
+                    {{ scriptLastHint(s.id) }}
+                  </span>
+                </div>
               </div>
               <button
                 type="button"
@@ -625,7 +917,8 @@ onUnmounted(() => {
                   devops.triggeringId === s.id ||
                   devops.queue.shuttingDown
                 "
-                @click="onRun(s)"
+                :title="'Run (R)'"
+                @click.stop="onRun(s)"
               >
                 <span class="faw-build-run-btn__icon">▶</span>
                 {{
@@ -643,16 +936,20 @@ onUnmounted(() => {
 
       <!-- Main: queue + feed -->
       <div class="faw-build-main">
-        <section class="faw-build-queue-strip">
+        <section class="faw-build-queue-strip" aria-label="Build queue">
           <div class="faw-build-queue-strip__title">
             Build queue
-            <span class="faw-build-queue-strip__n">({{ queueActive.length }})</span>
+            <span class="faw-build-queue-strip__n">({{ queueStripJobs.active.length }})</span>
+            <span class="faw-build-queue-strip__hint">now · FIFO</span>
           </div>
-          <div v-if="!queueActive.length" class="faw-build-queue-empty">
+          <div
+            v-if="!queueStripJobs.active.length && !queueStripJobs.failed.length"
+            class="faw-build-queue-empty"
+          >
             No builds waiting — FIFO, at most one build at a time.
           </div>
           <div v-else class="faw-build-queue-chips">
-            <template v-for="(job, idx) in queueActive" :key="job.id">
+            <template v-for="(job, idx) in queueStripJobs.active" :key="job.id">
               <button
                 type="button"
                 class="faw-build-chip"
@@ -673,16 +970,86 @@ onUnmounted(() => {
                 </span>
               </button>
               <span
-                v-if="idx < queueActive.length - 1"
+                v-if="idx < queueStripJobs.active.length - 1"
                 class="faw-build-chip__arrow"
               >→</span>
+            </template>
+            <template v-for="job in queueStripJobs.failed" :key="`fail-${job.id}`">
+              <button
+                type="button"
+                class="faw-build-chip is-failed"
+                :title="`Failed ${formatTime(job.finishedAt || job.startedAt)}`"
+                @click="toggleBuildCard(job)"
+              >
+                <span class="faw-build-chip__pos">!</span>
+                <span class="faw-build-chip__body">
+                  <span class="faw-build-chip__name">{{ job.scriptLabel }}</span>
+                  <span class="faw-build-chip__time">
+                    failed · {{ failChipTime(job) }}
+                  </span>
+                </span>
+              </button>
             </template>
           </div>
         </section>
 
-        <div class="faw-build-feed">
-          <div v-if="!feedBuilds.length" class="faw-build-feed-empty">
-            No builds yet. Pick a script on the left to start.
+        <div class="faw-build-feed-bar">
+          <div class="faw-build-feed-filters" role="group" aria-label="Feed filter">
+            <button
+              v-for="f in [
+                { key: 'all', label: 'All' },
+                { key: 'running', label: 'Running' },
+                { key: 'failed', label: 'Failed' },
+              ] as const"
+              :key="f.key"
+              type="button"
+              class="faw-build-feed-filter"
+              :class="{ 'is-active': feedFilter === f.key }"
+              :aria-pressed="feedFilter === f.key"
+              @click="feedFilter = f.key"
+            >
+              {{ f.label }}
+            </button>
+          </div>
+          <span class="faw-build-feed-bar__hint">
+            Esc cancel · R run · / search
+          </span>
+        </div>
+
+        <div
+          ref="feedEl"
+          class="faw-build-feed"
+          @scroll="onFeedScroll"
+        >
+          <div
+            v-if="!devops.builds.length"
+            class="faw-build-feed-empty faw-build-empty--cta"
+          >
+            <p class="m-0">No builds yet.</p>
+            <div class="faw-build-empty__actions">
+              <button
+                v-if="activeScripts.length"
+                type="button"
+                class="faw-build-empty__btn faw-build-empty__btn--primary"
+                @click="emptyRunFirst"
+              >
+                Run «{{ (filteredScripts[0] || activeScripts[0]).label }}»
+              </button>
+              <button
+                v-if="canConfigure"
+                type="button"
+                class="faw-build-empty__btn"
+                @click="emptyOpenConfig"
+              >
+                Open Config
+              </button>
+            </div>
+          </div>
+          <div
+            v-else-if="!feedBuilds.length"
+            class="faw-build-feed-empty"
+          >
+            No builds match this filter.
           </div>
           <BuildFeedCard
             v-for="job in feedBuilds"
@@ -691,42 +1058,61 @@ onUnmounted(() => {
             :open="expandedBuildId === job.id"
             :lines="linesForJob(job)"
             :now-ms="nowTick"
+            :flash="isFlash(job.id)"
             @toggle="toggleBuildCard(job)"
             @copy="copyCommand(job)"
             @download="onDownloadLog(job)"
             @cancel="onCancelCard(job)"
+            @rerun="onRerun(job)"
+            @open-terminal="onOpenTerminal(job)"
+            @copy-log="copyVisibleLog"
           />
 
-          <form
-            v-if="
-              expandedBuildId &&
-              devops.liveBuild?.status === 'running' &&
-              expandedBuildId === devops.liveBuildId
-            "
-            class="faw-build-stdin"
-            @submit.prevent="onSendStdin"
+          <div
+            v-if="devops.buildsLoadingMore"
+            class="faw-build-feed-more"
+            aria-busy="true"
           >
-            <input
-              v-model="stdinText"
-              class="faw-build-stdin__input"
-              :type="stdinSecret ? 'password' : 'text'"
-              :disabled="!liveRunning || devops.stdinBusy"
-              placeholder="Send text/password to stdin (running build)…"
-              autocomplete="off"
-            />
-            <label class="faw-build-stdin__secret">
-              <input v-model="stdinSecret" type="checkbox" />
-              Password
-            </label>
-            <button
-              type="submit"
-              class="faw-build-run-btn faw-build-stdin__send"
-              :disabled="!liveRunning || devops.stdinBusy"
-            >
-              Send
-            </button>
-          </form>
+            Loading more…
+          </div>
+          <div
+            v-else-if="devops.buildsHasMore && feedFilter === 'all'"
+            class="faw-build-feed-more faw-build-feed-more--hint"
+          >
+            Scroll for older builds
+          </div>
         </div>
+
+        <form
+          v-if="
+            expandedBuildId &&
+            devops.liveBuild?.status === 'running' &&
+            expandedBuildId === devops.liveBuildId
+          "
+          class="faw-build-stdin"
+          @submit.prevent="onSendStdin"
+        >
+          <input
+            v-model="stdinText"
+            class="faw-build-stdin__input"
+            :type="stdinSecret ? 'password' : 'text'"
+            :disabled="!liveRunning || devops.stdinBusy"
+            placeholder="Send text/password to stdin (running build)…"
+            autocomplete="off"
+            aria-label="Build stdin"
+          />
+          <label class="faw-build-stdin__secret">
+            <input v-model="stdinSecret" type="checkbox" />
+            Password
+          </label>
+          <button
+            type="submit"
+            class="faw-build-run-btn faw-build-stdin__send"
+            :disabled="!liveRunning || devops.stdinBusy"
+          >
+            Send
+          </button>
+        </form>
       </div>
     </div>
 
@@ -743,7 +1129,16 @@ onUnmounted(() => {
           :options="histStatusOptions"
         />
       </div>
+      <div
+        v-if="devops.historyLoading && !devops.history.length"
+        class="faw-build-hist-skel"
+        aria-busy="true"
+        aria-label="Loading history"
+      >
+        <div v-for="n in 6" :key="n" class="faw-build-hist-skel__row" />
+      </div>
       <a-table
+        v-else
         class="faw-dev-hist-table"
         :columns="histColumns"
         :data-source="devops.history"
@@ -760,14 +1155,29 @@ onUnmounted(() => {
         :custom-row="
           (record: BuildJob) => ({
             onClick: () => openHistoryJob(record),
+            class: 'faw-dev-hist-row',
+            tabindex: 0,
+            onKeydown: (e: KeyboardEvent) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                void openHistoryJob(record);
+              }
+            },
           })
         "
         @change="(p: { current?: number }) => onHistPageChange(p.current || 1)"
       >
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'start'">
-            <span class="font-mono text-[12px]">
-              {{ formatTime((record as BuildJob).startedAt || (record as BuildJob).queuedAt) }}
+            <span
+              class="font-mono text-[12px]"
+              :title="formatTime((record as BuildJob).startedAt || (record as BuildJob).queuedAt)"
+            >
+              {{
+                formatRelativeTime(
+                  (record as BuildJob).startedAt || (record as BuildJob).queuedAt,
+                ) || formatTime((record as BuildJob).startedAt || (record as BuildJob).queuedAt)
+              }}
             </span>
           </template>
           <template v-else-if="column.key === 'script'">
@@ -782,7 +1192,21 @@ onUnmounted(() => {
           </template>
           <template v-else-if="column.key === 'status'">
             <span class="inline-flex items-center gap-1.5">
-              <span :class="statusClass((record as BuildJob).status)">
+              <span
+                class="faw-build-card__badge"
+                :class="`faw-build-card__badge--${
+                  (record as BuildJob).status === 'running'
+                    ? 'running'
+                    : (record as BuildJob).status === 'queued'
+                      ? 'queued'
+                      : (record as BuildJob).status === 'success'
+                        ? 'success'
+                        : (record as BuildJob).status === 'failed' ||
+                            (record as BuildJob).status === 'timeout'
+                          ? 'failed'
+                          : 'warn'
+                }`"
+              >
                 {{ (record as BuildJob).status }}
               </span>
               <span

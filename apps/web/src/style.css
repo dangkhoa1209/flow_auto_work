@@ -4493,6 +4493,20 @@ a.faw-mseg__btn {
 .faw-build-run-btn:hover:not(.is-disabled) {
   background: rgba(52, 211, 153, 0.22);
 }
+.faw-build-run-btn:focus-visible,
+.faw-build-chip:focus-visible,
+.faw-build-card__head:focus-visible,
+.faw-build-card__foot-btn:focus-visible,
+.faw-build-card__tool:focus-visible,
+.faw-build-empty__btn:focus-visible,
+.faw-build-feed-filter:focus-visible,
+.faw-build-script-row__fav:focus-visible,
+.faw-build-jump:focus-visible,
+.faw-build-stdin__input:focus-visible,
+.faw-build-search__input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
 .faw-build-run-btn.is-disabled,
 .faw-build-run-btn:disabled {
   background: var(--surface-raised);
@@ -4500,6 +4514,56 @@ a.faw-mseg__btn {
   border-color: var(--line);
   cursor: default;
   pointer-events: none;
+}
+.faw-build-script-row__fav {
+  all: unset;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  color: var(--ink-faint, var(--ink-muted));
+  border-radius: 4px;
+  font-size: 12px;
+}
+.faw-build-script-row__fav:hover,
+.faw-build-script-row.is-fav .faw-build-script-row__fav {
+  color: var(--warn, #f5a623);
+}
+.faw-build-script-row.is-focused {
+  background: var(--surface-raised);
+}
+.faw-build-script-row__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+.faw-build-script-pill {
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+}
+.faw-build-script-pill--run {
+  background: rgba(74, 58, 23, 0.65);
+  color: var(--warn, #f5a623);
+}
+.faw-build-script-pill--queued {
+  background: var(--surface-raised);
+  color: var(--ink-muted);
+  border: 1px solid var(--line);
+}
+.faw-build-script-row__last {
+  font-size: 10.5px;
+  color: var(--ink-faint, var(--ink-muted));
+  font-family: var(--font-mono, ui-monospace, monospace);
 }
 .faw-build-main {
   display: flex;
@@ -4521,10 +4585,21 @@ a.faw-mseg__btn {
   color: var(--ink-faint, var(--ink-muted));
   text-transform: uppercase;
   margin-bottom: 10px;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
 }
 .faw-build-queue-strip__n {
   color: var(--ink-muted);
   font-family: var(--font-mono, ui-monospace, monospace);
+}
+.faw-build-queue-strip__hint {
+  margin-left: auto;
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  color: var(--ink-faint, var(--ink-muted));
+  text-transform: none;
+  font-weight: 500;
 }
 .faw-build-queue-empty {
   font-size: 12.5px;
@@ -4553,6 +4628,10 @@ a.faw-mseg__btn {
   border-color: rgba(245, 166, 35, 0.35);
   background: rgba(245, 166, 35, 0.07);
 }
+.faw-build-chip.is-failed {
+  border-color: rgba(240, 84, 107, 0.35);
+  background: rgba(240, 84, 107, 0.07);
+}
 .faw-build-chip__pos {
   font-family: var(--font-mono, ui-monospace, monospace);
   font-size: 10.5px;
@@ -4570,7 +4649,8 @@ a.faw-mseg__btn {
   font-weight: 600;
   color: var(--ink-muted);
 }
-.faw-build-chip.is-running .faw-build-chip__name {
+.faw-build-chip.is-running .faw-build-chip__name,
+.faw-build-chip.is-failed .faw-build-chip__name {
   color: var(--ink);
 }
 .faw-build-chip__time {
@@ -4585,16 +4665,62 @@ a.faw-mseg__btn {
 .faw-build-chip__arrow {
   color: var(--ink-faint, var(--ink-muted));
 }
+.faw-build-feed-bar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 22px;
+  border-bottom: 1px solid var(--line-soft, var(--line));
+  background: var(--app-bg);
+}
+.faw-build-feed-filters {
+  display: flex;
+  gap: 4px;
+}
+.faw-build-feed-filter {
+  all: unset;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 550;
+  padding: 4px 10px;
+  border-radius: 6px;
+  color: var(--ink-muted);
+}
+.faw-build-feed-filter:hover {
+  background: var(--surface-raised);
+  color: var(--ink);
+}
+.faw-build-feed-filter.is-active {
+  background: var(--surface-raised);
+  color: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.faw-build-feed-bar__hint {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--ink-faint, var(--ink-muted));
+  font-family: var(--font-mono, ui-monospace, monospace);
+}
 .faw-build-feed {
   flex: 1 1 0;
   min-height: 0;
   overflow-x: hidden;
   overflow-y: auto;
-  padding: 16px 22px 40px;
+  padding: 16px 22px 24px;
   display: flex;
   flex-direction: column;
   gap: 10px;
   align-items: stretch;
+}
+.faw-build-feed-more {
+  text-align: center;
+  font-size: 12px;
+  color: var(--ink-faint, var(--ink-muted));
+  padding: 8px;
+}
+.faw-build-feed-more--hint {
+  opacity: 0.75;
 }
 .faw-build-feed-empty,
 .faw-build-empty {
@@ -4603,12 +4729,47 @@ a.faw-mseg__btn {
   padding: 30px 4px;
   flex-shrink: 0;
 }
+.faw-build-empty--cta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+}
+.faw-build-empty__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.faw-build-empty__btn {
+  all: unset;
+  cursor: pointer;
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 7px 12px;
+  border-radius: 7px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+}
+.faw-build-empty__btn:hover {
+  background: var(--surface-raised);
+}
+.faw-build-empty__btn--primary {
+  background: rgba(27, 74, 60, 0.65);
+  color: var(--success, #34d399);
+  border-color: rgba(52, 211, 153, 0.25);
+}
 .faw-build-card {
   flex: 0 0 auto;
   border: 1px solid var(--line);
   border-radius: 10px;
   background: var(--surface);
   overflow: hidden;
+  transition: box-shadow 0.35s ease, border-color 0.35s ease;
+}
+.faw-build-card.is-flash {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent);
 }
 .faw-build-card__head {
   display: flex;
@@ -4668,6 +4829,11 @@ a.faw-mseg__btn {
   background: rgba(74, 31, 42, 0.65);
   color: var(--danger, #f0546b);
 }
+.faw-build-card__badge--warn {
+  background: var(--surface-raised);
+  color: var(--warn, #f5a623);
+  border: 1px solid var(--line);
+}
 .faw-build-card__title-wrap {
   flex: 1;
   min-width: 0;
@@ -4689,6 +4855,15 @@ a.faw-mseg__btn {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.faw-build-card__meta {
+  margin-top: 3px;
+  font-size: 11px;
+  color: var(--ink-muted);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .faw-build-card__time {
   font-family: var(--font-mono, ui-monospace, monospace);
   font-size: 11.5px;
@@ -4699,6 +4874,29 @@ a.faw-mseg__btn {
 .faw-build-card__body {
   border-top: 1px solid var(--line-soft, var(--line));
 }
+.faw-build-card__log-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 8px 12px 0;
+}
+.faw-build-card__tool {
+  all: unset;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 550;
+  padding: 4px 8px;
+  border-radius: 5px;
+  color: var(--ink-faint, var(--ink-muted));
+}
+.faw-build-card__tool:hover,
+.faw-build-card__tool.is-on {
+  background: var(--surface-raised);
+  color: var(--ink);
+}
+.faw-build-log-wrap {
+  position: relative;
+}
 .faw-build-log {
   padding: 13px 16px 16px;
   font-family: var(--font-mono, ui-monospace, monospace);
@@ -4708,6 +4906,9 @@ a.faw-mseg__btn {
   max-height: 340px;
   overflow-y: auto;
   background: var(--app-bg);
+}
+.faw-build-log.is-expanded {
+  max-height: min(70vh, 720px);
 }
 .faw-build-log__line--cmd { color: var(--accent); }
 .faw-build-log__line--out { color: var(--ink-muted); }
@@ -4732,6 +4933,25 @@ a.faw-mseg__btn {
 @keyframes faw-build-blink {
   50% { opacity: 0; }
 }
+.faw-build-jump {
+  all: unset;
+  cursor: pointer;
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  z-index: 2;
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
+}
+.faw-build-jump:hover {
+  background: var(--surface-raised);
+}
 .faw-build-card__err {
   margin: 0;
   padding: 0 16px 8px;
@@ -4755,6 +4975,7 @@ a.faw-mseg__btn {
   display: flex;
   align-items: center;
   justify-content: flex-end;
+  flex-wrap: wrap;
   gap: 8px;
   padding: 8px 16px 12px;
 }
@@ -4774,6 +4995,9 @@ a.faw-mseg__btn {
 .faw-build-card__foot-btn--danger:hover {
   color: var(--danger, #f0546b);
 }
+.faw-build-card__foot-btn--run:hover {
+  color: var(--success, #34d399);
+}
 .faw-build-stdin {
   flex: 0 0 auto;
   display: flex;
@@ -4783,6 +5007,7 @@ a.faw-mseg__btn {
   padding: 10px 14px;
   border-top: 1px solid var(--line);
   background: var(--surface);
+  box-shadow: 0 -6px 18px rgba(0, 0, 0, 0.12);
 }
 .faw-build-stdin__input {
   flex: 1;
@@ -4793,6 +5018,12 @@ a.faw-mseg__btn {
   padding: 6px 10px;
   font-size: 12px;
   color: var(--ink);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.faw-build-stdin__input:focus {
+  border-color: var(--accent-dim, var(--accent));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+  outline: none;
 }
 .faw-build-stdin__secret {
   display: flex;
@@ -4800,6 +5031,47 @@ a.faw-mseg__btn {
   gap: 6px;
   font-size: 12px;
   color: var(--ink-muted);
+}
+.faw-build-hist-skel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 16px;
+}
+.faw-build-hist-skel__row {
+  height: 36px;
+  border-radius: 6px;
+  background: linear-gradient(
+    90deg,
+    var(--surface-raised) 0%,
+    var(--surface) 50%,
+    var(--surface-raised) 100%
+  );
+  background-size: 200% 100%;
+  animation: faw-build-skel 1.2s ease-in-out infinite;
+}
+@keyframes faw-build-skel {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+.faw-dev-hist-table .faw-dev-hist-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .faw-build-card__pulse,
+  .faw-build-log__caret,
+  .faw-build-hist-skel__row,
+  .faw-build-card {
+    animation: none !important;
+    transition: none !important;
+  }
+  .faw-build-log__caret {
+    opacity: 0.85;
+  }
+  .faw-build-card.is-flash {
+    box-shadow: none;
+  }
 }
 @media (max-width: 900px) {
   .faw-build-shell {

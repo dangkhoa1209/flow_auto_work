@@ -58,20 +58,42 @@ export async function updateBuildJob(
 export async function listBuildJobs(opts?: {
   limit?: number;
   offset?: number;
+  /** Cursor: return jobs older than this id (createdAt DESC). */
+  lastId?: string;
   status?: BuildStatus;
   scriptId?: string;
 }): Promise<BuildJob[]> {
-  const limit = Math.min(200, Math.max(1, opts?.limit ?? 50));
+  // Allow limit+1 peek from the controller (max page 200 → fetch up to 201).
+  const limit = Math.min(201, Math.max(1, opts?.limit ?? 50));
   const offset = Math.max(0, opts?.offset ?? 0);
   const filter: Record<string, unknown> = {};
   if (opts?.status) filter.status = opts.status;
   if (opts?.scriptId) filter.scriptId = opts.scriptId;
-  return (await col())
+
+  const lastId = opts?.lastId?.trim();
+  if (lastId) {
+    const last = await getBuildJob(lastId);
+    if (!last) {
+      // Soft-deleted / unknown cursor — start from newest instead of empty dead-end.
+      const cursor = (await col())
+        .find(withActive(filter))
+        .sort({ createdAt: -1, id: -1 })
+        .skip(offset)
+        .limit(limit);
+      return cursor.toArray();
+    }
+    const lastCreated = last.createdAt || "";
+    filter.$or = [
+      { createdAt: { $lt: lastCreated } },
+      { createdAt: lastCreated, id: { $lt: last.id } },
+    ];
+  }
+
+  const cursor = (await col())
     .find(withActive(filter))
-    .sort({ createdAt: -1 })
-    .skip(offset)
-    .limit(limit)
-    .toArray();
+    .sort({ createdAt: -1, id: -1 });
+  if (!lastId) cursor.skip(offset);
+  return cursor.limit(limit).toArray();
 }
 
 export async function countBuildJobs(opts?: {

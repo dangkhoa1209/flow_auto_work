@@ -130,6 +130,8 @@ export type Job = {
     targetBranch?: string;
     restoreStatus?: string;
   };
+  createdAt?: string;
+  updatedAt?: string;
 };
 
 export function isAdhocJob(job: Job | null | undefined): boolean {
@@ -181,6 +183,23 @@ export type TaskDetail = {
 export const useWorkStore = defineStore("work", () => {
   const tasks = ref<Task[]>([]);
   const jobs = ref<Job[]>([]);
+  const jobsHasMore = ref(false);
+  const jobsLoadingMore = ref(false);
+  const JOBS_PAGE = 40;
+  /** Last cursor id for the next loadMore page (advances even if page was all dupes). */
+  let jobsNextCursor: string | null = null;
+  let jobsFetchSeq = 0;
+
+  function oldestJobId(list: Job[]): string | null {
+    if (!list.length) return null;
+    const oldest = [...list].sort((a, b) => {
+      const ua = Date.parse(a.updatedAt || "") || 0;
+      const ub = Date.parse(b.updatedAt || "") || 0;
+      if (ua !== ub) return ua - ub;
+      return (a.id || "").localeCompare(b.id || "");
+    })[0];
+    return oldest?.id ?? null;
+  }
   const selectedTaskIid = ref<number | null>(null);
   const selectedJobId = ref<string | null>(null);
   const currentJob = ref<Job | null>(null);
@@ -266,8 +285,18 @@ export const useWorkStore = defineStore("work", () => {
 
   async function loadJobs() {
     const prevStatus = currentJob.value?.status;
-    const data = await jobApi.list({ limit: 40 });
+    const seq = ++jobsFetchSeq;
+    // Refresh the currently loaded window (at least one page) so scroll-loaded
+    // older jobs stay visible after SSE / status polls.
+    const limit = Math.min(
+      200,
+      Math.max(JOBS_PAGE, jobs.value.length || JOBS_PAGE),
+    );
+    const data = await jobApi.list({ limit });
+    if (seq !== jobsFetchSeq) return;
     jobs.value = (data.jobs || []) as Job[];
+    jobsHasMore.value = Boolean(data.hasMore);
+    jobsNextCursor = oldestJobId(jobs.value);
     // Keep currentJob.status in sync so Progress polling knows job is live
     if (selectedJobId.value) {
       const j = jobs.value.find((x) => x.id === selectedJobId.value);
@@ -295,6 +324,31 @@ export const useWorkStore = defineStore("work", () => {
         taskDetail.value = null;
         agentTyping.value = false;
       }
+    }
+  }
+
+  async function loadMoreJobs() {
+    if (jobsLoadingMore.value || !jobsHasMore.value) return;
+    const lastId = jobsNextCursor || oldestJobId(jobs.value);
+    if (!lastId) return;
+    jobsLoadingMore.value = true;
+    const seq = jobsFetchSeq;
+    try {
+      const data = await jobApi.list({ limit: JOBS_PAGE, lastId });
+      if (seq !== jobsFetchSeq) return;
+      const incoming = (data.jobs || []) as Job[];
+      // Advance cursor to the end of this server page even if rows were dupes
+      // (refresh race), so the next scroll does not loop on the same lastId.
+      const pageLast = incoming[incoming.length - 1]?.id;
+      if (pageLast) jobsNextCursor = pageLast;
+      const seen = new Set(jobs.value.map((j) => j.id));
+      const appended = incoming.filter((j) => !seen.has(j.id));
+      if (appended.length) {
+        jobs.value = [...jobs.value, ...appended];
+      }
+      jobsHasMore.value = Boolean(data.hasMore);
+    } finally {
+      jobsLoadingMore.value = false;
     }
   }
 
@@ -1193,6 +1247,8 @@ export const useWorkStore = defineStore("work", () => {
   return {
     tasks,
     jobs,
+    jobsHasMore,
+    jobsLoadingMore,
     selectedTaskIid,
     selectedJobId,
     currentJob,
@@ -1221,6 +1277,7 @@ export const useWorkStore = defineStore("work", () => {
     killAllBusy,
     loadTasks,
     loadJobs,
+    loadMoreJobs,
     loadMeta,
     loadStatus,
     resyncRealtime,

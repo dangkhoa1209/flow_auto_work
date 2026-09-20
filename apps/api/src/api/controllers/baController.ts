@@ -23,7 +23,14 @@ export const baController = {
   listThreads: asyncHandler(async (req: Request, res: Response) => {
     const { username } = requireRoleContext();
     const projectId = String(req.query.baProjectId || "").trim();
-    res.formatter.ok(await ba.baListThreads(username, projectId || undefined));
+    const limit = Number(req.query.limit ?? "40");
+    const lastId = String(req.query.lastId || "").trim() || undefined;
+    res.formatter.ok(
+      await ba.baListThreads(username, projectId || undefined, {
+        limit: Number.isFinite(limit) ? limit : 40,
+        lastId,
+      }),
+    );
   }),
 
   createThread: asyncHandler(async (req: Request, res: Response) => {

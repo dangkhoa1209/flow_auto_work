@@ -139,6 +139,12 @@ export const useBaChatStore = defineStore("baChat", () => {
     safeGetItem("flow_ba_project_id"),
   );
   const threads = ref<BaThread[]>([]);
+  const threadsHasMore = ref(false);
+  const threadsLoadingMore = ref(false);
+  const THREADS_PAGE = 40;
+  /** Last cursor id for the next loadMore page. */
+  let threadsNextCursor: string | null = null;
+  let threadsFetchSeq = 0;
   const activeThreadId = ref<string | null>(null);
   const messages = ref<BaMessage[]>([]);
   const streaming = ref(false);
@@ -383,24 +389,34 @@ export const useBaChatStore = defineStore("baChat", () => {
   async function loadThreads() {
     if (!selectedProjectId.value) {
       threads.value = [];
+      threadsHasMore.value = false;
+      threadsNextCursor = null;
       activeThreadId.value = null;
       messages.value = [];
       return;
     }
-    const qs = `?baProjectId=${encodeURIComponent(selectedProjectId.value)}`;
-    const data = await api<{ threads?: BaThread[] }>(`${API.ba.threads}${qs}`);
+    const seq = ++threadsFetchSeq;
+    // Refresh the loaded window so scroll-loaded older chats stay visible.
+    const limit = Math.min(
+      200,
+      Math.max(THREADS_PAGE, threads.value.length || THREADS_PAGE),
+    );
+    const qs = new URLSearchParams();
+    qs.set("baProjectId", selectedProjectId.value);
+    qs.set("limit", String(limit));
+    const data = await api<{ threads?: BaThread[]; hasMore?: boolean }>(
+      `${API.ba.threads}?${qs.toString()}`,
+    );
+    if (seq !== threadsFetchSeq) return;
     const uid = currentUserId();
     // Defense: never show another user's threads in the sidebar
     threads.value = (data.threads || []).filter(
       (t) => !uid || t.userId.toLowerCase() === uid,
     );
+    threadsHasMore.value = Boolean(data.hasMore);
     // Keep pin order if API omitted sort (defense).
-    threads.value = [...threads.value].sort((a, b) => {
-      const ap = a.pinned ? 1 : 0;
-      const bp = b.pinned ? 1 : 0;
-      if (ap !== bp) return bp - ap;
-      return (b.updatedAt || "").localeCompare(a.updatedAt || "");
-    });
+    sortThreadsInPlace();
+    threadsNextCursor = threads.value[threads.value.length - 1]?.id ?? null;
     if (
       activeThreadId.value &&
       !threads.value.some((t) => t.id === activeThreadId.value)
@@ -412,12 +428,55 @@ export const useBaChatStore = defineStore("baChat", () => {
     }
   }
 
+  async function loadMoreThreads() {
+    if (
+      threadsLoadingMore.value ||
+      !threadsHasMore.value ||
+      !selectedProjectId.value
+    ) {
+      return;
+    }
+    const lastId =
+      threadsNextCursor || threads.value[threads.value.length - 1]?.id;
+    if (!lastId) return;
+    threadsLoadingMore.value = true;
+    const seq = threadsFetchSeq;
+    try {
+      const qs = new URLSearchParams();
+      qs.set("baProjectId", selectedProjectId.value);
+      qs.set("limit", String(THREADS_PAGE));
+      qs.set("lastId", lastId);
+      const data = await api<{ threads?: BaThread[]; hasMore?: boolean }>(
+        `${API.ba.threads}?${qs.toString()}`,
+      );
+      if (seq !== threadsFetchSeq) return;
+      const uid = currentUserId();
+      const incoming = (data.threads || []).filter(
+        (t) => !uid || t.userId.toLowerCase() === uid,
+      );
+      const pageLast = incoming[incoming.length - 1]?.id;
+      if (pageLast) threadsNextCursor = pageLast;
+      const seen = new Set(threads.value.map((t) => t.id));
+      const appended = incoming.filter((t) => !seen.has(t.id));
+      if (appended.length) {
+        // Keep API page order (pin + updatedAt) so lastId cursor stays stable.
+        threads.value = [...threads.value, ...appended];
+      }
+      threadsHasMore.value = Boolean(data.hasMore);
+    } finally {
+      threadsLoadingMore.value = false;
+    }
+  }
+
   /** Clear all BA chat state (call on logout / user switch). */
   function reset() {
     projects.value = [];
     features.value = { ...DEFAULT_BA_FEATURES };
     featuresLoaded.value = false;
     threads.value = [];
+    threadsHasMore.value = false;
+    threadsLoadingMore.value = false;
+    threadsNextCursor = null;
     activeThreadId.value = null;
     messages.value = [];
     endStreamingUi();
@@ -469,6 +528,9 @@ export const useBaChatStore = defineStore("baChat", () => {
     persistProjectId(id);
     activeThreadId.value = null;
     messages.value = [];
+    threads.value = [];
+    threadsHasMore.value = false;
+    threadsNextCursor = null;
     failedPendingSend.value = null;
     errorText.value = "";
     endStreamingUi();
@@ -535,8 +597,11 @@ export const useBaChatStore = defineStore("baChat", () => {
       const ap = a.pinned ? 1 : 0;
       const bp = b.pinned ? 1 : 0;
       if (ap !== bp) return bp - ap;
-      return (b.updatedAt || "").localeCompare(a.updatedAt || "");
+      const byUpdated = (b.updatedAt || "").localeCompare(a.updatedAt || "");
+      if (byUpdated !== 0) return byUpdated;
+      return (b.id || "").localeCompare(a.id || "");
     });
+    threadsNextCursor = threads.value[threads.value.length - 1]?.id ?? null;
   }
 
   async function renameThread(id: string, title: string) {
@@ -1116,6 +1181,8 @@ export const useBaChatStore = defineStore("baChat", () => {
     selectedProjectId,
     selectedProject,
     threads,
+    threadsHasMore,
+    threadsLoadingMore,
     activeThreadId,
     activeThread,
     messages,
@@ -1141,6 +1208,7 @@ export const useBaChatStore = defineStore("baChat", () => {
     reset,
     loadProjects,
     loadThreads,
+    loadMoreThreads,
     selectProject,
     selectThread,
     newChat,

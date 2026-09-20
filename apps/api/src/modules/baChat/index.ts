@@ -54,8 +54,12 @@ export async function baListProjects() {
   };
 }
 
-export async function baListThreads(userId: string, baProjectId?: string) {
-  return { threads: await listBaThreads(userId, baProjectId) };
+export async function baListThreads(
+  userId: string,
+  baProjectId?: string,
+  opts?: { limit?: number; lastId?: string },
+) {
+  return listBaThreads(userId, baProjectId, opts);
 }
 
 export async function baCreateThread(
