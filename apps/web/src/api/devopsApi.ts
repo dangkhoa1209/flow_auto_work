@@ -70,12 +70,14 @@ export const devopsApi = {
   listBuilds(opts?: {
     limit?: number;
     offset?: number;
+    lastId?: string;
     status?: BuildStatus;
     scriptId?: string;
   }) {
     const qs = new URLSearchParams();
     if (opts?.limit) qs.set("limit", String(opts.limit));
     if (opts?.offset) qs.set("offset", String(opts.offset));
+    if (opts?.lastId?.trim()) qs.set("lastId", opts.lastId.trim());
     if (opts?.status) qs.set("status", opts.status);
     if (opts?.scriptId) qs.set("scriptId", opts.scriptId);
     const q = qs.toString();
@@ -83,6 +85,7 @@ export const devopsApi = {
       queue: BuildQueueSnapshot;
       builds: BuildJob[];
       total?: number;
+      hasMore?: boolean;
     }>({
       url: q ? `${API.devops.builds}?${q}` : API.devops.builds,
     });
