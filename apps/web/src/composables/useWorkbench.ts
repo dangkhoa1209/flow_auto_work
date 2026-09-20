@@ -41,6 +41,12 @@ export function useWorkbench() {
   const midTab = ref<MidTab>("detail");
   const selectedIids = ref<number[]>([]);
   const chatInput = ref("");
+  /** Send failed before server accepted — show bubble + Retry in console. */
+  const failedSend = ref<{
+    content: string;
+    error: string;
+    mode: "continue" | "ask";
+  } | null>(null);
   const busy = ref(false);
   const stopBusy = ref(false);
   const notesSaving = ref(false);
@@ -473,6 +479,7 @@ export function useWorkbench() {
 
   async function onSelectJob(id: string) {
     if (jobLoading.value && selectedJobId.value === id) return;
+    failedSend.value = null;
     try {
       await work.selectJob(id);
       midTab.value = "detail";
@@ -709,6 +716,7 @@ export function useWorkbench() {
     const run = async () => {
       if (!(await ensureWorkReady())) return;
       chatInput.value = "";
+      failedSend.value = null;
       await nextTick();
       busy.value = true;
       mobilePane.value = "chat";
@@ -721,7 +729,14 @@ export function useWorkbench() {
                 title: titleFromWorkRequest(msg),
               }),
             );
-            if (!res) return;
+            if (!res) {
+              failedSend.value = {
+                content: msg,
+                error: "Could not start session",
+                mode,
+              };
+              return;
+            }
             await projectClone.withCloneRetry(() => work.sendAsk(msg));
           } else {
             const res = await projectClone.withCloneRetry(() =>
@@ -730,7 +745,14 @@ export function useWorkbench() {
                 planFirst: planFirst.value,
               }),
             );
-            if (!res) return;
+            if (!res) {
+              failedSend.value = {
+                content: msg,
+                error: "Could not start session",
+                mode,
+              };
+              return;
+            }
           }
           return;
         }
@@ -744,7 +766,14 @@ export function useWorkbench() {
               planFirst: mode === "continue" ? planFirst.value : undefined,
             }),
           );
-          if (!res) return;
+          if (!res) {
+            failedSend.value = {
+              content: msg,
+              error: "Send was not accepted",
+              mode,
+            };
+            return;
+          }
         } else {
           await projectClone.withCloneRetry(() => work.sendAsk(msg));
         }
@@ -753,6 +782,7 @@ export function useWorkbench() {
         if (/Force-stopped/i.test(msgText)) {
           message.info("Chat stopped");
         } else {
+          failedSend.value = { content: msg, error: msgText, mode };
           message.error(msgText);
         }
       } finally {
@@ -779,6 +809,14 @@ export function useWorkbench() {
     }
 
     await run();
+  }
+
+  async function retryFailedSend() {
+    const pending = failedSend.value;
+    if (!pending?.content?.trim()) return;
+    chatInput.value = pending.content;
+    failedSend.value = null;
+    await sendChat(pending.mode);
   }
 
   async function forceStop() {
@@ -1277,6 +1315,7 @@ export function useWorkbench() {
     midTab,
     selectedIids,
     chatInput,
+    failedSend,
     busy,
     stopBusy,
     notesSaving,
@@ -1351,6 +1390,7 @@ export function useWorkbench() {
     runCheckedTasks,
     runCurrentJob,
     sendChat,
+    retryFailedSend,
     forceStop,
     killAllJobs,
     resetAgentWindow,

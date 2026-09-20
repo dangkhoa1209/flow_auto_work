@@ -11,16 +11,20 @@ import {
   PlusOutlined,
   ReloadOutlined,
   DownOutlined,
+  PushpinOutlined,
+  PushpinFilled,
 } from "@ant-design/icons-vue";
 import IssueIidLink from "@/components/IssueIidLink.vue";
 import GitlabLabelChip from "@/components/GitlabLabelChip.vue";
 import { statusLabel, MANUAL_JOB_STATUSES, manualStatusMenuLabel } from "@/utils/status";
+import { formatRelativeTime } from "@/utils/formatChatTime";
 import type { Job, Task } from "@/stores/work";
 import { useWorkStore } from "@/stores/work";
 import { gitlabLabelChipStyle } from "@/utils/gitlabLabel";
 
 const JOBS_OPEN_KEY = "flow.tasklist.jobsOpen";
 const JOBS_H_KEY = "flow.tasklist.jobsHeight";
+const JOBS_PIN_KEY = "flow.work.pinnedJobs";
 const JOBS_H_MIN = 120;
 const JOBS_H_DEFAULT = 220;
 
@@ -60,9 +64,59 @@ const emit = defineEmits<{
   statusChange: [jobId: string, status: string];
   deleteJob: [jobId: string];
   killAll: [];
+  openAdhoc: [];
 }>();
 
 const work = useWorkStore();
+const pinnedJobIds = ref<Set<string>>(new Set());
+
+function loadPinnedJobs() {
+  try {
+    const raw = localStorage.getItem(JOBS_PIN_KEY);
+    const arr = raw ? (JSON.parse(raw) as string[]) : [];
+    pinnedJobIds.value = new Set(Array.isArray(arr) ? arr : []);
+  } catch {
+    pinnedJobIds.value = new Set();
+  }
+}
+
+function persistPinnedJobs() {
+  try {
+    localStorage.setItem(
+      JOBS_PIN_KEY,
+      JSON.stringify([...pinnedJobIds.value]),
+    );
+  } catch {
+    /* ignore */
+  }
+}
+
+function isPinned(id: string) {
+  return pinnedJobIds.value.has(id);
+}
+
+function togglePin(id: string) {
+  const next = new Set(pinnedJobIds.value);
+  if (next.has(id)) next.delete(id);
+  else next.add(id);
+  pinnedJobIds.value = next;
+  persistPinnedJobs();
+}
+
+function focusTaskSearch() {
+  const root = document.getElementById("faw-task-search");
+  const input =
+    root instanceof HTMLInputElement
+      ? root
+      : (root?.querySelector?.("input") as HTMLInputElement | null) ||
+        (document.querySelector(
+          "#faw-task-search input, input#faw-task-search",
+        ) as HTMLInputElement | null);
+  input?.focus();
+  input?.select?.();
+}
+
+defineExpose({ focusTaskSearch });
 
 function filterOptionLabel(kind: "milestone" | "label", v: string) {
   if (v === "all") return kind === "milestone" ? "All milestones" : "All labels";
@@ -86,6 +140,7 @@ let dragMoved = false;
 let dragPointerId: number | null = null;
 
 onMounted(() => {
+  loadPinnedJobs();
   try {
     const open = localStorage.getItem(JOBS_OPEN_KEY);
     if (open === "0" || open === "false") jobsOpen.value = false;
@@ -173,16 +228,26 @@ function onJobsRailPointerUp(e: PointerEvent) {
   }
 }
 
+const taskSearch = ref("");
+const taskSearchDebounced = ref("");
+let searchTimer: ReturnType<typeof setTimeout> | null = null;
+
+watch(taskSearch, (q) => {
+  if (searchTimer) clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => {
+    taskSearchDebounced.value = q;
+  }, 180);
+});
+
 onUnmounted(() => {
+  if (searchTimer) clearTimeout(searchTimer);
   window.removeEventListener("pointermove", onJobsRailPointerMove);
   window.removeEventListener("pointerup", onJobsRailPointerUp);
   window.removeEventListener("pointercancel", onJobsRailPointerUp);
 });
 
-const taskSearch = ref("");
-
 const visibleTasks = computed(() => {
-  const q = taskSearch.value.trim().toLowerCase();
+  const q = taskSearchDebounced.value.trim().toLowerCase();
   if (!q) return props.filteredTasks;
   const qBare = q.startsWith("#") ? q.slice(1) : q;
   return props.filteredTasks.filter((t) => {
@@ -193,6 +258,43 @@ const visibleTasks = computed(() => {
     return false;
   });
 });
+
+const displayJobs = computed(() => {
+  const list = [...props.sortedJobs];
+  list.sort((a, b) => {
+    const ap = isPinned(a.id) ? 1 : 0;
+    const bp = isPinned(b.id) ? 1 : 0;
+    if (ap !== bp) return bp - ap;
+    return 0;
+  });
+  return list;
+});
+
+const jobsCountLabel = computed(() => {
+  const n = props.sortedJobs.length;
+  if (work.jobsHasMore) return `${n}+`;
+  return String(n);
+});
+
+function formatJobDuration(j: Job): string {
+  const start = Date.parse(j.createdAt || "") || 0;
+  if (!start) return "";
+  const end =
+    j.status === "running" || j.status === "queued"
+      ? Date.now()
+      : Date.parse(j.updatedAt || "") || Date.now();
+  const ms = Math.max(0, end - start);
+  if (ms < 60_000) return `${Math.max(1, Math.round(ms / 1000))}s`;
+  if (ms < 3_600_000) return `${Math.floor(ms / 60_000)}m`;
+  return `${Math.floor(ms / 3_600_000)}h`;
+}
+
+function jobMetaLine(j: Job): string {
+  const rel = formatRelativeTime(j.updatedAt || j.createdAt);
+  const dur = formatJobDuration(j);
+  if (rel && dur) return `${rel} · ${dur}`;
+  return rel || dur || "";
+}
 
 function statusDotClass(status: string) {
   if (status === "succeeded") return "done";
@@ -235,7 +337,14 @@ function contextQualityShort(level?: string) {
   return "";
 }
 
-function jobSecondaryChip(j: Job): { label: string; title?: string } | null {
+function jobSecondaryChip(j: Job): { label: string; title?: string; awaiting?: boolean } | null {
+  if (j.status.startsWith("awaiting_")) {
+    return {
+      label: statusLabel(j.status).replace(/^Awaiting\s+/i, ""),
+      title: statusLabel(j.status),
+      awaiting: true,
+    };
+  }
   const cq = j.contextQuality?.level;
   if (cq) {
     return {
@@ -282,7 +391,7 @@ watch(
   >
     <div class="faw-col-head">
       <h2>Tasks</h2>
-      <span class="faw-count">{{ sortedJobs.length }} jobs</span>
+      <span class="faw-count">{{ jobsCountLabel }} jobs</span>
       <button
         type="button"
         class="faw-icon-btn"
@@ -356,12 +465,14 @@ watch(
         </div>
         <div class="faw-field faw-field--grow">
           <a-input
+            id="faw-task-search"
             v-model:value="taskSearch"
             size="small"
             class="faw-input-ghost"
-            placeholder="Search title, tag…"
+            placeholder="Search title, tag… (/ )"
             :bordered="false"
             allow-clear
+            aria-label="Search tasks"
           />
         </div>
         <button type="button" class="faw-btn" title="New session with a title" @click="emit('openAdhoc')">
@@ -424,7 +535,10 @@ watch(
             :key="t.issueIid"
             class="faw-task-row"
             :class="{ active: selectedTaskIid === t.issueIid }"
+            role="button"
+            tabindex="0"
             @click="emit('selectTask', t.issueIid)"
+            @keydown.enter.prevent="emit('selectTask', t.issueIid)"
           >
             <a-checkbox
               :checked="selectedIids.includes(t.issueIid)"
@@ -497,7 +611,7 @@ watch(
         </span>
         <span class="jobs-panel__label">Jobs</span>
         <span v-if="sortedJobs.length" class="jobs-panel__count">{{
-          sortedJobs.length
+          jobsCountLabel
         }}</span>
         <span class="flex-1" />
         <DownOutlined
@@ -518,14 +632,18 @@ watch(
           class="relative"
         >
           <div
-            v-for="j in sortedJobs"
+            v-for="j in displayJobs"
             :key="j.id"
             class="faw-job-row group/job"
             :class="{
               active: selectedJobId === j.id,
               flash: flashIds.has(j.id),
+              pinned: isPinned(j.id),
             }"
+            role="button"
+            tabindex="0"
             @click="emit('selectJob', j.id)"
+            @keydown.enter.prevent="emit('selectJob', j.id)"
           >
             <div @click.stop>
               <a-dropdown
@@ -584,16 +702,34 @@ watch(
               link-class="faw-job-id !no-underline"
             />
 
-            <span class="faw-job-t" :title="j.issue?.title">{{
-              j.issue?.title
-            }}</span>
+            <div class="faw-job-main min-w-0 flex-1">
+              <span class="faw-job-t" :title="j.issue?.title">{{
+                j.issue?.title
+              }}</span>
+              <span v-if="jobMetaLine(j)" class="faw-job-meta">{{
+                jobMetaLine(j)
+              }}</span>
+            </div>
 
             <span
               v-if="jobSecondaryChip(j)"
               class="faw-job-tag"
+              :class="{ 'faw-job-tag--await': jobSecondaryChip(j)?.awaiting }"
               :title="jobSecondaryChip(j)?.title"
               >{{ jobSecondaryChip(j)?.label }}</span
             >
+
+            <button
+              type="button"
+              class="faw-job-pin"
+              :class="{ 'is-on': isPinned(j.id) }"
+              :title="isPinned(j.id) ? 'Unpin job' : 'Pin job'"
+              :aria-pressed="isPinned(j.id)"
+              @click.stop="togglePin(j.id)"
+            >
+              <PushpinFilled v-if="isPinned(j.id)" />
+              <PushpinOutlined v-else />
+            </button>
 
             <a-spin
               v-if="jobLoading && selectedJobId === j.id"
@@ -626,9 +762,17 @@ watch(
           class="py-4"
           description="No jobs yet"
         >
-          <span class="text-[11px] text-ink-faint"
-            >Type in Console to start a session, or Run a GitLab task</span
-          >
+          <div class="flex flex-wrap gap-2 justify-center px-2">
+            <a-button size="small" type="primary" @click="emit('startChat')"
+              >Start from chat</a-button
+            >
+            <a-button
+              size="small"
+              :disabled="busy || !selectedIids.length"
+              @click="emit('runSelected')"
+              >Run selected</a-button
+            >
+          </div>
         </a-empty>
         <div
           v-else-if="work.jobsLoadingMore"

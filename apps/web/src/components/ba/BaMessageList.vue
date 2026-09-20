@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
+import { Modal } from "ant-design-vue";
 import ChatMessageBody from "@/components/ChatMessageBody.vue";
 import { useAutoScroll } from "@/composables/useAutoScroll";
 import { formatChatTime } from "@/utils/formatChatTime";
@@ -111,6 +112,23 @@ function canRegenerate(m: BaMessage) {
   if (!m.content?.trim()) return false;
   // Only the latest assistant — regenerating older ones would wipe later turns.
   return m.id === lastAssistantId.value;
+}
+
+function requestRegenerate(m: BaMessage) {
+  if (!canRegenerate(m)) return;
+  const isRetry = isErrorMessage(m);
+  Modal.confirm({
+    title: isRetry ? "Retry this reply?" : "Regenerate this reply?",
+    content: isRetry
+      ? "This will try generating the answer again from the previous question."
+      : "This will replace the current answer and re-run the previous question.",
+    okText: isRetry ? "Retry" : "Regenerate",
+    cancelText: "Cancel",
+    centered: true,
+    onOk: () => {
+      emit("regenerate", m.id);
+    },
+  });
 }
 
 const showEmpty = computed(
@@ -272,7 +290,7 @@ function onTip(prompt: string) {
                   type="button"
                   class="faw-ba-msg-action"
                   :aria-label="isErrorMessage(m) ? 'Retry reply' : 'Regenerate reply'"
-                  @click="emit('regenerate', m.id)"
+                  @click="requestRegenerate(m)"
                 >
                   {{ isErrorMessage(m) ? "Retry" : "Regenerate" }}
                 </button>

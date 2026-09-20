@@ -441,6 +441,7 @@ onMounted(() => {
 });
 onUnmounted(() => {
   window.removeEventListener("message", onGoogleOAuthMessage);
+  if (midFlashTimer) clearTimeout(midFlashTimer);
 });
 
 const mergeOpHistory = computed(() => props.currentJob?.mergeOpHistory ?? []);
@@ -524,11 +525,34 @@ const canSyncIssue = computed(
         props.currentJob?.issue?.issueIid,
     ),
 );
+
+const midFlash = ref(false);
+let midFlashTimer: ReturnType<typeof setTimeout> | null = null;
+watch(
+  () => props.currentJob?.status,
+  (status, prev) => {
+    if (!status || !prev || status === prev) return;
+    midFlash.value = true;
+    if (midFlashTimer) clearTimeout(midFlashTimer);
+    midFlashTimer = setTimeout(() => {
+      midFlash.value = false;
+    }, 1000);
+  },
+);
+
+const runTooltip = computed(() => {
+  if (props.runBlockedReason) return props.runBlockedReason;
+  if (props.contextIsBad) {
+    return "Thin context — confirm when you Run / Send";
+  }
+  return "Run agent on selected task · ⌘/Ctrl+Enter";
+});
 </script>
 
 <template>
   <section
     class="flex flex-col min-h-0 overflow-hidden relative h-full faw-mid-col"
+    :class="{ 'faw-mid-col--flash': midFlash }"
   >
     <div
       v-if="jobLoading"
@@ -1233,33 +1257,36 @@ const canSyncIssue = computed(
       </a-tab-pane>
     </a-tabs>
 
-    <!-- Bottom bar — mockup bottombar -->
+    <!-- Bottom bar — primary Run vs secondary actions -->
     <div
       v-show="!jobLoading && !hideStickyActions && midTab === 'detail'"
       class="faw-bottombar"
       :class="mobileTouch ? '!gap-3' : ''"
     >
-      <a-tooltip title="Run agent on selected task">
+      <div class="faw-bottombar__primary">
+        <a-tooltip :title="runTooltip">
+          <button
+            type="button"
+            class="faw-btn faw-btn--run"
+            :class="mobileTouch ? '!min-h-[44px]' : ''"
+            :disabled="busy"
+            @click="emit('runSelected')"
+          >
+            ▶ Run
+          </button>
+        </a-tooltip>
         <button
+          v-if="awaitingPlanApproval"
           type="button"
           class="faw-btn faw-btn--run"
           :class="mobileTouch ? '!min-h-[44px]' : ''"
-          :disabled="busy"
-          @click="emit('runSelected')"
+          :disabled="approvePlanBusy"
+          @click="emit('approvePlan')"
         >
-          ▶ Run
+          Approve Plan
         </button>
-      </a-tooltip>
-      <button
-        v-if="awaitingPlanApproval"
-        type="button"
-        class="faw-btn faw-btn--run"
-        :class="mobileTouch ? '!min-h-[44px]' : ''"
-        :disabled="approvePlanBusy"
-        @click="emit('approvePlan')"
-      >
-        Approve Plan
-      </button>
+      </div>
+      <div class="faw-bottombar__secondary">
       <a-tooltip
         :title="
           canSyncBase
@@ -1361,6 +1388,7 @@ const canSyncIssue = computed(
           </button>
         </a-tooltip>
       </a-popconfirm>
+      </div>
     </div>
 
     <a-modal
