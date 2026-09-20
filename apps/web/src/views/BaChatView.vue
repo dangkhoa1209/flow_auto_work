@@ -364,7 +364,7 @@ const contextBits = computed(() => {
           </a-tooltip>
           <span
             v-if="ba.streaming"
-            class="faw-idle text-[13px]"
+            class="faw-idle text-[11px]"
           >
             <span class="faw-idle__dot wip" />
             thinking…

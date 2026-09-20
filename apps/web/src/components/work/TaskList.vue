@@ -537,7 +537,7 @@ watch(
                 <IssueIidLink
                   :iid="t.issueIid"
                   :url="t.url"
-                  link-class="!text-[13px] !font-mono"
+                  link-class="!text-[10.5px] !font-mono"
                 />
               </div>
               <div class="faw-task-row__title">{{ t.title }}</div>
@@ -760,14 +760,14 @@ watch(
         </a-empty>
         <div
           v-else-if="work.jobsLoadingMore"
-          class="px-3 py-3 text-center text-[13px] text-ink-faint"
+          class="px-3 py-3 text-center text-[11px] text-ink-faint"
           aria-live="polite"
         >
           Loading more…
         </div>
         <div
           v-else-if="work.jobsHasMore"
-          class="px-3 py-2 text-center text-[13px] text-ink-faint"
+          class="px-3 py-2 text-center text-[10px] text-ink-faint"
         >
           Scroll for more
         </div>

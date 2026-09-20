@@ -1208,7 +1208,7 @@ onUnmounted(() => {
 
         <p
           v-if="seedHint && !featureDisabledReason && !dbTargetLabel"
-          class="text-[13px] text-ink-muted m-0"
+          class="text-[12px] text-ink-muted m-0"
         >
           {{ seedHint }}
         </p>
@@ -1313,7 +1313,7 @@ onUnmounted(() => {
                   : "Plan finished"
               }}
             </div>
-            <span class="text-[13px] text-ink-muted tabular-nums shrink-0">
+            <span class="text-[12px] text-ink-muted tabular-nums shrink-0">
               {{ humanProgress?.pct ?? 0 }}%
             </span>
           </div>
@@ -1332,14 +1332,14 @@ onUnmounted(() => {
           <div class="text-[13px] text-ink-muted">
             {{ humanProgress?.label || "Starting…" }}
           </div>
-          <div class="text-[13px] text-ink-faint">
+          <div class="text-[11px] text-ink-faint">
             Step {{ (humanProgress?.stageIndex ?? 0) + 1 }} of
             {{ humanProgress?.totalStages ?? 6 }}
           </div>
           <button
             v-if="progressLines.length"
             type="button"
-            class="text-[13px] text-ink-muted underline"
+            class="text-[11px] text-ink-muted underline"
             @click="showPlannerLog = !showPlannerLog"
           >
             {{ showPlannerLog ? "Hide" : "Show" }} planner activity ({{
@@ -1353,7 +1353,7 @@ onUnmounted(() => {
             <div
               v-for="(line, i) in progressLines"
               :key="`${line.step}-${i}-${line.label}`"
-              class="text-[13px] font-mono text-ink truncate"
+              class="text-[12px] font-mono text-ink truncate"
             >
               <span class="text-ink-faint">{{ line.step }}</span>
               · {{ line.label }}
@@ -1366,7 +1366,7 @@ onUnmounted(() => {
         <button
           v-else-if="progressLines.length && !planning"
           type="button"
-          class="text-[13px] text-ink-muted underline"
+          class="text-[11px] text-ink-muted underline"
           @click="showPlannerLog = true"
         >
           Show planner log ({{ progressLines.length }})
@@ -1382,7 +1382,7 @@ onUnmounted(() => {
             v-if="planQuestions.length"
             class="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 space-y-1.5"
           >
-            <div class="text-[13px] font-semibold text-amber-950 uppercase tracking-wide">
+            <div class="text-[11px] font-semibold text-amber-950 uppercase tracking-wide">
               Needs clarification / validation
             </div>
             <ul class="m-0 pl-4 text-[13px] text-amber-950 space-y-1.5 leading-snug">
@@ -1391,13 +1391,13 @@ onUnmounted(() => {
           </div>
           <div
             v-else-if="planSteps.length"
-            class="text-[13px] text-ink-muted"
+            class="text-[12px] text-ink-muted"
           >
             Plan has {{ planSteps.length }} steps. Reply below to refine, or
             Execute when ready.
           </div>
           <div class="space-y-1">
-            <div class="text-[13px] font-medium text-ink-muted uppercase tracking-wide">
+            <div class="text-[11px] font-medium text-ink-muted uppercase tracking-wide">
               Your reply
             </div>
             <div class="flex gap-2 items-end">
@@ -1424,14 +1424,14 @@ onUnmounted(() => {
         <div v-if="planNotes.length">
           <button
             type="button"
-            class="text-[13px] text-ink-muted underline"
+            class="text-[12px] text-ink-muted underline"
             @click="showPlanNotes = !showPlanNotes"
           >
             {{ showPlanNotes ? "Hide" : "Show" }} planner notes ({{ planNotes.length }})
           </button>
           <div
             v-if="showPlanNotes"
-            class="mt-1 text-[13px] text-ink-muted space-y-1"
+            class="mt-1 text-[12px] text-ink-muted space-y-1"
           >
             <div v-for="(n, i) in planNotes" :key="i">• {{ n }}</div>
           </div>
@@ -1444,7 +1444,7 @@ onUnmounted(() => {
         >
           <div class="flex flex-wrap items-baseline justify-between gap-2">
             <div class="text-sm font-medium text-ink">Execution summary</div>
-            <div class="text-[13px] text-ink-muted">
+            <div class="text-[12px] text-ink-muted">
               <code class="text-ink">{{ executionSummary.batchId }}</code>
               ·
               <span :class="statusColor[executionSummary.status]">{{
@@ -1475,7 +1475,7 @@ onUnmounted(() => {
             <span
               v-for="c in executionSummary.collections"
               :key="c.collection"
-              class="inline-flex items-center gap-1 rounded border border-[var(--app-border)] px-2 py-0.5 text-[13px] font-mono"
+              class="inline-flex items-center gap-1 rounded border border-[var(--app-border)] px-2 py-0.5 text-[12px] font-mono"
             >
               {{ c.collection }}
               <span class="text-green-700">{{ c.success }}</span>
@@ -1485,13 +1485,13 @@ onUnmounted(() => {
 
           <p
             v-if="executionSummary.error"
-            class="m-0 text-[13px] text-red-600"
+            class="m-0 text-[12px] text-red-600"
           >
             {{ executionSummary.error }}
           </p>
 
           <div class="overflow-x-auto">
-            <table class="w-full text-left text-[13px] border-collapse">
+            <table class="w-full text-left text-[12px] border-collapse">
               <thead>
                 <tr class="text-ink-muted border-b border-[var(--app-border)]">
                   <th class="py-1 pr-2 font-medium">#</th>
@@ -1543,7 +1543,7 @@ onUnmounted(() => {
 
         <div
           v-else-if="activeBatch"
-          class="text-[13px] text-ink-muted"
+          class="text-[12px] text-ink-muted"
         >
           Active batch
           <code class="text-ink">{{ activeBatch.batchId }}</code>
@@ -1564,7 +1564,7 @@ onUnmounted(() => {
             </div>
             <button
               type="button"
-              class="text-[13px] text-ink-muted underline"
+              class="text-[12px] text-ink-muted underline"
               @click="forceShowEditors = !forceShowEditors"
             >
               {{ forceShowEditors ? "Hide all step JSON" : "Show all step JSON" }}
@@ -1581,7 +1581,7 @@ onUnmounted(() => {
                 <div class="text-[13px] font-medium text-ink">
                   {{ idx + 1 }}.
                   <span
-                    class="uppercase tracking-wide text-[13px] px-1.5 py-0.5 rounded ml-1"
+                    class="uppercase tracking-wide text-[11px] px-1.5 py-0.5 rounded ml-1"
                     :class="{
                       'bg-green-50 text-green-800': s.op === 'insert',
                       'bg-amber-50 text-amber-800': s.op === 'update',
@@ -1591,13 +1591,13 @@ onUnmounted(() => {
                   >
                   <span class="font-mono ml-1">{{ s.collection }}</span>
                 </div>
-                <div class="text-[13px] text-ink-muted mt-0.5">
+                <div class="text-[12px] text-ink-muted mt-0.5">
                   {{ s.description || s.step_id }}
                 </div>
               </div>
               <button
                 type="button"
-                class="text-[13px] text-ink-muted underline shrink-0"
+                class="text-[11px] text-ink-muted underline shrink-0"
                 @click="toggleStepJson(s.step_id)"
               >
                 {{ isStepJsonOpen(s.step_id) ? "Hide JSON" : "JSON" }}
@@ -1606,10 +1606,10 @@ onUnmounted(() => {
 
             <!-- Insert: field cards -->
             <div v-if="s.op === 'insert'" class="space-y-1">
-              <div class="text-[13px] text-ink-muted">Fields to create</div>
+              <div class="text-[11px] text-ink-muted">Fields to create</div>
               <dl
                 v-if="stepFieldEntries(stepDataForDisplay(s)).length"
-                class="grid grid-cols-[minmax(7rem,auto)_1fr] gap-x-3 gap-y-1 text-[13px]"
+                class="grid grid-cols-[minmax(7rem,auto)_1fr] gap-x-3 gap-y-1 text-[12px]"
               >
                 <template
                   v-for="f in stepFieldEntries(stepDataForDisplay(s))"
@@ -1619,16 +1619,16 @@ onUnmounted(() => {
                   <dd class="font-mono text-ink m-0 break-all">{{ f.value }}</dd>
                 </template>
               </dl>
-              <div v-else class="text-[13px] text-ink-faint">No fields</div>
+              <div v-else class="text-[12px] text-ink-faint">No fields</div>
             </div>
 
             <!-- Update: target + changes -->
             <div v-else-if="s.op === 'update'" class="space-y-2">
               <div>
-                <div class="text-[13px] text-ink-muted mb-1">Match record (filter)</div>
+                <div class="text-[11px] text-ink-muted mb-1">Match record (filter)</div>
                 <dl
                   v-if="stepFieldEntries(stepFilterForDisplay(s)).length"
-                  class="grid grid-cols-[minmax(7rem,auto)_1fr] gap-x-3 gap-y-1 text-[13px]"
+                  class="grid grid-cols-[minmax(7rem,auto)_1fr] gap-x-3 gap-y-1 text-[12px]"
                 >
                   <template
                     v-for="f in stepFieldEntries(stepFilterForDisplay(s))"
@@ -1638,15 +1638,15 @@ onUnmounted(() => {
                     <dd class="font-mono text-ink m-0 break-all">{{ f.value }}</dd>
                   </template>
                 </dl>
-                <div v-else class="text-[13px] text-ink-faint">Empty filter</div>
+                <div v-else class="text-[12px] text-ink-faint">Empty filter</div>
               </div>
               <div>
-                <div class="text-[13px] text-ink-muted mb-1">
+                <div class="text-[11px] text-ink-muted mb-1">
                   Fields that will change
                 </div>
                 <dl
                   v-if="stepFieldEntries(stepDataForDisplay(s)).length"
-                  class="grid grid-cols-[minmax(7rem,auto)_1fr] gap-x-3 gap-y-1 text-[13px]"
+                  class="grid grid-cols-[minmax(7rem,auto)_1fr] gap-x-3 gap-y-1 text-[12px]"
                 >
                   <template
                     v-for="f in stepFieldEntries(stepDataForDisplay(s))"
@@ -1658,16 +1658,16 @@ onUnmounted(() => {
                     </dd>
                   </template>
                 </dl>
-                <div v-else class="text-[13px] text-ink-faint">No changes</div>
+                <div v-else class="text-[12px] text-ink-faint">No changes</div>
               </div>
             </div>
 
             <!-- Delete: identity -->
             <div v-else class="space-y-1">
-              <div class="text-[13px] text-red-700">Record to delete</div>
+              <div class="text-[11px] text-red-700">Record to delete</div>
               <div
                 v-if="stepIdentityLabels(s).length"
-                class="text-[13px] font-mono text-ink space-y-0.5"
+                class="text-[12px] font-mono text-ink space-y-0.5"
               >
                 <div v-for="(lab, li) in stepIdentityLabels(s)" :key="li">
                   {{ lab }}
@@ -1675,7 +1675,7 @@ onUnmounted(() => {
               </div>
               <dl
                 v-else-if="stepFieldEntries(stepFilterForDisplay(s)).length"
-                class="grid grid-cols-[minmax(7rem,auto)_1fr] gap-x-3 gap-y-1 text-[13px]"
+                class="grid grid-cols-[minmax(7rem,auto)_1fr] gap-x-3 gap-y-1 text-[12px]"
               >
                 <template
                   v-for="f in stepFieldEntries(stepFilterForDisplay(s))"
@@ -1685,31 +1685,31 @@ onUnmounted(() => {
                   <dd class="font-mono text-ink m-0 break-all">{{ f.value }}</dd>
                 </template>
               </dl>
-              <div v-else class="text-[13px] text-ink-faint">No filter</div>
+              <div v-else class="text-[12px] text-ink-faint">No filter</div>
             </div>
 
             <div
               v-if="isStepJsonOpen(s.step_id)"
               class="space-y-2 pt-2 border-t border-[var(--app-border)]"
             >
-              <label class="flex flex-col gap-1 text-[13px] text-ink-muted">
+              <label class="flex flex-col gap-1 text-[11px] text-ink-muted">
                 data
                 <a-textarea
                   v-model:value="editingData[s.step_id]"
                   :rows="4"
-                  class="font-mono text-[13px]"
+                  class="font-mono text-[12px]"
                   placeholder="null / JSON document or row"
                 />
               </label>
               <label
                 v-if="s.op !== 'insert'"
-                class="flex flex-col gap-1 text-[13px] text-ink-muted"
+                class="flex flex-col gap-1 text-[11px] text-ink-muted"
               >
                 filter
                 <a-textarea
                   v-model:value="editingFilter[s.step_id]"
                   :rows="2"
-                  class="font-mono text-[13px]"
+                  class="font-mono text-[12px]"
                   placeholder="WHERE / Mongo filter JSON"
                 />
               </label>
@@ -1717,7 +1717,7 @@ onUnmounted(() => {
 
             <div
               v-if="resultFor(s.step_id)"
-              class="text-[13px]"
+              class="text-[12px]"
               :class="statusColor[resultFor(s.step_id)!.status]"
             >
               Result: {{ resultFor(s.step_id)!.status }}
@@ -1763,18 +1763,18 @@ onUnmounted(() => {
           @click="openHistory(b)"
         >
           <div class="flex items-center justify-between gap-2">
-            <code class="text-[13px] text-ink">{{ b.batchId }}</code>
-            <span class="text-[13px]" :class="statusColor[b.status]">{{
+            <code class="text-[12px] text-ink">{{ b.batchId }}</code>
+            <span class="text-[11px]" :class="statusColor[b.status]">{{
               b.status
             }}</span>
           </div>
-          <div class="text-[13px] text-ink-muted mt-1 line-clamp-1">
+          <div class="text-[12px] text-ink-muted mt-1 line-clamp-1">
             {{ batchPreviewLine(b) }}
           </div>
-          <div class="text-[13px] text-ink-faint mt-0.5 line-clamp-2">
+          <div class="text-[12px] text-ink-faint mt-0.5 line-clamp-2">
             {{ b.prompt }}
           </div>
-          <div class="text-[13px] text-ink-faint mt-1">
+          <div class="text-[11px] text-ink-faint mt-1">
             {{ new Date(b.createdAt).toLocaleString() }}
           </div>
         </button>

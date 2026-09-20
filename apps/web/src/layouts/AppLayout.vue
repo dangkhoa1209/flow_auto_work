@@ -180,7 +180,7 @@ async function onKillAll() {
             :value="o.value"
             :label="`${o.gitlabPath} › ${o.flowName}`"
           >
-            <span class="font-mono text-[13px] text-ink-faint">{{
+            <span class="font-mono text-[11px] text-ink-faint">{{
               o.gitlabPath
             }}</span>
             <span class="text-ink-faint mx-1">›</span>

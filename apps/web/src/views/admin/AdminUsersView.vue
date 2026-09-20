@@ -426,7 +426,7 @@ onMounted(() => {
             </span>
             <span
               v-if="isSelf(record as AdminUser)"
-              class="ml-1.5 text-[13px] text-accent"
+              class="ml-1.5 text-[11px] text-accent"
             >
               (you)
             </span>
@@ -470,8 +470,8 @@ onMounted(() => {
               <span class="font-mono text-sm text-ink font-semibold">
                 {{ (record as AdminUser).baChatMessageCount ?? 0 }}
               </span>
-              <span class="text-[13px] text-ink-muted ml-1">msgs</span>
-              <div class="text-[13px] text-ink-faint">
+              <span class="text-[11px] text-ink-muted ml-1">msgs</span>
+              <div class="text-[10px] text-ink-faint">
                 {{ (record as AdminUser).baChatThreadCount ?? 0 }} threads
                 <template
                   v-if="((record as AdminUser).baChatMessageDeletedCount ?? 0) > 0"

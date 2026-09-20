@@ -336,7 +336,7 @@ function onTip(prompt: string) {
           <div class="faw-msg agent faw-msg--failed">
             <div class="faw-msg__who">system</div>
             <div class="faw-msg__bubble faw-msg__bubble--error">
-              <p class="m-0 text-[13px]">⚠️ {{ failedSend.error }}</p>
+              <p class="m-0 text-[12px]">⚠️ {{ failedSend.error }}</p>
             </div>
           </div>
         </template>
@@ -352,7 +352,7 @@ function onTip(prompt: string) {
             <span class="chat-typing">
               <span /><span /><span />
             </span>
-            <span class="text-[13px] text-[var(--app-faint)] ml-1.5">{{
+            <span class="text-[11px] text-[var(--app-faint)] ml-1.5">{{
               typingHint
             }}</span>
           </div>
