@@ -647,7 +647,7 @@ watch(chatBox, (el, prev) => {
             <div class="faw-msg user faw-msg--failed">
               <div class="faw-msg__who">You</div>
               <div class="faw-msg__bubble faw-msg__bubble--failed">
-                <div class="whitespace-pre-wrap text-[13px]">{{ failedSend.content }}</div>
+                <div class="chat-md chat-md-user">{{ failedSend.content }}</div>
                 <div class="faw-console-failed-meta">
                   <span class="faw-ba-failed-label">Send failed</span>
                   <button
@@ -941,12 +941,12 @@ watch(chatBox, (el, prev) => {
           aria-label="Agent console message"
           :placeholder="
             agentTyping || busy
-              ? 'Type a follow-up — Send will ask to stop the current run…'
+              ? 'Follow-up — Send will stop the current run first…'
               : currentJob?.status === 'awaiting_clarification'
-                ? 'Reply to the agent / confirm…'
+                ? 'Reply to the agent…'
                 : currentJob
-                  ? 'Send a command (fix / implement / analyze) → queue…'
-                  : 'Describe the work — Send starts a session (no GitLab issue needed)'
+                  ? 'Command or question…'
+                  : 'Describe work — Send starts a session'
           "
           @update:value="(v: string) => emit('update:chatInput', v)"
           @keydown="onChatKeydown"
@@ -1012,7 +1012,7 @@ watch(chatBox, (el, prev) => {
               title="Quick Q&A (no code changes) → queue"
               @click="emit('sendChat', 'ask')"
             >
-              Ask only
+              Ask
             </button>
           </div>
         </div>

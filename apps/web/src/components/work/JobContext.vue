@@ -1261,14 +1261,14 @@ const runTooltip = computed(() => {
     <div
       v-show="!jobLoading && !hideStickyActions && midTab === 'detail'"
       class="faw-bottombar"
-      :class="mobileTouch ? '!gap-3' : ''"
+      :class="mobileTouch ? '!gap-2' : ''"
     >
       <div class="faw-bottombar__primary">
         <a-tooltip :title="runTooltip">
           <button
             type="button"
             class="faw-btn faw-btn--run"
-            :class="mobileTouch ? '!min-h-[44px]' : ''"
+            :class="mobileTouch ? '!min-h-[32px]' : ''"
             :disabled="busy"
             @click="emit('runSelected')"
           >
@@ -1279,7 +1279,7 @@ const runTooltip = computed(() => {
           v-if="awaitingPlanApproval"
           type="button"
           class="faw-btn faw-btn--run"
-          :class="mobileTouch ? '!min-h-[44px]' : ''"
+          :class="mobileTouch ? '!min-h-[32px]' : ''"
           :disabled="approvePlanBusy"
           @click="emit('approvePlan')"
         >
@@ -1297,7 +1297,7 @@ const runTooltip = computed(() => {
         <button
           type="button"
           class="faw-btn"
-          :class="mobileTouch ? '!min-h-[44px]' : ''"
+          :class="mobileTouch ? '!min-h-[32px]' : ''"
           :disabled="!canSyncBase || syncBaseBusy"
           @click="emit('syncBase')"
         >
@@ -1316,7 +1316,7 @@ const runTooltip = computed(() => {
         <button
           type="button"
           class="faw-btn"
-          :class="mobileTouch ? '!min-h-[44px]' : ''"
+          :class="mobileTouch ? '!min-h-[32px]' : ''"
           :disabled="!canCreateMr || createMrBusy || mergeBusy || handoffBusy"
           @click="emit('createMr')"
         >
@@ -1340,7 +1340,7 @@ const runTooltip = computed(() => {
           <button
             type="button"
             class="faw-btn"
-            :class="mobileTouch ? '!min-h-[44px]' : ''"
+            :class="mobileTouch ? '!min-h-[32px]' : ''"
             :disabled="!canQuickMerge || mergeBusy || handoffBusy || createMrBusy"
           >
             Merge
@@ -1357,7 +1357,7 @@ const runTooltip = computed(() => {
         <button
           type="button"
           class="faw-btn"
-          :class="mobileTouch ? '!min-h-[44px]' : ''"
+          :class="mobileTouch ? '!min-h-[32px]' : ''"
           :disabled="!canGenerateTestcases || testcasesBusy"
           @click="emit('generateTestcases')"
         >
@@ -1381,7 +1381,7 @@ const runTooltip = computed(() => {
           <button
             type="button"
             class="faw-btn"
-            :class="mobileTouch ? '!min-h-[44px]' : ''"
+            :class="mobileTouch ? '!min-h-[32px]' : ''"
             :disabled="!canQuickHandoff || handoffBusy || mergeBusy || createMrBusy"
           >
             Handoff
