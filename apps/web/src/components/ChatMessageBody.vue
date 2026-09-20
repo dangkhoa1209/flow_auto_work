@@ -146,10 +146,15 @@ async function copyText() {
   padding: 3px 7px;
   border-radius: 4px;
   cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease;
 }
 .chat-md-copy__btn:hover {
   color: var(--app-accent);
   border-color: var(--app-accent);
+}
+.chat-md-copy__btn:focus-visible {
+  outline: 2px solid var(--app-accent);
+  outline-offset: 2px;
 }
 .faw-msg.user .chat-md-copy__btn {
   background: rgb(255 255 255 / 0.35);

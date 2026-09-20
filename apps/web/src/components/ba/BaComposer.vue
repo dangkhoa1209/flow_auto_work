@@ -62,13 +62,14 @@ function onKeydown(e: KeyboardEvent) {
 </script>
 
 <template>
-  <div class="faw-console-input">
+  <div class="faw-console-input" role="form" aria-label="Message composer">
     <a-tooltip :title="disabled && disabledReason ? disabledReason : ''">
       <a-textarea
         v-model:value="text"
         :rows="2"
         :auto-size="{ minRows: 2, maxRows: 12 }"
         :disabled="Boolean(disabled)"
+        aria-label="Chat message"
         :placeholder="
           loading
             ? 'Type a follow-up — Send will ask to stop the current reply…'
@@ -118,6 +119,7 @@ function onKeydown(e: KeyboardEvent) {
             type="button"
             class="faw-btn faw-btn--danger"
             :disabled="stopBusy"
+            aria-label="Stop reply"
           >
             {{ stopBusy ? "…" : "Stop" }}
           </button>
@@ -126,6 +128,7 @@ function onKeydown(e: KeyboardEvent) {
           type="button"
           class="faw-btn faw-btn--run faw-btn--send"
           :disabled="!canSend"
+          aria-label="Send message"
           @click="submit"
         >
           Send

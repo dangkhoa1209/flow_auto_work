@@ -101,17 +101,23 @@ function whoLabel(role: string) {
   >
     <div
       v-if="!messages.length && !streaming"
-      class="flex-1 flex items-center justify-center py-16 px-4"
+      class="faw-ba-empty flex-1 flex items-center justify-center py-16 px-4"
+      role="status"
     >
-      <div class="max-w-sm text-center space-y-2">
-        <p class="text-[13px] font-semibold text-[var(--app-ink)] m-0">
-          Hỏi bất cứ điều gì về dự án đã chọn
+      <div class="faw-ba-empty__card max-w-md text-center space-y-3">
+        <p class="faw-ba-empty__title m-0">
+          Ask anything about the selected project
         </p>
-        <p class="text-[11.5px] text-[var(--app-muted)] m-0 leading-relaxed">
-          Nên kèm
+        <p class="faw-ba-empty__desc m-0">
+          Include a
           <strong class="text-[var(--app-ink)] font-medium">URL</strong>
-          hoặc điểm neo trên UI (menu, nút, màn hình) để trả lời khớp hệ thống.
+          or UI anchor (menu, button, screen) so answers match the real system.
         </p>
+        <ul class="faw-ba-empty__tips" aria-label="Example prompts">
+          <li>How does the attendance rules screen validate shifts?</li>
+          <li>Summarize this page: https://…</li>
+          <li>Draft an issue for the bug I described</li>
+        </ul>
       </div>
     </div>
 
@@ -135,7 +141,8 @@ function whoLabel(role: string) {
             <div
               v-if="isStreamingMessage(m)"
               class="faw-msg__typing-inline"
-              aria-label="Đang suy nghĩ"
+              aria-live="polite"
+              aria-label="Thinking"
             >
               <span class="chat-typing">
                 <span /><span /><span />
@@ -168,8 +175,8 @@ function whoLabel(role: string) {
     <!-- Only before first token — one assistant row, no duplicate under content -->
     <div v-if="showTypingFooter" class="faw-msg agent">
       <div class="faw-msg__who">assistant</div>
-      <div class="faw-msg__bubble faw-msg__bubble--typing">
-        <span class="chat-typing" aria-label="Đang suy nghĩ">
+      <div class="faw-msg__bubble faw-msg__bubble--typing" aria-live="polite">
+        <span class="chat-typing" aria-label="Thinking">
           <span /><span /><span />
         </span>
         <span class="text-[11px] text-[var(--app-faint)] ml-1.5">{{

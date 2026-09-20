@@ -23,11 +23,11 @@ function onSelectThread(id: string) {
 
 function onDelete(id: string, title: string) {
   Modal.confirm({
-    title: "Xóa chat?",
+    title: "Delete this chat?",
     content: title,
     okType: "danger",
-    okText: "Xóa",
-    cancelText: "Hủy",
+    okText: "Delete",
+    cancelText: "Cancel",
     onOk: async () => {
       try {
         await ba.deleteThread(id);
@@ -63,10 +63,10 @@ function formatTime(iso: string) {
       <a-tooltip
         :title="
           !ba.selectedProjectId
-            ? 'Chọn project ở thanh trên cùng'
+            ? 'Select a project in the top bar'
             : !ba.projectReady
-              ? 'Project chưa sẵn sàng — liên hệ admin'
-              : 'Bắt đầu hội thoại mới'
+              ? 'Project is not ready yet — ask an admin'
+              : 'Start a new conversation'
         "
       >
         <button
@@ -85,7 +85,8 @@ function formatTime(iso: string) {
         v-if="!ba.threads.length"
         class="px-3 py-10 text-center text-[11px] text-[var(--app-faint)]"
       >
-        Chưa có chat.<br />Bấm <b class="text-[var(--app-muted)]">New Chat</b> để bắt đầu.
+        No chats yet.<br />Click
+        <b class="text-[var(--app-muted)]">New Chat</b> to start.
       </div>
       <div
         v-for="t in ba.threads"
@@ -104,7 +105,8 @@ function formatTime(iso: string) {
         <button
           type="button"
           class="faw-icon-btn faw-ba-thread__del"
-          title="Xóa"
+          title="Delete"
+          aria-label="Delete chat"
           @click.stop="onDelete(t.id, t.title)"
         >
           <DeleteOutlined />
