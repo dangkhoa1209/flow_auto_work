@@ -915,6 +915,14 @@ code {
   --bug-dim: #f0576b22;
   --accent-dim: #5b8def33;
   --r: 6px;
+  /* Shorthand aliases used by .faw-build-* (map to --app-* tokens) */
+  --surface: var(--app-bg);
+  --surface-raised: var(--app-panel);
+  --ink: var(--app-ink);
+  --ink-muted: var(--app-muted);
+  --ink-faint: var(--app-faint);
+  --line: var(--app-border);
+  --accent: var(--app-accent);
 }
 
 .faw-col {
@@ -4675,26 +4683,32 @@ a.faw-mseg__btn {
   background: var(--app-bg);
 }
 .faw-build-feed-filters {
-  display: flex;
-  gap: 4px;
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--app-panel);
+  border: 1px solid var(--app-border);
 }
 .faw-build-feed-filter {
   all: unset;
+  box-sizing: border-box;
   cursor: pointer;
   font-size: 12px;
   font-weight: 550;
   padding: 4px 10px;
   border-radius: 6px;
-  color: var(--ink-muted);
+  color: var(--app-muted);
+  transition: background 0.12s ease, color 0.12s ease;
 }
 .faw-build-feed-filter:hover {
-  background: var(--surface-raised);
-  color: var(--ink);
+  background: var(--app-panel-hover);
+  color: var(--app-ink);
 }
 .faw-build-feed-filter.is-active {
-  background: var(--surface-raised);
-  color: var(--ink);
-  box-shadow: inset 0 0 0 1px var(--line);
+  background: var(--app-accent-soft);
+  color: var(--app-accent);
+  font-weight: 650;
 }
 .faw-build-feed-bar__hint {
   margin-left: auto;

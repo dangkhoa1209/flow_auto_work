@@ -29,8 +29,19 @@ const stdinText = ref("");
 const stdinSecret = ref(false);
 const lastFailedToastId = ref<string | null>(null);
 const lastWarningToastId = ref<string | null>(null);
+/** Draft bound to the input; applied query is debounced for live filter. */
 const scriptSearch = ref("");
+const scriptSearchQuery = ref("");
 const scriptSearchEl = ref<HTMLInputElement | null>(null);
+let scriptSearchTimer: ReturnType<typeof setTimeout> | undefined;
+
+watch(scriptSearch, (v) => {
+  clearTimeout(scriptSearchTimer);
+  scriptSearchTimer = setTimeout(() => {
+    scriptSearchQuery.value = v;
+  }, 200);
+});
+
 const focusedScriptId = ref<string | null>(null);
 const expandedBuildId = ref<string | null>(null);
 const logCache = ref<Record<string, BuildLogLine[]>>({});
@@ -131,7 +142,7 @@ const activeScripts = computed(() =>
 );
 
 const filteredScripts = computed(() => {
-  const q = scriptSearch.value.trim().toLowerCase();
+  const q = scriptSearchQuery.value.trim().toLowerCase();
   const fav = new Set(favoriteIds.value);
   const list = activeScripts.value.filter((s) => {
     if (!q) return true;
@@ -786,6 +797,7 @@ onUnmounted(() => {
     configMq.removeEventListener("change", syncConfigCompact);
   }
   if (tickTimer) clearInterval(tickTimer);
+  clearTimeout(scriptSearchTimer);
   window.removeEventListener("keydown", onKeydown);
   for (const t of recentFailedTimers.values()) clearTimeout(t);
   recentFailedTimers.clear();
@@ -823,6 +835,8 @@ onUnmounted(() => {
               class="faw-build-search__input"
               placeholder="Search scripts… (/)"
               aria-label="Search scripts"
+              autocomplete="off"
+              @keydown.enter.prevent
             />
           </div>
         </div>
