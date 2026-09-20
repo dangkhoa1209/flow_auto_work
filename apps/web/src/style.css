@@ -2726,6 +2726,25 @@ a.faw-mseg__btn {
   resize: none;
   transition: border-color 0.15s ease, box-shadow 0.15s ease !important;
 }
+/* Work AgentConsole: denser composer (placeholder + input box) */
+.faw-console:not(.faw-console--ba) .faw-console-input {
+  padding: 8px 10px;
+}
+.faw-console:not(.faw-console--ba) .faw-console-input .ant-input,
+.faw-console:not(.faw-console--ba) .faw-console-input textarea.ant-input {
+  font: 400 11px / 1.4 var(--font-ui) !important;
+  padding: 5px 8px !important;
+  min-height: 28px !important;
+}
+.faw-console:not(.faw-console--ba) .faw-console-input .ant-input::placeholder,
+.faw-console:not(.faw-console--ba) .faw-console-input textarea.ant-input::placeholder {
+  font-size: 11px;
+  font-weight: 400;
+  opacity: 0.72;
+}
+.faw-console:not(.faw-console--ba) .faw-console-input__row {
+  margin-top: 5px;
+}
 .faw-console-input .ant-input:hover,
 .faw-console-input textarea.ant-input:hover {
   border-color: var(--app-border-strong) !important;
