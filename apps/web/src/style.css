@@ -2316,7 +2316,7 @@ a.faw-mseg__btn {
   }
   .faw-app-shell .faw-console-input .ant-input,
   .faw-app-shell .faw-console-input textarea.ant-input {
-    font-size: 16px !important; /* avoid iOS zoom on focus */
+    /* Keep dense IDE type on narrow desktop; iOS zoom handled below */
     padding: 6px 8px !important;
   }
   .faw-app-shell .faw-console-input__row {
@@ -2720,15 +2720,18 @@ a.faw-mseg__btn {
   border: 1px solid var(--app-border) !important;
   border-radius: var(--r) !important;
   color: var(--app-ink) !important;
-  /* Shared BA Chat + Work console composer type scale */
-  font: 400 11px / 1.4 var(--font-ui) !important;
+  /* Match message body density (BA Chat + Work console) — separate props; shorthand+var can drop */
+  font-family: var(--font-ui) !important;
+  font-size: var(--app-chat-size) !important;
+  font-weight: 400 !important;
+  line-height: var(--app-chat-leading) !important;
   padding: 8px 10px !important;
   resize: none;
   transition: border-color 0.15s ease, box-shadow 0.15s ease !important;
 }
 .faw-console-input .ant-input::placeholder,
 .faw-console-input textarea.ant-input::placeholder {
-  font-size: 11px;
+  font-size: var(--app-chat-size);
   font-weight: 400;
   opacity: 0.72;
 }
@@ -4230,6 +4233,12 @@ a.faw-mseg__btn {
   .faw-ba-shell .faw-console-input {
     padding: 8px 10px 10px;
   }
+}
+
+/* iOS Safari zooms inputs <16px — only real phones, not narrow desktop windows */
+@media (max-width: 767px) and (pointer: coarse) {
+  .faw-app-shell .faw-console-input .ant-input,
+  .faw-app-shell .faw-console-input textarea.ant-input,
   .faw-ba-shell .faw-console-input .ant-input,
   .faw-ba-shell .faw-console-input textarea.ant-input {
     font-size: 16px !important;
