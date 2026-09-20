@@ -647,7 +647,7 @@ watch(chatBox, (el, prev) => {
             <div class="faw-msg user faw-msg--failed">
               <div class="faw-msg__who">You</div>
               <div class="faw-msg__bubble faw-msg__bubble--failed">
-                <div class="whitespace-pre-wrap text-[13px]">{{ failedSend.content }}</div>
+                <div class="chat-md chat-md-user">{{ failedSend.content }}</div>
                 <div class="faw-console-failed-meta">
                   <span class="faw-ba-failed-label">Send failed</span>
                   <button

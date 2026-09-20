@@ -552,21 +552,15 @@ code {
   }
 }
 
-/* Agent chat markdown (narrow panel, dark) */
-.chat-md-rich {
-  white-space: normal;
-  line-height: 1.45;
+/* Agent + user chat body — same size/weight so You vs agent read evenly */
+.chat-md-rich,
+.chat-md-user {
   font-size: 13.5px;
-  color: var(--app-muted);
-}
-/* Light mode: chat body reads as primary ink, not washed muted gray */
-:root[data-theme="light"] .chat-md-rich,
-:root[data-theme="light"] .chat-md-rich :where(table td),
-:root[data-theme="light"] .faw-msg__bubble {
+  line-height: 1.55;
   color: var(--app-ink);
 }
-:root[data-theme="light"] .chat-md-rich :where(blockquote) {
-  color: var(--app-muted);
+.chat-md-rich {
+  white-space: normal;
 }
 .chat-md-rich :where(p, ul, ol) {
   margin: 0.25em 0;
@@ -2684,7 +2678,7 @@ a.faw-mseg__btn {
   padding: 10px 12px;
   font-size: 13.5px;
   line-height: 1.55;
-  color: var(--app-muted);
+  color: var(--app-ink);
   background: var(--app-panel-soft);
   border: 1px solid var(--app-border);
   word-break: break-word;
@@ -2693,7 +2687,6 @@ a.faw-mseg__btn {
   background: var(--accent-dim);
   border-color: var(--accent-dim);
   color: var(--app-ink);
-  padding: 9px 11px;
 }
 .faw-msg__bubble--typing {
   display: inline-flex;
