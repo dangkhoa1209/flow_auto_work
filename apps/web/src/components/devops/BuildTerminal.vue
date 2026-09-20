@@ -71,7 +71,7 @@ function boot() {
     cursorBlink: true,
     disableStdin: true,
     convertEol: true,
-    fontSize: 12,
+    fontSize: 13,
     fontFamily: "IBM Plex Mono, ui-monospace, Menlo, Consolas, monospace",
     theme: {
       background: "#0d1117",

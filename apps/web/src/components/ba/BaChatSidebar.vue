@@ -186,14 +186,14 @@ function onThreadListScroll() {
     >
       <div
         v-if="!ba.threads.length"
-        class="px-3 py-10 text-center text-[11px] text-[var(--app-faint)]"
+        class="px-3 py-10 text-center text-[13px] text-[var(--app-faint)]"
       >
         No chats yet.<br />Click
         <b class="text-[var(--app-muted)]">New Chat</b> to start.
       </div>
       <div
         v-else-if="!filteredThreads.length"
-        class="px-3 py-8 text-center text-[11px] text-[var(--app-faint)]"
+        class="px-3 py-8 text-center text-[13px] text-[var(--app-faint)]"
       >
         No chats match “{{ threadQuery.trim() }}”
       </div>
@@ -286,14 +286,14 @@ function onThreadListScroll() {
       </div>
       <div
         v-if="ba.threadsLoadingMore"
-        class="px-3 py-3 text-center text-[11px] text-[var(--app-faint)]"
+        class="px-3 py-3 text-center text-[13px] text-[var(--app-faint)]"
         aria-live="polite"
       >
         Loading more…
       </div>
       <div
         v-else-if="ba.threadsHasMore && ba.threads.length"
-        class="px-3 py-2 text-center text-[10px] text-[var(--app-faint)]"
+        class="px-3 py-2 text-center text-[13px] text-[var(--app-faint)]"
       >
         Scroll for more
       </div>

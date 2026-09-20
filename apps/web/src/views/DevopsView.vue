@@ -1186,7 +1186,7 @@ onUnmounted(() => {
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'start'">
             <span
-              class="font-mono text-[12px]"
+              class="font-mono text-[13px]"
               :title="formatTime((record as BuildJob).startedAt || (record as BuildJob).queuedAt)"
             >
               {{
@@ -1227,7 +1227,7 @@ onUnmounted(() => {
               </span>
               <span
                 v-if="(record as BuildJob).warningMessage?.trim()"
-                class="text-[10px] font-semibold uppercase tracking-wide text-amber-700"
+                class="text-[13px] font-semibold uppercase tracking-wide text-amber-700"
                 title="Log warning"
               >
                 warn
@@ -1343,7 +1343,7 @@ onUnmounted(() => {
               </span>
             </template>
             <template v-else-if="column.key === 'timeout'">
-              <span class="font-mono text-[11px] text-ink-muted">
+              <span class="font-mono text-[13px] text-ink-muted">
                 {{ (record as BuildScript).timeoutSec ?? "—" }}
               </span>
             </template>
@@ -1431,7 +1431,7 @@ onUnmounted(() => {
         >
           {{ devops.selected.errorMessage }}
         </p>
-        <div class="text-[11px] font-mono text-ink-muted break-all">
+        <div class="text-[13px] font-mono text-ink-muted break-all">
           $ {{ devops.selected.command }}
           <span class="text-ink-faint"> (cwd {{ devops.selected.workingDir }})</span>
         </div>

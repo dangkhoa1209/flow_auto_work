@@ -737,15 +737,15 @@ onMounted(async () => {
               {{ record.name }}
               <a-tag
                 v-if="record.isActive"
-                class="!m-0 !ml-1 !text-[10px] align-middle"
+                class="!m-0 !ml-1 !text-[13px] align-middle"
                 color="green"
               >
                 Active
               </a-tag>
             </div>
-            <div class="text-[11px] text-ink-faint font-mono truncate mt-0.5">
+            <div class="text-[13px] text-ink-faint font-mono truncate mt-0.5">
               <a-tag
-                class="!m-0 !mr-1 !text-[10px]"
+                class="!m-0 !mr-1 !text-[13px]"
                 :color="record.gitProvider === 'github' ? 'purple' : 'geekblue'"
               >
                 {{ record.gitProvider === "github" ? "GH" : "GL" }}
@@ -777,7 +777,7 @@ onMounted(async () => {
           <span>Work <b>{{ record.workBranch }}</b></span>
           <span>
             <a-tag
-              class="!m-0 !text-[10px]"
+              class="!m-0 !text-[13px]"
               :color="record.defaultCommitMode === 'manual' ? 'orange' : 'blue'"
             >
               {{ record.defaultCommitMode === "manual" ? "Manual" : "Auto" }}
@@ -785,7 +785,7 @@ onMounted(async () => {
           </span>
           <span>
             <a-tag
-              class="!m-0 !text-[10px]"
+              class="!m-0 !text-[13px]"
               :color="
                 record.cloneStatus === 'ready'
                   ? 'green'
@@ -799,7 +799,7 @@ onMounted(async () => {
             >
           </span>
         </div>
-        <div class="text-[11px] text-ink-faint truncate" :title="String(record.localPath)">
+        <div class="text-[13px] text-ink-faint truncate" :title="String(record.localPath)">
           {{ record.localPath }}
         </div>
       </div>

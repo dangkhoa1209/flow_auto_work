@@ -131,7 +131,7 @@ function boot() {
     document.documentElement.dataset.theme !== "light";
   term = new Terminal({
     cursorBlink: true,
-    fontSize: 12,
+    fontSize: 13,
     fontFamily: "IBM Plex Mono, ui-monospace, Menlo, monospace",
     theme: isDark
       ? {

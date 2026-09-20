@@ -17,6 +17,8 @@ export default {
         mono: ['"IBM Plex Mono"', "ui-monospace", "monospace"],
       },
       fontSize: {
+        // Floor: no UI text below 13px (matches Ant Design / body)
+        xs: ["13px", { lineHeight: "1.45" }],
         base: ["13px", { lineHeight: "1.45" }],
       },
       borderRadius: {

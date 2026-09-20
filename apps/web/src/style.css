@@ -52,7 +52,7 @@
   --font-ui: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, monospace;
   /* Shared Work AgentConsole + BA Chat message density (keep in sync) */
-  --app-chat-size: 12px;
+  --app-chat-size: 13px;
   --app-chat-leading: 1.5;
 }
 
@@ -188,7 +188,7 @@ a.issue-iid-link:hover {
 
 code {
   font-family: var(--font-mono);
-  font-size: 0.88em;
+  font-size: 1em;
   color: var(--app-accent-bright);
   background: var(--app-accent-soft);
   padding: 0.08em 0.32em;
@@ -197,7 +197,7 @@ code {
 
 .mono-log {
   font-family: var(--font-mono);
-  font-size: 11.5px;
+  font-size: 13px;
   line-height: 1.3;
   white-space: pre-wrap;
   word-break: break-word;
@@ -340,7 +340,7 @@ code {
 
 /* Section headings */
 .section-accent {
-  font-size: 10px;
+  font-size: 13px;
   font-weight: 650;
   letter-spacing: 0.07em;
   text-transform: uppercase;
@@ -355,7 +355,7 @@ code {
   flex-wrap: wrap;
   align-items: center;
   gap: 10px 16px;
-  font-size: 11.5px;
+  font-size: 13px;
   line-height: 1.35;
   color: var(--app-muted);
   padding: 8px 0 12px;
@@ -370,7 +370,7 @@ code {
   padding: 1px 6px;
   border-radius: 4px;
   color: var(--app-muted);
-  font-size: 10.5px;
+  font-size: 13px;
 }
 .meta-line__sep {
   color: var(--app-ghost);
@@ -399,7 +399,7 @@ code {
 }
 .meta-line__sha {
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: 13px;
 }
 .meta-line__detail {
   color: var(--app-faint);
@@ -413,7 +413,7 @@ code {
   height: 1.25rem;
   border-radius: 4px;
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 13px;
   line-height: 1;
   color: var(--app-muted);
   background: var(--app-hover-weak);
@@ -468,7 +468,7 @@ code {
   background: var(--app-glass);
   backdrop-filter: blur(6px);
   border-bottom: 1px solid var(--app-border);
-  font-size: 10px;
+  font-size: 13px;
   font-weight: 650;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -482,7 +482,7 @@ code {
   background: var(--app-panel-soft);
   border: 1px solid var(--app-border);
   color: var(--app-muted);
-  font-size: 9px;
+  font-size: 13px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   display: inline-flex;
@@ -572,14 +572,14 @@ code {
   padding-left: 1rem;
 }
 .chat-md-rich :where(h1, h2, h3, h4) {
-  font-size: 0.85rem;
+  font-size: 1rem;
   font-weight: 650;
   margin: 0.45em 0 0.2em;
   color: var(--app-ink);
 }
 .chat-md-rich :where(code) {
   font-family: var(--font-mono);
-  font-size: 0.76rem;
+  font-size: 1rem;
   padding: 0.04rem 0.28rem;
   border-radius: 3px;
   background: rgb(var(--c-accent) / 0.1);
@@ -590,7 +590,7 @@ code {
   padding: 0.45rem 0.55rem;
   border-radius: 4px;
   overflow-x: auto;
-  font-size: 0.72rem;
+  font-size: 1rem;
   background: var(--app-deep);
   border: 1px solid var(--app-border);
 }
@@ -610,7 +610,7 @@ code {
   width: 100%;
   min-width: max-content;
   border-collapse: collapse;
-  font-size: 0.75rem;
+  font-size: 1rem;
   margin: 0;
 }
 .chat-md-rich :where(th, td) {
@@ -688,7 +688,7 @@ code {
   border: 0;
   background: linear-gradient(180deg, var(--app-panel) 0%, var(--app-deep) 100%);
   color: var(--app-faint);
-  font-size: 9px;
+  font-size: 13px;
   font-weight: 650;
   letter-spacing: 0.07em;
   text-transform: uppercase;
@@ -773,7 +773,7 @@ code {
   border-radius: 999px;
   background: var(--app-hover);
   color: var(--app-faint);
-  font-size: 9px;
+  font-size: 13px;
   font-weight: 600;
   letter-spacing: 0;
   text-transform: none;
@@ -783,7 +783,7 @@ code {
   font-variant-numeric: tabular-nums;
 }
 .console-progress__chevron {
-  font-size: 8px;
+  font-size: 13px;
   opacity: 0.65;
   transition: transform 0.2s ease;
   transform: rotate(-90deg);
@@ -801,7 +801,7 @@ code {
   border: 1px solid var(--app-border);
   border-radius: var(--r);
   padding: 8px 10px;
-  font-size: 10.5px;
+  font-size: 13px;
   color: var(--app-faint);
 }
 .console-progress.is-collapsed .console-progress__body {
@@ -835,7 +835,7 @@ code {
   border-bottom: 1px solid var(--app-border);
   background: linear-gradient(180deg, var(--app-panel-soft) 0%, var(--app-panel) 100%);
   color: var(--app-faint);
-  font-size: 9px;
+  font-size: 13px;
   font-weight: 650;
   letter-spacing: 0.07em;
   text-transform: uppercase;
@@ -881,7 +881,7 @@ code {
   border-radius: 999px;
   background: var(--app-hover);
   color: var(--app-faint);
-  font-size: 9px;
+  font-size: 13px;
   font-weight: 600;
   letter-spacing: 0;
   text-transform: none;
@@ -891,7 +891,7 @@ code {
   font-variant-numeric: tabular-nums;
 }
 .jobs-panel__chevron {
-  font-size: 8px;
+  font-size: 13px;
   opacity: 0.65;
   transition: transform 0.2s ease;
   transform: rotate(-90deg);
@@ -937,7 +937,7 @@ code {
   background: var(--app-panel);
 }
 .faw-col-head h2 {
-  font-size: 11px;
+  font-size: 13px;
   text-transform: uppercase;
   letter-spacing: 0.7px;
   color: var(--app-muted);
@@ -947,7 +947,7 @@ code {
 }
 .faw-count {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 13px;
   color: var(--app-faint);
   background: var(--app-panel-soft);
   border: 1px solid var(--app-border);
@@ -965,7 +965,7 @@ code {
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  font-size: 12px;
+  font-size: 13px;
   padding: 0;
 }
 .faw-icon-btn:hover {
@@ -1016,7 +1016,7 @@ code {
   box-shadow: none !important;
   padding-left: 2px !important;
   padding-right: 2px !important;
-  font-size: 11.5px !important;
+  font-size: 13px !important;
   color: var(--app-ink) !important;
 }
 .faw-btn {
@@ -1080,7 +1080,7 @@ code {
   align-items: center;
   gap: 6px;
   padding: 8px 10px 5px;
-  font-size: 10.5px;
+  font-size: 13px;
   text-transform: uppercase;
   letter-spacing: 0.6px;
   color: var(--app-faint);
@@ -1125,10 +1125,10 @@ code {
 .faw-task-row__id {
   font-family: var(--font-mono);
   color: var(--ant-color-primary, var(--app-accent));
-  font-size: 10.5px;
+  font-size: 13px;
 }
 .faw-task-row__title {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--app-ink);
   margin: 1px 0 4px;
   line-height: 1.35;
@@ -1145,7 +1145,7 @@ code {
 }
 .faw-chip {
   font-family: var(--font-mono);
-  font-size: 9.5px;
+  font-size: 13px;
   font-weight: 600;
   padding: 1.5px 6px;
   border-radius: 3px;
@@ -1217,7 +1217,7 @@ code {
   min-width: 0;
 }
 .faw-job-meta {
-  font-size: 9px;
+  font-size: 13px;
   color: var(--app-faint);
   font-variant-numeric: tabular-nums;
   line-height: 1.2;
@@ -1245,7 +1245,7 @@ code {
   max-width: 6.25rem;
   color: var(--app-muted);
   font-family: var(--font-mono);
-  font-size: 9.5px;
+  font-size: 13px;
   line-height: 1.2;
   border-radius: 3px;
 }
@@ -1280,12 +1280,12 @@ code {
 }
 .faw-job-id {
   font-family: var(--font-mono) !important;
-  font-size: 10.5px !important;
+  font-size: 13px !important;
   color: var(--ant-color-primary, var(--app-accent)) !important;
   flex-shrink: 0;
 }
 .faw-job-t {
-  font-size: 11px;
+  font-size: 13px;
   color: var(--app-muted);
   white-space: nowrap;
   overflow: hidden;
@@ -1295,7 +1295,7 @@ code {
 }
 .faw-job-tag {
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: 13px;
   color: var(--app-faint);
   flex-shrink: 0;
   max-width: 4.5rem;
@@ -1314,7 +1314,7 @@ code {
   border: 0;
   background: transparent;
   color: var(--app-faint);
-  font-size: 11px;
+  font-size: 13px;
   line-height: 1;
   padding: 2px;
   cursor: pointer;
@@ -1340,7 +1340,7 @@ code {
   border: 0;
   background: transparent;
   color: var(--app-faint);
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1;
   padding: 0 2px;
   cursor: pointer;
@@ -1364,7 +1364,7 @@ code {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 600;
   padding: 3px 9px;
   border-radius: 20px;
@@ -1380,7 +1380,7 @@ code {
   cursor: pointer;
 }
 .faw-sec {
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 700;
   color: var(--app-ink);
   margin: 16px 0 8px;
@@ -1453,7 +1453,7 @@ code {
   align-items: center;
   gap: 6px;
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: 13px;
   color: var(--app-muted);
   background: var(--app-panel-soft);
   border: 1px solid var(--app-border);
@@ -1475,12 +1475,12 @@ code {
   padding: 0 !important;
   height: 26px !important;
   font-family: var(--font-mono) !important;
-  font-size: 12px !important;
+  font-size: 13px !important;
   color: var(--app-muted) !important;
 }
 .faw-crumb-select .ant-select-selection-item {
   font-family: var(--font-mono) !important;
-  font-size: 12px !important;
+  font-size: 13px !important;
   line-height: 26px !important;
   color: var(--app-ink) !important;
   font-weight: 600 !important;
@@ -1523,7 +1523,7 @@ code {
   display: flex;
   align-items: center;
   gap: 10px;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--app-muted);
   flex-shrink: 0;
 }
@@ -1602,7 +1602,7 @@ code {
   border: 1px solid var(--app-border);
   background: var(--app-panel-soft);
   color: var(--app-ink);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   font-family: var(--font-mono, ui-monospace, monospace);
   cursor: pointer;
@@ -1649,7 +1649,7 @@ code {
     height: 30px;
     padding: 0 8px;
     border-radius: 6px;
-    font-size: 11px;
+    font-size: 13px;
   }
 }
 
@@ -1696,7 +1696,7 @@ code {
   display: none;
 }
 .faw-crumb-tap__chev {
-  font-size: 10px;
+  font-size: 13px;
   color: var(--app-faint);
   flex-shrink: 0;
 }
@@ -1783,7 +1783,7 @@ a.faw-mseg__btn {
   line-height: 1;
 }
 .faw-mnav__label {
-  font-size: 10.5px;
+  font-size: 13px;
   font-weight: 600;
   line-height: 1;
   letter-spacing: 0.01em;
@@ -1808,7 +1808,7 @@ a.faw-mseg__btn {
 }
 .faw-project-sheet__eyebrow {
   margin: 0;
-  font-size: 10px;
+  font-size: 13px;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--app-faint);
@@ -1852,7 +1852,7 @@ a.faw-mseg__btn {
 }
 .faw-project-sheet__repo {
   margin-top: 2px;
-  font-size: 11px;
+  font-size: 13px;
   color: var(--app-faint);
 }
 .faw-project-sheet__check {
@@ -1883,7 +1883,7 @@ a.faw-mseg__btn {
   flex-shrink: 0;
   cursor: pointer;
   padding: 0;
-  font-size: 12px;
+  font-size: 13px;
 }
 .faw-m-detail-bar__back:active {
   color: var(--app-ink);
@@ -1894,14 +1894,14 @@ a.faw-mseg__btn {
   min-width: 0;
 }
 .faw-m-detail-bar__name {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 650;
   color: var(--app-ink);
   line-height: 1.25;
 }
 .faw-m-detail-bar__meta {
   margin-top: 1px;
-  font-size: 10px;
+  font-size: 13px;
   color: var(--app-faint);
   line-height: 1.2;
 }
@@ -2100,7 +2100,7 @@ a.faw-mseg__btn {
   /* Shared control height */
   .faw-app-shell {
     --faw-ctrl-h: 28px;
-    --faw-ctrl-fs: 11px;
+    --faw-ctrl-fs: 13px;
     --faw-ctrl-r: 6px;
   }
 
@@ -2109,16 +2109,16 @@ a.faw-mseg__btn {
     gap: 6px;
   }
   .faw-app-shell .faw-col-head h2 {
-    font-size: 10px;
+    font-size: 13px;
   }
   .faw-app-shell .faw-count {
-    font-size: 9px;
+    font-size: 13px;
     padding: 0 5px;
   }
   .faw-app-shell .faw-icon-btn {
     width: 24px;
     height: 24px;
-    font-size: 11px;
+    font-size: 13px;
   }
 
   .faw-app-shell .faw-filters {
@@ -2163,7 +2163,7 @@ a.faw-mseg__btn {
 
   .faw-app-shell .faw-group-label {
     padding: 6px 8px 3px;
-    font-size: 9.5px;
+    font-size: 13px;
   }
   .faw-app-shell .faw-task-row {
     gap: 6px;
@@ -2171,15 +2171,15 @@ a.faw-mseg__btn {
     min-height: 0;
   }
   .faw-app-shell .faw-task-row__id {
-    font-size: 10px;
+    font-size: 13px;
   }
   .faw-app-shell .faw-task-row__title {
-    font-size: 11px;
+    font-size: 13px;
     margin: 1px 0 2px;
     line-height: 1.3;
   }
   .faw-app-shell .faw-chip {
-    font-size: 9px;
+    font-size: 13px;
     padding: 1px 5px;
   }
   .faw-app-shell .faw-job-row {
@@ -2188,13 +2188,13 @@ a.faw-mseg__btn {
     min-height: 0;
   }
   .faw-app-shell .faw-job-id {
-    font-size: 10px !important;
+    font-size: 13px !important;
   }
   .faw-app-shell .faw-job-t {
-    font-size: 10.5px;
+    font-size: 13px;
   }
   .faw-app-shell .faw-job-tag {
-    font-size: 8.5px;
+    font-size: 13px;
     max-width: 3.5rem;
   }
 
@@ -2205,7 +2205,7 @@ a.faw-mseg__btn {
     display: none;
   }
   .faw-app-shell .meta-line {
-    font-size: 10.5px;
+    font-size: 13px;
     margin-bottom: 8px;
   }
   .faw-app-shell .meta-line__detail {
@@ -2217,7 +2217,7 @@ a.faw-mseg__btn {
   }
   .faw-app-shell .faw-ctx-tags .faw-chip,
   .faw-app-shell .faw-pill {
-    font-size: 10px;
+    font-size: 13px;
     padding: 2px 7px;
   }
   .faw-app-shell .faw-issue-body,
@@ -2235,13 +2235,13 @@ a.faw-mseg__btn {
     width: 28px;
     height: 28px;
     border-radius: 6px;
-    font-size: 12px;
+    font-size: 13px;
   }
   .faw-app-shell .faw-m-detail-bar__name {
-    font-size: 12px;
+    font-size: 13px;
   }
   .faw-app-shell .faw-m-detail-bar__meta {
-    font-size: 10px;
+    font-size: 13px;
   }
   .faw-app-shell .faw-m-seg {
     padding: 2px;
@@ -2251,7 +2251,7 @@ a.faw-mseg__btn {
     height: 28px;
     min-width: 2.75rem;
     padding: 0 8px;
-    font-size: 11px;
+    font-size: 13px;
     border-radius: 5px;
   }
 
@@ -2260,7 +2260,7 @@ a.faw-mseg__btn {
   }
   .faw-app-shell .faw-m-console-tabs__btn {
     height: 28px;
-    font-size: 11px;
+    font-size: 13px;
     border-radius: 6px;
   }
 
@@ -2272,7 +2272,7 @@ a.faw-mseg__btn {
     min-width: 0;
   }
   .faw-app-shell .faw-console--mobile .faw-console-head__win {
-    font-size: 10px;
+    font-size: 13px;
     max-width: 7rem;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -2280,22 +2280,22 @@ a.faw-mseg__btn {
   }
   .faw-app-shell .faw-console--mobile .faw-console-context {
     padding: 4px 10px 6px;
-    font-size: 10px;
+    font-size: 13px;
   }
   .faw-app-shell .faw-console-head {
     padding: 6px 10px;
   }
   .faw-app-shell .faw-console-head__title h2 {
-    font-size: 11px;
+    font-size: 13px;
   }
   .faw-app-shell .faw-console-head__win {
-    font-size: 9px;
+    font-size: 13px;
   }
   .faw-app-shell .faw-console-actions .faw-btn,
   .faw-app-shell .faw-console-actions .ant-btn {
     height: 28px !important;
     padding: 0 8px !important;
-    font-size: 11px !important;
+    font-size: 13px !important;
     border-radius: 6px !important;
   }
   .faw-app-shell .faw-console-scroll {
@@ -2303,12 +2303,12 @@ a.faw-mseg__btn {
     gap: 8px;
   }
   .faw-app-shell .faw-msg__who {
-    font-size: 9px;
+    font-size: 13px;
     margin-bottom: 2px;
   }
   .faw-app-shell .faw-msg__bubble {
     padding: 6px 8px;
-    font-size: 11px;
+    font-size: 13px;
     line-height: 1.45;
   }
   .faw-app-shell .faw-console-input {
@@ -2316,7 +2316,7 @@ a.faw-mseg__btn {
   }
   .faw-app-shell .faw-console-input .ant-input,
   .faw-app-shell .faw-console-input textarea.ant-input {
-    /* Keep dense IDE type on narrow desktop; iOS zoom handled below */
+    /* Keep dense IDE type on narrow desktop */
     padding: 6px 8px !important;
   }
   .faw-app-shell .faw-console-input__row {
@@ -2338,7 +2338,7 @@ a.faw-mseg__btn {
     min-height: var(--faw-ctrl-h, 28px);
     padding: 0 10px;
     border-radius: var(--faw-ctrl-r, 5px);
-    font-size: var(--faw-ctrl-fs, 11px);
+    font-size: var(--faw-ctrl-fs, 13px);
     flex: none;
   }
   .faw-app-shell .faw-console-input__row .faw-agent-mode-select.ant-select-sm,
@@ -2375,7 +2375,7 @@ a.faw-mseg__btn {
     border-radius: 6px;
   }
   .faw-app-shell .faw-crumb-tap__flow {
-    font-size: 12px;
+    font-size: 13px;
   }
 
   .faw-app-shell .faw-mnav__grid {
@@ -2385,7 +2385,7 @@ a.faw-mseg__btn {
     font-size: 16px;
   }
   .faw-app-shell .faw-mnav__label {
-    font-size: 10px;
+    font-size: 13px;
   }
 
   .faw-app-shell .faw-m-dock {
@@ -2429,7 +2429,7 @@ a.faw-mseg__btn {
 .faw-issue-head__num {
   font-family: var(--font-mono);
   color: var(--ant-color-primary, var(--app-accent));
-  font-size: 12.5px;
+  font-size: 13px;
 }
 .faw-issue-head h1,
 .faw-issue-head__title {
@@ -2476,7 +2476,7 @@ a.faw-mseg__btn {
 .faw-bottombar .faw-btn {
   flex: 1;
   padding: 8px;
-  font-size: 12px;
+  font-size: 13px;
 }
 .faw-bottombar__primary .faw-btn--run {
   flex: 1.2;
@@ -2497,7 +2497,7 @@ a.faw-mseg__btn {
   align-items: center;
 }
 .faw-ctx-tags .faw-chip {
-  font-size: 10.5px;
+  font-size: 13px;
   padding: 3px 9px;
 }
 
@@ -2513,14 +2513,14 @@ a.faw-mseg__btn {
   gap: 8px;
 }
 .faw-console-head__title h2 {
-  font-size: 12.5px;
+  font-size: 13px;
   margin: 0;
   font-weight: 700;
   color: var(--app-ink);
 }
 .faw-console-head__win {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 13px;
   color: var(--app-faint);
   margin-top: 2px;
 }
@@ -2532,7 +2532,7 @@ a.faw-mseg__btn {
   padding: 5px 12px;
   border-bottom: 1px solid var(--app-border);
   background: var(--app-panel-soft);
-  font-size: 10px;
+  font-size: 13px;
   color: var(--app-faint);
   flex-shrink: 0;
 }
@@ -2564,7 +2564,7 @@ a.faw-mseg__btn {
   border: 1px solid var(--app-border-strong);
   background: var(--app-panel-alt, var(--app-panel));
   color: var(--app-ink);
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 600;
   padding: 5px 12px;
   border-radius: 999px;
@@ -2586,7 +2586,7 @@ a.faw-mseg__btn {
   border: 0;
   background: transparent;
   color: var(--app-faint);
-  font-size: 9.5px;
+  font-size: 13px;
   font-weight: 600;
   padding: 2px 6px;
   border-radius: 4px;
@@ -2666,7 +2666,7 @@ a.faw-mseg__btn {
   opacity: 0.85;
 }
 .faw-msg__who {
-  font-size: 9.5px;
+  font-size: 13px;
   font-weight: 700;
   letter-spacing: 0.5px;
   text-transform: uppercase;
@@ -2676,7 +2676,7 @@ a.faw-mseg__btn {
 .faw-msg__time {
   display: block;
   margin-top: 6px;
-  font-size: 9px;
+  font-size: 13px;
   font-weight: 400;
   letter-spacing: 0;
   text-transform: none;
@@ -2720,9 +2720,9 @@ a.faw-mseg__btn {
   border: 1px solid var(--app-border) !important;
   border-radius: var(--r) !important;
   color: var(--app-ink) !important;
-  /* Match message body density (BA Chat + Work console) — separate props; shorthand+var can drop */
+  /* Match Dev Notes / Ant Design fontSize (13) — floor for all UI text */
   font-family: var(--font-ui) !important;
-  font-size: var(--app-chat-size) !important;
+  font-size: 13px !important;
   font-weight: 400 !important;
   line-height: var(--app-chat-leading) !important;
   padding: 8px 10px !important;
@@ -2731,7 +2731,7 @@ a.faw-mseg__btn {
 }
 .faw-console-input .ant-input::placeholder,
 .faw-console-input textarea.ant-input::placeholder {
-  font-size: var(--app-chat-size);
+  font-size: 13px;
   font-weight: 400;
   opacity: 0.72;
 }
@@ -2781,7 +2781,7 @@ a.faw-mseg__btn {
   min-height: 26px;
   padding: 0 10px;
   border-radius: 5px;
-  font-size: 11px;
+  font-size: 13px;
   line-height: 1;
   box-sizing: border-box;
 }
@@ -2805,7 +2805,7 @@ a.faw-mseg__btn {
 .chat-md-rich :where(table th) {
   background: var(--app-panel-soft) !important;
   color: var(--app-faint) !important;
-  font-size: 10px !important;
+  font-size: 13px !important;
   text-transform: uppercase;
   letter-spacing: 0.4px;
   padding: 7px 10px !important;
@@ -2902,7 +2902,7 @@ a.faw-mseg__btn {
 }
 .faw-login__tagline {
   margin: 0 0 22px;
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--app-muted);
   line-height: 1.45;
 }
@@ -2932,7 +2932,7 @@ a.faw-mseg__btn {
   margin: 0;
 }
 .faw-login__field > span {
-  font-size: 10.5px;
+  font-size: 13px;
   font-weight: 700;
   letter-spacing: 0.5px;
   text-transform: uppercase;
@@ -2975,7 +2975,7 @@ a.faw-mseg__btn {
 }
 .faw-login__error {
   margin: 0;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--bug);
   line-height: 1.4;
 }
@@ -2992,7 +2992,7 @@ a.faw-mseg__btn {
 .faw-login__foot {
   margin: 14px 0 0;
   text-align: center;
-  font-size: 11px;
+  font-size: 13px;
   color: var(--app-faint);
   font-family: var(--font-mono);
 }
@@ -3111,7 +3111,7 @@ a.faw-mseg__btn {
 }
 
 .faw-handoff-list-summary .chat-md-rich {
-  font-size: 11px;
+  font-size: 13px;
   line-height: 1.45;
   color: var(--app-faint);
 }
@@ -3227,7 +3227,7 @@ a.faw-mseg__btn {
   border: 1px solid var(--app-border);
   background: var(--app-panel);
   color: var(--app-muted);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   text-decoration: none;
   white-space: nowrap;
@@ -3255,7 +3255,7 @@ a.faw-mseg__btn {
   display: flex;
   flex-wrap: wrap;
   gap: 8px 12px;
-  font-size: 11px;
+  font-size: 13px;
   color: var(--app-faint);
 }
 .faw-project-card__meta b {
@@ -3365,13 +3365,13 @@ a.faw-mseg__btn {
   color: var(--app-ink);
 }
 .faw-integrations__item-hint {
-  font-size: 11px;
+  font-size: 13px;
   color: var(--app-faint);
   line-height: 1.35;
 }
 .faw-integrations__item-badge {
   flex: none;
-  font-size: 10px;
+  font-size: 13px;
   font-weight: 600;
   padding: 2px 8px;
   border-radius: 999px;
@@ -3443,7 +3443,7 @@ a.faw-mseg__btn {
   gap: 4px;
 }
 .faw-account__label {
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -3523,7 +3523,7 @@ a.faw-mseg__btn {
     overflow-x: auto;
   }
   .faw-wizard-steps .ant-steps-item-title {
-    font-size: 11px !important;
+    font-size: 13px !important;
   }
 }
 
@@ -3585,7 +3585,7 @@ a.faw-mseg__btn {
 }
 .faw-ba-label {
   display: block;
-  font-size: 10px;
+  font-size: 13px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -3643,14 +3643,14 @@ a.faw-mseg__btn {
   gap: 2px;
 }
 .faw-ba-thread__title {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .faw-ba-thread__time {
-  font-size: 10px;
+  font-size: 13px;
   color: var(--app-faint);
 }
 .faw-ba-thread__del {
@@ -3680,13 +3680,13 @@ a.faw-mseg__btn {
 }
 .faw-ba-thread__pin-mark {
   margin-right: 4px;
-  font-size: 10px;
+  font-size: 13px;
   color: var(--app-accent);
   vertical-align: 0;
 }
 .faw-ba-thread__rename {
   width: 100%;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   padding: 2px 6px;
   border-radius: 4px;
@@ -3700,7 +3700,7 @@ a.faw-mseg__btn {
   border: 0;
   background: transparent;
   color: var(--app-accent);
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 500;
   padding: 0 2px;
   cursor: pointer;
@@ -3714,7 +3714,7 @@ a.faw-mseg__btn {
   outline-offset: 1px;
 }
 .faw-ba-failed-label {
-  font-size: 11px;
+  font-size: 13px;
   color: var(--app-danger, #ef4444);
   font-weight: 500;
 }
@@ -3731,7 +3731,7 @@ a.faw-mseg__btn {
   flex-wrap: wrap;
 }
 .faw-ba-input-hint {
-  font-size: 10.5px;
+  font-size: 13px;
   color: var(--app-faint);
   min-width: 0;
   flex: 1;
@@ -3755,7 +3755,7 @@ a.faw-mseg__btn {
 }
 .faw-agent-mode-select .ant-select-selector {
   border-radius: 5px !important;
-  font-size: 11px;
+  font-size: 13px;
   align-items: center;
   padding-inline: 8px !important;
 }
@@ -3772,10 +3772,10 @@ a.faw-mseg__btn {
 }
 .faw-agent-mode-opt__title {
   font-weight: 500;
-  font-size: 12px;
+  font-size: 13px;
 }
 .faw-agent-mode-opt__desc {
-  font-size: 11px;
+  font-size: 13px;
   color: var(--app-faint, #8b949e);
   white-space: normal;
   max-width: 260px;
@@ -3785,7 +3785,7 @@ a.faw-mseg__btn {
   min-height: 26px;
   padding: 0 10px;
   border-radius: 5px;
-  font-size: 11px;
+  font-size: 13px;
   line-height: 1;
   box-sizing: border-box;
 }
@@ -3796,13 +3796,13 @@ a.faw-mseg__btn {
   text-align: center;
 }
 .faw-ba-empty__title {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 650;
   color: var(--app-ink);
   letter-spacing: -0.01em;
 }
 .faw-ba-empty__desc {
-  font-size: 11px;
+  font-size: 13px;
   color: var(--app-muted);
   line-height: 1.5;
 }
@@ -3832,14 +3832,14 @@ a.faw-mseg__btn {
   background: var(--app-panel-soft);
   color: var(--app-muted);
   font: inherit;
-  font-size: 11px;
+  font-size: 13px;
   line-height: 1.4;
   text-align: left;
   cursor: pointer;
   transition: border-color 0.15s ease, color 0.15s ease, background-color 0.15s ease;
 }
 .faw-ba-empty__tip-title {
-  font-size: 10px;
+  font-size: 13px;
   font-weight: 600;
   letter-spacing: 0.01em;
   color: var(--app-muted);
@@ -3870,7 +3870,7 @@ a.faw-mseg__btn {
   border-bottom: 1px solid var(--app-border);
   background: var(--app-panel);
   border-left: 2px solid var(--app-accent);
-  font-size: 10.5px;
+  font-size: 13px;
   color: var(--app-faint);
   flex-shrink: 0;
   min-width: 0;
@@ -4016,7 +4016,7 @@ a.faw-mseg__btn {
   position: absolute;
   left: 8px;
   color: var(--app-faint);
-  font-size: 11px;
+  font-size: 13px;
   pointer-events: none;
 }
 .faw-ba-thread-search__input {
@@ -4035,7 +4035,7 @@ a.faw-mseg__btn {
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--app-accent) 24%, transparent);
 }
 .faw-ba-thread__snip {
-  font-size: 10.5px;
+  font-size: 13px;
   color: var(--app-faint);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -4161,7 +4161,7 @@ a.faw-mseg__btn {
     min-height: 32px;
   }
   .faw-ba-mode-toggle {
-    font-size: 12px;
+    font-size: 13px;
   }
   .faw-ba-context {
     padding: 4px 10px 6px;
@@ -4217,31 +4217,21 @@ a.faw-mseg__btn {
     border-radius: 10px;
   }
   .faw-ba-empty__tip-title {
-    font-size: 12px;
+    font-size: 13px;
   }
   .faw-ba-empty__tip-prompt {
-    font-size: 12px;
+    font-size: 13px;
     line-height: 1.4;
   }
   .faw-ba-jump {
     bottom: 12px;
     padding: 8px 14px;
-    font-size: 12px;
+    font-size: 13px;
     min-height: 36px;
   }
   /* Main already clears bottom nav — avoid double safe-area on composer */
   .faw-ba-shell .faw-console-input {
     padding: 8px 10px 10px;
-  }
-}
-
-/* iOS Safari zooms inputs <16px — only real phones, not narrow desktop windows */
-@media (max-width: 767px) and (pointer: coarse) {
-  .faw-app-shell .faw-console-input .ant-input,
-  .faw-app-shell .faw-console-input textarea.ant-input,
-  .faw-ba-shell .faw-console-input .ant-input,
-  .faw-ba-shell .faw-console-input textarea.ant-input {
-    font-size: 16px !important;
   }
 }
 
@@ -4354,7 +4344,7 @@ a.faw-mseg__btn {
   border-radius: 4px;
   padding: 0.1em 0.35em;
   font-family: var(--font-mono);
-  font-size: 0.92em;
+  font-size: 1em;
 }
 
 .ba-issue-editor-host .ProseMirror pre {
@@ -4398,7 +4388,7 @@ a.faw-mseg__btn {
   background: var(--app-panel-soft) !important;
   border-color: var(--app-border) !important;
   color: var(--app-muted) !important;
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .ba-issue-editor-host .toastui-editor-mode-switch .tab-item.active {
@@ -4534,7 +4524,7 @@ a.faw-mseg__btn {
 }
 .faw-dev-queue-pop__empty {
   margin: 4px 2px;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--app-muted);
 }
 .faw-dev-queue-pop__row {
@@ -4554,7 +4544,7 @@ a.faw-mseg__btn {
   border: 0;
   padding: 0;
   cursor: pointer;
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--app-ink);
 }
 .faw-dev-queue-pop__label:hover {
@@ -4562,7 +4552,7 @@ a.faw-mseg__btn {
 }
 .faw-dev-queue-pop__meta {
   display: block;
-  font-size: 10px;
+  font-size: 13px;
   color: var(--app-muted);
   font-family: var(--font-mono);
 }
@@ -4571,7 +4561,7 @@ a.faw-mseg__btn {
   border: 0;
   padding: 0;
   cursor: pointer;
-  font-size: 11.5px;
+  font-size: 13px;
   color: var(--app-danger-ink);
 }
 .faw-dev-queue-pop__cancel:hover {
@@ -4591,7 +4581,7 @@ a.faw-mseg__btn {
   padding: 0 12px 12px;
 }
 .faw-dev-script-table .ant-table-thead > tr > th {
-  font-size: 10px;
+  font-size: 13px;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--app-muted);
@@ -4603,7 +4593,7 @@ a.faw-mseg__btn {
   vertical-align: middle;
 }
 .faw-dev-script-table .ant-table-cell {
-  font-size: 12px;
+  font-size: 13px;
 }
 .faw-dev-hist-table {
   flex: 1;
@@ -4649,7 +4639,7 @@ a.faw-mseg__btn {
 }
 .faw-dev-script-row__cmd {
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: 13px;
   color: var(--app-muted);
   line-height: 1.35;
 }
@@ -4657,7 +4647,7 @@ a.faw-mseg__btn {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  font-size: 10.5px;
+  font-size: 13px;
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--app-muted);
@@ -4668,12 +4658,12 @@ a.faw-mseg__btn {
   padding: 0 8px;
   height: 26px;
   min-width: 0;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 650;
 }
 .faw-topbar--devops .faw-seg__btn {
   padding: 4px 9px;
-  font-size: 11.5px;
+  font-size: 13px;
 }
 .faw-dev-tabs {
   margin: 10px 12px 0;
@@ -4707,7 +4697,7 @@ a.faw-mseg__btn {
 }
 .faw-dev-section-label {
   margin-top: 12px;
-  font-size: 10px;
+  font-size: 13px;
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -4738,7 +4728,7 @@ a.faw-mseg__btn {
 }
 .faw-dev-term-head__sub {
   margin: 2px 0 0;
-  font-size: 11px;
+  font-size: 13px;
   font-family: var(--font-mono);
   color: #8b949e;
 }
@@ -4782,13 +4772,13 @@ a.faw-mseg__btn {
   display: flex;
   align-items: center;
   gap: 5px;
-  font-size: 11px;
+  font-size: 13px;
   color: #8b949e;
   white-space: nowrap;
   cursor: pointer;
 }
 .faw-dev-badge {
-  font-size: 10px;
+  font-size: 13px;
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -4834,7 +4824,7 @@ a.faw-mseg__btn {
   .faw-dev-script-table .faw-btn--tight {
     padding: 0 6px;
     height: 24px;
-    font-size: 10px;
+    font-size: 13px;
   }
 }
 
@@ -4874,13 +4864,13 @@ a.faw-mseg__btn {
   padding: 0;
 }
 .faw-build-sidebar__toggle {
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--accent, var(--app-accent));
   letter-spacing: 0.02em;
 }
 .faw-build-sidebar__title {
-  font-size: 11.5px;
+  font-size: 13px;
   font-weight: 600;
   letter-spacing: 0.06em;
   color: var(--ink-faint, var(--ink-muted));
@@ -4888,7 +4878,7 @@ a.faw-mseg__btn {
 }
 .faw-build-sidebar__count {
   font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 11.5px;
+  font-size: 13px;
   color: var(--ink-faint, var(--ink-muted));
   background: var(--surface-raised);
   padding: 1px 7px;
@@ -4911,7 +4901,7 @@ a.faw-mseg__btn {
   border: 1px solid var(--line);
   border-radius: 7px;
   padding: 7px 10px 7px 30px;
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--ink);
   outline: none;
 }
@@ -4962,7 +4952,7 @@ a.faw-mseg__btn {
 }
 .faw-build-script-row__cmd {
   font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 11px;
+  font-size: 13px;
   color: var(--ink-faint, var(--ink-muted));
   white-space: nowrap;
   overflow: hidden;
@@ -4977,7 +4967,7 @@ a.faw-mseg__btn {
   gap: 5px;
   padding: 6px 11px;
   border-radius: 6px;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   background: rgba(27, 74, 60, 0.65);
   color: var(--success, #34d399);
@@ -5020,7 +5010,7 @@ a.faw-mseg__btn {
   flex-shrink: 0;
   color: var(--ink-faint, var(--ink-muted));
   border-radius: 4px;
-  font-size: 12px;
+  font-size: 13px;
 }
 .faw-build-script-row__fav:hover,
 .faw-build-script-row.is-fav .faw-build-script-row__fav {
@@ -5037,7 +5027,7 @@ a.faw-mseg__btn {
   margin-top: 4px;
 }
 .faw-build-script-pill {
-  font-size: 10px;
+  font-size: 13px;
   font-weight: 650;
   letter-spacing: 0.03em;
   text-transform: uppercase;
@@ -5055,7 +5045,7 @@ a.faw-mseg__btn {
   border: 1px solid var(--line);
 }
 .faw-build-script-row__last {
-  font-size: 10.5px;
+  font-size: 13px;
   color: var(--ink-faint, var(--ink-muted));
   font-family: var(--font-mono, ui-monospace, monospace);
 }
@@ -5073,7 +5063,7 @@ a.faw-mseg__btn {
   background: var(--surface);
 }
 .faw-build-queue-strip__title {
-  font-size: 11.5px;
+  font-size: 13px;
   font-weight: 600;
   letter-spacing: 0.05em;
   color: var(--ink-faint, var(--ink-muted));
@@ -5089,14 +5079,14 @@ a.faw-mseg__btn {
 }
 .faw-build-queue-strip__hint {
   margin-left: auto;
-  font-size: 10.5px;
+  font-size: 13px;
   letter-spacing: 0.04em;
   color: var(--ink-faint, var(--ink-muted));
   text-transform: none;
   font-weight: 500;
 }
 .faw-build-queue-empty {
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--ink-faint, var(--ink-muted));
   font-family: var(--font-mono, ui-monospace, monospace);
 }
@@ -5116,7 +5106,7 @@ a.faw-mseg__btn {
   border-radius: 8px;
   background: var(--surface);
   border: 1px solid var(--line);
-  font-size: 12px;
+  font-size: 13px;
 }
 .faw-build-chip.is-running {
   border-color: rgba(245, 166, 35, 0.35);
@@ -5128,7 +5118,7 @@ a.faw-mseg__btn {
 }
 .faw-build-chip__pos {
   font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 10.5px;
+  font-size: 13px;
   color: var(--ink-faint, var(--ink-muted));
   align-self: flex-start;
   margin-top: 2px;
@@ -5149,7 +5139,7 @@ a.faw-mseg__btn {
 }
 .faw-build-chip__time {
   font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 10.5px;
+  font-size: 13px;
   color: var(--ink-faint, var(--ink-muted));
   white-space: nowrap;
 }
@@ -5186,7 +5176,7 @@ a.faw-mseg__btn {
   height: 26px;
   padding: 0 10px;
   border-radius: 6px;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 550;
   line-height: 1;
   color: var(--app-muted);
@@ -5203,7 +5193,7 @@ a.faw-mseg__btn {
 }
 .faw-build-feed-bar__hint {
   margin-left: auto;
-  font-size: 11px;
+  font-size: 13px;
   color: var(--ink-faint, var(--ink-muted));
   font-family: var(--font-mono, ui-monospace, monospace);
 }
@@ -5220,7 +5210,7 @@ a.faw-mseg__btn {
 }
 .faw-build-feed-more {
   text-align: center;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--ink-faint, var(--ink-muted));
   padding: 8px;
 }
@@ -5248,7 +5238,7 @@ a.faw-mseg__btn {
 .faw-build-empty__btn {
   all: unset;
   cursor: pointer;
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 600;
   padding: 7px 12px;
   border-radius: 7px;
@@ -5290,7 +5280,7 @@ a.faw-mseg__btn {
 .faw-build-card__chev {
   color: var(--ink-faint, var(--ink-muted));
   transition: transform 0.16s ease;
-  font-size: 10px;
+  font-size: 13px;
 }
 .faw-build-card.is-open .faw-build-card__chev {
   transform: rotate(90deg);
@@ -5310,7 +5300,7 @@ a.faw-mseg__btn {
   100% { box-shadow: 0 0 0 0 rgba(245, 166, 35, 0); }
 }
 .faw-build-card__badge {
-  font-size: 10.5px;
+  font-size: 13px;
   font-weight: 700;
   letter-spacing: 0.04em;
   padding: 3px 8px;
@@ -5353,7 +5343,7 @@ a.faw-mseg__btn {
 }
 .faw-build-card__cmd {
   font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 11px;
+  font-size: 13px;
   color: var(--ink-faint, var(--ink-muted));
   margin-top: 2px;
   white-space: nowrap;
@@ -5362,7 +5352,7 @@ a.faw-mseg__btn {
 }
 .faw-build-card__meta {
   margin-top: 3px;
-  font-size: 11px;
+  font-size: 13px;
   color: var(--ink-muted);
   font-family: var(--font-mono, ui-monospace, monospace);
   white-space: nowrap;
@@ -5371,7 +5361,7 @@ a.faw-mseg__btn {
 }
 .faw-build-card__time {
   font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 11.5px;
+  font-size: 13px;
   color: var(--ink-faint, var(--ink-muted));
   min-width: 52px;
   text-align: right;
@@ -5388,7 +5378,7 @@ a.faw-mseg__btn {
 .faw-build-card__tool {
   all: unset;
   cursor: pointer;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 550;
   padding: 4px 8px;
   border-radius: 5px;
@@ -5405,7 +5395,7 @@ a.faw-mseg__btn {
 .faw-build-log {
   padding: 13px 16px 16px;
   font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.75;
   color: var(--ink-muted);
   max-height: 340px;
@@ -5445,7 +5435,7 @@ a.faw-mseg__btn {
   right: 12px;
   bottom: 12px;
   z-index: 2;
-  font-size: 11.5px;
+  font-size: 13px;
   font-weight: 600;
   padding: 6px 10px;
   border-radius: 999px;
@@ -5460,14 +5450,14 @@ a.faw-mseg__btn {
 .faw-build-card__err {
   margin: 0;
   padding: 0 16px 8px;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--danger, #f0546b);
 }
 .faw-build-card__warn {
   margin: 0 16px 8px;
   padding: 8px 10px;
   font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 11.5px;
+  font-size: 13px;
   line-height: 1.55;
   white-space: pre-wrap;
   word-break: break-word;
@@ -5487,7 +5477,7 @@ a.faw-mseg__btn {
 .faw-build-card__foot-btn {
   all: unset;
   cursor: pointer;
-  font-size: 11.5px;
+  font-size: 13px;
   font-weight: 500;
   color: var(--ink-faint, var(--ink-muted));
   padding: 5px 9px;
@@ -5521,7 +5511,7 @@ a.faw-mseg__btn {
   border: 1px solid var(--line);
   border-radius: 6px;
   padding: 6px 10px;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--ink);
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
@@ -5534,7 +5524,7 @@ a.faw-mseg__btn {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--ink-muted);
 }
 .faw-build-hist-skel {
@@ -5687,7 +5677,7 @@ a.faw-mseg__btn {
     height: 28px;
     min-height: 28px;
     width: 100%;
-    font-size: 11px;
+    font-size: 13px;
     padding: 0 8px;
   }
   .faw-build-feed-bar__hint--desktop {
@@ -5709,7 +5699,7 @@ a.faw-mseg__btn {
     font-size: 13px;
   }
   .faw-build-card__meta {
-    font-size: 10.5px;
+    font-size: 13px;
   }
   .faw-build-card__log-tools {
     flex-wrap: wrap;
@@ -5721,14 +5711,14 @@ a.faw-mseg__btn {
   }
   .faw-build-log {
     max-height: min(42vh, 320px);
-    font-size: 11.5px;
+    font-size: 13px;
   }
   .faw-build-log.is-expanded {
     max-height: min(62vh, 520px);
   }
   .faw-build-jump {
     padding: 8px 14px;
-    font-size: 12px;
+    font-size: 13px;
     min-height: 36px;
   }
   .faw-build-card__foot {
@@ -5740,7 +5730,7 @@ a.faw-mseg__btn {
     flex: 1 1 calc(50% - 6px);
     justify-content: center;
     padding: 8px 10px;
-    font-size: 12px;
+    font-size: 13px;
   }
   .faw-build-stdin {
     flex-wrap: wrap;
@@ -5800,7 +5790,7 @@ a.faw-mseg__btn {
 }
 .faw-admin-page__desc {
   margin: 6px 0 0;
-  font-size: 0.875rem;
+  font-size: 1rem;
   color: var(--ink-muted);
   line-height: 1.5;
   max-width: 640px;
@@ -5828,7 +5818,7 @@ a.faw-mseg__btn {
   color: var(--ink);
 }
 .faw-admin-stat__l {
-  font-size: 0.75rem;
+  font-size: 1rem;
   color: var(--ink-muted);
 }
 .faw-admin-stat--ok .faw-admin-stat__n { color: var(--success, #34d399); }
@@ -5849,7 +5839,7 @@ a.faw-mseg__btn {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 0.8125rem;
+  font-size: 1rem;
   color: var(--ink-muted);
   cursor: pointer;
 }
@@ -5867,12 +5857,12 @@ a.faw-mseg__btn {
 .faw-admin-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.8125rem;
+  font-size: 1rem;
 }
 .faw-admin-table th {
   text-align: left;
   padding: 10px 14px;
-  font-size: 0.6875rem;
+  font-size: 1rem;
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -5889,26 +5879,26 @@ a.faw-mseg__btn {
 .faw-admin-table tbody tr.is-disabled td { opacity: 0.55; }
 .faw-admin-table__date {
   font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 0.75rem;
+  font-size: 1rem;
   color: var(--ink-muted);
 }
 .faw-admin-user-cell__name { font-weight: 600; color: var(--ink); }
 .faw-admin-user-cell__sub {
   display: block;
-  font-size: 0.75rem;
+  font-size: 1rem;
   color: var(--ink-muted);
   margin-top: 2px;
 }
 .faw-admin-user-cell__you {
   margin-left: 6px;
-  font-size: 0.6875rem;
+  font-size: 1rem;
   color: var(--accent);
 }
 .faw-admin-role-tags { display: flex; flex-wrap: wrap; gap: 4px; }
 .faw-admin-role-tag {
   padding: 2px 7px;
   border-radius: 4px;
-  font-size: 0.6875rem;
+  font-size: 1rem;
   font-weight: 600;
   background: var(--surface);
   border: 1px solid var(--line);
@@ -5923,7 +5913,7 @@ a.faw-mseg__btn {
   display: inline-block;
   padding: 2px 8px;
   border-radius: 99px;
-  font-size: 0.6875rem;
+  font-size: 1rem;
   font-weight: 600;
 }
 .faw-admin-status--on {
@@ -5940,7 +5930,7 @@ a.faw-mseg__btn {
   cursor: pointer;
   padding: 4px 8px;
   border-radius: 5px;
-  font-size: 0.75rem;
+  font-size: 1rem;
   color: var(--ink-muted);
 }
 .faw-admin-action:hover:not(:disabled) {

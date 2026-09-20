@@ -484,12 +484,12 @@ onUnmounted(() => {
           <span class="text-sm font-semibold text-ink shrink-0">Commits</span>
           <span
             v-if="commits.length"
-            class="text-[11px] text-ink-faint bg-surface-muted px-1.5 py-0.5 rounded-md shrink-0"
+            class="text-[13px] text-ink-faint bg-surface-muted px-1.5 py-0.5 rounded-md shrink-0"
             >{{ commits.length }}</span
           >
           <code
             v-if="branch"
-            class="text-[10px] sm:text-[11px] font-mono text-ink-soft bg-surface-muted/80 px-1.5 py-0.5 rounded truncate min-w-0"
+            class="text-[13px] sm:text-[13px] font-mono text-ink-soft bg-surface-muted/80 px-1.5 py-0.5 rounded truncate min-w-0"
             :title="branch"
             >{{ branch }}</code
           >
@@ -506,7 +506,7 @@ onUnmounted(() => {
         </div>
         <a-tooltip title="Auto commit after each Run (off = manual)">
           <div class="flex items-center gap-1.5 shrink-0">
-            <span class="text-[10px] text-ink-faint hidden sm:inline">Auto</span>
+            <span class="text-[13px] text-ink-faint hidden sm:inline">Auto</span>
             <a-switch
               size="small"
               :checked="commitMode === 'auto'"
@@ -583,7 +583,7 @@ onUnmounted(() => {
       </p>
       <div class="space-y-3">
         <div>
-          <div class="text-[11px] font-medium text-ink-soft mb-1">Title</div>
+          <div class="text-[13px] font-medium text-ink-soft mb-1">Title</div>
           <a-input
             v-model:value="groupTitle"
             placeholder="Commit title (subject)"
@@ -591,7 +591,7 @@ onUnmounted(() => {
           />
         </div>
         <div>
-          <div class="text-[11px] font-medium text-ink-soft mb-1">
+          <div class="text-[13px] font-medium text-ink-soft mb-1">
             Body (concatenated commits)
           </div>
           <a-textarea
@@ -639,7 +639,7 @@ onUnmounted(() => {
           >
             <div class="flex items-start gap-2 sm:gap-2.5">
               <div
-                class="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[10px] font-bold"
+                class="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[13px] font-bold"
                 :class="
                   hasPendingChanges
                     ? 'bg-amber-500/25 text-amber-300'
@@ -653,17 +653,17 @@ onUnmounted(() => {
                   Working tree
                   <span
                     v-if="hasPendingChanges"
-                    class="text-[10px] font-semibold uppercase tracking-wide text-amber-300 bg-amber-500/20 px-1.5 py-0.5 rounded"
+                    class="text-[13px] font-semibold uppercase tracking-wide text-amber-300 bg-amber-500/20 px-1.5 py-0.5 rounded"
                   >
                     {{ pendingFileCount || "" }} uncommitted
                   </span>
                   <span
                     v-else
-                    class="text-[10px] text-ink-faint font-normal"
+                    class="text-[13px] text-ink-faint font-normal"
                     >clean</span
                   >
                 </div>
-                <div class="text-[11px] text-ink-faint mt-0.5">
+                <div class="text-[13px] text-ink-faint mt-0.5">
                   {{
                     hasPendingChanges
                       ? "Chưa commit — bấm View files để xem diff từng file"
@@ -717,7 +717,7 @@ onUnmounted(() => {
                 {{ c.subject }}
               </div>
               <div
-                class="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-ink-faint"
+                class="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-ink-faint"
               >
                 <code
                   class="font-mono text-accent bg-accent-soft/60 px-1.5 py-0.5 rounded"
@@ -730,7 +730,7 @@ onUnmounted(() => {
                 <span>{{ formatDate(c.date) }}</span>
               </div>
               <div class="mt-2 flex items-center gap-2 sm:hidden">
-                <span class="text-[11px] text-accent">View changes</span>
+                <span class="text-[13px] text-accent">View changes</span>
                 <a-button
                   type="default"
                   size="small"
@@ -806,7 +806,7 @@ onUnmounted(() => {
               }}
             </div>
             <div
-              class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-ink-faint"
+              class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[13px] text-ink-faint"
             >
               <code
                 v-if="activeCommit"
@@ -922,7 +922,7 @@ onUnmounted(() => {
               </div>
               <div
                 v-if="!navFiles.length && !modalLoading"
-                class="p-4 text-[11px] text-ink-faint text-center"
+                class="p-4 text-[13px] text-ink-faint text-center"
               >
                 No changed files
               </div>
@@ -947,7 +947,7 @@ onUnmounted(() => {
                     b.path
                   }}</span>
                 </div>
-                <div class="text-[11px] shrink-0 flex items-center gap-2">
+                <div class="text-[13px] shrink-0 flex items-center gap-2">
                   <span
                     v-if="fileStat(b.path)?.additions"
                     class="text-emerald-600 font-semibold"
@@ -1031,7 +1031,7 @@ onUnmounted(() => {
 .commit-modal-error {
   flex-shrink: 0;
   padding: 0.5rem 1rem;
-  font-size: 0.875rem;
+  font-size: 1rem;
   color: #f87171;
   border-bottom: 1px solid var(--app-border);
 }
@@ -1065,7 +1065,7 @@ onUnmounted(() => {
 .commit-modal-files-title {
   flex-shrink: 0;
   padding: 0.4rem 0.65rem;
-  font-size: 10px;
+  font-size: 13px;
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -1116,7 +1116,7 @@ onUnmounted(() => {
   background: transparent;
   color: var(--app-faint);
   cursor: pointer;
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1;
 }
 .commit-file-discard:hover:not(:disabled) {
@@ -1130,14 +1130,14 @@ onUnmounted(() => {
 .commit-file-name {
   flex: 1 1 auto;
   min-width: 0;
-  font-size: 11px;
+  font-size: 13px;
   color: var(--app-ink);
   word-break: break-all;
   line-height: 1.35;
 }
 .commit-file-delta {
   flex-shrink: 0;
-  font-size: 10px;
+  font-size: 13px;
   white-space: nowrap;
 }
 .commit-file-delta .add {
@@ -1228,7 +1228,7 @@ onUnmounted(() => {
   min-width: 1.25rem;
   height: 1.15rem;
   padding: 0 0.3rem;
-  font-size: 10px;
+  font-size: 13px;
   font-weight: 700;
   border-radius: 4px;
   border: 1px solid var(--app-border);
@@ -1260,7 +1260,7 @@ onUnmounted(() => {
   min-width: 28rem;
   border-collapse: collapse;
   font-family: "IBM Plex Mono", ui-monospace, monospace;
-  font-size: 11.5px;
+  font-size: 13px;
   line-height: 1.45;
   color: var(--app-ink);
 }
