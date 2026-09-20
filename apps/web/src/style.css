@@ -2720,9 +2720,9 @@ a.faw-mseg__btn {
   border: 1px solid var(--app-border) !important;
   border-radius: var(--r) !important;
   color: var(--app-ink) !important;
-  /* Match message body density (BA Chat + Work console) — separate props; shorthand+var can drop */
+  /* Match Dev Notes / Ant Design fontSize (13) — not message bubble --app-chat-size */
   font-family: var(--font-ui) !important;
-  font-size: var(--app-chat-size) !important;
+  font-size: 13px !important;
   font-weight: 400 !important;
   line-height: var(--app-chat-leading) !important;
   padding: 8px 10px !important;
@@ -2731,7 +2731,7 @@ a.faw-mseg__btn {
 }
 .faw-console-input .ant-input::placeholder,
 .faw-console-input textarea.ant-input::placeholder {
-  font-size: var(--app-chat-size);
+  font-size: 13px;
   font-weight: 400;
   opacity: 0.72;
 }
