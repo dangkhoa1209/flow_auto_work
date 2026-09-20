@@ -38,3 +38,11 @@
 - Purple AI gradients, neon glitch overlays, emoji-as-icons.
 - Duplicate typing bubbles; blank screen on thread switch (use skeleton).
 - Replace Ant Design forms/modals; do not abandon `--app-*` tokens.
+
+## Mobile (≤1023)
+
+- Thread list = drawer (hamburger + backdrop + close); rows ≥48px tap.
+- Keep **BA mode** switch; short hint only (`Enter send · Esc stop`).
+- Context: hide GitLab path; Create Issue uses short **Issue** label.
+- Empty tips full-width, ≥52px; composer input 16px; Jump ≥36px.
+- Main already clears bottom nav — do not double `safe-area` on composer.

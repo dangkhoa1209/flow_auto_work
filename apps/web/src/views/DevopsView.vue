@@ -817,12 +817,14 @@ onUnmounted(() => {
         <div class="faw-build-sidebar__head">
           <button
             type="button"
-            class="faw-build-sidebar__title-row w-full text-left lg:pointer-events-none"
+            class="faw-build-sidebar__title-row w-full text-left"
+            :aria-expanded="!scriptsCollapsed"
+            aria-controls="faw-build-script-list"
             @click="scriptsCollapsed = !scriptsCollapsed"
           >
             <span class="faw-build-sidebar__title">Scripts</span>
             <span class="faw-build-sidebar__count">{{ activeScripts.length }}</span>
-            <span class="lg:hidden ml-auto text-[11px] text-[var(--ink-muted)]">
+            <span class="faw-build-sidebar__toggle lg:hidden ml-auto">
               {{ scriptsCollapsed ? "Show" : "Hide" }}
             </span>
           </button>
@@ -833,7 +835,7 @@ onUnmounted(() => {
               v-model="scriptSearch"
               type="search"
               class="faw-build-search__input"
-              placeholder="Search scripts… (/)"
+              placeholder="Search scripts…"
               aria-label="Search scripts"
               autocomplete="off"
               @keydown.enter.prevent
@@ -841,7 +843,7 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <div class="faw-build-script-list">
+        <div id="faw-build-script-list" class="faw-build-script-list">
           <div v-if="devops.loading" class="faw-build-empty">Loading scripts…</div>
           <div
             v-else-if="!activeScripts.length"
@@ -1025,7 +1027,7 @@ onUnmounted(() => {
               {{ f.label }}
             </button>
           </div>
-          <span class="faw-build-feed-bar__hint">
+          <span class="faw-build-feed-bar__hint faw-build-feed-bar__hint--desktop">
             Esc cancel · R run · / search
           </span>
         </div>

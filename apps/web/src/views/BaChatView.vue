@@ -332,8 +332,8 @@ const contextBits = computed(() => {
   <div class="faw-ba h-full min-h-0 flex overflow-hidden">
     <BaChatSidebar />
 
-    <section class="faw-console flex-1 min-w-0 min-h-0 flex flex-col">
-      <div class="faw-console-head">
+    <section class="faw-console faw-console--ba flex-1 min-w-0 min-h-0 flex flex-col">
+      <div class="faw-console-head faw-console-head--ba">
         <div class="faw-console-head__title">
           <h2>{{ ba.activeThread?.title || "Project Chat" }}</h2>
           <div
@@ -354,7 +354,12 @@ const contextBits = computed(() => {
               :disabled="createIssueDisabled"
               @click="onCreateIssueFromThread"
             >
-              {{ draftingIssue ? "Drafting…" : createIssueLabel }}
+              <span class="faw-ba-create-label faw-ba-create-label--full">{{
+                draftingIssue ? "Drafting…" : createIssueLabel
+              }}</span>
+              <span class="faw-ba-create-label faw-ba-create-label--short">{{
+                draftingIssue ? "…" : "Issue"
+              }}</span>
             </button>
           </a-tooltip>
           <span
@@ -384,6 +389,7 @@ const contextBits = computed(() => {
             :class="{
               'faw-ba-context__bit--accent': bit.tone === 'accent',
               'faw-ba-context__bit--warn': bit.tone === 'warn',
+              'faw-ba-context__bit--path': bit.key === 'path',
             }"
             >{{ bit.label }}</span
           >

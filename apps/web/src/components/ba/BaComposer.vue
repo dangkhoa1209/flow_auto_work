@@ -111,7 +111,7 @@ defineExpose({ fill, focusInput });
           title="On: ready for BA analysis when you ask for it; normal Q&A still works. Off: product Q&A only."
         >
           <label
-            class="inline-flex items-center gap-1.5 cursor-pointer select-none shrink-0 text-[11px] text-[var(--app-muted)]"
+            class="faw-ba-mode-toggle inline-flex items-center gap-1.5 cursor-pointer select-none shrink-0 text-[11px] text-[var(--app-muted)]"
           >
             <a-switch
               size="small"
@@ -129,8 +129,11 @@ defineExpose({ fill, focusInput });
             >
           </label>
         </a-tooltip>
-        <span class="opacity-70"
+        <span class="faw-ba-input-hint--desktop opacity-70"
           >Enter / ⌘·Ctrl+Enter send · Shift+Enter newline · Esc stop</span
+        >
+        <span class="faw-ba-input-hint--mobile opacity-70"
+          >Enter send · Esc stop</span
         >
       </div>
       <div class="faw-ba-input-actions">

@@ -222,7 +222,7 @@ function onTip(prompt: string) {
         class="faw-ba-empty flex-1 flex items-center justify-center py-16 px-4"
         role="status"
       >
-        <div class="faw-ba-empty__card max-w-md text-center space-y-3">
+        <div class="faw-ba-empty__card max-w-md space-y-3">
           <p class="faw-ba-empty__title m-0">
             Ask anything about the selected project
           </p>
