@@ -145,8 +145,8 @@ function applyReadyDraft(res: {
   ba.clearIssueDraft();
   message.success(
     res.cached
-      ? "Dùng bản soạn trước — chat chưa thay đổi"
-      : "Đã soạn draft — chỉnh sửa rồi lưu hoặc publish",
+      ? "Using the previous draft — chat has not changed"
+      : "Draft ready — edit, then save or publish",
   );
 }
 
@@ -168,13 +168,13 @@ async function runCreateIssueFromThread() {
       applyReadyDraft(res);
       return;
     }
-    // status === "started" (incl. alreadyRunning) → chờ SSE ba_issue_draft_done
+    // status === "started" (incl. alreadyRunning) → wait for SSE ba_issue_draft_done
   } catch (e) {
     // Legacy 409 while draft agent still runs — keep modal, wait for SSE.
     if (isIssueDraftInFlightError(e)) {
       ba.beginIssueDraft(threadId);
       taskModalOpen.value = true;
-      message.info("Issue đang được soạn — đợi trong modal");
+      message.info("Issue is still drafting — wait in the modal");
       return;
     }
     ba.clearIssueDraft();
@@ -217,7 +217,7 @@ async function onTaskSave(payload: {
     });
     taskModalOpen.value = false;
     ba.clearIssueDraft();
-    message.success("Đã lưu task draft — xem tab Tasks");
+    message.success("Task draft saved — see the Tasks tab");
   } catch (e) {
     message.error(e instanceof Error ? e.message : String(e));
   } finally {
@@ -254,7 +254,7 @@ async function doTaskPublish(payload: {
     });
     taskModalOpen.value = false;
     ba.clearIssueDraft();
-    message.success(`Đã lên GitLab #${pub.issue.iid}`);
+    message.success(`Published to GitLab #${pub.issue.iid}`);
   } catch (e) {
     if (!handleBaPatApiError(e, () => void doTaskPublish(payload))) {
       message.error(e instanceof Error ? e.message : String(e));
@@ -294,7 +294,7 @@ function onTaskPublish(payload: {
                 · {{ ba.selectedProject.gitlabPath }}
               </template>
             </template>
-            <template v-else>Chưa chọn project</template>
+            <template v-else>No project selected</template>
           </div>
         </div>
         <div class="faw-console-actions">
@@ -314,7 +314,7 @@ function onTaskPublish(payload: {
           <span
             v-if="ba.analysisMode && !ba.streaming"
             class="faw-idle text-[11px]"
-            title="BA mode: phân tích nghiệp vụ"
+            title="BA mode: business analysis"
           >
             BA mode
           </span>
@@ -332,7 +332,7 @@ function onTaskPublish(payload: {
         v-if="!ba.projects.length"
         class="flex-1 flex items-center justify-center px-6"
       >
-        <a-empty description="Chưa có project — admin cần tạo và clone trước" />
+        <a-empty description="No projects yet — an admin must create and clone one first" />
       </div>
 
       <template v-else>

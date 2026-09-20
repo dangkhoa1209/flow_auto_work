@@ -1,6 +1,6 @@
 ---
 description: UI/UX rules for Flow Auto WorkBench (Vue 3 + Ant Design Vue + Tailwind)
-globs: apps/web/src/views/Work*.vue,apps/web/src/components/work/**/*.vue,apps/web/src/composables/**/*.ts
+globs: apps/web/src/views/Work*.vue,apps/web/src/views/Ba*.vue,apps/web/src/components/work/**/*.vue,apps/web/src/components/ba/**/*.vue,apps/web/src/composables/**/*.ts
 alwaysApply: false
 ---
 
@@ -8,6 +8,7 @@ alwaysApply: false
 
 You are a Senior UI/UX Engineer for **Flow Auto WorkBench** (internal orchestrator). Ship polished UI **and** low cognitive-load UX — think states, flows, and feedback, not just colors.
 Stack: Vue 3 `<script setup>`, Ant Design Vue (data entry / feedback), Tailwind (layout / spacing / typography).
+Design category: **Developer Tool / IDE** + **AI/Chatbot** (not marketing landing). Keep existing `--app-*` tokens; avoid purple AI gradients.
 
 ## UX
 
@@ -16,6 +17,7 @@ Stack: Vue 3 `<script setup>`, Ant Design Vue (data entry / feedback), Tailwind 
 3. **Visual hierarchy** — At most 1–2 Primary buttons per screen. Secondary / ghost actions stay quieter.
 4. **Realtime (SSE)** — Terminal and chat auto-scroll to newest. Status changes from SSE get a soft highlight/flash (~1s), not a jarring jump.
 5. **Empty states** — Empty lists / no selection show a clear Empty State + next-step CTA.
+6. **Keyboard / a11y** — Visible `:focus-visible` on controls; composer and threads reachable by keyboard; respect `prefers-reduced-motion` for typing/ambient animation.
 
 ## UI
 
@@ -33,3 +35,7 @@ Stack: Vue 3 `<script setup>`, Ant Design Vue (data entry / feedback), Tailwind 
 ## Workbench layout
 
 Three columns: **TaskList** (~3/12) | **JobContext** (~5/12) | **AgentConsole** (~4/12). Keep `WorkView.vue` as a thin shell; logic in composables; SSE stays in AppLayout → Pinia.
+
+## BA Chat
+
+Sidebar (threads) + message list + composer. Dense conversation UI: clear empty state, focus ring on textarea, one typing indicator (not duplicate bubbles), English copy.
