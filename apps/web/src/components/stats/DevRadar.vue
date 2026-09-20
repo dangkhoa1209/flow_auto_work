@@ -95,7 +95,7 @@ function labelPos(angle: number) {
         :y="labelPos(angle).y"
         text-anchor="middle"
         dominant-baseline="middle"
-        class="fill-ink-muted text-[13px]"
+        class="fill-ink-muted text-[9px]"
       >
         {{ label }}
       </text>

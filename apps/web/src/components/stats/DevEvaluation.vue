@@ -99,13 +99,13 @@ function onRecClick(rec: DevAnalysis["recommendations"][0]) {
     <div class="flex flex-wrap items-center justify-between gap-2">
       <div>
         <div class="text-sm font-medium text-ink">Đánh giá dev</div>
-        <div class="text-[13px] text-ink-muted">
+        <div class="text-[11px] text-ink-muted">
           {{ analysis.jobCount }} task · {{ analysis.from }} → {{ analysis.to }}
           <span v-if="analysis.engine"> · Agent</span>
           <span v-if="analysis.cached"> · cache</span>
         </div>
       </div>
-      <div class="text-[13px] text-ink-muted">
+      <div class="text-[11px] text-ink-muted">
         Cập nhật: {{ analyzedLabel(analysis.analyzedAt) }}
       </div>
     </div>
@@ -136,7 +136,7 @@ function onRecClick(rec: DevAnalysis["recommendations"][0]) {
             </span>
           </span>
         </div>
-        <p class="text-[13px] text-ink-muted m-0 pt-1">
+        <p class="text-[10px] text-ink-muted m-0 pt-1">
           Viền đứt = kỳ trước · trend = Δ so kỳ trước
         </p>
       </div>
@@ -167,7 +167,7 @@ function onRecClick(rec: DevAnalysis["recommendations"][0]) {
       >
         <div class="flex items-start gap-2">
           <span
-            class="shrink-0 text-[13px] uppercase px-1.5 py-0.5 rounded"
+            class="shrink-0 text-[10px] uppercase px-1.5 py-0.5 rounded"
             :class="{
               'bg-red-500/15 text-red-500': rec.severity === 'high',
               'bg-orange-500/15 text-orange-500': rec.severity === 'medium',
@@ -196,7 +196,7 @@ function onRecClick(rec: DevAnalysis["recommendations"][0]) {
 
     <ul
       v-if="analysis.dataGaps?.length"
-      class="text-[13px] text-ink-muted m-0 pl-4 space-y-0.5"
+      class="text-[10px] text-ink-muted m-0 pl-4 space-y-0.5"
     >
       <li v-for="(g, i) in analysis.dataGaps" :key="i">{{ g }}</li>
     </ul>

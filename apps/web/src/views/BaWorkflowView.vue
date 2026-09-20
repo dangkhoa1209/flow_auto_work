@@ -831,7 +831,7 @@ onUnmounted(() => {
                   :rows="3"
                   placeholder="Dán yêu cầu từ KH/PD. Có thể kèm #123, link GitLab, Google Docs/Sheets/Excel Drive…"
                 />
-                <p class="text-[13px] text-[var(--app-muted)] m-0 mt-1">
+                <p class="text-[11px] text-[var(--app-muted)] m-0 mt-1">
                   Hệ thống tự đọc #issue / link GitLab (PAT project) và Google Docs–Sheets–Excel Drive (Settings → Authorize Google).
                 </p>
               </div>
@@ -925,12 +925,12 @@ onUnmounted(() => {
                   v-if="flowInvalidReason"
                   type="error"
                   show-icon
-                  class="text-[13px]"
+                  class="text-[12px]"
                 >
                   <template #message>Flow dừng — YC không phải yêu cầu nghiệp vụ</template>
                   <template #description>
                     <p class="m-0 whitespace-pre-wrap">{{ flowInvalidReason }}</p>
-                    <p class="m-0 mt-2 text-[13px] text-[var(--app-muted)]">
+                    <p class="m-0 mt-2 text-[11px] text-[var(--app-muted)]">
                       Sửa lại <strong>Yêu cầu gốc</strong> (ai cần gì, để làm gì) rồi chạy lại.
                     </p>
                   </template>
@@ -940,7 +940,7 @@ onUnmounted(() => {
                   v-if="inputStale && hasAnalysis && !flowRunning"
                   type="info"
                   show-icon
-                  class="text-[13px]"
+                  class="text-[12px]"
                 >
                   <template #message>YC gốc / BA đàm phán đã thay đổi</template>
                   <template #description>
@@ -956,12 +956,12 @@ onUnmounted(() => {
                   v-if="flowPaused"
                   type="warning"
                   show-icon
-                  class="text-[13px]"
+                  class="text-[12px]"
                 >
                   <template #message>Bước 1 còn điểm cần chốt — có thể chạy tiếp với giả định</template>
                   <template #description>
                     <p class="m-0 whitespace-pre-wrap">{{ flowPauseReason }}</p>
-                    <p class="m-0 mt-2 text-[13px] text-[var(--app-muted)]">
+                    <p class="m-0 mt-2 text-[11px] text-[var(--app-muted)]">
                       Trao đổi chat bên phải nếu muốn chốt, hoặc bấm
                       <strong>Tiếp tục flow</strong> để sang Hiện trạng (câu hỏi sẽ mang theo như giả định).
                     </p>
@@ -974,7 +974,7 @@ onUnmounted(() => {
                     <button
                       v-if="!editingYc"
                       type="button"
-                      class="faw-btn text-[13px]"
+                      class="faw-btn text-[11px]"
                       :disabled="flowRunning"
                       @click="startEditYc"
                     >
@@ -983,15 +983,15 @@ onUnmounted(() => {
                   </template>
 
                   <template v-if="!editingYc">
-                    <pre class="whitespace-pre-wrap text-[13px] m-0 font-sans">{{ selected.rawContent }}</pre>
+                    <pre class="whitespace-pre-wrap text-[12px] m-0 font-sans">{{ selected.rawContent }}</pre>
                     <div
                       v-if="selected.baNote"
                       class="mt-3 pt-2 border-t border-dashed border-[var(--app-border)]"
                     >
-                      <div class="text-[13px] font-semibold text-[var(--app-muted)] mb-1">
+                      <div class="text-[11px] font-semibold text-[var(--app-muted)] mb-1">
                         BA phân tích / đàm phán
                       </div>
-                      <pre class="whitespace-pre-wrap text-[13px] m-0 font-sans">{{ selected.baNote }}</pre>
+                      <pre class="whitespace-pre-wrap text-[12px] m-0 font-sans">{{ selected.baNote }}</pre>
                     </div>
                   </template>
 
@@ -1012,14 +1012,14 @@ onUnmounted(() => {
                     <div class="flex gap-2 justify-end">
                       <button
                         type="button"
-                        class="faw-btn text-[13px]"
+                        class="faw-btn text-[11px]"
                         @click="editingYc = false"
                       >
                         Huỷ
                       </button>
                       <button
                         type="button"
-                        class="faw-btn faw-btn--run text-[13px]"
+                        class="faw-btn faw-btn--run text-[11px]"
                         :disabled="editYcSaving"
                         @click="saveYcEdit"
                       >
@@ -1043,10 +1043,10 @@ onUnmounted(() => {
                         <div class="text-[13px] font-semibold text-[var(--app-ink)]">
                           {{ step.label }}
                         </div>
-                        <div class="text-[13px] text-[var(--app-muted)]">{{ step.hint }}</div>
+                        <div class="text-[11px] text-[var(--app-muted)]">{{ step.hint }}</div>
                       </div>
                       <span
-                        class="text-[13px] uppercase tracking-wide shrink-0"
+                        class="text-[10px] uppercase tracking-wide shrink-0"
                         :class="
                           stepDone(step.key)
                             ? 'text-emerald-600 dark:text-emerald-400'
@@ -1079,7 +1079,7 @@ onUnmounted(() => {
                   <template #extra>
                     <button
                       type="button"
-                      class="faw-btn faw-btn--run text-[13px]"
+                      class="faw-btn faw-btn--run text-[11px]"
                       @click="openTaskFromDraft(taskDraft)"
                     >
                       {{ taskDraft.gitlabIid ? "Cập nhật / tạo task" : "Tạo task" }}
@@ -1090,7 +1090,7 @@ onUnmounted(() => {
                     <div class="font-semibold text-[13px]">
                       {{ taskDraft.title }}
                     </div>
-                    <div class="text-[13px] text-[var(--app-muted)]">
+                    <div class="text-[11px] text-[var(--app-muted)]">
                       {{ taskDraft.status }}
                       <a
                         v-if="taskDraft.gitlabUrl"
@@ -1110,7 +1110,7 @@ onUnmounted(() => {
                     </div>
                     <ul
                       v-if="taskDraft.acceptanceCriteria.length"
-                      class="m-0 pl-4 text-[13px] space-y-0.5"
+                      class="m-0 pl-4 text-[12px] space-y-0.5"
                     >
                       <li v-for="(ac, i) in taskDraft.acceptanceCriteria" :key="i">
                         {{ ac }}
@@ -1121,11 +1121,11 @@ onUnmounted(() => {
                       v-if="taskDraft.devNotes"
                       class="rounded-lg border border-dashed border-[var(--app-border)] px-3 py-2"
                     >
-                      <summary class="cursor-pointer text-[13px] font-medium text-[var(--app-muted)]">
+                      <summary class="cursor-pointer text-[12px] font-medium text-[var(--app-muted)]">
                         Ghi chú kỹ thuật cho Dev (lưu riêng —
                         {{ taskDraft.includeDevNotes ? "sẽ đưa lên task" : "không đưa lên task" }})
                       </summary>
-                      <div class="faw-ba-step-body mt-2 text-[13px]">
+                      <div class="faw-ba-step-body mt-2 text-[12px]">
                         <ChatMessageBody :body="taskDraft.devNotes" markdown />
                       </div>
                     </details>
@@ -1146,14 +1146,14 @@ onUnmounted(() => {
                   Làm rõ YC — nội dung chat được dùng khi chạy / chạy lại flow
                 </div>
               </div>
-              <span v-if="wfStreaming" class="faw-idle text-[13px] shrink-0">
+              <span v-if="wfStreaming" class="faw-idle text-[11px] shrink-0">
                 <span class="faw-idle__dot wip" />
                 thinking…
               </span>
             </div>
 
             <div v-if="!selected" class="flex-1 flex items-center justify-center p-4">
-              <p class="text-[13px] text-[var(--app-muted)] m-0 text-center">
+              <p class="text-[12px] text-[var(--app-muted)] m-0 text-center">
                 Chọn YC để mở chat làm rõ
               </p>
             </div>
@@ -1322,7 +1322,7 @@ onUnmounted(() => {
           </div>
           <p
             v-if="flowBlockedReason && !flowPaused"
-            class="text-[13px] text-[var(--app-muted)] m-0"
+            class="text-[11px] text-[var(--app-muted)] m-0"
           >
             {{ flowBlockedReason }}
           </p>
@@ -1331,7 +1331,7 @@ onUnmounted(() => {
             v-if="flowInvalidReason"
             type="error"
             show-icon
-            class="text-[13px]"
+            class="text-[12px]"
             message="Flow dừng — YC không phải yêu cầu nghiệp vụ"
             :description="flowInvalidReason"
           />
@@ -1339,14 +1339,14 @@ onUnmounted(() => {
             v-if="inputStale && hasAnalysis && !flowRunning"
             type="info"
             show-icon
-            class="text-[13px]"
+            class="text-[12px]"
             message="YC đã đổi — bấm Phân tích lại"
           />
           <a-alert
             v-if="flowPaused"
             type="warning"
             show-icon
-            class="text-[13px]"
+            class="text-[12px]"
             message="Cần chốt — chat hoặc Tiếp tục flow"
             :description="flowPauseReason"
           />
@@ -1357,7 +1357,7 @@ onUnmounted(() => {
               <button
                 v-if="!editingYc"
                 type="button"
-                class="faw-btn text-[13px]"
+                class="faw-btn text-[11px]"
                 :disabled="flowRunning"
                 @click="startEditYc"
               >
@@ -1365,15 +1365,15 @@ onUnmounted(() => {
               </button>
             </template>
             <template v-if="!editingYc">
-              <pre class="whitespace-pre-wrap text-[13px] m-0 font-sans">{{ selected.rawContent }}</pre>
+              <pre class="whitespace-pre-wrap text-[12px] m-0 font-sans">{{ selected.rawContent }}</pre>
               <div
                 v-if="selected.baNote"
                 class="mt-3 pt-2 border-t border-dashed border-[var(--app-border)]"
               >
-                <div class="text-[13px] font-semibold text-[var(--app-muted)] mb-1">
+                <div class="text-[11px] font-semibold text-[var(--app-muted)] mb-1">
                   BA phân tích / đàm phán
                 </div>
-                <pre class="whitespace-pre-wrap text-[13px] m-0 font-sans">{{ selected.baNote }}</pre>
+                <pre class="whitespace-pre-wrap text-[12px] m-0 font-sans">{{ selected.baNote }}</pre>
               </div>
             </template>
             <div v-else class="space-y-2">
@@ -1385,12 +1385,12 @@ onUnmounted(() => {
                 placeholder="BA phân tích / đàm phán"
               />
               <div class="flex gap-2 justify-end">
-                <button type="button" class="faw-btn text-[13px]" @click="editingYc = false">
+                <button type="button" class="faw-btn text-[11px]" @click="editingYc = false">
                   Huỷ
                 </button>
                 <button
                   type="button"
-                  class="faw-btn faw-btn--run text-[13px]"
+                  class="faw-btn faw-btn--run text-[11px]"
                   :disabled="editYcSaving"
                   @click="saveYcEdit"
                 >
@@ -1413,10 +1413,10 @@ onUnmounted(() => {
                 <div class="text-[13px] font-semibold text-[var(--app-ink)]">
                   {{ step.label }}
                 </div>
-                <div class="text-[13px] text-[var(--app-muted)]">{{ step.hint }}</div>
+                <div class="text-[11px] text-[var(--app-muted)]">{{ step.hint }}</div>
               </div>
               <span
-                class="text-[13px] uppercase tracking-wide shrink-0"
+                class="text-[10px] uppercase tracking-wide shrink-0"
                 :class="
                   stepDone(step.key)
                     ? 'text-emerald-600 dark:text-emerald-400'
@@ -1443,7 +1443,7 @@ onUnmounted(() => {
             <template #extra>
               <button
                 type="button"
-                class="faw-btn faw-btn--run text-[13px]"
+                class="faw-btn faw-btn--run text-[11px]"
                 @click="openTaskFromDraft(taskDraft)"
               >
                 {{ taskDraft.gitlabIid ? "Cập nhật task" : "Tạo task" }}
@@ -1465,7 +1465,7 @@ onUnmounted(() => {
           class="flex-1 min-h-0 flex flex-col overflow-hidden"
         >
           <div v-if="!wfThreadId" class="flex-1 flex items-center justify-center p-4">
-            <p class="text-[13px] text-[var(--app-muted)] m-0 text-center">
+            <p class="text-[12px] text-[var(--app-muted)] m-0 text-center">
               Đang tải chat…
             </p>
           </div>

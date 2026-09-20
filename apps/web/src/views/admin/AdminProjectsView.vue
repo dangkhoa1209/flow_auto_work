@@ -1443,7 +1443,7 @@ onUnmounted(() => {
         </button>
         <p
           v-if="seedKnowledgeSummary"
-          class="w-full text-[13px] text-ink-muted m-0 pt-1"
+          class="w-full text-[12px] text-ink-muted m-0 pt-1"
         >
           Knowledge: {{ seedKnowledgeSummary }}
         </p>

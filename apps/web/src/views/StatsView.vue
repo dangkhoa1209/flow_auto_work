@@ -548,7 +548,7 @@ watch(
 
             <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div class="rounded-xl border border-line bg-surface-raised/40 p-4">
-                <div class="text-[13px] text-ink-muted uppercase tracking-wide">
+                <div class="text-[11px] text-ink-muted uppercase tracking-wide">
                   Total tasks
                 </div>
                 <div class="text-2xl font-semibold text-ink mt-1">
@@ -559,7 +559,7 @@ watch(
                 </div>
               </div>
               <div class="rounded-xl border border-line bg-surface-raised/40 p-4">
-                <div class="text-[13px] text-ink-muted uppercase tracking-wide">
+                <div class="text-[11px] text-ink-muted uppercase tracking-wide">
                   Completed
                 </div>
                 <div class="text-2xl font-semibold text-ink mt-1">
@@ -576,7 +576,7 @@ watch(
                 </div>
               </div>
               <div class="rounded-xl border border-line bg-surface-raised/40 p-4">
-                <div class="text-[13px] text-ink-muted uppercase tracking-wide">
+                <div class="text-[11px] text-ink-muted uppercase tracking-wide">
                   Avg tasks / day
                 </div>
                 <div class="text-2xl font-semibold text-ink mt-1">
@@ -590,7 +590,7 @@ watch(
 
             <div class="flex items-center gap-2">
               <Sparkline :values="levelCounts.spark || []" :width="180" :height="32" />
-              <span class="text-[13px] text-ink-muted">Daily task trend</span>
+              <span class="text-[11px] text-ink-muted">Daily task trend</span>
             </div>
 
             <div class="text-sm text-ink">
@@ -709,7 +709,7 @@ watch(
                   'bg-accent/10 -mx-2 px-2 rounded': highlightJobIds.has(it.jobId),
                 }"
               >
-                <span class="text-[13px] text-ink-muted font-mono mr-2">
+                <span class="text-[11px] text-ink-muted font-mono mr-2">
                   {{ ymdShort((it.at || "").slice(0, 10)) }}
                 </span>
                 <IssueIidLink :iid="it.issueIid" :url="it.url" />
@@ -719,7 +719,7 @@ watch(
                 </a-tag>
                 <div
                   v-if="it.status === 'failed' && it.error"
-                  class="text-[13px] text-red-500 mt-0.5 ml-12"
+                  class="text-[11px] text-red-500 mt-0.5 ml-12"
                 >
                   {{ it.error }}
                 </div>

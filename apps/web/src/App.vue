@@ -11,8 +11,6 @@ const sharedToken = {
   fontFamily:
     '"IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif',
   fontSize: 13,
-  // Ant algorithm would derive fontSizeSM = fontSize - 2 (11px); keep floor at 13.
-  fontSizeSM: 13,
   controlHeight: 28,
   controlHeightSM: 24,
 };

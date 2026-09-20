@@ -181,7 +181,7 @@ function formatDuration(job: SyncDbJob): string {
                 <span :class="statusColor(job.status)">· {{ job.status }}</span>
                 <span class="text-ink-muted font-normal"> · {{ formatDuration(job) }}</span>
               </div>
-              <div class="text-[13px] text-ink-muted truncate">
+              <div class="text-[11px] text-ink-muted truncate">
                 @{{ job.triggeredBy }}
                 · sync at {{ formatSyncAt(job) }}
                 <template v-if="job.progress?.total">
@@ -247,7 +247,7 @@ function formatDuration(job: SyncDbJob): string {
   border-bottom: none;
 }
 .faw-sync-pop__cancel {
-  font-size: 13px;
+  font-size: 11px;
   color: #b91c1c;
   background: transparent;
   border: none;

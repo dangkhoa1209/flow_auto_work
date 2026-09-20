@@ -105,7 +105,7 @@ async function copyText() {
       </div>
     </div>
   </div>
-  <div v-else class="text-ink-faint text-[13px]">{{ empty || "—" }}</div>
+  <div v-else class="text-ink-faint text-[12px]">{{ empty || "—" }}</div>
 </template>
 
 <style scoped>
@@ -139,7 +139,7 @@ async function copyText() {
   border: 1px solid var(--app-border);
   background: var(--app-panel, transparent);
   color: var(--app-faint);
-  font-size: 13px;
+  font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.02em;
   line-height: 1;

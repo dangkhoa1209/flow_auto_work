@@ -79,7 +79,7 @@ const columns = computed(() => {
         />
       </div>
     </div>
-    <div class="mt-1 flex items-center gap-1 text-[13px] text-ink-muted">
+    <div class="mt-1 flex items-center gap-1 text-[10px] text-ink-muted">
       Less
       <span class="inline-block h-[10px] w-[10px] rounded-[2px] bg-line" />
       <span class="inline-block h-[10px] w-[10px] rounded-[2px] bg-accent/25" />

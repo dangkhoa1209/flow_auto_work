@@ -294,7 +294,7 @@ function confirmMergeFromMenu() {
                   wb.currentJob?.issue?.issueIid ||
                   wb.selectedTaskIid
                 "
-                link-class="!text-[13px] shrink-0 mr-1"
+                link-class="!text-[12px] shrink-0 mr-1"
                 :url="wb.taskDetail?.url || wb.currentJob?.issue?.url"
               />
               <span

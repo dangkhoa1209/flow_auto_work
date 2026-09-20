@@ -111,7 +111,7 @@ defineExpose({ fill, focusInput });
           title="On: ready for BA analysis when you ask for it; normal Q&A still works. Off: product Q&A only."
         >
           <label
-            class="faw-ba-mode-toggle inline-flex items-center gap-1.5 cursor-pointer select-none shrink-0 text-[13px] text-[var(--app-muted)]"
+            class="faw-ba-mode-toggle inline-flex items-center gap-1.5 cursor-pointer select-none shrink-0 text-[11px] text-[var(--app-muted)]"
           >
             <a-switch
               size="small"

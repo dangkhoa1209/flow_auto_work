@@ -93,7 +93,7 @@ async function onChange(id: string) {
 
 <style scoped>
 .faw-ba-project-status {
-  font-size: 13px;
+  font-size: 11px;
   color: var(--app-faint, var(--app-muted));
   font-family: var(--font-mono, ui-monospace, monospace);
 }

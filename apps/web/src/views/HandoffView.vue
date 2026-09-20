@@ -287,7 +287,7 @@ async function mergeBranch() {
               :body="j.summary"
             />
           </div>
-          <div v-else class="text-[13px] text-ink-faint mt-1 truncate">
+          <div v-else class="text-[11px] text-ink-faint mt-1 truncate">
             {{ j.branch || j.id }}
           </div>
         </button>
@@ -316,7 +316,7 @@ async function mergeBranch() {
                 v-if="selected"
                 :iid="selected.issue?.issueIid"
                 :url="selected.issue?.url"
-                link-class="!text-[13px] shrink-0 mr-1"
+                link-class="!text-[12px] shrink-0 mr-1"
               />
               <span>{{ selected?.issue?.title || "—" }}</span>
             </div>

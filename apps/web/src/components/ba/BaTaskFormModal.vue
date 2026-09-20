@@ -247,7 +247,7 @@ function close() {
           v-if="metaError && !metaLoading"
           type="warning"
           show-icon
-          class="text-[13px]"
+          class="text-[12px]"
           :message="metaError"
         />
 
@@ -259,7 +259,7 @@ function close() {
             :disabled="agentDrafting"
             :status="titleMissing ? 'error' : undefined"
           />
-          <p v-if="titleMissing" class="text-[13px] text-red-500 m-0 mt-1">
+          <p v-if="titleMissing" class="text-[11px] text-red-500 m-0 mt-1">
             Tiêu đề là bắt buộc
           </p>
         </div>
@@ -273,7 +273,7 @@ function close() {
           />
           <p
             v-if="descriptionMissing"
-            class="text-[13px] text-red-500 m-0 mt-1"
+            class="text-[11px] text-red-500 m-0 mt-1"
           >
             Mô tả là bắt buộc
           </p>
@@ -282,7 +282,7 @@ function close() {
         <div class="rounded-lg border border-dashed border-[var(--app-border)] p-3">
           <div class="flex items-center justify-between gap-2 mb-1">
             <label class="faw-ba-label m-0">Ghi chú kỹ thuật cho Dev (lưu riêng)</label>
-            <span class="flex items-center gap-2 text-[13px] text-[var(--app-muted)]">
+            <span class="flex items-center gap-2 text-[11px] text-[var(--app-muted)]">
               Đưa lên task
               <a-switch
                 v-model:checked="form.includeDevNotes"
@@ -297,7 +297,7 @@ function close() {
             :disabled="agentDrafting"
             placeholder="Không bắt buộc — gợi ý kỹ thuật cho Dev, không xuất hiện trong mô tả nghiệp vụ"
           />
-          <p class="text-[13px] text-[var(--app-muted)] m-0 mt-1">
+          <p class="text-[11px] text-[var(--app-muted)] m-0 mt-1">
             {{
               form.includeDevNotes
                 ? "Sẽ thêm mục “Ghi chú kỹ thuật (cho Dev)” vào issue khi lên GitLab."
@@ -352,7 +352,7 @@ function close() {
             option-filter-prop="label"
             :status="milestoneMissing ? 'error' : undefined"
           />
-          <p v-if="milestoneMissing" class="text-[13px] text-red-500 m-0 mt-1">
+          <p v-if="milestoneMissing" class="text-[11px] text-red-500 m-0 mt-1">
             Milestone là bắt buộc khi lên GitLab
           </p>
         </div>
@@ -361,7 +361,7 @@ function close() {
           v-if="alreadyPublished"
           type="warning"
           show-icon
-          class="text-[13px]"
+          class="text-[12px]"
         >
           <template #message>
             Task đã lên GitLab
