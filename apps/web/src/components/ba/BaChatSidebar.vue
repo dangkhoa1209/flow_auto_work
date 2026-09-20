@@ -1,11 +1,36 @@
 <script setup lang="ts">
-import { inject } from "vue";
+import { computed, inject, ref } from "vue";
 import { Modal, message } from "ant-design-vue";
-import { PlusOutlined, DeleteOutlined } from "@ant-design/icons-vue";
+import { PlusOutlined, DeleteOutlined, SearchOutlined } from "@ant-design/icons-vue";
 import { useBaChatStore } from "@/stores/baChat";
+import { formatRelativeTime } from "@/utils/formatChatTime";
 
 const ba = useBaChatStore();
 const closeSide = inject<() => void>("baCloseSide", () => undefined);
+
+const threadQuery = ref("");
+
+const showSearch = computed(() => ba.threads.length >= 8);
+
+const filteredThreads = computed(() => {
+  const q = threadQuery.value.trim().toLowerCase();
+  if (!q) return ba.threads;
+  return ba.threads.filter((t) => t.title.toLowerCase().includes(q));
+});
+
+/** Last message snippet for the active thread (others load on select). */
+const activeSnippet = computed(() => {
+  const msgs = ba.messages;
+  if (!msgs.length) return "";
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    const c = msgs[i]?.content?.trim();
+    if (c) {
+      const oneLine = c.replace(/\s+/g, " ");
+      return oneLine.length > 72 ? `${oneLine.slice(0, 72)}…` : oneLine;
+    }
+  }
+  return "";
+});
 
 async function onNewChat() {
   try {
@@ -37,19 +62,6 @@ function onDelete(id: string, title: string) {
     },
   });
 }
-
-function formatTime(iso: string) {
-  try {
-    return new Date(iso).toLocaleString(undefined, {
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  } catch {
-    return "";
-  }
-}
 </script>
 
 <template>
@@ -78,6 +90,16 @@ function formatTime(iso: string) {
           <PlusOutlined /> New Chat
         </button>
       </a-tooltip>
+      <div v-if="showSearch" class="faw-ba-thread-search">
+        <SearchOutlined class="faw-ba-thread-search__icon" aria-hidden="true" />
+        <input
+          v-model="threadQuery"
+          type="search"
+          class="faw-ba-thread-search__input"
+          placeholder="Filter chats…"
+          aria-label="Filter chats"
+        />
+      </div>
     </div>
 
     <div class="flex-1 min-h-0 overflow-y-auto">
@@ -89,7 +111,13 @@ function formatTime(iso: string) {
         <b class="text-[var(--app-muted)]">New Chat</b> to start.
       </div>
       <div
-        v-for="t in ba.threads"
+        v-else-if="!filteredThreads.length"
+        class="px-3 py-8 text-center text-[11px] text-[var(--app-faint)]"
+      >
+        No chats match “{{ threadQuery.trim() }}”
+      </div>
+      <div
+        v-for="t in filteredThreads"
         :key="t.id"
         role="button"
         tabindex="0"
@@ -100,7 +128,14 @@ function formatTime(iso: string) {
       >
         <div class="faw-ba-thread__main">
           <span class="faw-ba-thread__title">{{ t.title }}</span>
-          <span class="faw-ba-thread__time">{{ formatTime(t.updatedAt) }}</span>
+          <span
+            v-if="t.id === ba.activeThreadId && activeSnippet"
+            class="faw-ba-thread__snip"
+            >{{ activeSnippet }}</span
+          >
+          <span class="faw-ba-thread__time">{{
+            formatRelativeTime(t.updatedAt)
+          }}</span>
         </div>
         <button
           type="button"

@@ -5,12 +5,24 @@ import { useAutoScroll } from "@/composables/useAutoScroll";
 import { formatChatTime } from "@/utils/formatChatTime";
 import type { BaMessage } from "@/stores/baChat";
 
+const EMPTY_TIPS = [
+  "How does the attendance rules screen validate shifts?",
+  "Summarize this page: https://…",
+  "Draft an issue for the bug I described",
+] as const;
+
 const props = defineProps<{
   messages: BaMessage[];
   streaming?: boolean;
   streamingMessageId?: string | null;
+  /** True while loading messages for a thread switch. */
+  loading?: boolean;
   /** Change this when switching project/thread so we pin to latest again. */
   resetKey?: string | null;
+}>();
+
+const emit = defineEmits<{
+  "use-prompt": [prompt: string];
 }>();
 
 /**
@@ -59,14 +71,22 @@ const visibleMessages = computed(() =>
 
 function isStreamingMessage(m: BaMessage) {
   return (
-    typingInsideStream.value &&
+    !!props.streaming &&
     !!props.streamingMessageId &&
     m.id === props.streamingMessageId
   );
 }
 
+const showEmpty = computed(
+  () => !props.messages.length && !props.streaming && !props.loading,
+);
+
+const showSkeleton = computed(
+  () => !!props.loading && !props.messages.length && !props.streaming,
+);
+
 const listRef = ref<HTMLElement | null>(null);
-const { onScroll, onWheel, onTouchMove, resetPin, scrollToBottom } =
+const { pinnedToBottom, onScroll, onWheel, onTouchMove, resetPin, jumpToBottom } =
   useAutoScroll(listRef, () =>
     [
       visibleMessages.value.map((m) => m.content).join(""),
@@ -75,12 +95,18 @@ const { onScroll, onWheel, onTouchMove, resetPin, scrollToBottom } =
     ].join("|"),
   );
 
+const showJumpLatest = computed(
+  () =>
+    !pinnedToBottom.value &&
+    (props.messages.length > 0 || !!props.streaming),
+);
+
 watch(
   () => props.resetKey,
   (key, prev) => {
     if (key === prev) return;
     resetPin();
-    void scrollToBottom(true);
+    void jumpToBottom();
   },
 );
 
@@ -89,108 +115,154 @@ function whoLabel(role: string) {
   if (role === "system") return "system";
   return "assistant";
 }
+
+function onJumpLatest() {
+  void jumpToBottom();
+}
+
+function onTip(prompt: string) {
+  emit("use-prompt", prompt);
+}
 </script>
 
 <template>
-  <div
-    ref="listRef"
-    class="faw-console-scroll flex-1 min-h-0 overflow-y-auto"
-    @scroll="onScroll"
-    @wheel.passive="onWheel"
-    @touchmove.passive="onTouchMove"
-  >
+  <div class="faw-ba-msgs relative flex-1 min-h-0 flex flex-col">
     <div
-      v-if="!messages.length && !streaming"
-      class="faw-ba-empty flex-1 flex items-center justify-center py-16 px-4"
-      role="status"
+      ref="listRef"
+      class="faw-console-scroll flex-1 min-h-0 overflow-y-auto"
+      role="log"
+      aria-relevant="additions"
+      :aria-busy="streaming ? 'true' : undefined"
+      :aria-live="streaming ? 'polite' : 'off'"
+      @scroll="onScroll"
+      @wheel.passive="onWheel"
+      @touchmove.passive="onTouchMove"
     >
-      <div class="faw-ba-empty__card max-w-md text-center space-y-3">
-        <p class="faw-ba-empty__title m-0">
-          Ask anything about the selected project
-        </p>
-        <p class="faw-ba-empty__desc m-0">
-          Include a
-          <strong class="text-[var(--app-ink)] font-medium">URL</strong>
-          or UI anchor (menu, button, screen) so answers match the real system.
-        </p>
-        <ul class="faw-ba-empty__tips" aria-label="Example prompts">
-          <li>How does the attendance rules screen validate shifts?</li>
-          <li>Summarize this page: https://…</li>
-          <li>Draft an issue for the bug I described</li>
-        </ul>
+      <div
+        v-if="showSkeleton"
+        class="faw-ba-skel space-y-3 py-4"
+        aria-busy="true"
+        aria-label="Loading messages"
+      >
+        <div class="faw-ba-skel__row agent">
+          <div class="faw-ba-skel__who" />
+          <div class="faw-ba-skel__bubble" />
+        </div>
+        <div class="faw-ba-skel__row user">
+          <div class="faw-ba-skel__who" />
+          <div class="faw-ba-skel__bubble faw-ba-skel__bubble--short" />
+        </div>
+        <div class="faw-ba-skel__row agent">
+          <div class="faw-ba-skel__who" />
+          <div class="faw-ba-skel__bubble" />
+        </div>
       </div>
+
+      <div
+        v-else-if="showEmpty"
+        class="faw-ba-empty flex-1 flex items-center justify-center py-16 px-4"
+        role="status"
+      >
+        <div class="faw-ba-empty__card max-w-md text-center space-y-3">
+          <p class="faw-ba-empty__title m-0">
+            Ask anything about the selected project
+          </p>
+          <p class="faw-ba-empty__desc m-0">
+            Include a
+            <strong class="text-[var(--app-ink)] font-medium">URL</strong>
+            or UI anchor (menu, button, screen) so answers match the real system.
+          </p>
+          <ul class="faw-ba-empty__tips" aria-label="Example prompts">
+            <li v-for="tip in EMPTY_TIPS" :key="tip">
+              <button
+                type="button"
+                class="faw-ba-empty__tip"
+                @click="onTip(tip)"
+              >
+                {{ tip }}
+              </button>
+            </li>
+          </ul>
+        </div>
+      </div>
+
+      <template v-else>
+        <div
+          v-for="m in visibleMessages"
+          :key="m.id"
+          class="faw-msg"
+          :class="
+            m.role === 'user' ? 'user' : m.role === 'system' ? 'system' : 'agent'
+          "
+          :data-msg-id="m.id"
+        >
+          <div class="faw-msg__who">{{ whoLabel(m.role) }}</div>
+          <div
+            class="faw-msg__bubble"
+            :class="{ 'faw-msg__bubble--streaming': isStreamingMessage(m) }"
+          >
+            <ChatMessageBody
+              v-if="m.content"
+              :body="m.content"
+              :role="m.role === 'user' ? 'user' : 'agent'"
+              copyable
+            >
+              <template #below>
+                <span
+                  v-if="isStreamingMessage(m)"
+                  class="faw-stream-caret"
+                  aria-hidden="true"
+                />
+              </template>
+              <template #meta>
+                <time
+                  v-if="formatChatTime(m.createdAt)"
+                  class="faw-msg__time"
+                  :datetime="m.createdAt"
+                >
+                  {{ formatChatTime(m.createdAt) }}
+                </time>
+              </template>
+            </ChatMessageBody>
+            <template v-else>
+              <time
+                v-if="formatChatTime(m.createdAt)"
+                class="faw-msg__time"
+                :datetime="m.createdAt"
+              >
+                {{ formatChatTime(m.createdAt) }}
+              </time>
+            </template>
+          </div>
+        </div>
+
+        <!-- Only before first token — one assistant row, no duplicate under content -->
+        <div v-if="showTypingFooter" class="faw-msg agent">
+          <div class="faw-msg__who">assistant</div>
+          <div
+            class="faw-msg__bubble faw-msg__bubble--typing"
+            aria-live="polite"
+            aria-label="Thinking"
+          >
+            <span class="chat-typing">
+              <span /><span /><span />
+            </span>
+            <span class="text-[11px] text-[var(--app-faint)] ml-1.5">{{
+              typingHint
+            }}</span>
+          </div>
+        </div>
+      </template>
     </div>
 
-    <div
-      v-for="m in visibleMessages"
-      :key="m.id"
-      class="faw-msg"
-      :class="
-        m.role === 'user' ? 'user' : m.role === 'system' ? 'system' : 'agent'
-      "
+    <button
+      v-if="showJumpLatest"
+      type="button"
+      class="faw-ba-jump"
+      aria-label="Jump to latest message"
+      @click="onJumpLatest"
     >
-      <div class="faw-msg__who">{{ whoLabel(m.role) }}</div>
-      <div class="faw-msg__bubble">
-        <ChatMessageBody
-          v-if="m.content"
-          :body="m.content"
-          :role="m.role === 'user' ? 'user' : 'agent'"
-          copyable
-        >
-          <template #below>
-            <div
-              v-if="isStreamingMessage(m)"
-              class="faw-msg__typing-inline"
-              aria-live="polite"
-              aria-label="Thinking"
-            >
-              <span class="chat-typing">
-                <span /><span /><span />
-              </span>
-              <span class="text-[11px] text-[var(--app-faint)] ml-1.5">{{
-                typingHint
-              }}</span>
-            </div>
-          </template>
-          <template #meta>
-            <time
-              v-if="formatChatTime(m.createdAt)"
-              class="faw-msg__time"
-              :datetime="m.createdAt"
-            >
-              {{ formatChatTime(m.createdAt) }}
-            </time>
-          </template>
-        </ChatMessageBody>
-        <time
-          v-else-if="formatChatTime(m.createdAt)"
-          class="faw-msg__time"
-          :datetime="m.createdAt"
-        >
-          {{ formatChatTime(m.createdAt) }}
-        </time>
-      </div>
-    </div>
-
-    <!-- Only before first token — one assistant row, no duplicate under content -->
-    <div v-if="showTypingFooter" class="faw-msg agent">
-      <div class="faw-msg__who">assistant</div>
-      <div class="faw-msg__bubble faw-msg__bubble--typing" aria-live="polite">
-        <span class="chat-typing" aria-label="Thinking">
-          <span /><span /><span />
-        </span>
-        <span class="text-[11px] text-[var(--app-faint)] ml-1.5">{{
-          typingHint
-        }}</span>
-      </div>
-    </div>
+      Jump to latest
+    </button>
   </div>
 </template>
-
-<style scoped>
-.faw-msg__typing-inline {
-  display: inline-flex;
-  align-items: center;
-  margin-top: 8px;
-}
-</style>

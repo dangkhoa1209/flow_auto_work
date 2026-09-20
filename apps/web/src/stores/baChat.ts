@@ -456,6 +456,7 @@ export const useBaChatStore = defineStore("baChat", () => {
 
   async function selectThread(id: string) {
     activeThreadId.value = id;
+    messages.value = [];
     loading.value = true;
     errorText.value = "";
     try {

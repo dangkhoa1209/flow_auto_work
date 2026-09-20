@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
-import { message, Modal } from "ant-design-vue";
+import { message } from "ant-design-vue";
 import { useBaChatStore } from "@/stores/baChat";
 import { baApi } from "@/api/baApi";
 import { ApiError } from "@/api/http";
@@ -12,6 +12,8 @@ import BaTaskFormModal from "@/components/ba/BaTaskFormModal.vue";
 
 const ba = useBaChatStore();
 const { requireGitPat, handleBaPatApiError } = useBaGitPat();
+
+const composerRef = ref<{ fill: (prompt: string) => void } | null>(null);
 
 const taskModalOpen = ref(false);
 const taskModalLoading = ref(false);
@@ -277,6 +279,37 @@ function onTaskPublish(payload: {
   if (!requireGitPat(() => void doTaskPublish(payload))) return;
   void doTaskPublish(payload);
 }
+
+function onUsePrompt(prompt: string) {
+  composerRef.value?.fill(prompt);
+}
+
+const contextBits = computed(() => {
+  const bits: { key: string; label: string; tone?: "accent" | "warn" }[] = [];
+  if (ba.selectedProject) {
+    bits.push({
+      key: "project",
+      label: ba.selectedProject.displayName,
+    });
+    if (ba.selectedProject.gitlabPath) {
+      bits.push({
+        key: "path",
+        label: ba.selectedProject.gitlabPath,
+      });
+    }
+  }
+  if (ba.analysisMode) {
+    bits.push({ key: "mode", label: "BA mode", tone: "accent" });
+  }
+  if (draftingIssue.value) {
+    bits.push({
+      key: "draft",
+      label: ba.issueDraftLabel || "Drafting issue…",
+      tone: "warn",
+    });
+  }
+  return bits;
+});
 </script>
 
 <template>
@@ -287,14 +320,11 @@ function onTaskPublish(payload: {
       <div class="faw-console-head">
         <div class="faw-console-head__title">
           <h2>{{ ba.activeThread?.title || "Project Chat" }}</h2>
-          <div class="faw-console-head__win">
-            <template v-if="ba.selectedProject">
-              {{ ba.selectedProject.displayName }}
-              <template v-if="ba.selectedProject.gitlabPath">
-                · {{ ba.selectedProject.gitlabPath }}
-              </template>
-            </template>
-            <template v-else>No project selected</template>
+          <div
+            v-if="!ba.selectedProject"
+            class="faw-console-head__win"
+          >
+            No project selected
           </div>
         </div>
         <div class="faw-console-actions">
@@ -312,13 +342,6 @@ function onTaskPublish(payload: {
             </button>
           </a-tooltip>
           <span
-            v-if="ba.analysisMode && !ba.streaming"
-            class="faw-idle text-[11px]"
-            title="BA mode: business analysis"
-          >
-            BA mode
-          </span>
-          <span
             v-if="ba.streaming"
             class="faw-idle text-[11px]"
           >
@@ -326,6 +349,29 @@ function onTaskPublish(payload: {
             thinking…
           </span>
         </div>
+      </div>
+
+      <div
+        v-if="contextBits.length"
+        class="faw-ba-context"
+        aria-label="Chat context"
+      >
+        <template v-for="(bit, i) in contextBits" :key="bit.key">
+          <span
+            v-if="i > 0"
+            class="faw-ba-context__sep"
+            aria-hidden="true"
+            >·</span
+          >
+          <span
+            class="faw-ba-context__bit"
+            :class="{
+              'faw-ba-context__bit--accent': bit.tone === 'accent',
+              'faw-ba-context__bit--warn': bit.tone === 'warn',
+            }"
+            >{{ bit.label }}</span
+          >
+        </template>
       </div>
 
       <div
@@ -340,7 +386,9 @@ function onTaskPublish(payload: {
           :messages="ba.messages"
           :streaming="ba.streaming"
           :streaming-message-id="ba.streamingMessageId"
+          :loading="ba.loading"
           :reset-key="ba.activeThreadId"
+          @use-prompt="onUsePrompt"
         />
         <div
           v-if="ba.errorText"
@@ -349,6 +397,7 @@ function onTaskPublish(payload: {
           <a-alert type="error" show-icon :message="ba.errorText" />
         </div>
         <BaComposer
+          ref="composerRef"
           :disabled="composerDisabled"
           :disabled-reason="disabledReason"
           :loading="ba.streaming"

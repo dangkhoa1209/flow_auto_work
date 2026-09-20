@@ -59,6 +59,15 @@ export function useAutoScroll(
     el.scrollTop = el.scrollHeight;
   }
 
+  /** Explicit user action (e.g. Jump to latest) — always pin and scroll. */
+  async function jumpToBottom() {
+    resetPin();
+    await nextTick();
+    const el = elRef.value;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }
+
   watch(
     source,
     () => {
@@ -74,5 +83,6 @@ export function useAutoScroll(
     onTouchMove,
     resetPin,
     scrollToBottom,
+    jumpToBottom,
   };
 }
