@@ -45,8 +45,9 @@ const props = withDefaults(
     planFirst?: boolean;
     /** Mobile: Chat | Logs tabs instead of split panes */
     mobileTabs?: boolean;
+    failedSend?: { content: string; error: string; mode: "continue" | "ask" } | null;
   }>(),
-  { mobileTabs: false, planFirst: false },
+  { mobileTabs: false, planFirst: false, failedSend: null },
 );
 
 const emit = defineEmits<{
@@ -55,6 +56,7 @@ const emit = defineEmits<{
   sendChat: ["continue" | "ask"];
   forceStop: [];
   resetWindow: [];
+  retryFailedSend: [];
 }>();
 
 const agentRunMode = computed(() => (props.planFirst ? "plan" : "agent"));
@@ -63,11 +65,19 @@ function onAgentRunMode(v: string) {
   emit("update:planFirst", v === "plan");
 }
 
-/** Enter → Send; Shift+Enter → newline (IME composition ignored). */
+/** Enter / ⌘·Ctrl+Enter → Send; Shift+Enter → newline; Esc → Force Stop. */
 function onChatKeydown(e: KeyboardEvent) {
+  if (e.key === "Escape") {
+    if (props.canForceStop && !props.stopBusy) {
+      e.preventDefault();
+      e.stopPropagation();
+      emit("forceStop");
+    }
+    return;
+  }
   if (e.key !== "Enter") return;
   if (e.isComposing) return;
-  if (e.shiftKey) return;
+  if (e.shiftKey && !(e.metaKey || e.ctrlKey)) return;
   e.preventDefault();
   if (!props.chatInput.trim() || props.stopBusy) return;
   emit("sendChat", "continue");
@@ -246,6 +256,7 @@ const chatScroll = useAutoScroll(chatBox, () => [
   props.chat.length,
   props.chat.at(-1)?.body,
   props.agentTyping,
+  props.failedSend?.content,
 ]);
 const lastProgress = () => props.progressLines.at(-1);
 const progressScroll = useAutoScroll(progressBox, () => [
@@ -253,6 +264,74 @@ const progressScroll = useAutoScroll(progressBox, () => [
   lastProgress()?.id,
   lastProgress()?.text,
 ]);
+
+const progressErrorsOnly = ref(false);
+
+const PROGRESS_ERR_RE = /\b(error|failed|fail|warn|exception|fatal)\b/i;
+
+const visibleProgressLines = computed(() => {
+  if (!progressErrorsOnly.value) return props.progressLines;
+  return props.progressLines.filter(
+    (l) =>
+      l.kind === "error" ||
+      l.kind === "err" ||
+      l.kind === "warn" ||
+      PROGRESS_ERR_RE.test(l.text),
+  );
+});
+
+const showJumpChat = computed(
+  () =>
+    !chatScroll.pinnedToBottom.value &&
+    (props.chat.length > 0 || props.agentTyping || !!props.failedSend),
+);
+
+const showJumpProgress = computed(
+  () =>
+    !progressScroll.pinnedToBottom.value &&
+    (visibleProgressLines.value.length > 0 || props.progressLive),
+);
+
+const contextStripBits = computed(() => {
+  const j = props.currentJob;
+  if (!j) return [] as Array<{ text: string; tone?: "accent" | "warn" }>;
+  const bits: Array<{ text: string; tone?: "accent" | "warn" }> = [];
+  const iid = j.issue?.issueIid;
+  if (iid && iid > 0) bits.push({ text: `#${iid}`, tone: "accent" });
+  else bits.push({ text: "Session" });
+  const branch = (j.workBranch || j.branch || "").trim();
+  if (branch) bits.push({ text: branch });
+  bits.push({
+    text: statusLabel(j.status),
+    tone:
+      j.status === "failed"
+        ? "warn"
+        : j.status.startsWith("awaiting_")
+          ? "warn"
+          : undefined,
+  });
+  const cq = props.contextQuality?.level || j.contextQuality?.level;
+  if (cq) {
+    bits.push({
+      text: contextQualityLabel(cq),
+      tone: cq === "bad" ? "warn" : cq === "good" ? "accent" : undefined,
+    });
+  }
+  return bits;
+});
+
+async function copyVisibleProgress() {
+  const text = visibleProgressLines.value
+    .map((l) => l.text)
+    .join("\n")
+    .trim();
+  if (!text) return;
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    /* ignore */
+  }
+}
 
 function jumpPinnedPanes(force: boolean) {
   void nextTick().then(() => {
@@ -434,6 +513,26 @@ watch(chatBox, (el, prev) => {
         </div>
       </div>
 
+      <div
+        v-if="contextStripBits.length"
+        class="faw-console-context"
+        aria-label="Job context"
+      >
+        <template v-for="(bit, i) in contextStripBits" :key="i">
+          <span v-if="i > 0" class="faw-console-context__sep" aria-hidden="true"
+            >·</span
+          >
+          <span
+            class="faw-console-context__bit"
+            :class="{
+              'faw-console-context__bit--accent': bit.tone === 'accent',
+              'faw-console-context__bit--warn': bit.tone === 'warn',
+            }"
+            >{{ bit.text }}</span
+          >
+        </template>
+      </div>
+
       <!-- Mobile: Chat | Logs | Terminal switcher -->
       <div
         v-if="mobileTabs"
@@ -476,7 +575,7 @@ watch(chatBox, (el, prev) => {
       <!-- Chat messages (scroll) -->
       <div
         v-show="!mobileTabs || mobileConsoleTab === 'chat'"
-        class="flex flex-col min-h-0 flex-1"
+        class="faw-console-chat-wrap flex flex-col min-h-0 flex-1 relative"
         :style="
           !mobileTabs && progressOpen
             ? { minHeight: `${CHAT_RESERVE_MIN}px` }
@@ -486,6 +585,10 @@ watch(chatBox, (el, prev) => {
         <div
           ref="chatBox"
           class="faw-console-scroll flex-1 min-h-0 overflow-y-auto"
+          role="log"
+          aria-relevant="additions"
+          :aria-busy="agentTyping || busy ? 'true' : undefined"
+          :aria-live="agentTyping ? 'polite' : 'off'"
           @scroll="chatScroll.onScroll"
           @wheel.passive="chatScroll.onWheel"
           @touchmove.passive="chatScroll.onTouchMove"
@@ -512,18 +615,49 @@ watch(chatBox, (el, prev) => {
             </div>
           </div>
 
+          <template v-if="failedSend">
+            <div class="faw-msg user faw-msg--failed">
+              <div class="faw-msg__who">You</div>
+              <div class="faw-msg__bubble faw-msg__bubble--failed">
+                <div class="whitespace-pre-wrap text-[13px]">{{ failedSend.content }}</div>
+                <div class="faw-console-failed-meta">
+                  <span class="faw-ba-failed-label">Send failed</span>
+                  <button
+                    type="button"
+                    class="faw-ba-msg-action"
+                    aria-label="Retry send"
+                    @click="emit('retryFailedSend')"
+                  >
+                    Retry
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div class="faw-msg agent faw-msg--failed">
+              <div class="faw-msg__who">system</div>
+              <div class="faw-msg__bubble faw-msg__bubble--error">
+                <p class="m-0 text-[12px]">{{ failedSend.error }}</p>
+              </div>
+            </div>
+          </template>
+
           <div v-if="agentTyping" class="faw-msg agent">
             <div class="faw-msg__who">agent</div>
-            <div class="faw-msg__bubble faw-msg__bubble--typing">
-              <span class="chat-typing" aria-label="Đang suy nghĩ">
+            <div
+              class="faw-msg__bubble faw-msg__bubble--typing"
+              aria-live="polite"
+              aria-label="Thinking"
+            >
+              <span class="chat-typing">
                 <span /><span /><span />
               </span>
               <span class="text-[11px] text-ink-faint ml-1.5">thinking…</span>
+              <span class="faw-stream-caret" aria-hidden="true" />
             </div>
           </div>
 
           <a-empty
-            v-if="!chat.length && !agentTyping"
+            v-if="!chat.length && !agentTyping && !failedSend"
             :description="
               currentJob
                 ? 'No messages yet — Run or Send'
@@ -531,6 +665,15 @@ watch(chatBox, (el, prev) => {
             "
           />
         </div>
+        <button
+          v-if="showJumpChat"
+          type="button"
+          class="faw-console-jump"
+          aria-label="Jump to latest message"
+          @click="chatScroll.jumpToBottom()"
+        >
+          Jump to latest
+        </button>
       </div>
 
       <!-- Clarification alert -->
@@ -544,7 +687,7 @@ watch(chatBox, (el, prev) => {
         <a-alert
           type="warning"
           show-icon
-          message="Agent đang hỏi — trả lời ở ô chat bên dưới để tiếp tục"
+          message="Agent is asking — reply in the chat box below to continue"
         />
       </div>
 
@@ -627,6 +770,27 @@ watch(chatBox, (el, prev) => {
             >{{ progressLines.length }}</span
           >
           <span class="flex-1" />
+          <template v-if="mobileTabs || progressOpen">
+            <button
+              type="button"
+              class="faw-console-log-tool"
+              :class="{ 'is-on': progressErrorsOnly }"
+              title="Show errors and warnings only"
+              @pointerdown.stop
+              @click.stop="progressErrorsOnly = !progressErrorsOnly"
+            >
+              Errors
+            </button>
+            <button
+              type="button"
+              class="faw-console-log-tool"
+              title="Copy visible log"
+              @pointerdown.stop
+              @click.stop="copyVisibleProgress"
+            >
+              Copy
+            </button>
+          </template>
           <DownOutlined
             v-if="!mobileTabs"
             class="console-progress__chevron"
@@ -641,57 +805,80 @@ watch(chatBox, (el, prev) => {
               ? mobileConsoleTab === 'logs'
               : !terminalEnabled || bottomTab === 'logs')
           "
-          ref="progressBox"
-          class="console-progress__body flex-1 min-h-0 overflow-y-auto space-y-0"
-          :class="mobileTabs ? 'text-xs' : ''"
-          @scroll="progressScroll.onScroll"
-          @wheel.passive="progressScroll.onWheel"
-          @touchmove.passive="progressScroll.onTouchMove"
+          class="faw-console-progress-wrap relative flex-1 min-h-0 flex flex-col"
         >
           <div
-            v-for="l in progressLines"
-            :key="l.id"
-            class="mb-1.5 last:mb-0"
+            ref="progressBox"
+            class="console-progress__body flex-1 min-h-0 overflow-y-auto space-y-0"
+            :class="mobileTabs ? 'text-xs' : ''"
+            role="log"
+            aria-relevant="additions"
+            :aria-busy="progressLive ? 'true' : undefined"
+            :aria-live="progressLive ? 'polite' : 'off'"
+            @scroll="progressScroll.onScroll"
+            @wheel.passive="progressScroll.onWheel"
+            @touchmove.passive="progressScroll.onTouchMove"
           >
-            <div class="flex items-center gap-1.5 mb-0.5 opacity-70">
-              <span
-                class="text-[9px] font-semibold uppercase tracking-wide"
-                :class="{
-                  'text-amber-700': l.kind === 'task',
-                  'text-sky-700': l.kind === 'tool',
-                }"
-                >{{
-                  l.kind === "task"
-                    ? "SUBAGENT"
-                    : l.kind === "tool"
-                      ? "TOOL"
-                      : l.kind
-                }}</span
+            <div
+              v-for="l in visibleProgressLines"
+              :key="l.id"
+              class="mb-1.5 last:mb-0"
+            >
+              <div class="flex items-center gap-1.5 mb-0.5 opacity-70">
+                <span
+                  class="text-[9px] font-semibold uppercase tracking-wide"
+                  :class="{
+                    'text-amber-700': l.kind === 'task',
+                    'text-sky-700': l.kind === 'tool',
+                  }"
+                  >{{
+                    l.kind === "task"
+                      ? "SUBAGENT"
+                      : l.kind === "tool"
+                        ? "TOOL"
+                        : l.kind
+                  }}</span
+                >
+                <span class="text-[9px]">{{
+                  new Date(l.at).toLocaleTimeString()
+                }}</span>
+              </div>
+              <div
+                class="leading-snug break-words whitespace-pre-wrap overflow-y-auto text-[10.5px]"
+                :class="
+                  l.kind === 'assistant' ||
+                  l.kind === 'thinking' ||
+                  l.kind === 'task' ||
+                  l.kind === 'prompt'
+                    ? 'max-h-[min(70vh,28rem)]'
+                    : 'max-h-36'
+                "
               >
-              <span class="text-[9px]">{{
-                new Date(l.at).toLocaleTimeString()
-              }}</span>
+                {{ l.text }}
+              </div>
             </div>
             <div
-              class="leading-snug break-words whitespace-pre-wrap overflow-y-auto text-[10.5px]"
-              :class="
-                l.kind === 'assistant' ||
-                l.kind === 'thinking' ||
-                l.kind === 'task' ||
-                l.kind === 'prompt'
-                  ? 'max-h-[min(70vh,28rem)]'
-                  : 'max-h-36'
-              "
+              v-if="!visibleProgressLines.length"
+              class="text-center py-4 text-[11px] font-sans opacity-60"
             >
-              {{ l.text }}
+              {{
+                progressErrorsOnly
+                  ? "No error lines in this log"
+                  : progressLive
+                    ? "Waiting for Cursor stream…"
+                    : "No progress yet"
+              }}
             </div>
           </div>
-          <div
-            v-if="!progressLines.length"
-            class="text-center py-4 text-[11px] font-sans opacity-60"
+          <button
+            v-if="showJumpProgress"
+            type="button"
+            class="faw-console-jump faw-console-jump--progress"
+            aria-label="Jump to latest log"
+            @click="progressScroll.jumpToBottom()"
           >
-            {{ progressLive ? "Waiting for Cursor stream…" : "No progress yet" }}
-          </div>
+            Jump to latest
+          </button>
         </div>
 
         <div
@@ -723,6 +910,7 @@ watch(chatBox, (el, prev) => {
           :autofocus="false"
           :disabled="false"
           :readonly="false"
+          aria-label="Agent console message"
           :placeholder="
             agentTyping || busy
               ? 'Type a follow-up — Send will ask to stop the current run…'
@@ -737,7 +925,7 @@ watch(chatBox, (el, prev) => {
         />
         <div class="faw-console-input__row faw-ba-input-row">
           <span class="faw-ba-input-hint">
-            Enter to send · Shift+Enter for newline
+            Enter / ⌘·Ctrl+Enter send · Shift+Enter newline · Esc stop
           </span>
           <div class="faw-ba-input-actions">
             <a-select

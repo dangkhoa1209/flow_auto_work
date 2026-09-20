@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { reactive } from "vue";
+import { reactive, ref, computed } from "vue";
 import { Modal } from "ant-design-vue";
 import { Splitpanes, Pane } from "splitpanes";
 import "splitpanes/dist/splitpanes.css";
@@ -25,9 +25,15 @@ const panes = reactive(usePaneLayout());
 /** Mobile must not mount desktop Splitpanes/console — dual tree freezes tab switches. */
 const isDesktop = useIsDesktopLg();
 
+const taskListRef = ref<{ focusTaskSearch?: () => void } | null>(null);
+const canForceStopRef = computed(() => Boolean(wb.canForceStop));
+
 useWorkbenchShortcuts({
   run: () => wb.runCheckedTasks(),
   saveNotes: () => wb.saveNotes({ silent: false }),
+  forceStop: () => wb.forceStop(),
+  canForceStop: canForceStopRef,
+  focusTaskSearch: () => taskListRef.value?.focusTaskSearch?.(),
   closeModal: () => {
     if (wb.relatedPreviewOpen) {
       wb.relatedPreviewOpen = false;
@@ -80,6 +86,7 @@ function confirmMergeFromMenu() {
         <Pane :size="panes.leftSize" :min-size="16" :max-size="40">
           <div class="h-full min-h-0">
             <TaskList
+              ref="taskListRef"
               class="w-full h-full"
               :filtered-tasks="wb.filteredTasks"
               :sorted-jobs="wb.sortedJobs"
@@ -198,11 +205,13 @@ function confirmMergeFromMenu() {
               :agent-window-short="wb.agentWindowShort"
               :context-quality="wb.contextQuality"
               :plan-first="wb.planFirst"
+              :failed-send="wb.failedSend"
               @update:chat-input="wb.chatInput = $event"
               @update:plan-first="wb.planFirst = $event"
               @send-chat="wb.sendChat"
               @force-stop="wb.forceStop"
               @reset-window="wb.resetAgentWindow"
+              @retry-failed-send="wb.retryFailedSend"
             />
           </div>
         </Pane>
@@ -212,6 +221,7 @@ function confirmMergeFromMenu() {
     <!-- Mobile: list ↔ job detail (Issue | Console) -->
     <div v-else class="flex-1 min-h-0 overflow-hidden flex flex-col">
       <TaskList
+        ref="taskListRef"
         v-show="wb.mobilePane === 'tasks'"
         class="w-full h-full"
         :filtered-tasks="wb.filteredTasks"
@@ -394,11 +404,13 @@ function confirmMergeFromMenu() {
           :agent-window-short="wb.agentWindowShort"
           :context-quality="wb.contextQuality"
           :plan-first="wb.planFirst"
+          :failed-send="wb.failedSend"
           @update:chat-input="wb.chatInput = $event"
           @update:plan-first="wb.planFirst = $event"
           @send-chat="wb.sendChat"
           @force-stop="wb.forceStop"
           @reset-window="wb.resetAgentWindow"
+          @retry-failed-send="wb.retryFailedSend"
         />
       </div>
     </div>
