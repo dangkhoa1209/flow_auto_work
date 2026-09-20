@@ -31,6 +31,7 @@ Design category: **Developer Tool / IDE** + **AI/Chatbot** (not marketing landin
    - Success → green
    - Danger / stop → red
 4. **Clean surfaces** — Thin `border-line` / gray borders, light `shadow-sm` on raised cards. Flat over heavy chrome.
+5. **Chat typography** — Work AgentConsole + BA Chat share `--app-chat-size` (12px) + `--app-chat-leading` (1.5) for bubble, `chat-md`, and composer. Keep them in sync; do not re-bump to 13.5px.
 
 ## Workbench layout
 

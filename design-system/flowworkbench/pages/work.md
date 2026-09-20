@@ -30,6 +30,7 @@
 ## Console UX
 
 - Context strip under head: `#iid · branch · status · context quality`.
+- **Typography:** chat body + composer use `--app-chat-size` / `--app-chat-leading` (**12px / 1.5**) — synced with BA Chat. Mid issue title ~14px; issue body same chat size.
 - Message hierarchy: You right / accent soft; agent full-width left border; streaming caret on typing.
 - `aria-busy` / `aria-live` while typing or Process live; respect `prefers-reduced-motion`.
 - Composer elevation on focus; hint Enter / ⌘·Ctrl+Enter · Shift+Enter · Esc stop.

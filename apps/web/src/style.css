@@ -51,6 +51,9 @@
   --shadow-float: 0 12px 32px rgba(0, 0, 0, 0.4);
   --font-ui: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+  /* Shared Work AgentConsole + BA Chat message density (keep in sync) */
+  --app-chat-size: 12px;
+  --app-chat-leading: 1.5;
 }
 
 /* ===== Theme tokens — light ===== */
@@ -552,11 +555,11 @@ code {
   }
 }
 
-/* Agent + user chat body — same size/weight so You vs agent read evenly */
+/* Agent + user chat body — shared token so Work console + BA Chat stay in sync */
 .chat-md-rich,
 .chat-md-user {
-  font-size: 13.5px;
-  line-height: 1.55;
+  font-size: var(--app-chat-size);
+  line-height: var(--app-chat-leading);
   color: var(--app-ink);
 }
 .chat-md-rich {
@@ -2219,8 +2222,8 @@ a.faw-mseg__btn {
   }
   .faw-app-shell .faw-issue-body,
   .faw-app-shell .faw-issue-body .chat-md-rich {
-    font-size: 12px;
-    line-height: 1.5;
+    font-size: var(--app-chat-size);
+    line-height: var(--app-chat-leading);
   }
 
   .faw-app-shell .faw-m-detail-bar {
@@ -2415,11 +2418,11 @@ a.faw-mseg__btn {
 .faw-issue-head__num {
   font-family: var(--font-mono);
   color: var(--ant-color-primary, var(--app-accent));
-  font-size: 14px;
+  font-size: 12.5px;
 }
 .faw-issue-head h1,
 .faw-issue-head__title {
-  font-size: 17px;
+  font-size: 14px;
   margin: 0;
   font-weight: 700;
   color: var(--app-ink);
@@ -2427,12 +2430,12 @@ a.faw-mseg__btn {
 }
 .faw-issue-body {
   color: var(--app-muted);
-  font-size: 12.5px;
-  line-height: 1.6;
+  font-size: var(--app-chat-size);
+  line-height: 1.55;
 }
 .faw-issue-body .chat-md-rich {
-  font-size: 12.5px;
-  line-height: 1.6;
+  font-size: var(--app-chat-size);
+  line-height: 1.55;
 }
 .faw-bottombar {
   display: flex;
@@ -2675,9 +2678,9 @@ a.faw-mseg__btn {
 }
 .faw-msg__bubble {
   border-radius: var(--r);
-  padding: 10px 12px;
-  font-size: 13.5px;
-  line-height: 1.55;
+  padding: 8px 10px;
+  font-size: var(--app-chat-size);
+  line-height: var(--app-chat-leading);
   color: var(--app-ink);
   background: var(--app-panel-soft);
   border: 1px solid var(--app-border);
@@ -2706,7 +2709,8 @@ a.faw-mseg__btn {
   border: 1px solid var(--app-border) !important;
   border-radius: var(--r) !important;
   color: var(--app-ink) !important;
-  font: 500 12px var(--font-ui) !important;
+  font: 500 var(--app-chat-size) var(--font-ui) !important;
+  line-height: var(--app-chat-leading) !important;
   padding: 8px 10px !important;
   resize: none;
   transition: border-color 0.15s ease, box-shadow 0.15s ease !important;
@@ -3058,8 +3062,8 @@ a.faw-mseg__btn {
 }
 
 .faw-handoff-detail-summary .chat-md-rich {
-  font-size: 13px;
-  line-height: 1.55;
+  font-size: var(--app-chat-size);
+  line-height: var(--app-chat-leading);
   color: var(--app-muted);
 }
 
@@ -3754,15 +3758,15 @@ a.faw-mseg__btn {
   text-align: center;
 }
 .faw-ba-empty__title {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 650;
   color: var(--app-ink);
   letter-spacing: -0.01em;
 }
 .faw-ba-empty__desc {
-  font-size: 11.5px;
+  font-size: 11px;
   color: var(--app-muted);
-  line-height: 1.55;
+  line-height: 1.5;
 }
 .faw-ba-empty__tips {
   list-style: none;
