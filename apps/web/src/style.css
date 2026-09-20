@@ -51,6 +51,9 @@
   --shadow-float: 0 12px 32px rgba(0, 0, 0, 0.4);
   --font-ui: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+  /* Shared Work AgentConsole + BA Chat message density (keep in sync) */
+  --app-chat-size: 12px;
+  --app-chat-leading: 1.5;
 }
 
 /* ===== Theme tokens — light ===== */
@@ -552,11 +555,11 @@ code {
   }
 }
 
-/* Agent + user chat body — same size/weight so You vs agent read evenly */
+/* Agent + user chat body — shared token so Work console + BA Chat stay in sync */
 .chat-md-rich,
 .chat-md-user {
-  font-size: 13.5px;
-  line-height: 1.55;
+  font-size: var(--app-chat-size);
+  line-height: var(--app-chat-leading);
   color: var(--app-ink);
 }
 .chat-md-rich {
@@ -2219,8 +2222,8 @@ a.faw-mseg__btn {
   }
   .faw-app-shell .faw-issue-body,
   .faw-app-shell .faw-issue-body .chat-md-rich {
-    font-size: 12px;
-    line-height: 1.5;
+    font-size: var(--app-chat-size);
+    line-height: var(--app-chat-leading);
   }
 
   .faw-app-shell .faw-m-detail-bar {
@@ -2327,13 +2330,24 @@ a.faw-mseg__btn {
   .faw-app-shell .faw-ba-input-hint--mobile {
     display: inline !important;
   }
+  /* Match TaskList Chat / Run (--faw-ctrl-h), not BA Chat 40px touch targets */
+  .faw-app-shell .faw-console-input__row .faw-ba-input-actions .faw-btn,
   .faw-app-shell .faw-console-input__row .faw-btn--send,
   .faw-app-shell .faw-console-input__row .faw-btn--ask {
-    height: 28px;
+    height: var(--faw-ctrl-h, 28px);
+    min-height: var(--faw-ctrl-h, 28px);
     padding: 0 10px;
-    border-radius: 5px;
-    font-size: 11px;
+    border-radius: var(--faw-ctrl-r, 5px);
+    font-size: var(--faw-ctrl-fs, 11px);
     flex: none;
+  }
+  .faw-app-shell .faw-console-input__row .faw-agent-mode-select.ant-select-sm,
+  .faw-app-shell .faw-console-input__row .faw-agent-mode-select .ant-select-selector {
+    height: var(--faw-ctrl-h, 28px) !important;
+    min-height: var(--faw-ctrl-h, 28px) !important;
+  }
+  .faw-app-shell .faw-console-input__row .faw-agent-mode-select .ant-select-selection-item {
+    line-height: calc(var(--faw-ctrl-h, 28px) - 2px) !important;
   }
 
   .faw-app-shell .faw-m-dock {
@@ -2415,11 +2429,11 @@ a.faw-mseg__btn {
 .faw-issue-head__num {
   font-family: var(--font-mono);
   color: var(--ant-color-primary, var(--app-accent));
-  font-size: 14px;
+  font-size: 12.5px;
 }
 .faw-issue-head h1,
 .faw-issue-head__title {
-  font-size: 17px;
+  font-size: 14px;
   margin: 0;
   font-weight: 700;
   color: var(--app-ink);
@@ -2427,12 +2441,12 @@ a.faw-mseg__btn {
 }
 .faw-issue-body {
   color: var(--app-muted);
-  font-size: 12.5px;
-  line-height: 1.6;
+  font-size: var(--app-chat-size);
+  line-height: 1.55;
 }
 .faw-issue-body .chat-md-rich {
-  font-size: 12.5px;
-  line-height: 1.6;
+  font-size: var(--app-chat-size);
+  line-height: 1.55;
 }
 .faw-bottombar {
   display: flex;
@@ -2675,9 +2689,9 @@ a.faw-mseg__btn {
 }
 .faw-msg__bubble {
   border-radius: var(--r);
-  padding: 10px 12px;
-  font-size: 13.5px;
-  line-height: 1.55;
+  padding: 8px 10px;
+  font-size: var(--app-chat-size);
+  line-height: var(--app-chat-leading);
   color: var(--app-ink);
   background: var(--app-panel-soft);
   border: 1px solid var(--app-border);
@@ -2706,7 +2720,8 @@ a.faw-mseg__btn {
   border: 1px solid var(--app-border) !important;
   border-radius: var(--r) !important;
   color: var(--app-ink) !important;
-  font: 500 12px var(--font-ui) !important;
+  font: 500 var(--app-chat-size) var(--font-ui) !important;
+  line-height: var(--app-chat-leading) !important;
   padding: 8px 10px !important;
   resize: none;
   transition: border-color 0.15s ease, box-shadow 0.15s ease !important;
@@ -2742,9 +2757,12 @@ a.faw-mseg__btn {
   flex: none;
   min-width: 0;
   height: 26px;
+  min-height: 26px;
   padding: 0 10px;
   border-radius: 5px;
   font-size: 11px;
+  line-height: 1;
+  box-sizing: border-box;
 }
 .faw-console-input__row .faw-btn--ask {
   background: transparent;
@@ -3058,8 +3076,8 @@ a.faw-mseg__btn {
 }
 
 .faw-handoff-detail-summary .chat-md-rich {
-  font-size: 13px;
-  line-height: 1.55;
+  font-size: var(--app-chat-size);
+  line-height: var(--app-chat-leading);
   color: var(--app-muted);
 }
 
@@ -3743,9 +3761,12 @@ a.faw-mseg__btn {
 }
 .faw-ba-input-actions .faw-btn {
   height: 26px;
+  min-height: 26px;
   padding: 0 10px;
   border-radius: 5px;
   font-size: 11px;
+  line-height: 1;
+  box-sizing: border-box;
 }
 
 /* BA Chat empty state */
@@ -3754,15 +3775,15 @@ a.faw-mseg__btn {
   text-align: center;
 }
 .faw-ba-empty__title {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 650;
   color: var(--app-ink);
   letter-spacing: -0.01em;
 }
 .faw-ba-empty__desc {
-  font-size: 11.5px;
+  font-size: 11px;
   color: var(--app-muted);
-  line-height: 1.55;
+  line-height: 1.5;
 }
 .faw-ba-empty__tips {
   list-style: none;
@@ -4109,12 +4130,14 @@ a.faw-mseg__btn {
   .faw-ba-input-hint--mobile {
     display: inline !important;
   }
-  .faw-ba-input-actions {
+  /* BA Chat only — do not inflate Work console Send/Ask via shared class */
+  .faw-ba-shell .faw-ba-input-actions {
     width: 100%;
   }
-  .faw-ba-input-actions .faw-btn {
+  .faw-ba-shell .faw-ba-input-actions .faw-btn {
     flex: 1;
-    min-height: 40px;
+    height: 32px;
+    min-height: 32px;
   }
   .faw-ba-mode-toggle {
     font-size: 12px;
@@ -5129,11 +5152,16 @@ a.faw-mseg__btn {
 .faw-build-feed-filter {
   all: unset;
   box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
-  font-size: 12px;
-  font-weight: 550;
-  padding: 4px 10px;
+  height: 26px;
+  padding: 0 10px;
   border-radius: 6px;
+  font-size: 11px;
+  font-weight: 550;
+  line-height: 1;
   color: var(--app-muted);
   transition: background 0.12s ease, color 0.12s ease;
 }
@@ -5625,11 +5653,14 @@ a.faw-mseg__btn {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
     gap: 0;
-    min-height: 40px;
+    min-height: 0;
+    align-items: stretch;
   }
   .faw-build-feed-filter {
-    min-height: 40px;
-    font-size: 12.5px;
+    height: 28px;
+    min-height: 28px;
+    width: 100%;
+    font-size: 11px;
     padding: 0 8px;
   }
   .faw-build-feed-bar__hint--desktop {

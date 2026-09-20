@@ -105,7 +105,7 @@ async function copyText() {
       </div>
     </div>
   </div>
-  <div v-else class="text-ink-faint text-sm">{{ empty || "—" }}</div>
+  <div v-else class="text-ink-faint text-[12px]">{{ empty || "—" }}</div>
 </template>
 
 <style scoped>
