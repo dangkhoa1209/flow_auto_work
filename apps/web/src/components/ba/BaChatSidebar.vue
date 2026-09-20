@@ -8,6 +8,7 @@ import {
   PushpinOutlined,
   PushpinFilled,
   EditOutlined,
+  CloseOutlined,
 } from "@ant-design/icons-vue";
 import { useBaChatStore, type BaThread } from "@/stores/baChat";
 import { formatRelativeTime } from "@/utils/formatChatTime";
@@ -126,13 +127,25 @@ function onThreadListScroll() {
 </script>
 
 <template>
-  <aside class="faw-col faw-ba-side flex flex-col min-h-0 overflow-hidden h-full">
+  <aside
+    id="faw-ba-thread-drawer"
+    class="faw-col faw-ba-side flex flex-col min-h-0 overflow-hidden h-full"
+  >
     <div class="faw-col-head">
       <h2>Chats</h2>
       <span class="faw-count"
         >{{ ba.threads.length
         }}{{ ba.threadsHasMore ? "+" : "" }}</span
       >
+      <button
+        type="button"
+        class="faw-icon-btn faw-ba-side__close lg:hidden"
+        aria-label="Close chats"
+        title="Close"
+        @click="closeSide()"
+      >
+        <CloseOutlined />
+      </button>
     </div>
 
     <div class="faw-filters faw-ba-filters">

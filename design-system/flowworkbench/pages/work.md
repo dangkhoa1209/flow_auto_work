@@ -11,10 +11,21 @@
 
 ## Layout
 
-- Shell: **3 columns** — Tasks/Jobs (left) · Issue context (mid) · Agent console (right). Mobile: list ↔ Issue | Console.
-- Composer **sticky** at bottom of console; Process/Terminal collapsible below chat.
+- Shell: **3 columns** — Tasks/Jobs (left) · Issue context (mid) · Agent console (right).
+- **Mobile:** list ↔ Issue | Console (detail bar). Bottom nav + action dock on Issue; Console uses Chat | Logs | Terminal tabs.
+- Composer **sticky** at bottom of console; Process/Terminal collapsible below chat (desktop).
 - Chat + Process: scroll independently; **Jump to latest** when scrolled up during stream/typing.
 - Density: compact IDE (8pt). No marketing cards in columns.
+
+## Mobile
+
+- Touch targets ≥36–40px for back, Issue/Console, dock Run/Handoff, Chat|Logs tabs, Send.
+- Console tab shows **live pulse** when agent runs while user is on Issue; Chat/Logs tabs pulse when activity is on the other tab.
+- Slim console head on mobile (no duplicate Process/Terminal — tabs own that); keep Stop / Reset / status.
+- Issue content uses `.faw-m-detail-pad` so dock does not cover the last lines.
+- Composer: `font-size: 16px` to avoid iOS zoom; short hint “Enter send · Esc stop”.
+- Plan dock button uses accent blue (not purple).
+- Respect `prefers-reduced-motion` for live pulse.
 
 ## Console UX
 

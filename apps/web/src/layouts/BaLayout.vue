@@ -98,6 +98,9 @@ onMounted(() => {
         type="button"
         class="faw-icon-btn faw-ba-menu-btn lg:hidden"
         title="Chats"
+        aria-label="Open chats"
+        :aria-expanded="sideOpen"
+        aria-controls="faw-ba-thread-drawer"
         @click="toggleSide"
       >
         <MenuOutlined />

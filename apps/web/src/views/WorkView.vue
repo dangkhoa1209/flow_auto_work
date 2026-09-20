@@ -28,6 +28,14 @@ const isDesktop = useIsDesktopLg();
 const taskListRef = ref<{ focusTaskSearch?: () => void } | null>(null);
 const canForceStopRef = computed(() => Boolean(wb.canForceStop));
 
+/** Console tab pulse when agent is active but user is on Issue. */
+const consoleTabLive = computed(() => {
+  if (wb.mobilePane === "chat") return false;
+  if (wb.agentTyping || wb.progressLive || wb.busy || wb.chatLocked) return true;
+  const st = wb.currentJob?.status || "";
+  return ["running", "queued", "awaiting_clarification"].includes(st);
+});
+
 useWorkbenchShortcuts({
   run: () => wb.runCheckedTasks(),
   saveNotes: () => wb.saveNotes({ silent: false }),
@@ -261,7 +269,7 @@ function confirmMergeFromMenu() {
       <div
         v-show="wb.mobilePane !== 'tasks'"
         class="flex flex-col w-full flex-1 min-h-0"
-        :class="wb.mobilePane === 'detail' ? 'pb-10' : ''"
+        :class="wb.mobilePane === 'detail' ? 'faw-m-detail-pad' : ''"
       >
         <!-- Mobile detail chrome: back + title + slim Issue/Console -->
         <div class="faw-m-detail-bar shrink-0">
@@ -269,6 +277,7 @@ function confirmMergeFromMenu() {
             type="button"
             class="faw-m-detail-bar__back touch-manipulation"
             title="Back to tasks"
+            aria-label="Back to tasks"
             @click="wb.backToMobileList()"
           >
             <ArrowLeftOutlined />
@@ -285,8 +294,8 @@ function confirmMergeFromMenu() {
                   wb.currentJob?.issue?.issueIid ||
                   wb.selectedTaskIid
                 "
-                :url="wb.taskDetail?.url || wb.currentJob?.issue?.url"
                 link-class="!text-[12px] shrink-0 mr-1"
+                :url="wb.taskDetail?.url || wb.currentJob?.issue?.url"
               />
               <span
                 v-else
@@ -302,7 +311,7 @@ function confirmMergeFromMenu() {
               {{ wb.detailMeta }}
             </div>
           </div>
-          <div class="faw-m-seg" role="tablist">
+          <div class="faw-m-seg" role="tablist" aria-label="Issue or Console">
             <button
               type="button"
               role="tab"
@@ -317,11 +326,19 @@ function confirmMergeFromMenu() {
               type="button"
               role="tab"
               class="faw-m-seg__btn touch-manipulation"
-              :class="{ 'is-active': wb.mobilePane === 'chat' }"
+              :class="{
+                'is-active': wb.mobilePane === 'chat',
+                'is-live': consoleTabLive,
+              }"
               :aria-selected="wb.mobilePane === 'chat'"
               @click="wb.mobilePane = 'chat'"
             >
               Console
+              <span
+                v-if="consoleTabLive"
+                class="faw-m-seg__live"
+                aria-label="Agent active"
+              />
             </button>
           </div>
         </div>
@@ -419,6 +436,8 @@ function confirmMergeFromMenu() {
     <div
       v-if="!isDesktop && wb.mobilePane === 'detail'"
       class="faw-m-dock"
+      role="toolbar"
+      aria-label="Issue actions"
     >
       <div class="faw-m-dock__pair">
         <a-tooltip title="Run agent">
@@ -426,6 +445,7 @@ function confirmMergeFromMenu() {
             type="button"
             class="faw-m-btn faw-m-btn--primary touch-manipulation"
             :disabled="wb.busy"
+            aria-label="Run agent"
             @click="wb.runCurrentJob()"
           >
             {{ wb.busy ? "Running…" : "Run" }}
@@ -442,6 +462,7 @@ function confirmMergeFromMenu() {
             type="button"
             class="faw-m-btn faw-m-btn--handoff touch-manipulation"
             :disabled="!wb.canQuickHandoff || wb.handoffBusy || wb.mergeBusy"
+            aria-label="Handoff"
           >
             {{ wb.handoffBusy ? "…" : "Handoff" }}
           </button>
@@ -450,8 +471,9 @@ function confirmMergeFromMenu() {
       <button
         v-if="wb.awaitingPlanApproval"
         type="button"
-        class="faw-m-btn faw-m-btn--docs touch-manipulation"
+        class="faw-m-btn faw-m-btn--plan touch-manipulation"
         :disabled="wb.approvePlanBusy"
+        aria-label="Approve plan"
         @click="wb.approvePlan()"
       >
         {{ wb.approvePlanBusy ? "…" : "Plan" }}
@@ -461,6 +483,7 @@ function confirmMergeFromMenu() {
           type="button"
           class="faw-m-btn faw-m-btn--more touch-manipulation"
           title="More actions"
+          aria-label="More actions"
         >
           <MoreOutlined />
         </button>

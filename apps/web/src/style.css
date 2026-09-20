@@ -1875,8 +1875,8 @@ a.faw-mseg__btn {
   background: var(--app-panel);
 }
 .faw-m-detail-bar__back {
-  width: 36px;
-  height: 36px;
+  width: 40px;
+  height: 40px;
   border-radius: 8px;
   border: 1px solid var(--app-border);
   background: var(--app-panel-soft);
@@ -1926,10 +1926,47 @@ a.faw-mseg__btn {
   color: var(--app-faint);
   font: 600 11px var(--font-ui);
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  position: relative;
 }
 .faw-m-seg__btn.is-active {
   background: var(--app-panel-hover);
   color: var(--app-accent);
+}
+.faw-m-seg__btn:focus-visible,
+.faw-m-detail-bar__back:focus-visible,
+.faw-m-btn:focus-visible,
+.faw-m-console-tabs__btn:focus-visible {
+  outline: 2px solid var(--app-accent);
+  outline-offset: 2px;
+}
+.faw-m-seg__live {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--done);
+  box-shadow: 0 0 0 2px rgba(52, 211, 153, 0.28);
+  flex-shrink: 0;
+  animation: faw-m-live-pulse 1.4s ease-in-out infinite;
+}
+@keyframes faw-m-live-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.55;
+    transform: scale(0.85);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .faw-m-seg__live {
+    animation: none;
+  }
 }
 
 /* —— Mobile action dock —— */
@@ -1941,10 +1978,14 @@ a.faw-mseg__btn {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 10px;
+  padding: 8px 10px;
   background: var(--app-panel-alt);
   border-top: 1px solid var(--app-border);
   box-shadow: 0 -6px 18px rgba(0, 0, 0, 0.28);
+}
+/* Room for fixed dock above bottom nav when Issue pane is open */
+.faw-m-detail-pad {
+  padding-bottom: calc(3.25rem + env(safe-area-inset-bottom, 0px));
 }
 .faw-m-dock__pair {
   flex: 1;
@@ -1963,15 +2004,15 @@ a.faw-mseg__btn {
   width: 100%;
 }
 .faw-m-btn {
-  height: 32px;
-  border-radius: 6px;
-  font: 650 11.5px var(--font-ui);
+  height: 40px;
+  border-radius: 8px;
+  font: 650 12.5px var(--font-ui);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 4px;
   cursor: pointer;
-  padding: 0 10px;
+  padding: 0 12px;
   white-space: nowrap;
   touch-action: manipulation;
 }
@@ -1997,22 +2038,26 @@ a.faw-mseg__btn {
   color: var(--app-ink);
   background: var(--app-hover-weak);
 }
-.faw-m-btn--docs {
+.faw-m-btn--docs,
+.faw-m-btn--plan {
   flex: 0 0 auto;
-  padding: 0 10px;
+  padding: 0 12px;
   border: 0;
-  background: #6d28d9;
+  background: rgba(91, 141, 239, 0.92);
   color: #fff;
 }
+.faw-m-btn--plan:active:not(:disabled) {
+  filter: brightness(1.06);
+}
 .faw-m-btn--more {
-  width: 32px;
-  height: 32px;
+  width: 40px;
+  height: 40px;
   flex: none;
   padding: 0;
   border: 1px solid var(--app-border);
   background: transparent;
   color: var(--app-muted);
-  font-size: 14px;
+  font-size: 16px;
 }
 .faw-m-btn--more:active {
   color: var(--app-ink);
@@ -2032,7 +2077,8 @@ a.faw-mseg__btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  height: 32px;
+  gap: 5px;
+  height: 36px;
   padding: 0;
   line-height: 1;
   border: 1px solid transparent;
@@ -2102,10 +2148,10 @@ a.faw-mseg__btn {
   .faw-app-shell .faw-filters__row .faw-btn,
   .faw-app-shell .faw-filters__row .faw-btn--run,
   .faw-app-shell .faw-filters__row .faw-btn--danger {
-    height: var(--faw-ctrl-h);
-    padding: 0 8px;
-    border-radius: var(--faw-ctrl-r);
-    font-size: var(--faw-ctrl-fs);
+    height: 36px;
+    padding: 0 10px;
+    border-radius: 8px;
+    font-size: 12px;
     font-weight: 650;
   }
   /* Only stretch Run in task filters — not console-head Process/Terminal active state */
@@ -2123,8 +2169,9 @@ a.faw-mseg__btn {
     font-size: 9.5px;
   }
   .faw-app-shell .faw-task-row {
-    gap: 6px;
-    padding: 5px 8px 5px 5px;
+    gap: 8px;
+    padding: 8px 10px 8px 6px;
+    min-height: 44px;
   }
   .faw-app-shell .faw-task-row__id {
     font-size: 10px;
@@ -2139,8 +2186,9 @@ a.faw-mseg__btn {
     padding: 1px 5px;
   }
   .faw-app-shell .faw-job-row {
-    gap: 6px;
-    padding: 4px 8px;
+    gap: 8px;
+    padding: 8px 10px;
+    min-height: 44px;
   }
   .faw-app-shell .faw-job-id {
     font-size: 10px !important;
@@ -2182,42 +2230,61 @@ a.faw-mseg__btn {
   }
 
   .faw-app-shell .faw-m-detail-bar {
-    min-height: 40px;
-    padding: 4px 8px;
-    gap: 6px;
+    min-height: 48px;
+    padding: 6px 10px;
+    gap: 8px;
   }
   .faw-app-shell .faw-m-detail-bar__back {
-    width: 28px;
-    height: 28px;
-    border-radius: 6px;
-    font-size: 12px;
+    width: 40px;
+    height: 40px;
+    border-radius: 8px;
+    font-size: 14px;
   }
   .faw-app-shell .faw-m-detail-bar__name {
-    font-size: 12px;
+    font-size: 13px;
   }
   .faw-app-shell .faw-m-detail-bar__meta {
-    font-size: 10px;
+    font-size: 10.5px;
   }
   .faw-app-shell .faw-m-seg {
-    padding: 2px;
-    border-radius: 6px;
+    padding: 3px;
+    border-radius: 8px;
   }
   .faw-app-shell .faw-m-seg__btn {
-    height: 24px;
-    padding: 0 8px;
-    font-size: 10px;
-    border-radius: 4px;
+    height: 36px;
+    min-width: 3.25rem;
+    padding: 0 12px;
+    font-size: 12px;
+    border-radius: 6px;
   }
 
   .faw-app-shell .faw-m-console-tabs {
-    padding: 4px 8px;
+    padding: 6px 10px;
   }
   .faw-app-shell .faw-m-console-tabs__btn {
-    height: 26px;
-    font-size: 10.5px;
-    border-radius: 6px;
+    height: 36px;
+    font-size: 12px;
+    border-radius: 8px;
   }
 
+  .faw-app-shell .faw-console--mobile .faw-console-head {
+    padding: 6px 10px;
+    min-height: 40px;
+  }
+  .faw-app-shell .faw-console--mobile .faw-console-head__title--mobile {
+    min-width: 0;
+  }
+  .faw-app-shell .faw-console--mobile .faw-console-head__win {
+    font-size: 10px;
+    max-width: 7rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .faw-app-shell .faw-console--mobile .faw-console-context {
+    padding: 4px 10px 6px;
+    font-size: 10px;
+  }
   .faw-app-shell .faw-console-head {
     padding: 6px 10px;
   }
@@ -2229,10 +2296,10 @@ a.faw-mseg__btn {
   }
   .faw-app-shell .faw-console-actions .faw-btn,
   .faw-app-shell .faw-console-actions .ant-btn {
-    height: var(--faw-ctrl-h) !important;
-    padding: 0 8px !important;
-    font-size: var(--faw-ctrl-fs) !important;
-    border-radius: var(--faw-ctrl-r) !important;
+    height: 32px !important;
+    padding: 0 10px !important;
+    font-size: 11.5px !important;
+    border-radius: 6px !important;
   }
   .faw-app-shell .faw-console-scroll {
     padding: 8px;
@@ -2248,42 +2315,49 @@ a.faw-mseg__btn {
     line-height: 1.45;
   }
   .faw-app-shell .faw-console-input {
-    padding: 8px;
+    padding: 8px 10px calc(8px + env(safe-area-inset-bottom, 0px));
   }
   .faw-app-shell .faw-console-input .ant-input,
   .faw-app-shell .faw-console-input textarea.ant-input {
-    font-size: 12px !important;
-    padding: 6px 8px !important;
+    font-size: 16px !important; /* avoid iOS zoom on focus */
+    padding: 8px 10px !important;
   }
   .faw-app-shell .faw-console-input__row {
-    gap: 5px;
-    margin-top: 5px;
+    gap: 6px;
+    margin-top: 6px;
+    flex-wrap: wrap;
+  }
+  .faw-app-shell .faw-ba-input-hint--desktop {
+    display: none !important;
+  }
+  .faw-app-shell .faw-ba-input-hint--mobile {
+    display: inline !important;
   }
   .faw-app-shell .faw-console-input__row .faw-btn--send,
   .faw-app-shell .faw-console-input__row .faw-btn--ask {
-    height: var(--faw-ctrl-h);
-    padding: 0 8px;
-    border-radius: var(--faw-ctrl-r);
-    font-size: var(--faw-ctrl-fs);
+    height: 36px;
+    padding: 0 12px;
+    border-radius: 8px;
+    font-size: 12px;
   }
 
   .faw-app-shell .faw-m-dock {
-    gap: 5px;
-    padding: 5px 8px;
+    gap: 6px;
+    padding: 8px 10px;
   }
   .faw-app-shell .faw-m-dock__pair {
-    gap: 5px;
+    gap: 6px;
   }
   .faw-app-shell .faw-m-btn {
-    height: var(--faw-ctrl-h);
-    border-radius: var(--faw-ctrl-r);
-    font: 650 var(--faw-ctrl-fs) var(--font-ui);
-    padding: 0 8px;
+    height: 40px;
+    border-radius: 8px;
+    font: 650 12.5px var(--font-ui);
+    padding: 0 12px;
   }
   .faw-app-shell .faw-m-btn--more {
-    width: var(--faw-ctrl-h);
-    height: var(--faw-ctrl-h);
-    font-size: 13px;
+    width: 40px;
+    height: 40px;
+    font-size: 16px;
   }
 
   .faw-app-shell .faw-crumb-tap {
@@ -2307,6 +2381,9 @@ a.faw-mseg__btn {
 
   .faw-app-shell .faw-m-dock {
     bottom: calc(3.25rem + env(safe-area-inset-bottom, 0px));
+  }
+  .faw-app-shell .faw-m-detail-pad {
+    padding-bottom: calc(3.5rem + env(safe-area-inset-bottom, 0px));
   }
 }
 .faw-work {
@@ -3620,6 +3697,9 @@ a.faw-mseg__btn {
   min-width: 0;
   flex: 1;
 }
+.faw-ba-input-hint--mobile {
+  display: none;
+}
 .faw-ba-input-actions {
   display: flex;
   gap: 6px;
@@ -3670,6 +3750,7 @@ a.faw-mseg__btn {
 /* BA Chat empty state */
 .faw-ba-empty__card {
   padding: 8px;
+  text-align: center;
 }
 .faw-ba-empty__title {
   font-size: 13px;
@@ -3768,6 +3849,12 @@ a.faw-mseg__btn {
 .faw-ba-context__bit--warn {
   color: var(--app-warn, #e6a23c);
   font-weight: 600;
+}
+.faw-ba-create-label--short {
+  display: none;
+}
+.faw-ba-side__close {
+  margin-left: auto;
 }
 
 /* Jump to latest while reading history / streaming */
@@ -3965,16 +4052,23 @@ a.faw-mseg__btn {
   border: 0;
   background: rgba(0, 0, 0, 0.45);
   cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
 }
 
 @media (max-width: 1023px) {
+  .faw-ba-menu-btn {
+    width: 40px;
+    height: 40px;
+    min-width: 40px;
+    border-radius: 8px;
+  }
   .faw-ba-side {
     position: fixed;
     top: 48px;
     left: 0;
     bottom: calc(3.25rem + env(safe-area-inset-bottom, 0px));
     z-index: 40;
-    width: min(300px, 86vw);
+    width: min(320px, 88vw);
     transform: translateX(-105%);
     transition: transform 0.2s ease;
     box-shadow: 8px 0 24px rgba(0, 0, 0, 0.35);
@@ -3986,14 +4080,129 @@ a.faw-mseg__btn {
   .faw-ba-shell.is-side-open .faw-ba-side {
     transform: translateX(0);
   }
-  .faw-ba-input-hint {
-    display: none;
+  .faw-ba-side .faw-col-head {
+    min-height: 44px;
+    gap: 8px;
+    padding-right: 6px;
+  }
+  .faw-ba-side__close {
+    width: 36px;
+    height: 36px;
+    min-width: 36px;
+  }
+  .faw-ba-thread {
+    min-height: 48px;
+    padding: 10px 12px;
+    gap: 8px;
+  }
+  .faw-ba-thread__title {
+    font-size: 13px;
+  }
+  .faw-ba-new {
+    min-height: 40px;
+    font-size: 13px;
+  }
+  .faw-ba-input-hint--desktop {
+    display: none !important;
+  }
+  .faw-ba-input-hint--mobile {
+    display: inline !important;
   }
   .faw-ba-input-actions {
     width: 100%;
   }
   .faw-ba-input-actions .faw-btn {
     flex: 1;
+    min-height: 40px;
+  }
+  .faw-ba-mode-toggle {
+    font-size: 12px;
+  }
+  .faw-ba-context {
+    padding: 4px 10px 6px;
+    gap: 4px;
+    flex-wrap: wrap;
+    max-height: none;
+  }
+  .faw-ba-context__bit--path,
+  .faw-ba-context__sep:has(+ .faw-ba-context__bit--path) {
+    display: none;
+  }
+  .faw-ba-create-label--full {
+    display: none;
+  }
+  .faw-ba-create-label--short {
+    display: inline;
+  }
+  .faw-console--ba .faw-console-head {
+    min-height: 44px;
+    padding: 6px 10px;
+    gap: 8px;
+  }
+  .faw-console--ba .faw-console-head__title h2 {
+    font-size: 13px;
+    line-height: 1.3;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .faw-ba .faw-msg.user {
+    max-width: 92%;
+  }
+  .faw-ba .faw-msg.agent .faw-msg__bubble {
+    padding-left: 10px;
+  }
+  .faw-ba-empty {
+    padding-top: 1.5rem !important;
+    padding-bottom: 1rem !important;
+    align-items: flex-start !important;
+  }
+  .faw-ba-empty__card {
+    max-width: none;
+    text-align: left;
+  }
+  .faw-ba-empty__tips {
+    gap: 8px;
+  }
+  .faw-ba-empty__tip {
+    min-height: 52px;
+    padding: 10px 12px;
+    text-align: left;
+    border-radius: 10px;
+  }
+  .faw-ba-empty__tip-title {
+    font-size: 12px;
+  }
+  .faw-ba-empty__tip-prompt {
+    font-size: 12px;
+    line-height: 1.4;
+  }
+  .faw-ba-jump {
+    bottom: 12px;
+    padding: 8px 14px;
+    font-size: 12px;
+    min-height: 36px;
+  }
+  /* Main already clears bottom nav — avoid double safe-area on composer */
+  .faw-ba-shell .faw-console-input {
+    padding: 8px 10px 10px;
+  }
+  .faw-ba-shell .faw-console-input .ant-input,
+  .faw-ba-shell .faw-console-input textarea.ant-input {
+    font-size: 16px !important;
+  }
+}
+
+@media (max-width: 1023px) and (prefers-reduced-motion: reduce) {
+  .faw-ba-side {
+    transition: none;
+  }
+}
+
+@media (min-width: 1024px) {
+  .faw-ba-input-hint--mobile {
+    display: none !important;
   }
 }
 
@@ -4612,6 +4821,12 @@ a.faw-mseg__btn {
   color: inherit;
   cursor: default;
   padding: 0;
+}
+.faw-build-sidebar__toggle {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent, var(--app-accent));
+  letter-spacing: 0.02em;
 }
 .faw-build-sidebar__title {
   font-size: 11.5px;
@@ -5307,31 +5522,194 @@ a.faw-mseg__btn {
     box-shadow: none;
   }
 }
+@media (min-width: 901px) {
+  .faw-build-sidebar__title-row {
+    pointer-events: none;
+  }
+}
 @media (max-width: 900px) {
   .faw-build-shell {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: auto minmax(0, 1fr);
+    min-height: 0;
   }
   .faw-build-sidebar {
     max-height: none;
     border-right: none;
     border-bottom: 1px solid var(--line);
+    background: var(--surface, var(--app-panel));
+  }
+  .faw-build-sidebar__head {
+    padding: 8px 10px;
+    gap: 8px;
   }
   .faw-build-sidebar__title-row {
     cursor: pointer;
+    align-items: center;
+    min-height: 40px;
+    padding: 4px 2px;
+    border-radius: 8px;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .faw-build-sidebar__title-row:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
   }
   .faw-build-sidebar.is-collapsed .faw-build-script-list,
   .faw-build-sidebar.is-collapsed .faw-build-search {
     display: none;
   }
   .faw-build-sidebar:not(.is-collapsed) .faw-build-script-list {
-    max-height: min(36vh, 280px);
+    max-height: min(30vh, 240px);
+    padding-bottom: 10px;
+  }
+  .faw-build-search__input {
+    font-size: 16px; /* avoid iOS zoom */
+    min-height: 40px;
+    padding: 8px 10px 8px 32px;
+  }
+  .faw-build-script-row {
+    padding: 10px 8px;
+    gap: 8px;
+    min-height: 52px;
+  }
+  .faw-build-script-row__cmd {
+    display: none;
+  }
+  .faw-build-script-row__fav {
+    width: 36px;
+    height: 36px;
+    min-width: 36px;
+  }
+  .faw-build-run-btn {
+    min-height: 40px;
+    padding: 8px 14px;
+    font-size: 13px;
+    border-radius: 8px;
+  }
+  .faw-build-queue-strip {
+    padding: 8px 10px;
+  }
+  .faw-build-queue-strip__hint {
+    display: none;
+  }
+  .faw-build-queue-chips {
+    display: flex;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    gap: 6px;
+    padding-bottom: 2px;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .faw-build-queue-chips::-webkit-scrollbar {
+    display: none;
+  }
+  .faw-build-chip {
+    flex: 0 0 auto;
+    min-height: 40px;
+    padding: 6px 10px;
+  }
+  .faw-build-chip__arrow {
+    flex: 0 0 auto;
+    align-self: center;
+  }
+  .faw-build-feed-bar {
+    padding: 8px 10px;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .faw-build-feed-filters {
+    flex: 1 1 100%;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0;
+    min-height: 40px;
+  }
+  .faw-build-feed-filter {
+    min-height: 40px;
+    font-size: 12.5px;
+    padding: 0 8px;
+  }
+  .faw-build-feed-bar__hint--desktop {
+    display: none;
+  }
+  .faw-build-feed {
+    padding: 8px 10px 12px;
+    gap: 8px;
+  }
+  .faw-build-card__head {
+    min-height: 52px;
+    padding: 10px 10px;
+    gap: 8px;
+  }
+  .faw-build-card__cmd {
+    display: none;
+  }
+  .faw-build-card__title {
+    font-size: 13px;
+  }
+  .faw-build-card__meta {
+    font-size: 10.5px;
+  }
+  .faw-build-card__log-tools {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .faw-build-card__tool {
+    min-height: 36px;
+    padding: 6px 10px;
+  }
+  .faw-build-log {
+    max-height: min(42vh, 320px);
+    font-size: 11.5px;
+  }
+  .faw-build-log.is-expanded {
+    max-height: min(62vh, 520px);
+  }
+  .faw-build-jump {
+    padding: 8px 14px;
+    font-size: 12px;
+    min-height: 36px;
+  }
+  .faw-build-card__foot {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .faw-build-card__foot-btn {
+    min-height: 40px;
+    flex: 1 1 calc(50% - 6px);
+    justify-content: center;
+    padding: 8px 10px;
+    font-size: 12px;
   }
   .faw-build-stdin {
     flex-wrap: wrap;
+    gap: 8px;
+    padding: 8px 10px 10px;
+    position: sticky;
+    bottom: 0;
+    z-index: 3;
+    background: var(--surface, var(--app-panel));
+    border-top: 1px solid var(--line);
+    box-shadow: 0 -8px 20px -12px rgb(0 0 0 / 0.45);
   }
   .faw-build-stdin__input {
     flex: 1 1 100%;
+    font-size: 16px;
+    min-height: 40px;
+  }
+  .faw-build-stdin__send {
+    flex: 1 1 auto;
+    min-height: 40px;
+  }
+  .faw-build-empty__actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .faw-build-empty__btn {
+    min-height: 40px;
+    justify-content: center;
   }
   .faw-admin-page__head {
     flex-direction: column;

@@ -40,10 +40,16 @@ Three columns: **TaskList** (~3/12) | **JobContext** (~5/12) | **AgentConsole** 
 
 Sidebar (threads) + message list + composer. Dense conversation UI: clear empty state with **clickable prompt tips**, focus ring + elevation on composer, one typing indicator (not duplicate bubbles), streaming caret, Jump to latest when scrolled up, context strip (project · path · BA mode · draft), thread relative time + filter + **inline rename** + **pin**, hover copy + **Regenerate** / **Retry** on failed send or stream error, skeleton on thread switch, Esc stop / Enter·⌘↵ send. English copy. Respect `prefers-reduced-motion` for typing/caret/skeleton.
 
+**Mobile (≤1023):** hamburger thread drawer + backdrop + close; thread rows ≥48px; keep **BA mode** + short hint (hide desktop shortcuts); Create Issue short label; hide GitLab path in context strip; tips full-width ≥52px; composer 16px / no double safe-area; Jump + Send/Stop ≥36–40px.
+
 ## DevOps Build
 
 Scripts sidebar + queue strip + feed cards. CI console density: empty CTA (Run / Config), feed All·Running·Failed + `lastId` scroll (page 40), card meta `@user · relative · duration`, SSE soft flash, Jump to latest on log scroll-up, Errors only / Expand / Copy visible, Re-run + Open in terminal, script pin + queued/running pills + last result, sticky stdin with focus elevation, History relative time + skeleton. Shortcuts: `/` search · `R` run · `Esc` cancel. English copy. Keep run-green + `--app-*`; no purple. Respect `prefers-reduced-motion` for pulse/caret/flash.
 
+**Mobile (≤900):** Scripts collapse by default (Show/Hide, ≤30vh when open); hide cmd lines; queue chips horizontal scroll; All/Running/Failed full-width ≥40px; hide keyboard hint; card/log denser; foot actions wrap; stdin sticky + 16px input; Run ≥40px.
+
 ## Work (/work)
 
 Three columns: Tasks/Jobs | Issue context | Agent console. Jump to latest on chat + Process; context strip (`#iid · branch · status · context`); message hierarchy + streaming caret; composer focus elevation; Failed Send + Retry; Process Errors/Copy; Jobs empty CTAs, relative time/duration, pin, `N+` when hasMore; mid sticky primary Run vs secondary; SSE soft flash mid-col. Shortcuts: `/` search · Esc Force Stop (no modal) · Enter/⌘↵ composer. No Jobs All/Running/Failed filter and no clickable empty-console tips unless requested. English chrome. Respect `prefers-reduced-motion`.
+
+**Mobile:** list ↔ Issue | Console; dock Run/Handoff (≥40px) above bottom nav; live pulse on Console when agent active; Chat|Logs|Terminal tabs (no duplicate Process/Terminal in head); composer 16px + short hint; Plan uses accent (not purple); detail pad clears dock.

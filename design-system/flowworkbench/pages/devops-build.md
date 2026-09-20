@@ -14,7 +14,7 @@
 - Shell: **Scripts sidebar** (left) + **queue strip** + **feed** (main). History / Config are separate tabs.
 - Stdin **sticky** at bottom of main when the expanded card is the live running build.
 - Log panes: scroll independently; **Jump to latest** when scrolled up during stream.
-- Density: compact IDE (8pt). No marketing hero / stat strip clutter on the queue.
+- Density: compact IDE (8pt). No marketing hero / stat strip clutter on the feed.
 
 ## Build UX
 
@@ -33,7 +33,14 @@
 
 ## Do not
 
-- Purple AI gradients, neon glow stacks, badge clusters on the queue.
+- Purple AI gradients, neon glow stacks, badge clusters on the feed.
 - Force auto-scroll while the user reads log history (Jump only).
 - Replace Ant Design History table / Config forms; do not abandon `--app-*` / run-green.
 - Diff two logs in-product unless explicitly requested later.
+
+## Mobile (≤900)
+
+- Scripts panel collapses by default; Show/Hide toggle; list ≤30vh when open.
+- Hide script/card command lines; enlarge Run (≥40px) and feed filters (full-width).
+- Queue chips: horizontal scroll; hide FIFO hint + keyboard shortcut strip.
+- Log max-height ~42vh (expanded ~62vh); foot actions wrap; stdin sticky + 16px.
