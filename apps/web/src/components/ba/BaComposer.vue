@@ -17,6 +17,7 @@ const emit = defineEmits<{
 }>();
 
 const text = ref("");
+const inputWrap = ref<HTMLElement | null>(null);
 
 /** Draft anytime; project gates use `disabled`. Streaming still allows Send (confirm). */
 const canSend = computed(
@@ -52,17 +53,41 @@ function submit() {
 }
 
 function onKeydown(e: KeyboardEvent) {
+  if (e.key === "Escape" && props.loading && !props.stopBusy) {
+    e.preventDefault();
+    emit("stop");
+    return;
+  }
   if (e.key !== "Enter") return;
   if (e.isComposing) return;
-  if (e.shiftKey) return;
+  // Ctrl/Cmd+Enter always sends; plain Enter sends unless Shift (newline).
+  if (e.shiftKey && !(e.metaKey || e.ctrlKey)) return;
   if (props.disabled || props.stopBusy) return;
   e.preventDefault();
   submit();
 }
+
+function focusInput() {
+  const el = inputWrap.value?.querySelector?.("textarea");
+  el?.focus();
+}
+
+/** Fill composer from empty-state tips / external prompts. */
+function fill(prompt: string) {
+  text.value = prompt;
+  void nextTick(() => focusInput());
+}
+
+defineExpose({ fill, focusInput });
 </script>
 
 <template>
-  <div class="faw-console-input" role="form" aria-label="Message composer">
+  <div
+    ref="inputWrap"
+    class="faw-console-input faw-ba-composer"
+    role="form"
+    aria-label="Message composer"
+  >
     <a-tooltip :title="disabled && disabledReason ? disabledReason : ''">
       <a-textarea
         v-model:value="text"
@@ -104,7 +129,9 @@ function onKeydown(e: KeyboardEvent) {
             >
           </label>
         </a-tooltip>
-        <span class="opacity-70">Enter to send · Shift+Enter for newline</span>
+        <span class="opacity-70"
+          >Enter / ⌘·Ctrl+Enter send · Shift+Enter newline · Esc stop</span
+        >
       </div>
       <div class="faw-ba-input-actions">
         <a-popconfirm

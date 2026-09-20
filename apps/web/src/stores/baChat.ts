@@ -79,6 +79,8 @@ export type BaThread = {
   title: string;
   createdAt: string;
   updatedAt: string;
+  pinned?: boolean;
+  pinnedAt?: string | null;
 };
 
 export type BaMessage = {
@@ -89,6 +91,12 @@ export type BaMessage = {
   createdAt: string;
   /** Server: streaming while agent writes; done/error after finalize. */
   streamStatus?: "streaming" | "done" | "error";
+};
+
+/** Client-only: send failed before the user message was accepted. */
+export type BaFailedSend = {
+  content: string;
+  error: string;
 };
 
 export type BaProgressStep =
@@ -147,6 +155,8 @@ export const useBaChatStore = defineStore("baChat", () => {
   let resyncInFlight = false;
   const loading = ref(false);
   const errorText = ref("");
+  /** Last Send that failed before the server accepted the user message. */
+  const failedPendingSend = ref<BaFailedSend | null>(null);
   const progress = ref<BaProgressItem[]>([]);
   const progressVisible = ref(false);
   /** BA analysis mode — agent acts as real BA for requirements analysis */
@@ -384,6 +394,13 @@ export const useBaChatStore = defineStore("baChat", () => {
     threads.value = (data.threads || []).filter(
       (t) => !uid || t.userId.toLowerCase() === uid,
     );
+    // Keep pin order if API omitted sort (defense).
+    threads.value = [...threads.value].sort((a, b) => {
+      const ap = a.pinned ? 1 : 0;
+      const bp = b.pinned ? 1 : 0;
+      if (ap !== bp) return bp - ap;
+      return (b.updatedAt || "").localeCompare(a.updatedAt || "");
+    });
     if (
       activeThreadId.value &&
       !threads.value.some((t) => t.id === activeThreadId.value)
@@ -407,6 +424,7 @@ export const useBaChatStore = defineStore("baChat", () => {
     stopBusy.value = false;
     loading.value = false;
     errorText.value = "";
+    failedPendingSend.value = null;
     if (resyncTimer) {
       clearTimeout(resyncTimer);
       resyncTimer = undefined;
@@ -451,13 +469,19 @@ export const useBaChatStore = defineStore("baChat", () => {
     persistProjectId(id);
     activeThreadId.value = null;
     messages.value = [];
+    failedPendingSend.value = null;
+    errorText.value = "";
+    endStreamingUi();
+    clearProgress();
     await loadThreads();
   }
 
   async function selectThread(id: string) {
     activeThreadId.value = id;
+    messages.value = [];
     loading.value = true;
     errorText.value = "";
+    failedPendingSend.value = null;
     try {
       const data = await api<{
         messages?: BaMessage[];
@@ -489,8 +513,10 @@ export const useBaChatStore = defineStore("baChat", () => {
     });
     if (!data.thread) throw new Error("Failed to create chat");
     threads.value = [data.thread, ...threads.value];
+    sortThreadsInPlace();
     activeThreadId.value = data.thread.id;
     messages.value = [];
+    failedPendingSend.value = null;
     return data.thread;
   }
 
@@ -500,7 +526,42 @@ export const useBaChatStore = defineStore("baChat", () => {
     if (activeThreadId.value === id) {
       activeThreadId.value = null;
       messages.value = [];
+      failedPendingSend.value = null;
     }
+  }
+
+  function sortThreadsInPlace() {
+    threads.value = [...threads.value].sort((a, b) => {
+      const ap = a.pinned ? 1 : 0;
+      const bp = b.pinned ? 1 : 0;
+      if (ap !== bp) return bp - ap;
+      return (b.updatedAt || "").localeCompare(a.updatedAt || "");
+    });
+  }
+
+  async function renameThread(id: string, title: string) {
+    const next = title.trim();
+    if (!next) throw new Error("Title required");
+    const data = await api<{ thread?: BaThread }>(API.ba.thread(id), {
+      method: "PATCH",
+      body: JSON.stringify({ title: next }),
+    });
+    if (!data.thread) throw new Error("Failed to rename chat");
+    const idx = threads.value.findIndex((t) => t.id === id);
+    if (idx >= 0) threads.value[idx] = data.thread;
+    return data.thread;
+  }
+
+  async function setThreadPinned(id: string, pinned: boolean) {
+    const data = await api<{ thread?: BaThread }>(API.ba.thread(id), {
+      method: "PATCH",
+      body: JSON.stringify({ pinned }),
+    });
+    if (!data.thread) throw new Error("Failed to update pin");
+    const idx = threads.value.findIndex((t) => t.id === id);
+    if (idx >= 0) threads.value[idx] = data.thread;
+    sortThreadsInPlace();
+    return data.thread;
   }
 
   async function sendMessage(content: string) {
@@ -517,6 +578,7 @@ export const useBaChatStore = defineStore("baChat", () => {
     streamStartedAt = Date.now();
     streamLastActivityAt = Date.now();
     errorText.value = "";
+    failedPendingSend.value = null;
     clearProgress();
     progressVisible.value = true;
     progress.value = [
@@ -541,8 +603,86 @@ export const useBaChatStore = defineStore("baChat", () => {
       }
     } catch (e) {
       endStreamingUi();
+      const errMsg = e instanceof Error ? e.message : String(e);
+      errorText.value = errMsg;
+      // Only keep a Retry draft if the user bubble was not accepted yet
+      // (avoids duplicate user messages when the server persisted then failed).
+      const alreadySaved = messages.value.some(
+        (m) =>
+          m.role === "user" &&
+          m.content.trim() === text &&
+          m.threadId === threadId,
+      );
+      failedPendingSend.value = alreadySaved
+        ? null
+        : { content: text, error: errMsg };
+      clearProgress();
+      throw e;
+    }
+  }
+
+  async function retryFailedSend() {
+    const pending = failedPendingSend.value;
+    if (!pending?.content?.trim()) return;
+    await sendMessage(pending.content);
+  }
+
+  /**
+   * Soft-delete the assistant reply on the server and re-run the prior user
+   * question (Regenerate / Retry after stream error).
+   */
+  async function regenerateMessage(messageId?: string) {
+    const threadId = activeThreadId.value;
+    if (!threadId) throw new Error("No active chat");
+    if (streaming.value) throw new Error("Wait for the current reply to finish");
+
+    const targetId =
+      messageId ||
+      [...messages.value]
+        .reverse()
+        .find((m) => m.role === "assistant")?.id;
+    if (!targetId) throw new Error("No assistant message to regenerate");
+
+    const idx = messages.value.findIndex((m) => m.id === targetId);
+    if (idx >= 0) {
+      messages.value = messages.value.slice(0, idx);
+    }
+
+    streaming.value = true;
+    streamingMessageId.value = null;
+    pendingNewStream.value = true;
+    streamStartedAt = Date.now();
+    streamLastActivityAt = Date.now();
+    errorText.value = "";
+    failedPendingSend.value = null;
+    clearProgress();
+    progressVisible.value = true;
+    progress.value = [
+      {
+        step: "pull",
+        label: "Regenerating…",
+        at: new Date().toISOString(),
+      },
+    ];
+    armStallWatch();
+    try {
+      await api(API.ba.regenerate(threadId), {
+        method: "POST",
+        body: JSON.stringify({
+          messageId: targetId,
+          analysisMode: analysisMode.value,
+        }),
+      });
+    } catch (e) {
+      endStreamingUi();
       errorText.value = e instanceof Error ? e.message : String(e);
       clearProgress();
+      // Reload so soft-deleted bubbles stay consistent if the API failed mid-way.
+      try {
+        await selectThread(threadId);
+      } catch {
+        /* ignore */
+      }
       throw e;
     }
   }
@@ -663,6 +803,7 @@ export const useBaChatStore = defineStore("baChat", () => {
         messages.value[idx] = {
           ...messages.value[idx],
           content: finalContent,
+          streamStatus: "done",
         };
       } else if (finalContent) {
         messages.value.push({
@@ -671,6 +812,7 @@ export const useBaChatStore = defineStore("baChat", () => {
           role: "assistant",
           content: finalContent,
           createdAt: new Date().toISOString(),
+          streamStatus: "done",
         });
       }
     }
@@ -982,6 +1124,7 @@ export const useBaChatStore = defineStore("baChat", () => {
     stopBusy,
     loading,
     errorText,
+    failedPendingSend,
     progress,
     progressVisible,
     analysisMode,
@@ -1002,7 +1145,11 @@ export const useBaChatStore = defineStore("baChat", () => {
     selectThread,
     newChat,
     deleteThread,
+    renameThread,
+    setThreadPinned,
     sendMessage,
+    retryFailedSend,
+    regenerateMessage,
     stop,
     applyBaMessage,
     applyBaDelta,

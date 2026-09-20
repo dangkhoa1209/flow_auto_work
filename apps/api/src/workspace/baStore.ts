@@ -1409,6 +1409,10 @@ export type BaThread = {
   updatedAt: string;
   /** chat = tab Chat; workflow = chat cột phải của Phân tích YC (không hiện ở tab Chat). */
   kind?: BaThreadKind;
+  /** Pinned chats stay at the top of the sidebar. */
+  pinned?: boolean;
+  /** ISO time when pinned; null/omit when unpinned. */
+  pinnedAt?: string | null;
   /** Bumps when messages change — invalidates issue-draft cache. */
   issueDraftVersion?: number;
   /** Cached agent issue draft when issueDraftVersion unchanged. */
@@ -1458,9 +1462,16 @@ export async function listBaThreads(
     filter.id = { $nin: linkedIds };
   }
 
-  return BaThreadModel.findMany({
+  const threads = await BaThreadModel.findMany({
     filter,
     sort: { updatedAt: -1 },
+  });
+  // Pinned first, then most recently updated.
+  return threads.sort((a, b) => {
+    const ap = a.pinned ? 1 : 0;
+    const bp = b.pinned ? 1 : 0;
+    if (ap !== bp) return bp - ap;
+    return (b.updatedAt || "").localeCompare(a.updatedAt || "");
   });
 }
 
@@ -1510,11 +1521,37 @@ export async function updateBaThreadTitle(
   return getBaThread(id);
 }
 
+export async function updateBaThreadPinned(
+  id: string,
+  pinned: boolean,
+): Promise<BaThread | null> {
+  const now = new Date().toISOString();
+  await BaThreadModel.updateOne(
+    { id: id.trim() },
+    {
+      $set: {
+        pinned: Boolean(pinned),
+        pinnedAt: pinned ? now : null,
+        // Do not bump updatedAt on pin — keep recency of last message.
+      },
+    },
+  );
+  return getBaThread(id);
+}
+
 export async function touchBaThread(id: string): Promise<void> {
   await BaThreadModel.updateOne(
     { id: id.trim() },
     { $set: { updatedAt: new Date().toISOString() } },
   );
+}
+
+export async function softDeleteBaMessage(id: string): Promise<boolean> {
+  const existing = await BaMessageModel.findOne({ id: id.trim() });
+  if (!existing) return false;
+  const ok = await BaMessageModel.softDeleteById(id.trim());
+  if (ok) await bumpBaThreadIssueDraftVersion(existing.threadId);
+  return ok;
 }
 
 export async function deleteBaThread(id: string, userId: string): Promise<boolean> {

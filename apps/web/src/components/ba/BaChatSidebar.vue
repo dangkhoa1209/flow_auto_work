@@ -1,11 +1,46 @@
 <script setup lang="ts">
-import { inject } from "vue";
+import { computed, inject, nextTick, ref } from "vue";
 import { Modal, message } from "ant-design-vue";
-import { PlusOutlined, DeleteOutlined } from "@ant-design/icons-vue";
-import { useBaChatStore } from "@/stores/baChat";
+import {
+  PlusOutlined,
+  DeleteOutlined,
+  SearchOutlined,
+  PushpinOutlined,
+  PushpinFilled,
+  EditOutlined,
+} from "@ant-design/icons-vue";
+import { useBaChatStore, type BaThread } from "@/stores/baChat";
+import { formatRelativeTime } from "@/utils/formatChatTime";
 
 const ba = useBaChatStore();
 const closeSide = inject<() => void>("baCloseSide", () => undefined);
+
+const threadQuery = ref("");
+const renamingId = ref<string | null>(null);
+const renameDraft = ref("");
+const renameInputEl = ref<HTMLInputElement | null>(null);
+
+const showSearch = computed(() => ba.threads.length >= 8);
+
+const filteredThreads = computed(() => {
+  const q = threadQuery.value.trim().toLowerCase();
+  if (!q) return ba.threads;
+  return ba.threads.filter((t) => t.title.toLowerCase().includes(q));
+});
+
+/** Last message snippet for the active thread (others load on select). */
+const activeSnippet = computed(() => {
+  const msgs = ba.messages;
+  if (!msgs.length) return "";
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    const c = msgs[i]?.content?.trim();
+    if (c) {
+      const oneLine = c.replace(/\s+/g, " ");
+      return oneLine.length > 72 ? `${oneLine.slice(0, 72)}…` : oneLine;
+    }
+  }
+  return "";
+});
 
 async function onNewChat() {
   try {
@@ -17,8 +52,49 @@ async function onNewChat() {
 }
 
 function onSelectThread(id: string) {
+  if (renamingId.value === id) return;
   ba.selectThread(id);
   closeSide();
+}
+
+function startRename(t: BaThread, e?: Event) {
+  e?.stopPropagation();
+  renamingId.value = t.id;
+  renameDraft.value = t.title;
+  void nextTick(() => {
+    renameInputEl.value?.focus();
+    renameInputEl.value?.select();
+  });
+}
+
+function cancelRename() {
+  renamingId.value = null;
+  renameDraft.value = "";
+}
+
+async function commitRename() {
+  const id = renamingId.value;
+  if (!id) return;
+  const next = renameDraft.value.trim();
+  const prev = ba.threads.find((t) => t.id === id)?.title || "";
+  // Clear immediately so blur cannot double-fire while the PATCH is in flight.
+  renamingId.value = null;
+  renameDraft.value = "";
+  if (!next || next === prev) return;
+  try {
+    await ba.renameThread(id, next);
+  } catch (e) {
+    message.error(e instanceof Error ? e.message : String(e));
+  }
+}
+
+async function onTogglePin(t: BaThread, e: Event) {
+  e.stopPropagation();
+  try {
+    await ba.setThreadPinned(t.id, !t.pinned);
+  } catch (err) {
+    message.error(err instanceof Error ? err.message : String(err));
+  }
 }
 
 function onDelete(id: string, title: string) {
@@ -36,19 +112,6 @@ function onDelete(id: string, title: string) {
       }
     },
   });
-}
-
-function formatTime(iso: string) {
-  try {
-    return new Date(iso).toLocaleString(undefined, {
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  } catch {
-    return "";
-  }
 }
 </script>
 
@@ -78,6 +141,16 @@ function formatTime(iso: string) {
           <PlusOutlined /> New Chat
         </button>
       </a-tooltip>
+      <div v-if="showSearch" class="faw-ba-thread-search">
+        <SearchOutlined class="faw-ba-thread-search__icon" aria-hidden="true" />
+        <input
+          v-model="threadQuery"
+          type="search"
+          class="faw-ba-thread-search__input"
+          placeholder="Filter chats…"
+          aria-label="Filter chats"
+        />
+      </div>
     </div>
 
     <div class="flex-1 min-h-0 overflow-y-auto">
@@ -89,28 +162,97 @@ function formatTime(iso: string) {
         <b class="text-[var(--app-muted)]">New Chat</b> to start.
       </div>
       <div
-        v-for="t in ba.threads"
+        v-else-if="!filteredThreads.length"
+        class="px-3 py-8 text-center text-[11px] text-[var(--app-faint)]"
+      >
+        No chats match “{{ threadQuery.trim() }}”
+      </div>
+      <div
+        v-for="t in filteredThreads"
         :key="t.id"
         role="button"
         tabindex="0"
         class="faw-ba-thread"
-        :class="{ active: t.id === ba.activeThreadId }"
+        :class="{
+          active: t.id === ba.activeThreadId,
+          'faw-ba-thread--pinned': t.pinned,
+        }"
         @click="onSelectThread(t.id)"
         @keydown.enter.prevent="onSelectThread(t.id)"
+        @dblclick.stop="startRename(t)"
       >
         <div class="faw-ba-thread__main">
-          <span class="faw-ba-thread__title">{{ t.title }}</span>
-          <span class="faw-ba-thread__time">{{ formatTime(t.updatedAt) }}</span>
+          <template v-if="renamingId === t.id">
+            <input
+              :ref="
+                (el) => {
+                  renameInputEl.value = (el as HTMLInputElement | null) || null;
+                }
+              "
+              v-model="renameDraft"
+              type="text"
+              class="faw-ba-thread__rename"
+              maxlength="120"
+              aria-label="Rename chat"
+              @click.stop
+              @keydown.enter.prevent="commitRename"
+              @keydown.esc.prevent="cancelRename"
+              @blur="commitRename"
+            />
+          </template>
+          <template v-else>
+            <span class="faw-ba-thread__title">
+              <PushpinFilled
+                v-if="t.pinned"
+                class="faw-ba-thread__pin-mark"
+                aria-hidden="true"
+              />
+              {{ t.title }}
+            </span>
+            <span
+              v-if="t.id === ba.activeThreadId && activeSnippet"
+              class="faw-ba-thread__snip"
+              >{{ activeSnippet }}</span
+            >
+            <span class="faw-ba-thread__time">{{
+              formatRelativeTime(t.updatedAt)
+            }}</span>
+          </template>
         </div>
-        <button
-          type="button"
-          class="faw-icon-btn faw-ba-thread__del"
-          title="Delete"
-          aria-label="Delete chat"
-          @click.stop="onDelete(t.id, t.title)"
+        <div
+          v-if="renamingId !== t.id"
+          class="faw-ba-thread__actions"
+          @click.stop
         >
-          <DeleteOutlined />
-        </button>
+          <button
+            type="button"
+            class="faw-icon-btn"
+            :title="t.pinned ? 'Unpin' : 'Pin'"
+            :aria-label="t.pinned ? 'Unpin chat' : 'Pin chat'"
+            @click="onTogglePin(t, $event)"
+          >
+            <PushpinFilled v-if="t.pinned" />
+            <PushpinOutlined v-else />
+          </button>
+          <button
+            type="button"
+            class="faw-icon-btn"
+            title="Rename"
+            aria-label="Rename chat"
+            @click="startRename(t, $event)"
+          >
+            <EditOutlined />
+          </button>
+          <button
+            type="button"
+            class="faw-icon-btn faw-ba-thread__del"
+            title="Delete"
+            aria-label="Delete chat"
+            @click="onDelete(t.id, t.title)"
+          >
+            <DeleteOutlined />
+          </button>
+        </div>
       </div>
     </div>
   </aside>
