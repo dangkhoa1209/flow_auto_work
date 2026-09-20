@@ -392,7 +392,10 @@ watch(chatBox, (el, prev) => {
   <aside
     ref="rootEl"
     class="flex flex-col min-h-0 overflow-hidden relative h-full faw-console"
-    :class="{ 'select-none': progressDragging }"
+    :class="{
+      'select-none': progressDragging,
+      'faw-console--mobile': mobileTabs,
+    }"
   >
     <div
       v-if="jobLoading"
@@ -409,9 +412,9 @@ watch(chatBox, (el, prev) => {
     </div>
 
     <template v-if="!jobLoading">
-      <!-- Header / toolbar — mockup console-head -->
+      <!-- Header / toolbar — mockup console-head (slim on mobile tabs) -->
       <div ref="headerEl" class="faw-console-head">
-        <div class="faw-console-head__title">
+        <div v-if="!mobileTabs" class="faw-console-head__title">
           <h2>Agent console</h2>
           <div
             v-if="agentWindowShort"
@@ -422,15 +425,24 @@ watch(chatBox, (el, prev) => {
           </div>
           <div v-else class="faw-console-head__win">No window linked</div>
         </div>
+        <div v-else class="faw-console-head__title faw-console-head__title--mobile">
+          <div
+            v-if="agentWindowShort"
+            class="faw-console-head__win"
+            :title="currentJob?.agentId || ''"
+          >
+            {{ agentWindowShort }}
+          </div>
+          <div v-else class="faw-console-head__win">No window</div>
+        </div>
         <div class="faw-console-actions">
-          <template v-if="terminalEnabled">
+          <template v-if="terminalEnabled && !mobileTabs">
             <button
               type="button"
               class="faw-btn"
               :class="{
                 'faw-btn--run':
-                  (!mobileTabs && progressOpen && bottomTab === 'logs') ||
-                  (mobileTabs && mobileConsoleTab === 'logs'),
+                  progressOpen && bottomTab === 'logs',
               }"
               title="View Process / agent progress"
               @click="openProcessPanel"
@@ -447,8 +459,7 @@ watch(chatBox, (el, prev) => {
               class="faw-btn"
               :class="{
                 'faw-btn--run':
-                  (!mobileTabs && progressOpen && bottomTab === 'terminal') ||
-                  (mobileTabs && mobileConsoleTab === 'terminal'),
+                  progressOpen && bottomTab === 'terminal',
               }"
               title="Terminal trong repo project"
               @click="openTerminalPanel"
@@ -538,26 +549,43 @@ watch(chatBox, (el, prev) => {
         v-if="mobileTabs"
         class="faw-m-console-tabs shrink-0"
         role="tablist"
+        aria-label="Console panels"
       >
         <button
           type="button"
           role="tab"
           class="faw-m-console-tabs__btn touch-manipulation fx-colors"
-          :class="{ 'is-active': mobileConsoleTab === 'chat' }"
+          :class="{
+            'is-active': mobileConsoleTab === 'chat',
+            'is-live': mobileConsoleTab !== 'chat' && (agentTyping || busy),
+          }"
           :aria-selected="mobileConsoleTab === 'chat'"
           @click="mobileConsoleTab = 'chat'"
         >
           Chat
+          <span
+            v-if="mobileConsoleTab !== 'chat' && (agentTyping || busy)"
+            class="faw-m-seg__live"
+            aria-label="Agent typing"
+          />
         </button>
         <button
           type="button"
           role="tab"
           class="faw-m-console-tabs__btn touch-manipulation fx-colors"
-          :class="{ 'is-active': mobileConsoleTab === 'logs' }"
+          :class="{
+            'is-active': mobileConsoleTab === 'logs',
+            'is-live': mobileConsoleTab !== 'logs' && progressLive,
+          }"
           :aria-selected="mobileConsoleTab === 'logs'"
           @click="mobileConsoleTab = 'logs'"
         >
           Logs
+          <span
+            v-if="mobileConsoleTab !== 'logs' && progressLive"
+            class="faw-m-seg__live"
+            aria-label="Log streaming"
+          />
         </button>
         <button
           v-if="terminalEnabled"
@@ -924,8 +952,11 @@ watch(chatBox, (el, prev) => {
           @keydown="onChatKeydown"
         />
         <div class="faw-console-input__row faw-ba-input-row">
-          <span class="faw-ba-input-hint">
+          <span class="faw-ba-input-hint faw-ba-input-hint--desktop">
             Enter / ⌘·Ctrl+Enter send · Shift+Enter newline · Esc stop
+          </span>
+          <span class="faw-ba-input-hint faw-ba-input-hint--mobile">
+            Enter send · Esc stop
           </span>
           <div class="faw-ba-input-actions">
             <a-select

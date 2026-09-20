@@ -47,3 +47,5 @@ Scripts sidebar + queue strip + feed cards. CI console density: empty CTA (Run /
 ## Work (/work)
 
 Three columns: Tasks/Jobs | Issue context | Agent console. Jump to latest on chat + Process; context strip (`#iid · branch · status · context`); message hierarchy + streaming caret; composer focus elevation; Failed Send + Retry; Process Errors/Copy; Jobs empty CTAs, relative time/duration, pin, `N+` when hasMore; mid sticky primary Run vs secondary; SSE soft flash mid-col. Shortcuts: `/` search · Esc Force Stop (no modal) · Enter/⌘↵ composer. No Jobs All/Running/Failed filter and no clickable empty-console tips unless requested. English chrome. Respect `prefers-reduced-motion`.
+
+**Mobile:** list ↔ Issue | Console; dock Run/Handoff (≥40px) above bottom nav; live pulse on Console when agent active; Chat|Logs|Terminal tabs (no duplicate Process/Terminal in head); composer 16px + short hint; Plan uses accent (not purple); detail pad clears dock.
