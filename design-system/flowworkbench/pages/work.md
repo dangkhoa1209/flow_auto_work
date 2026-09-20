@@ -19,7 +19,7 @@
 
 ## Mobile
 
-- Touch targets ≥36–40px for back, Issue/Console, dock Run/Handoff, Chat|Logs tabs, Send.
+- Prefer **compact IDE density** (~28–32px controls, 11–12px chrome type) — avoid oversized 40–44px touch targets that crowd the viewport.
 - Console tab shows **live pulse** when agent runs while user is on Issue; Chat/Logs tabs pulse when activity is on the other tab.
 - Slim console head on mobile (no duplicate Process/Terminal — tabs own that); keep Stop / Reset / status.
 - Issue content uses `.faw-m-detail-pad` so dock does not cover the last lines.
