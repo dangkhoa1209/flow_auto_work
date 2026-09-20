@@ -3,7 +3,7 @@ import { computed, ref, watch } from "vue";
 import ChatMessageBody from "@/components/ChatMessageBody.vue";
 import { useAutoScroll } from "@/composables/useAutoScroll";
 import { formatChatTime } from "@/utils/formatChatTime";
-import type { BaMessage } from "@/stores/baChat";
+import type { BaFailedSend, BaMessage } from "@/stores/baChat";
 
 const EMPTY_TIPS = [
   "How does the attendance rules screen validate shifts?",
@@ -19,10 +19,14 @@ const props = defineProps<{
   loading?: boolean;
   /** Change this when switching project/thread so we pin to latest again. */
   resetKey?: string | null;
+  /** Client-only failed Send (before server accepted the user message). */
+  failedSend?: BaFailedSend | null;
 }>();
 
 const emit = defineEmits<{
   "use-prompt": [prompt: string];
+  retry: [];
+  regenerate: [messageId: string];
 }>();
 
 /**
@@ -77,8 +81,33 @@ function isStreamingMessage(m: BaMessage) {
   );
 }
 
+function isErrorMessage(m: BaMessage) {
+  return m.role === "assistant" && m.streamStatus === "error";
+}
+
+/** Last completed (or errored) assistant bubble — show Regenerate. */
+const lastAssistantId = computed(() => {
+  for (let i = props.messages.length - 1; i >= 0; i--) {
+    const m = props.messages[i];
+    if (m.role === "assistant" && m.content?.trim()) return m.id;
+  }
+  return null;
+});
+
+function canRegenerate(m: BaMessage) {
+  if (props.streaming || props.loading) return false;
+  if (m.role !== "assistant") return false;
+  if (!m.content?.trim()) return false;
+  // Only the latest assistant — regenerating older ones would wipe later turns.
+  return m.id === lastAssistantId.value;
+}
+
 const showEmpty = computed(
-  () => !props.messages.length && !props.streaming && !props.loading,
+  () =>
+    !props.messages.length &&
+    !props.streaming &&
+    !props.loading &&
+    !props.failedSend,
 );
 
 const showSkeleton = computed(
@@ -92,13 +121,14 @@ const { pinnedToBottom, onScroll, onWheel, onTouchMove, resetPin, jumpToBottom }
       visibleMessages.value.map((m) => m.content).join(""),
       showTyping.value ? "t" : "",
       typingInsideStream.value ? "in" : "foot",
+      props.failedSend?.content || "",
     ].join("|"),
   );
 
 const showJumpLatest = computed(
   () =>
     !pinnedToBottom.value &&
-    (props.messages.length > 0 || !!props.streaming),
+    (props.messages.length > 0 || !!props.streaming || !!props.failedSend),
 );
 
 watch(
@@ -199,7 +229,10 @@ function onTip(prompt: string) {
           <div class="faw-msg__who">{{ whoLabel(m.role) }}</div>
           <div
             class="faw-msg__bubble"
-            :class="{ 'faw-msg__bubble--streaming': isStreamingMessage(m) }"
+            :class="{
+              'faw-msg__bubble--streaming': isStreamingMessage(m),
+              'faw-msg__bubble--error': isErrorMessage(m),
+            }"
           >
             <ChatMessageBody
               v-if="m.content"
@@ -222,6 +255,15 @@ function onTip(prompt: string) {
                 >
                   {{ formatChatTime(m.createdAt) }}
                 </time>
+                <button
+                  v-if="canRegenerate(m)"
+                  type="button"
+                  class="faw-ba-msg-action"
+                  :aria-label="isErrorMessage(m) ? 'Retry reply' : 'Regenerate reply'"
+                  @click="emit('regenerate', m.id)"
+                >
+                  {{ isErrorMessage(m) ? "Retry" : "Regenerate" }}
+                </button>
               </template>
             </ChatMessageBody>
             <template v-else>
@@ -235,6 +277,39 @@ function onTip(prompt: string) {
             </template>
           </div>
         </div>
+
+        <!-- Failed Send before server accepted the user message -->
+        <template v-if="failedSend">
+          <div class="faw-msg user faw-msg--failed">
+            <div class="faw-msg__who">You</div>
+            <div class="faw-msg__bubble faw-msg__bubble--failed">
+              <div class="chat-md-wrap">
+                <div class="chat-md chat-md-user whitespace-pre-wrap">
+                  {{ failedSend.content }}
+                </div>
+                <div class="chat-md-foot">
+                  <div class="chat-md-foot__meta">
+                    <span class="faw-ba-failed-label">Send failed</span>
+                    <button
+                      type="button"
+                      class="faw-ba-msg-action"
+                      aria-label="Retry send"
+                      @click="emit('retry')"
+                    >
+                      Retry
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="faw-msg agent faw-msg--failed">
+            <div class="faw-msg__who">system</div>
+            <div class="faw-msg__bubble faw-msg__bubble--error">
+              <p class="m-0 text-[12px]">⚠️ {{ failedSend.error }}</p>
+            </div>
+          </div>
+        </template>
 
         <!-- Only before first token — one assistant row, no duplicate under content -->
         <div v-if="showTypingFooter" class="faw-msg agent">

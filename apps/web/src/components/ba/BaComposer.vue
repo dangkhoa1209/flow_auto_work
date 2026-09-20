@@ -130,7 +130,7 @@ defineExpose({ fill, focusInput });
           </label>
         </a-tooltip>
         <span class="opacity-70"
-          >Enter to send · Shift+Enter newline · Esc to stop</span
+          >Enter / ⌘·Ctrl+Enter send · Shift+Enter newline · Esc stop</span
         >
       </div>
       <div class="faw-ba-input-actions">

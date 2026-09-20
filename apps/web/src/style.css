@@ -3313,14 +3313,72 @@ a.faw-mseg__btn {
   opacity: 0;
   flex-shrink: 0;
 }
+.faw-ba-thread__actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+  opacity: 0;
+}
+.faw-ba-thread:hover .faw-ba-thread__actions,
+.faw-ba-thread:focus-within .faw-ba-thread__actions {
+  opacity: 1;
+}
 .faw-ba-thread:hover .faw-ba-thread__del,
 .faw-ba-thread:focus-within .faw-ba-thread__del {
   opacity: 1;
 }
 @media (hover: none) {
-  .faw-ba-thread__del {
+  .faw-ba-thread__del,
+  .faw-ba-thread__actions {
     opacity: 1;
   }
+}
+.faw-ba-thread__pin-mark {
+  margin-right: 4px;
+  font-size: 10px;
+  color: var(--app-accent);
+  vertical-align: 0;
+}
+.faw-ba-thread__rename {
+  width: 100%;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--app-accent);
+  background: var(--app-panel);
+  color: var(--app-ink);
+  outline: none;
+}
+.faw-ba-msg-action {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--app-accent);
+  font-size: 11px;
+  font-weight: 500;
+  padding: 0 2px;
+  cursor: pointer;
+  border-radius: 3px;
+}
+.faw-ba-msg-action:hover {
+  text-decoration: underline;
+}
+.faw-ba-msg-action:focus-visible {
+  outline: 2px solid var(--app-accent);
+  outline-offset: 1px;
+}
+.faw-ba-failed-label {
+  font-size: 11px;
+  color: var(--app-danger, #ef4444);
+  font-weight: 500;
+}
+.faw-ba .faw-msg__bubble--error {
+  border-color: color-mix(in srgb, var(--app-danger, #ef4444) 35%, var(--line-soft));
+}
+.faw-ba .faw-msg__bubble--failed {
+  opacity: 0.92;
 }
 
 .faw-ba-input-row {

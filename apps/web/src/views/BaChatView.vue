@@ -119,6 +119,22 @@ async function onSend(content: string) {
   }
 }
 
+async function onRetryFailed() {
+  try {
+    await ba.retryFailedSend();
+  } catch (e) {
+    message.error(e instanceof Error ? e.message : String(e));
+  }
+}
+
+async function onRegenerate(messageId: string) {
+  try {
+    await ba.regenerateMessage(messageId);
+  } catch (e) {
+    message.error(e instanceof Error ? e.message : String(e));
+  }
+}
+
 async function onStop() {
   try {
     await ba.stop();
@@ -388,10 +404,13 @@ const contextBits = computed(() => {
           :streaming-message-id="ba.streamingMessageId"
           :loading="ba.loading"
           :reset-key="ba.activeThreadId"
+          :failed-send="ba.failedPendingSend"
           @use-prompt="onUsePrompt"
+          @retry="onRetryFailed"
+          @regenerate="onRegenerate"
         />
         <div
-          v-if="ba.errorText"
+          v-if="ba.errorText && !ba.failedPendingSend"
           class="shrink-0 px-3 pb-1"
         >
           <a-alert type="error" show-icon :message="ba.errorText" />

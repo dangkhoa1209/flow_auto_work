@@ -76,6 +76,8 @@ export const API = {
     thread: (id: string) => `/api/ba/threads/${encodeURIComponent(id)}`,
     messages: (id: string) =>
       `/api/ba/threads/${encodeURIComponent(id)}/messages`,
+    regenerate: (id: string) =>
+      `/api/ba/threads/${encodeURIComponent(id)}/regenerate`,
     stop: (id: string) =>
       `/api/ba/threads/${encodeURIComponent(id)}/stop`,
     draftIssue: (id: string) =>

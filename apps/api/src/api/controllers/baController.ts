@@ -38,6 +38,28 @@ export const baController = {
     );
   }),
 
+  updateThread: asyncHandler(async (req: Request, res: Response) => {
+    const { username } = requireRoleContext();
+    res.formatter.ok(
+      await ba.baUpdateThread(
+        username,
+        String(req.params.id || ""),
+        req.body || {},
+      ),
+    );
+  }),
+
+  regenerateMessage: asyncHandler(async (req: Request, res: Response) => {
+    const { username } = requireRoleContext();
+    res.formatter.accepted(
+      await ba.baRegenerateMessage(
+        username,
+        String(req.params.id || ""),
+        req.body || {},
+      ),
+    );
+  }),
+
   getMessages: asyncHandler(async (req: Request, res: Response) => {
     const { username } = requireRoleContext();
     res.formatter.ok(await ba.baGetMessages(username, String(req.params.id || "")));
