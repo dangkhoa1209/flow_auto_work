@@ -933,8 +933,8 @@ watch(chatBox, (el, prev) => {
       >
         <a-textarea
           :value="chatInput"
-          :rows="2"
-          :auto-size="{ minRows: 2, maxRows: 12 }"
+          :rows="1"
+          :auto-size="{ minRows: 1, maxRows: 12 }"
           :autofocus="false"
           :disabled="false"
           :readonly="false"
