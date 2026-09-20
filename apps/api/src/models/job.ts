@@ -83,6 +83,8 @@ export async function upsertJobDoc(
 
 export async function listJobDocs(opts?: {
   limit?: number;
+  /** Cursor: return jobs after this id in updatedAt DESC order. */
+  lastId?: string;
   status?: JobStatus;
   workspaceProjectId?: string;
   ownerUsername?: string;
@@ -94,9 +96,22 @@ export async function listJobDocs(opts?: {
     filter.workspaceProjectId = opts.workspaceProjectId;
   }
   if (opts?.ownerUsername) filter.ownerUsername = opts.ownerUsername;
+
+  const lastId = opts?.lastId?.trim();
+  if (lastId) {
+    const last = await getJobDoc(lastId);
+    if (!last) return [];
+    const lastUpdated = last.updatedAt || "";
+    const lastKey = last._id || last.id;
+    filter.$or = [
+      { updatedAt: { $lt: lastUpdated } },
+      { updatedAt: lastUpdated, _id: { $lt: lastKey } },
+    ];
+  }
+
   return (await JobModel.col())
     .find(withActive(filter))
-    .sort({ updatedAt: -1 })
+    .sort({ updatedAt: -1, _id: -1 })
     .limit(opts?.limit ?? 50)
     .toArray();
 }

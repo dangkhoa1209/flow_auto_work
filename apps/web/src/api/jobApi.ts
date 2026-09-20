@@ -68,10 +68,13 @@ function invalidateGoogleSnapshot(id: string) {
 }
 
 export const jobApi = {
-  list(opts?: { limit?: number }) {
+  list(opts?: { limit?: number; lastId?: string }) {
     const limit = opts?.limit ?? 40;
-    return request<{ jobs: unknown[] }>({
-      url: `${API.jobs.list}?limit=${limit}`,
+    const qs = new URLSearchParams();
+    qs.set("limit", String(limit));
+    if (opts?.lastId?.trim()) qs.set("lastId", opts.lastId.trim());
+    return request<{ jobs: unknown[]; hasMore?: boolean }>({
+      url: `${API.jobs.list}?${qs.toString()}`,
       method: "GET",
     });
   },

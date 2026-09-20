@@ -75,6 +75,7 @@ function labelSwatchBg(name: string): string | undefined {
 }
 
 const rootEl = ref<HTMLElement | null>(null);
+const jobsScrollEl = ref<HTMLElement | null>(null);
 const jobsOpen = ref(true);
 const jobsHeight = ref(JOBS_H_DEFAULT);
 const jobsDragging = ref(false);
@@ -123,6 +124,14 @@ function clampJobsHeight(h: number) {
 
 function toggleJobs() {
   jobsOpen.value = !jobsOpen.value;
+}
+
+function onJobsScroll() {
+  const el = jobsScrollEl.value;
+  if (!el || work.jobsLoadingMore || !work.jobsHasMore) return;
+  if (el.scrollTop + el.clientHeight >= el.scrollHeight - 80) {
+    void work.loadMoreJobs();
+  }
 }
 
 function onJobsRailPointerDown(e: PointerEvent) {
@@ -499,7 +508,9 @@ watch(
 
       <div
         v-show="jobsOpen"
+        ref="jobsScrollEl"
         class="flex-1 min-h-0 overflow-y-auto overscroll-contain"
+        @scroll.passive="onJobsScroll"
       >
         <TransitionGroup
           name="list-slide"
@@ -619,6 +630,19 @@ watch(
             >Type in Console to start a session, or Run a GitLab task</span
           >
         </a-empty>
+        <div
+          v-else-if="work.jobsLoadingMore"
+          class="px-3 py-3 text-center text-[11px] text-ink-faint"
+          aria-live="polite"
+        >
+          Loading more…
+        </div>
+        <div
+          v-else-if="work.jobsHasMore"
+          class="px-3 py-2 text-center text-[10px] text-ink-faint"
+        >
+          Scroll for more
+        </div>
       </div>
     </div>
   </aside>
