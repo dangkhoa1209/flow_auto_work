@@ -276,24 +276,8 @@ const jobsCountLabel = computed(() => {
   return String(n);
 });
 
-function formatJobDuration(j: Job): string {
-  const start = Date.parse(j.createdAt || "") || 0;
-  if (!start) return "";
-  const end =
-    j.status === "running" || j.status === "queued"
-      ? Date.now()
-      : Date.parse(j.updatedAt || "") || Date.now();
-  const ms = Math.max(0, end - start);
-  if (ms < 60_000) return `${Math.max(1, Math.round(ms / 1000))}s`;
-  if (ms < 3_600_000) return `${Math.floor(ms / 60_000)}m`;
-  return `${Math.floor(ms / 3_600_000)}h`;
-}
-
 function jobMetaLine(j: Job): string {
-  const rel = formatRelativeTime(j.updatedAt || j.createdAt);
-  const dur = formatJobDuration(j);
-  if (rel && dur) return `${rel} · ${dur}`;
-  return rel || dur || "";
+  return formatRelativeTime(j.updatedAt || j.createdAt) || "";
 }
 
 function statusDotClass(status: string) {
