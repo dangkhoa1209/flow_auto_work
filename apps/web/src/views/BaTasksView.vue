@@ -253,7 +253,7 @@ onMounted(() => void refresh());
           >
             <div class="flex-1 min-w-0">
               <div class="font-medium text-[13px] truncate">{{ d.title }}</div>
-              <div class="text-[11px] text-[var(--app-muted)]">
+              <div class="text-[13px] text-[var(--app-muted)]">
                 {{ d.status }}
                 <template v-if="d.requirementId"> · từ YC</template>
                 <template v-if="d.threadId"> · từ chat</template>
@@ -263,25 +263,25 @@ onMounted(() => void refresh());
                 :href="d.gitlabUrl"
                 target="_blank"
                 rel="noopener"
-                class="text-[11px]"
+                class="text-[13px]"
               >
                 GitLab #{{ d.gitlabIid }}
               </a>
             </div>
             <div class="flex gap-1 shrink-0">
-              <button type="button" class="faw-btn text-[11px]" @click="openEdit(d)">
+              <button type="button" class="faw-btn text-[13px]" @click="openEdit(d)">
                 Xem
               </button>
               <button
                 type="button"
-                class="faw-btn faw-btn--run text-[11px]"
+                class="faw-btn faw-btn--run text-[13px]"
                 @click="onPublishOne(d)"
               >
                 {{ d.status === "published" ? "Cập nhật / tạo mới" : "Lên GitLab" }}
               </button>
               <button
                 type="button"
-                class="faw-btn faw-btn--danger text-[11px]"
+                class="faw-btn faw-btn--danger text-[13px]"
                 @click="onDelete(d.id, d.title)"
               >
                 Xóa

@@ -45,9 +45,9 @@ defineExpose({ clearInput, getToken, onSubmit });
       v-if="showStatus"
       class="flex items-center justify-between gap-2 rounded-lg border border-[var(--app-border)] bg-[var(--app-panel)] px-3 py-2"
     >
-      <span class="text-[12px] text-[var(--app-muted)]">Trạng thái PAT</span>
+      <span class="text-[13px] text-[var(--app-muted)]">Trạng thái PAT</span>
       <span
-        class="text-[11px] px-2 py-0.5 rounded-full border"
+        class="text-[13px] px-2 py-0.5 rounded-full border"
         :class="
           hasGitPat
             ? 'border-emerald-500/40 text-emerald-600'
@@ -67,21 +67,21 @@ defineExpose({ clearInput, getToken, onSubmit });
     <div
       class="rounded-lg border border-[var(--app-border)] bg-[var(--app-panel)] p-3 space-y-2"
     >
-      <p class="m-0 text-[12px] font-medium text-[var(--app-ink)]">
+      <p class="m-0 text-[13px] font-medium text-[var(--app-ink)]">
         Cách lấy PAT
       </p>
-      <ol class="m-0 pl-4 text-[12px] text-[var(--app-muted)] space-y-1">
+      <ol class="m-0 pl-4 text-[13px] text-[var(--app-muted)] space-y-1">
         <li>
           Mở GitLab → <strong>Preferences → Access Tokens</strong> (Personal
           access tokens).
         </li>
         <li>
           Tạo token mới, chọn scope
-          <code class="text-[11px]">api</code> (và
-          <code class="text-[11px]">read_repository</code> nếu cần).
+          <code class="text-[13px]">api</code> (và
+          <code class="text-[13px]">read_repository</code> nếu cần).
         </li>
         <li>
-          Copy token (dạng <code class="text-[11px]">glpat-…</code>) và dán bên
+          Copy token (dạng <code class="text-[13px]">glpat-…</code>) và dán bên
           dưới.
         </li>
       </ol>
@@ -89,7 +89,7 @@ defineExpose({ clearInput, getToken, onSubmit });
         :href="gitlabPatUrl"
         target="_blank"
         rel="noopener noreferrer"
-        class="inline-flex items-center gap-1.5 text-[12px] font-medium text-[var(--app-accent)] hover:underline"
+        class="inline-flex items-center gap-1.5 text-[13px] font-medium text-[var(--app-accent)] hover:underline"
       >
         <LinkOutlined />
         Mở trang tạo PAT trên {{ gitlabHostLabel }}

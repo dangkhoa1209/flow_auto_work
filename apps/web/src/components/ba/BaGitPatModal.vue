@@ -40,7 +40,7 @@ async function onSave() {
     @cancel="closePatModal"
   >
     <BaGitPatForm ref="patFormRef" :loading="saving" hide-default-actions @save="onSave" />
-    <p class="text-[11px] text-[var(--app-faint)] m-0 mt-4">
+    <p class="text-[13px] text-[var(--app-faint)] m-0 mt-4">
       Hoặc vào
       <RouterLink
         :to="`${basePath}/settings`"

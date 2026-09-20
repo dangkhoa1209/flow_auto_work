@@ -664,7 +664,7 @@ watch(chatBox, (el, prev) => {
             <div class="faw-msg agent faw-msg--failed">
               <div class="faw-msg__who">system</div>
               <div class="faw-msg__bubble faw-msg__bubble--error">
-                <p class="m-0 text-[12px]">{{ failedSend.error }}</p>
+                <p class="m-0 text-[13px]">{{ failedSend.error }}</p>
               </div>
             </div>
           </template>
@@ -679,7 +679,7 @@ watch(chatBox, (el, prev) => {
               <span class="chat-typing">
                 <span /><span /><span />
               </span>
-              <span class="text-[11px] text-ink-faint ml-1.5">thinking…</span>
+              <span class="text-[13px] text-ink-faint ml-1.5">thinking…</span>
               <span class="faw-stream-caret" aria-hidden="true" />
             </div>
           </div>
@@ -854,7 +854,7 @@ watch(chatBox, (el, prev) => {
             >
               <div class="flex items-center gap-1.5 mb-0.5 opacity-70">
                 <span
-                  class="text-[9px] font-semibold uppercase tracking-wide"
+                  class="text-[13px] font-semibold uppercase tracking-wide"
                   :class="{
                     'text-amber-700': l.kind === 'task',
                     'text-sky-700': l.kind === 'tool',
@@ -867,12 +867,12 @@ watch(chatBox, (el, prev) => {
                         : l.kind
                   }}</span
                 >
-                <span class="text-[9px]">{{
+                <span class="text-[13px]">{{
                   new Date(l.at).toLocaleTimeString()
                 }}</span>
               </div>
               <div
-                class="leading-snug break-words whitespace-pre-wrap overflow-y-auto text-[10.5px]"
+                class="leading-snug break-words whitespace-pre-wrap overflow-y-auto text-[13px]"
                 :class="
                   l.kind === 'assistant' ||
                   l.kind === 'thinking' ||
@@ -887,7 +887,7 @@ watch(chatBox, (el, prev) => {
             </div>
             <div
               v-if="!visibleProgressLines.length"
-              class="text-center py-4 text-[11px] font-sans opacity-60"
+              class="text-center py-4 text-[13px] font-sans opacity-60"
             >
               {{
                 progressErrorsOnly
@@ -989,7 +989,7 @@ watch(chatBox, (el, prev) => {
               title="Agent = code/fix. Plan = Cursor plan mode only → Approve Plan → code. Docs-first (Dev Notes) is separate: read → code → update docs."
             >
               <ExclamationCircleOutlined
-                class="text-[var(--app-faint)] text-[12px] cursor-help shrink-0"
+                class="text-[var(--app-faint)] text-[13px] cursor-help shrink-0"
               />
             </a-tooltip>
             <button

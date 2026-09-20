@@ -620,7 +620,7 @@ const runTooltip = computed(() => {
               message="Legacy Docs pause — press Run to continue"
             >
               <template #description>
-                <div class="text-[12px] text-ink-soft space-y-2">
+                <div class="text-[13px] text-ink-soft space-y-2">
                   <p class="m-0">
                     Docs-first no longer waits for Approve. {{ docsApproveNextHint }}.
                     Full report is also in Chat.
@@ -633,7 +633,7 @@ const runTooltip = computed(() => {
                   </div>
                   <ul
                     v-if="docsPathsPreview?.length"
-                    class="m-0 pl-4 text-[11px] text-ink-muted"
+                    class="m-0 pl-4 text-[13px] text-ink-muted"
                   >
                     <li v-for="p in docsPathsPreview" :key="p">{{ p }}</li>
                   </ul>
@@ -655,7 +655,7 @@ const runTooltip = computed(() => {
               message="Plan complete — review analysis, then approve"
             >
               <template #description>
-                <div class="text-[12px] text-ink-soft space-y-2">
+                <div class="text-[13px] text-ink-soft space-y-2">
                   <p class="m-0">
                     Agent plan phase (Cursor plan mode). Approve to run code.
                     Full report is also in Chat.
@@ -735,7 +735,7 @@ const runTooltip = computed(() => {
 
             <div
               v-if="showGoogleCard && !awaitingGoogleAuth"
-              class="mb-3 flex flex-wrap items-center gap-2 text-[12px] text-ink-soft"
+              class="mb-3 flex flex-wrap items-center gap-2 text-[13px] text-ink-soft"
             >
               <span v-if="googleStatus?.authorized || currentJob?.googleAuth?.email">
                 Google Sheets:
@@ -754,7 +754,7 @@ const runTooltip = computed(() => {
               <RouterLink
                 v-if="googleStatus?.source === 'user'"
                 to="/settings/integrations"
-                class="text-[11px] text-accent hover:underline"
+                class="text-[13px] text-accent hover:underline"
               >
                 Integrations
               </RouterLink>
@@ -820,7 +820,7 @@ const runTooltip = computed(() => {
                     title="Copy branch"
                     @click="emit('copyBranch', jobBranch(currentJob))"
                   >
-                    <CopyOutlined class="text-[10px]" />
+                    <CopyOutlined class="text-[13px]" />
                   </button>
                 </span>
               </template>
@@ -843,7 +843,7 @@ const runTooltip = computed(() => {
               <a-tag
                 v-else-if="contextQuality?.level"
                 :color="contextQualityColor(contextQuality.level)"
-                class="m-0 !text-[10px] !leading-none !px-1.5 !py-0.5"
+                class="m-0 !text-[13px] !leading-none !px-1.5 !py-0.5"
                 :title="contextQuality.reason || ''"
                 >{{ contextQualityLabel(contextQuality.level) }}</a-tag
               >
@@ -903,7 +903,7 @@ const runTooltip = computed(() => {
                     >({{ relatedIssues.length }})</span
                   >
                 </h3>
-                <ul v-if="relatedIssues.length" class="m-0 mb-2.5 pl-[18px] text-[12.5px] text-ink-muted leading-[1.7]">
+                <ul v-if="relatedIssues.length" class="m-0 mb-2.5 pl-[18px] text-[13px] text-ink-muted leading-[1.7]">
                   <li
                     v-for="r in relatedIssues"
                     :key="r.iid"
@@ -911,7 +911,7 @@ const runTooltip = computed(() => {
                   >
                     <button
                       type="button"
-                      class="text-left text-accent hover:underline bg-transparent border-0 p-0 cursor-pointer font-[inherit] text-[12.5px]"
+                      class="text-left text-accent hover:underline bg-transparent border-0 p-0 cursor-pointer font-[inherit] text-[13px]"
                       @click="
                         emit('openRelated', {
                           iid: r.iid,
@@ -923,13 +923,13 @@ const runTooltip = computed(() => {
                       <IssueIidLink :iid="r.iid" :url="r.url" />
                       — {{ r.title }}
                     </button>
-                    <div class="text-[11px] text-ink-faint">
+                    <div class="text-[13px] text-ink-faint">
                       {{ r.state }} · {{ r.source
                       }}{{ r.linkType ? ` · ${r.linkType}` : "" }}
                     </div>
                   </li>
                 </ul>
-                <div v-else class="text-[11px] text-ink-faint mb-2">
+                <div v-else class="text-[13px] text-ink-faint mb-2">
                   No related / child issues
                 </div>
               </div>
@@ -943,7 +943,7 @@ const runTooltip = computed(() => {
                 </h3>
                 <div v-if="humanComments.length" class="space-y-3">
                   <div v-for="n in humanComments" :key="n.id">
-                    <div class="text-[11px] text-ink-faint mb-1">
+                    <div class="text-[13px] text-ink-faint mb-1">
                       @{{ n.author }}
                       <span v-if="n.createdAt">
                         · {{ new Date(n.createdAt).toLocaleString() }}</span
@@ -958,7 +958,7 @@ const runTooltip = computed(() => {
                     />
                   </div>
                 </div>
-                <div v-else class="text-[11px] text-ink-faint">No comments yet</div>
+                <div v-else class="text-[13px] text-ink-faint">No comments yet</div>
               </div>
             </template>
 
@@ -968,13 +968,13 @@ const runTooltip = computed(() => {
                 <a-button
                   size="small"
                   type="link"
-                  class="!px-0 !h-auto !text-[10px] !ml-1"
+                  class="!px-0 !h-auto !text-[13px] !ml-1"
                   @click="emit('openStandards')"
                   >standards</a-button
                 >
                 <span
                   v-if="notesSaving"
-                  class="text-[10px] text-ink-faint font-normal normal-case tracking-normal"
+                  class="text-[13px] text-ink-faint font-normal normal-case tracking-normal"
                   >saving…</span
                 >
                 <span class="flex-1" />
@@ -1001,7 +1001,7 @@ const runTooltip = computed(() => {
               <div
                 class="mt-2 rounded-lg border border-[var(--app-border)] bg-[var(--app-panel-soft)] px-2.5 py-2 space-y-2"
               >
-                <div class="text-[10px] uppercase tracking-wide text-ink-faint font-medium">
+                <div class="text-[13px] uppercase tracking-wide text-ink-faint font-medium">
                   Run gates
                 </div>
                 <div class="flex items-start gap-1.5">
@@ -1014,7 +1014,7 @@ const runTooltip = computed(() => {
                     "
                   />
                   <div class="min-w-0">
-                    <div class="text-[11px] text-ink-soft font-medium flex items-center gap-1">
+                    <div class="text-[13px] text-ink-soft font-medium flex items-center gap-1">
                       Docs-first
                       <span class="font-normal text-ink-faint"
                         >(project)</span
@@ -1023,11 +1023,11 @@ const runTooltip = computed(() => {
                         title="On: agent reports existing feature docs, reads them, codes, then updates or creates docs. No Approve Docs step. Plan (composer) still needs Approve Plan."
                       >
                         <ExclamationCircleOutlined
-                          class="text-ink-faint text-[11px] cursor-help"
+                          class="text-ink-faint text-[13px] cursor-help"
                         />
                       </a-tooltip>
                     </div>
-                    <div class="text-[10px] text-ink-muted leading-snug">
+                    <div class="text-[13px] text-ink-muted leading-snug">
                       Read → code → update/create feature docs (no approve)
                       <span v-if="planFirst">
                         · after Approve Plan if composer is Plan</span
@@ -1041,10 +1041,10 @@ const runTooltip = computed(() => {
                 v-if="detectedSheets.length"
                 class="mt-3 rounded-lg border border-[var(--app-border)] bg-[var(--app-panel-soft)] px-3 py-2.5"
               >
-                <div class="text-[12px] text-ink-soft font-medium">
+                <div class="text-[13px] text-ink-soft font-medium">
                   Đọc Google Sheets / Excel khi Run
                 </div>
-                <div class="text-[11px] text-ink-muted mt-0.5 mb-2">
+                <div class="text-[13px] text-ink-muted mt-0.5 mb-2">
                   Mặc định tắt. Tick file cần đưa vào agent context (tối đa ~200
                   dòng / file).
                 </div>
@@ -1052,7 +1052,7 @@ const runTooltip = computed(() => {
                   <label
                     v-for="s in detectedSheets"
                     :key="s.spreadsheetId"
-                    class="flex items-start gap-2 text-[12px] text-ink-soft cursor-pointer"
+                    class="flex items-start gap-2 text-[13px] text-ink-soft cursor-pointer"
                   >
                     <a-checkbox
                       :checked="includeSheetIds.includes(s.spreadsheetId)"
@@ -1071,7 +1071,7 @@ const runTooltip = computed(() => {
                         :href="s.url"
                         target="_blank"
                         rel="noopener"
-                        class="block text-[10px] text-ink-faint truncate hover:underline"
+                        class="block text-[13px] text-ink-faint truncate hover:underline"
                         @click.stop
                         >{{ s.url }}</a
                       >
@@ -1085,11 +1085,11 @@ const runTooltip = computed(() => {
                 class="mt-3 rounded-lg border border-[var(--app-border)] bg-[var(--app-panel-soft)] px-3 py-2.5"
               >
                 <div class="flex items-center justify-between gap-2">
-                  <div class="text-[12px] text-ink-soft font-medium">
+                  <div class="text-[13px] text-ink-soft font-medium">
                     Đọc Figma khi Run
                   </div>
                   <span
-                    class="text-[10px]"
+                    class="text-[13px]"
                     :class="
                       hasFigmaToken ? 'text-emerald-600' : 'text-amber-600'
                     "
@@ -1097,7 +1097,7 @@ const runTooltip = computed(() => {
                     {{ hasFigmaToken ? "PAT OK" : "Thiếu PAT" }}
                   </span>
                 </div>
-                <div class="text-[11px] text-ink-muted mt-0.5 mb-2">
+                <div class="text-[13px] text-ink-muted mt-0.5 mb-2">
                   Nguồn ngoài — mặc định tắt. Tick từng link (structure / text /
                   variables). PAT ở Settings → Integrations.
                 </div>
@@ -1105,7 +1105,7 @@ const runTooltip = computed(() => {
                   <label
                     v-for="f in detectedFigs"
                     :key="f.includeKey"
-                    class="flex items-start gap-2 text-[12px] text-ink-soft cursor-pointer"
+                    class="flex items-start gap-2 text-[13px] text-ink-soft cursor-pointer"
                   >
                     <a-checkbox
                       :checked="includeFigmaKeys.includes(f.includeKey)"
@@ -1121,7 +1121,7 @@ const runTooltip = computed(() => {
                         :href="f.url"
                         target="_blank"
                         rel="noopener"
-                        class="block text-[10px] text-ink-faint truncate hover:underline"
+                        class="block text-[13px] text-ink-faint truncate hover:underline"
                         @click.stop
                         >{{ f.url }}</a
                       >
@@ -1134,7 +1134,7 @@ const runTooltip = computed(() => {
                 v-if="currentJob"
                 class="mt-4 rounded-lg border border-[var(--app-border)] bg-[var(--app-panel-soft)] px-3 py-2.5"
               >
-                <div class="text-[12px] text-ink-soft font-medium">
+                <div class="text-[13px] text-ink-soft font-medium">
                   Sync base / Merge - History
                 </div>
                 <ul
@@ -1147,7 +1147,7 @@ const runTooltip = computed(() => {
                     class="rounded-md border border-[var(--app-border)] bg-surface px-2.5 py-2"
                   >
                     <div
-                      class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-[11px]"
+                      class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-[13px]"
                     >
                       <span class="text-ink-faint tabular-nums shrink-0">{{
                         formatChatTime(h.at)
@@ -1174,14 +1174,14 @@ const runTooltip = computed(() => {
                     </div>
                     <div
                       v-if="h.message"
-                      class="mt-1 text-[12px] text-ink-soft whitespace-pre-wrap break-words"
+                      class="mt-1 text-[13px] text-ink-soft whitespace-pre-wrap break-words"
                     >
                       {{ redactSecrets(h.message) }}
                     </div>
                     <div v-if="mergeOpHasDetail(h)" class="mt-1.5">
                       <button
                         type="button"
-                        class="text-[11px] font-medium text-sky-600 hover:underline"
+                        class="text-[13px] font-medium text-sky-600 hover:underline"
                         @click="openMergeOpDetail(h)"
                       >
                         View detail
@@ -1189,14 +1189,14 @@ const runTooltip = computed(() => {
                     </div>
                   </li>
                 </ul>
-                <div v-else class="text-[11px] text-ink-faint mt-2">
+                <div v-else class="text-[13px] text-ink-faint mt-2">
                   No Sync base / Merge attempts on this job yet.
                 </div>
               </div>
             </div>
           </template>
           <a-empty v-else description="No task selected">
-            <span class="text-[11px] text-ink-faint"
+            <span class="text-[13px] text-ink-faint"
               >Type a request in Console to start, or pick a GitLab task</span
             >
           </a-empty>
@@ -1209,7 +1209,7 @@ const runTooltip = computed(() => {
             Diff
             <span
               v-if="currentJob?.hasPendingChanges"
-              class="inline-flex items-center justify-center min-w-[1.1rem] h-4 px-1 rounded text-[10px] font-bold bg-amber-500/25 text-amber-300"
+              class="inline-flex items-center justify-center min-w-[1.1rem] h-4 px-1 rounded text-[13px] font-bold bg-amber-500/25 text-amber-300"
               title="Uncommitted changes"
               >WIP</span
             >
@@ -1218,7 +1218,7 @@ const runTooltip = computed(() => {
         <div class="h-full min-h-0 flex flex-col overflow-hidden p-3">
           <div
             v-if="showGoogleCard"
-            class="mb-2 flex flex-wrap items-center gap-2 text-[12px] text-ink-soft shrink-0"
+            class="mb-2 flex flex-wrap items-center gap-2 text-[13px] text-ink-soft shrink-0"
           >
             <span v-if="awaitingGoogleAuth">Awaiting Google Sheets auth</span>
             <span v-else-if="googleStatus?.email || currentJob?.googleAuth?.email">
@@ -1400,9 +1400,9 @@ const runTooltip = computed(() => {
     >
       <div
         v-if="mergeOpDetailRow"
-        class="space-y-2 text-[12px] text-ink-soft"
+        class="space-y-2 text-[13px] text-ink-soft"
       >
-        <div class="flex flex-wrap gap-x-2 gap-y-0.5 text-[11px] text-ink-faint">
+        <div class="flex flex-wrap gap-x-2 gap-y-0.5 text-[13px] text-ink-faint">
           <span class="tabular-nums">{{
             formatChatTime(mergeOpDetailRow.at)
           }}</span>
