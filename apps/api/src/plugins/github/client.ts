@@ -69,6 +69,7 @@ async function githubFetch(
     method,
     headers: authHeaders(token),
     body: opts?.body === undefined ? undefined : JSON.stringify(opts.body),
+    signal: AbortSignal.timeout(20_000),
   });
 }
 
@@ -133,6 +134,7 @@ export async function fetchGithubRepo(
 export async function listMyGithubRepos(
   token: string,
   host?: string,
+  opts?: { maxPages?: number },
 ): Promise<
   Array<{
     id: number;
@@ -141,6 +143,7 @@ export async function listMyGithubRepos(
     defaultBranch?: string;
   }>
 > {
+  const maxPages = Math.max(1, Math.min(opts?.maxPages ?? 10, 10));
   const out: Array<{
     id: number;
     pathWithNamespace: string;
@@ -148,7 +151,7 @@ export async function listMyGithubRepos(
     defaultBranch?: string;
   }> = [];
   let page = 1;
-  while (page <= 10) {
+  while (page <= maxPages) {
     const qs = new URLSearchParams({
       per_page: "100",
       page: String(page),
