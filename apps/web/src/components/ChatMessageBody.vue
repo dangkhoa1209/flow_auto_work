@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, useSlots } from "vue";
 import { message } from "ant-design-vue";
+import { CopyOutlined, FileMarkdownOutlined } from "@ant-design/icons-vue";
 import { renderChatHtml, cleanMarkdownBody } from "@/utils/chatFormat";
 
 const props = withDefaults(
@@ -82,26 +83,29 @@ async function copyText() {
     />
     <slot name="below" />
     <div v-if="showFoot" class="chat-md-foot">
-      <div class="chat-md-foot__meta">
-        <slot name="meta" />
-      </div>
       <div v-if="copyable" class="chat-md-copy">
         <button
           type="button"
           class="chat-md-copy__btn"
           title="Copy as Markdown"
+          aria-label="Copy as Markdown"
           @click.stop="copyMd"
         >
-          Copy MD
+          <FileMarkdownOutlined />
         </button>
         <button
           type="button"
           class="chat-md-copy__btn"
           title="Copy as plain text"
+          aria-label="Copy as plain text"
           @click.stop="copyText"
         >
-          Copy text
+          <CopyOutlined />
         </button>
+      </div>
+      <div v-else class="chat-md-foot__spacer" aria-hidden="true" />
+      <div class="chat-md-foot__meta">
+        <slot name="meta" />
       </div>
     </div>
   </div>
@@ -111,41 +115,51 @@ async function copyText() {
 <style scoped>
 .chat-md-foot {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   gap: 6px 8px;
   margin-top: 6px;
   min-height: 18px;
+  width: 100%;
+  justify-content: space-between;
+}
+.chat-md-foot__spacer {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 .chat-md-foot__meta {
   display: flex;
   align-items: center;
+  gap: 6px;
   min-width: 0;
+  margin-left: auto;
 }
 .chat-md-foot__meta :deep(.faw-msg__time) {
   margin-top: 0;
+  text-align: right;
 }
 .chat-md-copy {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
-  gap: 4px;
-}
-.faw-msg.user .chat-md-foot {
-  justify-content: flex-end;
+  gap: 2px;
+  flex-shrink: 0;
 }
 .chat-md-copy__btn {
   appearance: none;
   border: 1px solid var(--app-border);
   background: var(--app-panel, transparent);
   color: var(--app-faint);
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
+  font-size: 11px;
   line-height: 1;
-  padding: 3px 7px;
+  width: 22px;
+  height: 22px;
+  padding: 0;
   border-radius: 4px;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   transition: color 0.15s ease, border-color 0.15s ease;
 }
 .chat-md-copy__btn:hover {
