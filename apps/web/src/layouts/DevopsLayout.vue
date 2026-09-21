@@ -5,6 +5,7 @@ import { message } from "ant-design-vue";
 import type { BuildJob } from "@/api/devopsApi";
 import AppTopbarRight from "@/components/layout/AppTopbarRight.vue";
 import AppSwitcher from "@/components/layout/AppSwitcher.vue";
+import PostLoginGreeting from "@/components/layout/PostLoginGreeting.vue";
 import { useSessionStore } from "@/stores/session";
 import { useDevopsStore, type DevopsTab } from "@/stores/devops";
 import MobileBottomNav from "@/components/MobileBottomNav.vue";
@@ -194,6 +195,8 @@ async function onCancelQueued(id: string) {
         </template>
       </AppTopbarRight>
     </header>
+
+    <PostLoginGreeting />
 
     <nav
       v-if="!inSettings"

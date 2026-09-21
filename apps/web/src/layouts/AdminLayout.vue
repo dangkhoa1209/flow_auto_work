@@ -1,17 +1,23 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, onMounted } from "vue";
 import { useRoute, RouterLink, RouterView } from "vue-router";
 import AdminShell from "@/components/layout/AdminShell.vue";
 import AppTopbarRight from "@/components/layout/AppTopbarRight.vue";
 import MobileBottomNav from "@/components/MobileBottomNav.vue";
 import { useSessionStore } from "@/stores/session";
 import { settingsDefaultPath } from "@/config/settingsNav";
+import { consumePostLoginGreeting } from "@/utils/postLoginGreeting";
 
 const route = useRoute();
 const session = useSessionStore();
 
 const settingsTo = settingsDefaultPath("admin");
 const inSettings = computed(() => route.path.startsWith("/admin/settings"));
+
+onMounted(() => {
+  // Dashboard hero already greets — clear flag so it does not linger for later shells.
+  consumePostLoginGreeting();
+});
 </script>
 
 <template>
