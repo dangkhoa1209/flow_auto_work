@@ -45,7 +45,7 @@ defineExpose({ clearInput, getToken, onSubmit });
       v-if="showStatus"
       class="flex items-center justify-between gap-2 rounded-lg border border-[var(--app-border)] bg-[var(--app-panel)] px-3 py-2"
     >
-      <span class="text-[12px] text-[var(--app-muted)]">Trạng thái PAT</span>
+      <span class="text-[12px] text-[var(--app-muted)]">PAT status</span>
       <span
         class="text-[11px] px-2 py-0.5 rounded-full border"
         :class="
@@ -54,35 +54,35 @@ defineExpose({ clearInput, getToken, onSubmit });
             : 'border-[var(--app-border)] text-[var(--app-faint)]'
         "
       >
-        {{ hasGitPat ? "Đã lưu (mã hoá)" : "Chưa có PAT" }}
+        {{ hasGitPat ? "Saved (encrypted)" : "No PAT yet" }}
       </span>
     </div>
 
     <p class="m-0 text-[var(--app-ink)]">
-      PAT cá nhân dùng khi <strong>lên task GitLab</strong>. Token được mã hoá
-      trên server — không hiển thị lại sau khi lưu. Dán PAT mới bất cứ lúc nào
-      để thay thế.
+      Personal PAT used when <strong>publishing GitLab tasks</strong>. The token
+      is encrypted on the server — it is not shown again after save. Paste a new
+      PAT anytime to replace it.
     </p>
 
     <div
       class="rounded-lg border border-[var(--app-border)] bg-[var(--app-panel)] p-3 space-y-2"
     >
       <p class="m-0 text-[12px] font-medium text-[var(--app-ink)]">
-        Cách lấy PAT
+        How to get a PAT
       </p>
       <ol class="m-0 pl-4 text-[12px] text-[var(--app-muted)] space-y-1">
         <li>
-          Mở GitLab → <strong>Preferences → Access Tokens</strong> (Personal
+          Open GitLab → <strong>Preferences → Access Tokens</strong> (Personal
           access tokens).
         </li>
         <li>
-          Tạo token mới, chọn scope
-          <code class="text-[11px]">api</code> (và
-          <code class="text-[11px]">read_repository</code> nếu cần).
+          Create a new token with scope
+          <code class="text-[11px]">api</code> (and
+          <code class="text-[11px]">read_repository</code> if needed).
         </li>
         <li>
-          Copy token (dạng <code class="text-[11px]">glpat-…</code>) và dán bên
-          dưới.
+          Copy the token (<code class="text-[11px]">glpat-…</code>) and paste it
+          below.
         </li>
       </ol>
       <a
@@ -92,13 +92,13 @@ defineExpose({ clearInput, getToken, onSubmit });
         class="inline-flex items-center gap-1.5 text-[12px] font-medium text-[var(--app-accent)] hover:underline"
       >
         <LinkOutlined />
-        Mở trang tạo PAT trên {{ gitlabHostLabel }}
+        Open PAT page on {{ gitlabHostLabel }}
       </a>
     </div>
 
     <div>
       <label class="faw-ba-label block mb-1">
-        {{ hasGitPat ? "PAT mới (thay thế)" : "Personal access token" }}
+        {{ hasGitPat ? "New PAT (replace)" : "Personal access token" }}
       </label>
       <a-input-password
         v-model:value="token"
@@ -116,7 +116,7 @@ defineExpose({ clearInput, getToken, onSubmit });
         :disabled="loading || !token.trim()"
         @click="onSubmit"
       >
-        {{ loading ? "Đang lưu…" : hasGitPat ? "Cập nhật PAT" : "Lưu PAT" }}
+        {{ loading ? "Saving…" : hasGitPat ? "Update PAT" : "Save PAT" }}
       </button>
     </slot>
   </div>

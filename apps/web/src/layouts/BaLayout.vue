@@ -47,7 +47,7 @@ const showTasksTab = computed(() => ba.featureVisible("tasks"));
 const showCreateDataTab = computed(() => ba.featureVisible("createData"));
 const chatTabLabel = "Chatbox";
 const workflowTabLabel = computed(() =>
-  ba.featureLabel("workflow", ba.features.workflowTabLabel || "Phân tích YC"),
+  ba.featureLabel("workflow", ba.features.workflowTabLabel || "Requirements"),
 );
 const tasksTabLabel = computed(() => ba.featureLabel("tasks", "Tasks"));
 const createDataTabLabel = computed(() =>

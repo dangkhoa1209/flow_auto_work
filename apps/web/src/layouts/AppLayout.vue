@@ -284,7 +284,7 @@ async function onKillAll() {
       <div class="faw-project-sheet__head">
         <div>
           <p class="faw-project-sheet__eyebrow">Workspace</p>
-          <h3 class="faw-project-sheet__title">Chọn project</h3>
+          <h3 class="faw-project-sheet__title">Select project</h3>
         </div>
         <button
           type="button"
@@ -321,7 +321,7 @@ async function onKillAll() {
           v-if="!projectOptions.length"
           class="px-4 py-8 text-center text-ink-faint text-sm"
         >
-          Chưa có project — thêm trong Settings.
+          No projects yet — add one in Settings.
         </p>
       </div>
     </a-drawer>
