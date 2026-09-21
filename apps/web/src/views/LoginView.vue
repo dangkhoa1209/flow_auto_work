@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, onMounted, onUnmounted, reactive, ref } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { message } from "ant-design-vue";
 import type { AuthTokensResponse } from "@/api/authApi";
@@ -34,12 +34,16 @@ const form = reactive({
 });
 
 const roleOptions = [
-  { value: "dev", label: "Dev — WorkBench" },
-  { value: "ba", label: "BA — Project chat" },
-  { value: "pd", label: "PD — Project chat" },
-  { value: "qc", label: "QC — QC chat" },
-  { value: "devops", label: "Devops" },
+  { value: "dev" as const, short: "Dev", hint: "WorkBench" },
+  { value: "ba" as const, short: "BA", hint: "Project chat" },
+  { value: "pd" as const, short: "PD", hint: "Project chat" },
+  { value: "qc" as const, short: "QC", hint: "QC chat" },
+  { value: "devops" as const, short: "Build", hint: "Devops" },
 ];
+
+const selectedRoleHint = computed(
+  () => roleOptions.find((r) => r.value === form.role)?.hint ?? "",
+);
 
 /** Only allow same-origin relative paths (block open redirects). */
 function safeRedirectTarget(): string | null {
@@ -121,11 +125,17 @@ onUnmounted(() => {
 });
 
 function switchMode(next: "login" | "register") {
+  if (mode.value === next) return;
   mode.value = next;
   errorText.value = "";
   form.password = "";
   form.password2 = "";
   focusUsername();
+}
+
+function selectRole(value: typeof form.role) {
+  if (loading.value) return;
+  form.role = value;
 }
 
 function normalizeUsername(raw: string) {
@@ -277,7 +287,7 @@ async function onRegister(e?: Event) {
     />
 
     <div class="faw-login__shell">
-      <header class="faw-login__hero">
+      <aside class="faw-login__brand">
         <img
           class="faw-login__logo"
           src="/logo.svg"
@@ -289,178 +299,219 @@ async function onRegister(e?: Event) {
         <p class="faw-login__tagline">
           From ticket to commit — steered by you
         </p>
-      </header>
+        <p class="faw-login__hint">
+          One workspace for Code, ChatBox, and Build.
+        </p>
+      </aside>
 
-      <div class="faw-login__panel">
-        <div class="faw-seg faw-login__seg" role="tablist" aria-label="Auth mode">
-          <button
-            type="button"
-            class="faw-seg__btn"
-            :class="{ active: mode === 'login' }"
-            role="tab"
-            :aria-selected="mode === 'login'"
-            :disabled="loading"
-            @click="switchMode('login')"
+      <div class="faw-login__main">
+        <div class="faw-login__panel">
+          <div
+            class="faw-seg faw-login__seg"
+            role="tablist"
+            aria-label="Auth mode"
           >
-            Sign in
-          </button>
-          <button
-            type="button"
-            class="faw-seg__btn"
-            :class="{ active: mode === 'register' }"
-            role="tab"
-            :aria-selected="mode === 'register'"
-            :disabled="loading"
-            @click="switchMode('register')"
+            <button
+              type="button"
+              class="faw-seg__btn"
+              :class="{ active: mode === 'login' }"
+              role="tab"
+              :aria-selected="mode === 'login'"
+              :disabled="loading"
+              @click="switchMode('login')"
+            >
+              Sign in
+            </button>
+            <button
+              type="button"
+              class="faw-seg__btn"
+              :class="{ active: mode === 'register' }"
+              role="tab"
+              :aria-selected="mode === 'register'"
+              :disabled="loading"
+              @click="switchMode('register')"
+            >
+              Register
+            </button>
+          </div>
+
+          <Transition
+            name="faw-login-mode"
+            mode="out-in"
+            :css="!reduceMotion"
           >
-            Register
-          </button>
+            <form
+              v-if="mode === 'login'"
+              key="login"
+              class="faw-login__form"
+              :aria-busy="loading"
+              @submit.prevent="onLogin"
+            >
+              <label class="faw-login__field">
+                <span>Username or email</span>
+                <a-input
+                  ref="usernameInputRef"
+                  v-model:value="form.username"
+                  size="large"
+                  autocomplete="username"
+                  placeholder="username or you@company.com"
+                  :disabled="loading"
+                  :aria-invalid="!!errorText"
+                  @pressEnter="onLogin"
+                />
+              </label>
+              <label class="faw-login__field">
+                <span>Password</span>
+                <a-input-password
+                  v-model:value="form.password"
+                  size="large"
+                  autocomplete="current-password"
+                  placeholder="Password"
+                  :disabled="loading"
+                  :aria-invalid="!!errorText"
+                  @pressEnter="onLogin"
+                />
+              </label>
+              <p
+                v-if="errorText"
+                id="login-error"
+                class="faw-login__error"
+                role="alert"
+                aria-live="assertive"
+              >
+                {{ errorText }}
+              </p>
+              <button
+                type="submit"
+                class="faw-btn faw-btn--run faw-login__submit"
+                :disabled="loading"
+                :aria-busy="loading"
+              >
+                <span
+                  v-if="loading"
+                  class="faw-login__spinner"
+                  aria-hidden="true"
+                />
+                {{ loading ? "Signing in…" : "Sign in" }}
+              </button>
+            </form>
+
+            <form
+              v-else
+              key="register"
+              class="faw-login__form"
+              :aria-busy="loading"
+              @submit.prevent="onRegister"
+            >
+              <fieldset class="faw-login__group">
+                <legend class="faw-login__group-label">Identity</legend>
+                <label class="faw-login__field">
+                  <span>Username or email</span>
+                  <a-input
+                    ref="usernameInputRef"
+                    v-model:value="form.username"
+                    size="large"
+                    autocomplete="username"
+                    placeholder="username or you@company.com"
+                    :disabled="loading"
+                    :aria-invalid="!!errorText"
+                  />
+                </label>
+                <label class="faw-login__field">
+                  <span>Display name <em>(optional)</em></span>
+                  <a-input
+                    v-model:value="form.displayName"
+                    size="large"
+                    autocomplete="nickname"
+                    placeholder="How you appear in the bench"
+                    :disabled="loading"
+                  />
+                </label>
+              </fieldset>
+
+              <fieldset class="faw-login__group">
+                <legend class="faw-login__group-label">Role</legend>
+                <div
+                  class="faw-login__roles"
+                  role="radiogroup"
+                  aria-label="Workspace role"
+                >
+                  <button
+                    v-for="opt in roleOptions"
+                    :key="opt.value"
+                    type="button"
+                    class="faw-login__role"
+                    role="radio"
+                    :aria-checked="form.role === opt.value"
+                    :class="{ active: form.role === opt.value }"
+                    :disabled="loading"
+                    @click="selectRole(opt.value)"
+                  >
+                    {{ opt.short }}
+                  </button>
+                </div>
+                <p class="faw-login__role-hint" aria-live="polite">
+                  {{ selectedRoleHint }}
+                </p>
+              </fieldset>
+
+              <fieldset class="faw-login__group">
+                <legend class="faw-login__group-label">Password</legend>
+                <label class="faw-login__field">
+                  <span>Password</span>
+                  <a-input-password
+                    v-model:value="form.password"
+                    size="large"
+                    autocomplete="new-password"
+                    placeholder="At least 6 characters"
+                    :disabled="loading"
+                    :aria-invalid="!!errorText"
+                  />
+                </label>
+                <label class="faw-login__field">
+                  <span>Confirm password</span>
+                  <a-input-password
+                    v-model:value="form.password2"
+                    size="large"
+                    autocomplete="new-password"
+                    placeholder="Re-enter password"
+                    :disabled="loading"
+                    :aria-invalid="!!errorText"
+                    @pressEnter="onRegister"
+                  />
+                </label>
+              </fieldset>
+
+              <p
+                v-if="errorText"
+                id="register-error"
+                class="faw-login__error"
+                role="alert"
+                aria-live="assertive"
+              >
+                {{ errorText }}
+              </p>
+              <button
+                type="submit"
+                class="faw-btn faw-btn--run faw-login__submit"
+                :disabled="loading"
+                :aria-busy="loading"
+              >
+                <span
+                  v-if="loading"
+                  class="faw-login__spinner"
+                  aria-hidden="true"
+                />
+                {{ loading ? "Creating…" : "Create account" }}
+              </button>
+            </form>
+          </Transition>
         </div>
 
-        <form
-          v-if="mode === 'login'"
-          class="faw-login__form"
-          :aria-busy="loading"
-          @submit.prevent="onLogin"
-        >
-          <label class="faw-login__field">
-            <span>Username or email</span>
-            <a-input
-              ref="usernameInputRef"
-              v-model:value="form.username"
-              size="large"
-              autocomplete="username"
-              placeholder="username or you@company.com"
-              :disabled="loading"
-              :aria-invalid="!!errorText"
-              @pressEnter="onLogin"
-            />
-          </label>
-          <label class="faw-login__field">
-            <span>Password</span>
-            <a-input-password
-              v-model:value="form.password"
-              size="large"
-              autocomplete="current-password"
-              placeholder="Password"
-              :disabled="loading"
-              :aria-invalid="!!errorText"
-              @pressEnter="onLogin"
-            />
-          </label>
-          <p
-            v-if="errorText"
-            id="login-error"
-            class="faw-login__error"
-            role="alert"
-            aria-live="assertive"
-          >
-            {{ errorText }}
-          </p>
-          <button
-            type="submit"
-            class="faw-btn faw-btn--run faw-login__submit"
-            :disabled="loading"
-            :aria-busy="loading"
-          >
-            <span
-              v-if="loading"
-              class="faw-login__spinner"
-              aria-hidden="true"
-            />
-            {{ loading ? "Signing in…" : "Sign in" }}
-          </button>
-        </form>
-
-        <form
-          v-else
-          class="faw-login__form"
-          :aria-busy="loading"
-          @submit.prevent="onRegister"
-        >
-          <label class="faw-login__field">
-            <span>Username or email</span>
-            <a-input
-              ref="usernameInputRef"
-              v-model:value="form.username"
-              size="large"
-              autocomplete="username"
-              placeholder="username or you@company.com"
-              :disabled="loading"
-              :aria-invalid="!!errorText"
-            />
-          </label>
-          <label class="faw-login__field">
-            <span>Display name <em>(optional)</em></span>
-            <a-input
-              v-model:value="form.displayName"
-              size="large"
-              autocomplete="nickname"
-              placeholder="How you appear in the bench"
-              :disabled="loading"
-            />
-          </label>
-          <label class="faw-login__field">
-            <span>Role</span>
-            <a-select
-              v-model:value="form.role"
-              size="large"
-              :options="roleOptions"
-              class="faw-login__select"
-              :disabled="loading"
-            />
-          </label>
-          <label class="faw-login__field">
-            <span>Password</span>
-            <a-input-password
-              v-model:value="form.password"
-              size="large"
-              autocomplete="new-password"
-              placeholder="At least 6 characters"
-              :disabled="loading"
-              :aria-invalid="!!errorText"
-            />
-          </label>
-          <label class="faw-login__field">
-            <span>Confirm password</span>
-            <a-input-password
-              v-model:value="form.password2"
-              size="large"
-              autocomplete="new-password"
-              placeholder="Re-enter password"
-              :disabled="loading"
-              :aria-invalid="!!errorText"
-              @pressEnter="onRegister"
-            />
-          </label>
-          <p
-            v-if="errorText"
-            id="register-error"
-            class="faw-login__error"
-            role="alert"
-            aria-live="assertive"
-          >
-            {{ errorText }}
-          </p>
-          <button
-            type="submit"
-            class="faw-btn faw-btn--run faw-login__submit"
-            :disabled="loading"
-            :aria-busy="loading"
-          >
-            <span
-              v-if="loading"
-              class="faw-login__spinner"
-              aria-hidden="true"
-            />
-            {{ loading ? "Creating…" : "Create account" }}
-          </button>
-        </form>
+        <p class="faw-login__foot">
+          One account · all of Flow Auto
+        </p>
       </div>
-
-      <p class="faw-login__foot">
-        One account · all of Flow Auto
-      </p>
     </div>
   </div>
 </template>

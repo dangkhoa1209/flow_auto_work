@@ -2870,14 +2870,14 @@ a.faw-mseg__btn {
   display: flex;
   flex-direction: column;
   align-items: stretch;
+  gap: 20px;
   animation: faw-login-in 0.45s ease-out both;
 }
-.faw-login__hero {
+.faw-login__brand {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   gap: 10px;
-  margin-bottom: 20px;
 }
 .faw-login__logo {
   display: block;
@@ -2895,6 +2895,20 @@ a.faw-mseg__btn {
   color: var(--app-muted);
   line-height: 1.5;
   max-width: 28em;
+}
+.faw-login__hint {
+  display: none;
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--app-faint);
+  line-height: 1.45;
+  max-width: 26em;
+}
+.faw-login__main {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  min-width: 0;
 }
 .faw-login__panel {
   background: var(--app-panel);
@@ -2929,6 +2943,24 @@ a.faw-mseg__btn {
   display: flex;
   flex-direction: column;
   gap: 14px;
+}
+.faw-login__group {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+.faw-login__group-label {
+  margin: 0;
+  padding: 0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--app-faint);
 }
 .faw-login__field {
   display: flex;
@@ -2991,27 +3023,51 @@ a.faw-mseg__btn {
 .faw-login__field .ant-input::placeholder {
   color: var(--app-faint) !important;
 }
-.faw-login__select {
-  width: 100%;
+.faw-login__roles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
-.faw-login__field .ant-select-selector {
-  background: var(--app-panel-soft) !important;
-  border-color: var(--app-border) !important;
-  border-radius: 8px !important;
-  color: var(--app-ink) !important;
-  font: 500 14px var(--font-ui) !important;
-  min-height: 44px !important;
-  padding: 6px 11px !important;
-  align-items: center !important;
+.faw-login__role {
+  appearance: none;
+  margin: 0;
+  min-height: 40px;
+  min-width: 64px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--app-border);
+  background: var(--app-panel-soft);
+  color: var(--app-muted);
+  font: 600 13px var(--font-ui);
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease,
+    color 0.15s ease;
 }
-.faw-login__field .ant-select-selection-item,
-.faw-login__field .ant-select-selection-placeholder {
-  line-height: 30px !important;
+.faw-login__role:hover:not(:disabled) {
+  border-color: var(--app-border-strong);
+  color: var(--app-ink);
 }
-.faw-login__field .ant-select-focused .ant-select-selector,
-.faw-login__field .ant-select-open .ant-select-selector {
-  border-color: var(--app-accent) !important;
-  box-shadow: 0 0 0 3px var(--app-accent-soft) !important;
+.faw-login__role.active {
+  border-color: var(--app-accent);
+  background: var(--app-accent-soft);
+  color: var(--app-accent-bright);
+  box-shadow: 0 0 0 1px var(--app-accent);
+}
+.faw-login__role:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.faw-login__role:focus-visible {
+  outline: 2px solid var(--app-accent);
+  outline-offset: 2px;
+}
+.faw-login__role-hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--app-faint);
+  line-height: 1.4;
 }
 .faw-login__error {
   margin: 0;
@@ -3063,6 +3119,50 @@ a.faw-mseg__btn {
   line-height: 1.4;
 }
 
+.faw-login-mode-enter-active,
+.faw-login-mode-leave-active {
+  transition:
+    opacity 0.18s ease,
+    transform 0.18s ease;
+}
+.faw-login-mode-enter-from,
+.faw-login-mode-leave-to {
+  opacity: 0;
+  transform: translateY(6px);
+}
+
+@media (min-width: 900px) {
+  .faw-login__shell {
+    max-width: 880px;
+    flex-direction: row;
+    align-items: center;
+    gap: 56px;
+  }
+  .faw-login__brand {
+    flex: 1;
+    gap: 14px;
+    padding-right: 8px;
+  }
+  .faw-login__logo {
+    height: 64px;
+  }
+  .faw-login__tagline {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--app-ink);
+    line-height: 1.35;
+    max-width: 16em;
+  }
+  .faw-login__hint {
+    display: block;
+    margin-top: 4px;
+  }
+  .faw-login__main {
+    width: 400px;
+    flex-shrink: 0;
+  }
+}
+
 @media (max-width: 480px) {
   .faw-login {
     align-items: flex-start;
@@ -3070,16 +3170,21 @@ a.faw-mseg__btn {
   }
   .faw-login__shell {
     max-width: 100%;
+    gap: 16px;
     padding-bottom: 12px;
-  }
-  .faw-login__hero {
-    margin-bottom: 16px;
   }
   .faw-login__logo {
     height: 48px;
   }
   .faw-login__panel {
     padding: 16px;
+  }
+  .faw-login__roles {
+    gap: 6px;
+  }
+  .faw-login__role {
+    flex: 1 1 calc(33.33% - 6px);
+    min-width: 0;
   }
   .faw-login__submit {
     position: sticky;
@@ -3118,6 +3223,10 @@ a.faw-mseg__btn {
     animation: none;
   }
   .faw-login__glow {
+    transition: none;
+  }
+  .faw-login-mode-enter-active,
+  .faw-login-mode-leave-active {
     transition: none;
   }
   .faw-login__spinner {
