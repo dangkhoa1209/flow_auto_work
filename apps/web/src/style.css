@@ -2862,6 +2862,27 @@ a.faw-mseg__btn {
     top 0.08s linear,
     opacity 0.25s ease;
 }
+.faw-login__bloom {
+  position: absolute;
+  inset: -10%;
+  pointer-events: none;
+  opacity: 0;
+  background: radial-gradient(
+    ellipse 55% 45% at 50% 42%,
+    color-mix(in srgb, var(--app-accent) 22%, transparent) 0%,
+    transparent 70%
+  );
+  transform: scale(0.92);
+  z-index: 0;
+}
+.faw-login.is-blooming .faw-login__bloom {
+  animation: faw-login-bloom 0.68s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.faw-login.is-blooming .faw-login__grid {
+  animation:
+    faw-login-grid 18s linear infinite,
+    faw-login-grid-pulse 0.68s ease-out both;
+}
 .faw-login__shell {
   position: relative;
   z-index: 1;
@@ -2878,6 +2899,29 @@ a.faw-mseg__btn {
   flex-direction: column;
   align-items: flex-start;
   gap: 10px;
+  transition:
+    transform 0.5s cubic-bezier(0.22, 1.15, 0.36, 1),
+    filter 0.45s ease;
+}
+.faw-login__brand .faw-login__tagline,
+.faw-login__brand .faw-login__hint {
+  transition:
+    opacity 0.4s ease,
+    transform 0.5s cubic-bezier(0.22, 1.15, 0.36, 1),
+    color 0.4s ease,
+    text-shadow 0.45s ease;
+}
+.faw-login__brand.is-mode-register .faw-login__tagline {
+  transform: translateX(4px);
+  text-shadow: 0 0 24px color-mix(in srgb, var(--app-accent) 35%, transparent);
+}
+.faw-login__brand.is-mode-forgot .faw-login__tagline {
+  opacity: 0.82;
+  transform: translateX(-2px);
+}
+.faw-login__brand.is-mode-register .faw-login__hint {
+  opacity: 1;
+  transform: translateX(2px);
 }
 .faw-login__logo {
   display: block;
@@ -2887,6 +2931,11 @@ a.faw-mseg__btn {
   object-fit: contain;
   user-select: none;
   pointer-events: none;
+  transition: filter 0.45s ease, transform 0.5s cubic-bezier(0.22, 1.15, 0.36, 1);
+}
+.faw-login__brand.is-mode-register .faw-login__logo {
+  filter: drop-shadow(0 0 18px color-mix(in srgb, var(--app-accent) 40%, transparent));
+  transform: translateY(-1px);
 }
 .faw-login__tagline {
   margin: 0;
@@ -2916,9 +2965,12 @@ a.faw-mseg__btn {
   border-radius: 12px;
   padding: 20px;
   box-shadow: var(--shadow-panel);
+  transform-origin: center center;
+  transform: perspective(900px) rotateY(0deg);
   transition:
     border-color 0.45s ease,
-    box-shadow 0.45s ease;
+    box-shadow 0.45s ease,
+    transform 0.48s cubic-bezier(0.22, 1.15, 0.36, 1);
 }
 .faw-login__panel.is-morphing {
   border-color: color-mix(in srgb, var(--app-accent) 45%, var(--app-border));
@@ -2926,6 +2978,12 @@ a.faw-mseg__btn {
     var(--shadow-panel),
     0 0 0 1px color-mix(in srgb, var(--app-accent) 35%, transparent),
     0 12px 40px -12px color-mix(in srgb, var(--app-accent) 28%, transparent);
+}
+.faw-login__panel.is-morphing.is-tilt-fwd {
+  transform: perspective(900px) rotateY(-2.8deg) translateY(-1px);
+}
+.faw-login__panel.is-morphing.is-tilt-back {
+  transform: perspective(900px) rotateY(2.8deg) translateY(-1px);
 }
 .faw-login__seg {
   position: relative;
@@ -2947,7 +3005,7 @@ a.faw-mseg__btn {
     0 1px 2px rgba(0, 0, 0, 0.18),
     0 0 12px color-mix(in srgb, var(--app-accent) 40%, transparent);
   transform: translateX(0);
-  transition: transform 0.48s cubic-bezier(0.22, 1.15, 0.36, 1);
+  transition: transform 0.55s cubic-bezier(0.34, 1.56, 0.64, 1);
   pointer-events: none;
   z-index: 0;
 }
@@ -2963,9 +3021,21 @@ a.faw-mseg__btn {
   padding: 8px 12px;
   font-size: 13px;
   border-radius: 6px;
+  overflow: hidden;
   transition:
     color 0.28s ease,
     background-color 0.28s ease;
+}
+.faw-login__seg-ripple {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  margin: -4px 0 0 -4px;
+  border-radius: 50%;
+  background: color-mix(in srgb, #fff 55%, var(--app-accent));
+  pointer-events: none;
+  animation: faw-login-ripple 0.5s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  z-index: 0;
 }
 .faw-login__seg .faw-seg__btn.active {
   background: transparent;
@@ -2983,12 +3053,13 @@ a.faw-mseg__btn {
   position: relative;
   overflow: hidden;
   min-height: 0;
+  transition: height 0.42s cubic-bezier(0.22, 1.15, 0.36, 1);
 }
 .faw-login__form {
   display: flex;
   flex-direction: column;
   gap: 14px;
-  will-change: transform, opacity, filter;
+  will-change: transform, opacity, filter, clip-path;
 }
 .faw-login__group {
   margin: 0;
@@ -3202,7 +3273,9 @@ a.faw-mseg__btn {
   transition:
     border-color 0.15s ease,
     background 0.15s ease,
-    color 0.15s ease;
+    color 0.15s ease,
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
 }
 .faw-login__role:hover:not(:disabled) {
   border-color: var(--app-border-strong);
@@ -3252,6 +3325,34 @@ a.faw-mseg__btn {
   margin-top: 4px;
   border-radius: 8px !important;
 }
+.faw-login__cta-text {
+  display: inline-grid;
+  place-items: center;
+  min-width: 0;
+}
+.faw-login__cta-text > span {
+  display: inline-block;
+}
+.faw-login-cta-enter-active,
+.faw-login-cta-leave-active {
+  transition:
+    opacity 0.22s ease,
+    transform 0.28s cubic-bezier(0.22, 1.15, 0.36, 1),
+    filter 0.22s ease,
+    letter-spacing 0.28s ease;
+}
+.faw-login-cta-enter-from {
+  opacity: 0;
+  transform: translateY(6px) scale(0.96);
+  filter: blur(4px);
+  letter-spacing: 0.08em;
+}
+.faw-login-cta-leave-to {
+  opacity: 0;
+  transform: translateY(-5px) scale(0.98);
+  filter: blur(3px);
+  letter-spacing: 0.04em;
+}
 .faw-login__submit:disabled {
   opacity: 0.6;
   cursor: not-allowed;
@@ -3278,40 +3379,58 @@ a.faw-mseg__btn {
   line-height: 1.4;
 }
 
-/* Directional Sign in ↔ Register (and Forgot) form swap */
+/* Directional Sign in ↔ Register (and Forgot) form swap — clip wipe + slide */
 .faw-login-fwd-enter-active,
 .faw-login-fwd-leave-active,
 .faw-login-back-enter-active,
 .faw-login-back-leave-active {
   transition:
-    opacity 0.32s cubic-bezier(0.22, 1, 0.36, 1),
-    transform 0.42s cubic-bezier(0.22, 1.15, 0.36, 1),
-    filter 0.32s ease;
+    opacity 0.34s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.44s cubic-bezier(0.22, 1.15, 0.36, 1),
+    filter 0.34s ease,
+    clip-path 0.44s cubic-bezier(0.22, 1.05, 0.36, 1);
 }
 .faw-login-fwd-leave-active,
 .faw-login-back-leave-active {
-  transition-duration: 0.22s, 0.28s, 0.22s;
-  transition-timing-function: ease-in, cubic-bezier(0.4, 0, 1, 1), ease-in;
+  transition-duration: 0.22s, 0.28s, 0.22s, 0.28s;
+  transition-timing-function: ease-in, cubic-bezier(0.4, 0, 1, 1), ease-in,
+    ease-in;
 }
 .faw-login-fwd-enter-from {
   opacity: 0;
-  transform: translateX(28px) scale(0.96);
-  filter: blur(6px);
+  transform: translateX(22px) scale(0.97);
+  filter: blur(5px);
+  clip-path: inset(0 0 0 92%);
+}
+.faw-login-fwd-enter-to {
+  clip-path: inset(0 0 0 0);
+}
+.faw-login-fwd-leave-from {
+  clip-path: inset(0 0 0 0);
 }
 .faw-login-fwd-leave-to {
   opacity: 0;
-  transform: translateX(-18px) scale(0.98);
-  filter: blur(4px);
+  transform: translateX(-14px) scale(0.985);
+  filter: blur(3px);
+  clip-path: inset(0 88% 0 0);
 }
 .faw-login-back-enter-from {
   opacity: 0;
-  transform: translateX(-28px) scale(0.96);
-  filter: blur(6px);
+  transform: translateX(-22px) scale(0.97);
+  filter: blur(5px);
+  clip-path: inset(0 92% 0 0);
+}
+.faw-login-back-enter-to {
+  clip-path: inset(0 0 0 0);
+}
+.faw-login-back-leave-from {
+  clip-path: inset(0 0 0 0);
 }
 .faw-login-back-leave-to {
   opacity: 0;
-  transform: translateX(18px) scale(0.98);
-  filter: blur(4px);
+  transform: translateX(14px) scale(0.985);
+  filter: blur(3px);
+  clip-path: inset(0 0 0 88%);
 }
 .faw-login-fwd-enter-active .faw-login__group,
 .faw-login-fwd-enter-active .faw-login__field,
@@ -3326,6 +3445,15 @@ a.faw-mseg__btn {
 .faw-login-back-enter-active .faw-login__back,
 .faw-login-back-enter-active .faw-login__forgot-ok {
   animation: faw-login-field-in 0.48s cubic-bezier(0.22, 1.15, 0.36, 1) both;
+}
+.faw-login-fwd-enter-active .faw-login__role,
+.faw-login-back-enter-active .faw-login__role {
+  animation: faw-login-role-pop 0.5s cubic-bezier(0.34, 1.45, 0.64, 1) both;
+  animation-delay: calc(0.12s + (var(--role-i, 0) * 0.055s));
+}
+.faw-login-fwd-enter-active .faw-login__submit,
+.faw-login-back-enter-active .faw-login__submit {
+  animation: faw-login-cta-in 0.55s cubic-bezier(0.22, 1.2, 0.36, 1) both;
 }
 .faw-login-fwd-enter-active .faw-login__form > *:nth-child(1),
 .faw-login-back-enter-active .faw-login__form > *:nth-child(1) {
@@ -3434,6 +3562,68 @@ a.faw-mseg__btn {
     transform: translateY(0);
   }
 }
+@keyframes faw-login-role-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.72) translateY(8px);
+  }
+  70% {
+    transform: scale(1.06) translateY(0);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+@keyframes faw-login-cta-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.94);
+    letter-spacing: 0.06em;
+    filter: blur(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    letter-spacing: normal;
+    filter: blur(0);
+  }
+}
+@keyframes faw-login-ripple {
+  from {
+    opacity: 0.55;
+    transform: scale(0.4);
+  }
+  to {
+    opacity: 0;
+    transform: scale(18);
+  }
+}
+@keyframes faw-login-bloom {
+  0% {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  35% {
+    opacity: 1;
+    transform: scale(1.04);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.12);
+  }
+}
+@keyframes faw-login-grid-pulse {
+  0% {
+    opacity: 0.55;
+  }
+  40% {
+    opacity: 0.85;
+  }
+  100% {
+    opacity: 0.55;
+  }
+}
 @keyframes faw-login-grid {
   from {
     background-position: 0 0, 0 0;
@@ -3456,17 +3646,47 @@ a.faw-mseg__btn {
   .faw-login__glow {
     transition: none;
   }
+  .faw-login__bloom,
+  .faw-login.is-blooming .faw-login__bloom,
+  .faw-login.is-blooming .faw-login__grid {
+    animation: none !important;
+    opacity: 0;
+  }
+  .faw-login__brand,
+  .faw-login__brand .faw-login__tagline,
+  .faw-login__brand .faw-login__hint,
+  .faw-login__logo,
+  .faw-login__stage {
+    transition: none !important;
+  }
+  .faw-login__brand.is-mode-register .faw-login__logo,
+  .faw-login__brand.is-mode-register .faw-login__tagline,
+  .faw-login__brand.is-mode-forgot .faw-login__tagline,
+  .faw-login__brand.is-mode-register .faw-login__hint {
+    transform: none;
+    filter: none;
+    text-shadow: none;
+    opacity: 1;
+  }
   .faw-login__panel,
   .faw-login__seg-thumb {
     transition: none;
   }
-  .faw-login__panel.is-morphing {
+  .faw-login__panel.is-morphing,
+  .faw-login__panel.is-morphing.is-tilt-fwd,
+  .faw-login__panel.is-morphing.is-tilt-back {
     box-shadow: var(--shadow-panel);
+    transform: none;
+  }
+  .faw-login__seg-ripple {
+    display: none;
   }
   .faw-login-fwd-enter-active,
   .faw-login-fwd-leave-active,
   .faw-login-back-enter-active,
-  .faw-login-back-leave-active {
+  .faw-login-back-leave-active,
+  .faw-login-cta-enter-active,
+  .faw-login-cta-leave-active {
     transition: none;
   }
   .faw-login-fwd-enter-active .faw-login__group,
@@ -3480,7 +3700,9 @@ a.faw-mseg__btn {
   .faw-login-back-enter-active .faw-login__forgot-head,
   .faw-login-back-enter-active .faw-login__submit,
   .faw-login-back-enter-active .faw-login__back,
-  .faw-login-back-enter-active .faw-login__forgot-ok {
+  .faw-login-back-enter-active .faw-login__forgot-ok,
+  .faw-login-fwd-enter-active .faw-login__role,
+  .faw-login-back-enter-active .faw-login__role {
     animation: none;
   }
   .faw-login__spinner {

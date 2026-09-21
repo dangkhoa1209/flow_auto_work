@@ -30,10 +30,23 @@ const reduceMotion = ref(false);
 /** Form slide direction + brief panel pulse on mode change. */
 const formDir = ref<"fwd" | "back">("fwd");
 const modeMorphing = ref(false);
+const modeBlooming = ref(false);
+const stageRef = ref<HTMLElement | null>(null);
+const stageHeight = ref<string>("auto");
+const segRipples = ref<
+  { id: number; x: number; y: number; side: "login" | "register" }[]
+>([]);
 let morphTimer: ReturnType<typeof setTimeout> | null = null;
+let bloomTimer: ReturnType<typeof setTimeout> | null = null;
+let stageHeightTimer: ReturnType<typeof setTimeout> | null = null;
+let rippleId = 0;
 
 const modeTransitionName = computed(() =>
   formDir.value === "fwd" ? "faw-login-fwd" : "faw-login-back",
+);
+
+const stageStyle = computed(() =>
+  stageHeight.value === "auto" ? undefined : { height: stageHeight.value },
 );
 
 const MODE_ORDER = { login: 0, register: 1, forgot: 2 } as const;
@@ -137,12 +150,74 @@ onMounted(() => {
 onUnmounted(() => {
   document.removeEventListener("visibilitychange", onLoginVisible);
   if (morphTimer) clearTimeout(morphTimer);
+  if (bloomTimer) clearTimeout(bloomTimer);
+  if (stageHeightTimer) clearTimeout(stageHeightTimer);
 });
+
+function lockStageHeight() {
+  const stage = stageRef.value;
+  if (!stage || reduceMotion.value) return;
+  stageHeight.value = `${stage.offsetHeight}px`;
+}
+
+function onStageBeforeLeave(el: Element) {
+  if (reduceMotion.value) return;
+  const h = (el as HTMLElement).offsetHeight;
+  if (h > 0) stageHeight.value = `${h}px`;
+}
+
+function onStageEnter(el: Element) {
+  if (reduceMotion.value) {
+    stageHeight.value = "auto";
+    return;
+  }
+  const target = (el as HTMLElement).offsetHeight;
+  // Keep prior height one frame, then morph to the incoming form.
+  requestAnimationFrame(() => {
+    stageHeight.value = `${Math.max(target, 1)}px`;
+  });
+}
+
+function onStageAfterEnter() {
+  if (reduceMotion.value) {
+    stageHeight.value = "auto";
+    return;
+  }
+  if (stageHeightTimer) clearTimeout(stageHeightTimer);
+  stageHeightTimer = setTimeout(() => {
+    stageHeight.value = "auto";
+    stageHeightTimer = null;
+  }, 420);
+}
+
+function spawnSegRipple(
+  e: MouseEvent | PointerEvent,
+  side: "login" | "register",
+) {
+  if (reduceMotion.value) return;
+  const btn = e.currentTarget as HTMLElement | null;
+  if (!btn) return;
+  const rect = btn.getBoundingClientRect();
+  const id = ++rippleId;
+  segRipples.value = [
+    ...segRipples.value.slice(-3),
+    {
+      id,
+      side,
+      x: e.clientX - rect.left,
+      y: e.clientY - rect.top,
+    },
+  ];
+  window.setTimeout(() => {
+    segRipples.value = segRipples.value.filter((r) => r.id !== id);
+  }, 520);
+}
 
 function switchMode(next: "login" | "register" | "forgot") {
   if (mode.value === next) return;
   formDir.value =
     MODE_ORDER[next] >= MODE_ORDER[mode.value] ? "fwd" : "back";
+  lockStageHeight();
   mode.value = next;
   errorText.value = "";
   forgotSent.value = false;
@@ -152,11 +227,17 @@ function switchMode(next: "login" | "register" | "forgot") {
   if (next !== "forgot") form.note = "";
   if (!reduceMotion.value) {
     modeMorphing.value = true;
+    modeBlooming.value = true;
     if (morphTimer) clearTimeout(morphTimer);
+    if (bloomTimer) clearTimeout(bloomTimer);
     morphTimer = setTimeout(() => {
       modeMorphing.value = false;
       morphTimer = null;
-    }, 520);
+    }, 560);
+    bloomTimer = setTimeout(() => {
+      modeBlooming.value = false;
+      bloomTimer = null;
+    }, 680);
   }
   focusUsername();
 }
@@ -335,6 +416,11 @@ async function onForgotPassword(e?: Event) {
 <template>
   <div
     class="faw-login"
+    :class="{
+      'is-blooming': modeBlooming,
+      [`is-mode-${mode}`]: true,
+      [`is-dir-${formDir}`]: modeMorphing,
+    }"
     @pointermove="onPointerMove"
     @pointerleave="onPointerLeave"
   >
@@ -348,9 +434,13 @@ async function onForgotPassword(e?: Event) {
         top: `${glowY}%`,
       }"
     />
+    <div class="faw-login__bloom" aria-hidden="true" />
 
     <div class="faw-login__shell">
-      <aside class="faw-login__brand">
+      <aside
+        class="faw-login__brand"
+        :class="`is-mode-${mode}`"
+      >
         <img
           class="faw-login__logo"
           src="/logo.svg"
@@ -370,7 +460,11 @@ async function onForgotPassword(e?: Event) {
       <div class="faw-login__main">
         <div
           class="faw-login__panel"
-          :class="{ 'is-morphing': modeMorphing }"
+          :class="{
+            'is-morphing': modeMorphing,
+            'is-tilt-fwd': modeMorphing && formDir === 'fwd',
+            'is-tilt-back': modeMorphing && formDir === 'back',
+          }"
         >
           <div
             v-if="mode !== 'forgot'"
@@ -390,8 +484,15 @@ async function onForgotPassword(e?: Event) {
               role="tab"
               :aria-selected="mode === 'login'"
               :disabled="loading"
-              @click="switchMode('login')"
+              @click="spawnSegRipple($event, 'login'); switchMode('login')"
             >
+              <span
+                v-for="r in segRipples.filter((x) => x.side === 'login')"
+                :key="r.id"
+                class="faw-login__seg-ripple"
+                :style="{ left: `${r.x}px`, top: `${r.y}px` }"
+                aria-hidden="true"
+              />
               Sign in
             </button>
             <button
@@ -401,17 +502,31 @@ async function onForgotPassword(e?: Event) {
               role="tab"
               :aria-selected="mode === 'register'"
               :disabled="loading"
-              @click="switchMode('register')"
+              @click="spawnSegRipple($event, 'register'); switchMode('register')"
             >
+              <span
+                v-for="r in segRipples.filter((x) => x.side === 'register')"
+                :key="r.id"
+                class="faw-login__seg-ripple"
+                :style="{ left: `${r.x}px`, top: `${r.y}px` }"
+                aria-hidden="true"
+              />
               Register
             </button>
           </div>
 
-          <div class="faw-login__stage">
+          <div
+            ref="stageRef"
+            class="faw-login__stage"
+            :style="stageStyle"
+          >
           <Transition
             :name="modeTransitionName"
             mode="out-in"
             :css="!reduceMotion"
+            @before-leave="onStageBeforeLeave"
+            @enter="onStageEnter"
+            @after-enter="onStageAfterEnter"
           >
             <form
               v-if="mode === 'login'"
@@ -475,7 +590,13 @@ async function onForgotPassword(e?: Event) {
                   class="faw-login__spinner"
                   aria-hidden="true"
                 />
-                {{ loading ? "Signing in…" : "Sign in" }}
+                <span class="faw-login__cta-text">
+                  <Transition name="faw-login-cta" mode="out-in">
+                    <span :key="loading ? 'busy' : 'idle'">
+                      {{ loading ? "Signing in…" : "Sign in" }}
+                    </span>
+                  </Transition>
+                </span>
               </button>
             </form>
 
@@ -538,7 +659,13 @@ async function onForgotPassword(e?: Event) {
                     class="faw-login__spinner"
                     aria-hidden="true"
                   />
-                  {{ loading ? "Sending…" : "Ask admin to reset" }}
+                  <span class="faw-login__cta-text">
+                    <Transition name="faw-login-cta" mode="out-in">
+                      <span :key="loading ? 'busy' : 'idle'">
+                        {{ loading ? "Sending…" : "Ask admin to reset" }}
+                      </span>
+                    </Transition>
+                  </span>
                 </button>
               </template>
 
@@ -600,13 +727,14 @@ async function onForgotPassword(e?: Event) {
                   aria-label="Workspace role"
                 >
                   <button
-                    v-for="opt in roleOptions"
+                    v-for="(opt, idx) in roleOptions"
                     :key="opt.value"
                     type="button"
                     class="faw-login__role"
                     role="radio"
                     :aria-checked="form.role === opt.value"
                     :class="{ active: form.role === opt.value }"
+                    :style="{ '--role-i': String(idx) }"
                     :disabled="loading"
                     @click="selectRole(opt.value)"
                   >
@@ -662,7 +790,13 @@ async function onForgotPassword(e?: Event) {
                   class="faw-login__spinner"
                   aria-hidden="true"
                 />
-                {{ loading ? "Creating…" : "Create account" }}
+                <span class="faw-login__cta-text">
+                  <Transition name="faw-login-cta" mode="out-in">
+                    <span :key="loading ? 'busy' : 'idle'">
+                      {{ loading ? "Creating…" : "Create account" }}
+                    </span>
+                  </Transition>
+                </span>
               </button>
             </form>
           </Transition>
