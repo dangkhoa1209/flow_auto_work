@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { useRoute, RouterLink, RouterView } from "vue-router";
+import AdminShell from "@/components/layout/AdminShell.vue";
 import AppTopbarRight from "@/components/layout/AppTopbarRight.vue";
 import MobileBottomNav from "@/components/MobileBottomNav.vue";
 import { useSessionStore } from "@/stores/session";
@@ -10,25 +11,7 @@ const route = useRoute();
 const session = useSessionStore();
 
 const settingsTo = settingsDefaultPath("admin");
-
-const tabs = [
-  { to: "/admin/users", label: "Users", short: "Users" },
-  { to: "/admin/usage", label: "Usage", short: "Usage" },
-  { to: "/admin/chatbox", label: "Project Chatbox", short: "Chatbox" },
-  { to: "/admin/ai-engine", label: "AI Engine", short: "AI" },
-  { to: "/admin/task-types", label: "Task labels", short: "Labels" },
-  { to: "/admin/ba-features", label: "BA features", short: "Features" },
-  { to: "/admin/sync-db", label: "Sync DB", short: "Sync" },
-];
-
 const inSettings = computed(() => route.path.startsWith("/admin/settings"));
-
-function isTabActive(tab: (typeof tabs)[0]): boolean {
-  if (tab.to === "/admin/users") {
-    return route.path === "/admin" || route.path.startsWith("/admin/users");
-  }
-  return route.path === tab.to || route.path.startsWith(`${tab.to}/`);
-}
 </script>
 
 <template>
@@ -55,18 +38,6 @@ function isTabActive(tab: (typeof tabs)[0]): boolean {
         />
       </RouterLink>
 
-      <nav v-if="!inSettings" class="faw-seg hidden lg:flex">
-        <RouterLink
-          v-for="t in tabs"
-          :key="t.to"
-          :to="t.to"
-          class="faw-seg__btn"
-          :class="{ active: isTabActive(t) }"
-        >
-          {{ t.label }}
-        </RouterLink>
-      </nav>
-
       <div class="faw-topbar__spacer" />
 
       <AppTopbarRight :settings-to="settingsTo">
@@ -84,27 +55,11 @@ function isTabActive(tab: (typeof tabs)[0]): boolean {
       </AppTopbarRight>
     </header>
 
-    <nav
-      v-if="!inSettings"
-      class="faw-mseg lg:hidden"
-      aria-label="Admin sections"
-    >
-      <RouterLink
-        v-for="t in tabs"
-        :key="t.to"
-        :to="t.to"
-        class="faw-mseg__btn"
-        :class="{ active: isTabActive(t) }"
-      >
-        {{ t.short }}
-      </RouterLink>
-    </nav>
-
     <main
-      class="flex-1 min-h-0 pb-[calc(3.25rem+env(safe-area-inset-bottom))] lg:pb-0"
-      :class="inSettings ? 'overflow-hidden' : 'overflow-y-auto'"
+      class="flex-1 min-h-0 pb-[calc(3.25rem+env(safe-area-inset-bottom))] lg:pb-0 overflow-hidden"
     >
-      <RouterView />
+      <AdminShell v-if="!inSettings" />
+      <RouterView v-else />
     </main>
 
     <MobileBottomNav />

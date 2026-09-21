@@ -109,14 +109,18 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="max-w-2xl mx-auto px-4 py-6">
-    <h1 class="text-xl font-semibold text-ink m-0 mb-1">Sync Database</h1>
-    <p class="text-sm text-ink-muted mb-4">
-      System credentials for BA Chat sync: SSH tunnel + <strong>read-only</strong>
-      source Mongo (live). Target DB comes from each project’s Connect DB and
-      <strong>must be loopback</strong> (<code>127.0.0.1</code> / <code>localhost</code>) —
-      never restore to live.
-    </p>
+  <div class="faw-admin-page faw-admin-page--narrow">
+    <header class="faw-admin-page__head">
+      <div>
+        <h1 class="faw-admin-page__title">Sync Database</h1>
+        <p class="faw-admin-page__desc">
+          System credentials for BA Chat sync: SSH tunnel +
+          <strong>read-only</strong> source Mongo (live). Target DB comes from
+          each project’s Connect DB and <strong>must be loopback</strong>
+          (<code>127.0.0.1</code> / <code>localhost</code> — never restore to live.
+        </p>
+      </div>
+    </header>
 
     <a-alert
       type="warning"
@@ -128,7 +132,7 @@ onMounted(() => {
       type="info"
       show-icon
       class="mb-4"
-      message="Nút Sync trên BA Chat chỉ hiện khi: (1) form này Ready (Enable + đủ SSH/source), (2) Admin → BA features → Sync Database ≠ Hide, (3) project đã Connect DB Mongo (host loopback). Ô password để trống sau Save là bình thường nếu đã có “(set)”."
+      message="The Sync control on BA Chat appears only when: (1) this form is Ready (Enable + SSH/source filled), (2) Admin → BA features → Sync Database ≠ Hide, (3) the project has a Mongo Connect DB on loopback. Leaving password blank after Save is normal when “(set)” is shown."
     />
 
     <div
@@ -151,7 +155,7 @@ onMounted(() => {
       </template>
     </div>
 
-    <div class="p-4 rounded-lg border border-line bg-surface-raised space-y-4">
+    <div class="faw-admin-panel space-y-4">
       <div class="flex items-center justify-between gap-3">
         <div>
           <div class="text-sm font-medium text-ink">Enable Sync Database</div>

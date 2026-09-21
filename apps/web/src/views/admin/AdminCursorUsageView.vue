@@ -214,7 +214,7 @@ watch(
       </div>
     </header>
 
-    <div class="flex flex-wrap gap-2 mb-4">
+    <div class="faw-admin-toolbar mb-4">
       <a-radio-group
         :value="customFrom ? 0 : daysPreset"
         size="small"

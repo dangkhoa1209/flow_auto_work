@@ -40,13 +40,8 @@ const ROLE_LABELS: Record<UserRole, string> = {
   qc: "QC",
   ba: "BA",
   pd: "PD",
-  devops: "Devops",
+  devops: "Build",
 };
-
-const roleOptions = ALL_ROLES.map((r) => ({
-  value: r,
-  label: ROLE_LABELS[r],
-}));
 
 const columns = [
   { title: "User", key: "user", width: 220 },
@@ -679,14 +674,23 @@ onMounted(() => {
             placeholder="Optional"
           />
         </label>
-        <label class="flex flex-col gap-1 text-sm">
+        <div class="flex flex-col gap-2 text-sm">
           <span class="text-ink-muted">Role</span>
-          <a-select
-            v-model:value="createForm.role"
-            :options="roleOptions"
-            class="w-full"
-          />
-        </label>
+          <div class="faw-admin-role-chips" role="radiogroup" aria-label="Role">
+            <button
+              v-for="r in ALL_ROLES"
+              :key="r"
+              type="button"
+              class="faw-admin-role-chip"
+              :class="{ 'is-active': createForm.role === r }"
+              role="radio"
+              :aria-checked="createForm.role === r"
+              @click="createForm.role = r"
+            >
+              {{ ROLE_LABELS[r] }}
+            </button>
+          </div>
+        </div>
       </div>
     </a-modal>
 
@@ -703,14 +707,23 @@ onMounted(() => {
           <span class="text-ink-muted">Display name</span>
           <a-input v-model:value="editForm.displayName" />
         </label>
-        <label class="flex flex-col gap-1 text-sm">
+        <div class="flex flex-col gap-2 text-sm">
           <span class="text-ink-muted">Role</span>
-          <a-select
-            v-model:value="editForm.role"
-            :options="roleOptions"
-            class="w-full"
-          />
-        </label>
+          <div class="faw-admin-role-chips" role="radiogroup" aria-label="Role">
+            <button
+              v-for="r in ALL_ROLES"
+              :key="r"
+              type="button"
+              class="faw-admin-role-chip"
+              :class="{ 'is-active': editForm.role === r }"
+              role="radio"
+              :aria-checked="editForm.role === r"
+              @click="editForm.role = r"
+            >
+              {{ ROLE_LABELS[r] }}
+            </button>
+          </div>
+        </div>
       </div>
     </a-modal>
 

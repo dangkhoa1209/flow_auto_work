@@ -109,11 +109,15 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="max-w-2xl mx-auto px-4 py-6">
-    <h1 class="text-xl font-semibold text-ink m-0 mb-1">BA features</h1>
-    <p class="text-sm text-ink-muted mb-4">
-      Toggle features for BA users. Chat and BA mode stay always on.
-    </p>
+  <div class="faw-admin-page faw-admin-page--narrow">
+    <header class="faw-admin-page__head">
+      <div>
+        <h1 class="faw-admin-page__title">BA features</h1>
+        <p class="faw-admin-page__desc">
+          Toggle features for BA users. Chat and BA mode stay always on.
+        </p>
+      </div>
+    </header>
 
     <a-alert
       v-if="devMode"
@@ -123,7 +127,7 @@ onMounted(() => {
       message="Running in dev mode (DEV=true or PRODUCTION=false) — all features are visible to developers regardless of settings below. These settings still apply in production."
     />
 
-    <div class="p-4 rounded-lg border border-line bg-surface-raised space-y-5">
+    <div class="faw-admin-panel space-y-5">
       <div
         v-for="f in FEATURES"
         :key="f.key"

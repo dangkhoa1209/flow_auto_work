@@ -111,26 +111,28 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="max-w-2xl mx-auto px-4 py-6">
-    <h1 class="text-xl font-semibold text-ink m-0 mb-1">Task types (Stats)</h1>
-    <p class="text-sm text-ink-muted mb-2">
-      Map GitLab labels → task types used for stats and developer review.
-    </p>
-    <p class="text-sm text-ink-muted mb-6">
-      Tasks with <strong>no GitLab label</strong> are treated as
-      <strong>Feature</strong>. Enter exact GitLab label names (free-form tags).
-    </p>
+  <div class="faw-admin-page faw-admin-page--narrow">
+    <header class="faw-admin-page__head">
+      <div>
+        <h1 class="faw-admin-page__title">Task labels</h1>
+        <p class="faw-admin-page__desc">
+          Map GitLab labels → task types used for stats and developer review.
+          Tasks with <strong>no GitLab label</strong> are treated as
+          <strong>Feature</strong>. Enter exact label names.
+        </p>
+      </div>
+    </header>
 
     <div
       v-if="loading"
-      class="text-sm text-ink-muted py-8 text-center"
+      class="faw-admin-empty py-10"
     >
       Loading…
     </div>
 
     <div
       v-else
-      class="p-4 rounded-lg border border-line bg-surface-raised space-y-5"
+      class="faw-admin-panel space-y-5"
     >
       <div
         v-for="row in rows"

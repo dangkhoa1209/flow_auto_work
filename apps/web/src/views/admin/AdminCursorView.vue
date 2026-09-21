@@ -253,7 +253,7 @@ onMounted(() => {
       </div>
     </header>
 
-    <div class="p-4 rounded-lg border border-line bg-surface-raised space-y-4 mb-4">
+    <div class="faw-admin-panel space-y-4 mb-4">
       <CursorModelFields
         ref="modelFieldsRef"
         :models-url="API.admin.cursorModels"

@@ -6517,11 +6517,208 @@ a.faw-mseg__btn {
   }
 }
 
+/* —— Admin console shell (mirrors Settings) —— */
+.faw-admin__shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+.faw-admin__nav {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-bottom: 1px solid var(--app-border);
+  background: var(--app-panel);
+}
+.faw-admin__head {
+  flex: none;
+  display: none;
+  padding: 14px 16px 10px;
+}
+.faw-admin__title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 650;
+  color: var(--app-ink);
+  letter-spacing: -0.01em;
+}
+.faw-admin__subtitle {
+  margin: 4px 0 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--app-faint);
+}
+.faw-admin__nav-list {
+  display: none;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0 8px 12px;
+}
+.faw-admin__nav-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  color: var(--app-muted);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+.faw-admin__nav-item:hover {
+  color: var(--app-ink);
+  background: var(--app-panel-soft);
+  text-decoration: none;
+}
+.faw-admin__nav-item.is-active {
+  color: var(--app-accent);
+  background: var(--accent-dim);
+  box-shadow: inset 2px 0 0 var(--app-accent);
+}
+.faw-admin__nav-item:focus-visible {
+  outline: 2px solid var(--app-accent);
+  outline-offset: 2px;
+}
+.faw-admin__nav-icon {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  margin-top: 1px;
+  font-size: 15px;
+  opacity: 0.85;
+}
+.faw-admin__nav-item.is-active .faw-admin__nav-icon {
+  opacity: 1;
+}
+.faw-admin__nav-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.faw-admin__nav-label {
+  line-height: 1.25;
+}
+.faw-admin__nav-hint {
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.35;
+  color: var(--app-faint);
+}
+.faw-admin__nav-item.is-active .faw-admin__nav-hint {
+  color: var(--app-muted);
+}
+.faw-admin__detail {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.faw-admin__panel {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  background: var(--app-bg);
+  min-width: 0;
+}
+.faw-admin__tabs {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  margin: 0;
+  padding: 0 12px 12px;
+  scroll-snap-type: x proximity;
+}
+.faw-admin__tabs::-webkit-scrollbar {
+  display: none;
+}
+.faw-admin__tab {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--app-border);
+  background: var(--app-panel);
+  color: var(--app-muted);
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+  scroll-snap-align: start;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    border-color 0.15s ease;
+}
+.faw-admin__tab:hover {
+  color: var(--app-ink);
+  border-color: var(--app-border-strong);
+  text-decoration: none;
+}
+.faw-admin__tab.is-active {
+  border-color: var(--app-accent);
+  color: var(--app-accent);
+  background: var(--accent-dim);
+}
+.faw-admin__tab:focus-visible {
+  outline: 2px solid var(--app-accent);
+  outline-offset: 2px;
+}
+.faw-admin__tab-icon {
+  display: inline-flex;
+  font-size: 13px;
+  opacity: 0.9;
+}
+@media (min-width: 1024px) {
+  .faw-admin__shell {
+    flex-direction: row;
+  }
+  .faw-admin__nav {
+    width: 248px;
+    flex: none;
+    border-bottom: 0;
+    border-right: 1px solid var(--app-border);
+    overflow-y: auto;
+  }
+  .faw-admin__head {
+    display: block;
+    padding: 20px 16px 14px;
+  }
+  .faw-admin__nav-list {
+    display: flex;
+    flex: 1;
+    padding: 0 10px 20px;
+  }
+  .faw-admin__tabs {
+    display: none;
+  }
+}
+
 /* Admin pages */
 .faw-admin-page {
   max-width: 1120px;
   margin: 0 auto;
-  padding: 24px 20px 48px;
+  padding: 20px 20px 48px;
+}
+.faw-admin-page--narrow {
+  max-width: 42rem;
 }
 .faw-admin-page--wide {
   max-width: 1280px;
@@ -6536,28 +6733,57 @@ a.faw-mseg__btn {
 .faw-admin-page__title {
   margin: 0;
   font-size: 1.25rem;
-  font-weight: 600;
-  color: var(--ink);
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  color: var(--app-ink, var(--ink));
 }
 .faw-admin-page__desc {
   margin: 6px 0 0;
   font-size: 0.875rem;
-  color: var(--ink-muted);
+  color: var(--app-muted, var(--ink-muted));
   line-height: 1.5;
   max-width: 640px;
 }
+.faw-admin-panel {
+  padding: 16px 18px;
+  border: 1px solid var(--app-border, var(--line));
+  border-radius: 12px;
+  background: var(--app-panel, var(--surface-raised));
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--app-ink, #fff) 4%, transparent);
+}
+.faw-admin-panel + .faw-admin-panel {
+  margin-top: 14px;
+}
+.faw-admin-panel__title {
+  margin: 0 0 4px;
+  font-size: 0.9375rem;
+  font-weight: 650;
+  color: var(--app-ink, var(--ink));
+}
+.faw-admin-panel__desc {
+  margin: 0 0 14px;
+  font-size: 0.8125rem;
+  color: var(--app-muted, var(--ink-muted));
+  line-height: 1.45;
+}
 .faw-admin-stats {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
   gap: 10px;
   margin-bottom: 16px;
 }
 .faw-admin-reset-queue {
   margin-bottom: 16px;
-  padding: 14px 16px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--surface-raised);
+  padding: 16px 18px;
+  border: 1px solid color-mix(in srgb, var(--app-accent, #5b8def) 28%, var(--app-border, var(--line)));
+  border-radius: 12px;
+  background:
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--app-accent, #5b8def) 8%, transparent),
+      transparent 55%
+    ),
+    var(--app-panel, var(--surface-raised));
 }
 .faw-admin-reset-queue__head {
   margin-bottom: 12px;
@@ -6566,7 +6792,7 @@ a.faw-mseg__btn {
   margin: 0;
   font-size: 0.95rem;
   font-weight: 650;
-  color: var(--ink);
+  color: var(--app-ink, var(--ink));
   display: flex;
   align-items: center;
   gap: 8px;
@@ -6588,7 +6814,7 @@ a.faw-mseg__btn {
 .faw-admin-reset-queue__desc {
   margin: 6px 0 0;
   font-size: 0.8125rem;
-  color: var(--ink-muted);
+  color: var(--app-muted, var(--ink-muted));
   line-height: 1.45;
 }
 .faw-admin-reset-queue__list {
@@ -6605,10 +6831,10 @@ a.faw-mseg__btn {
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
-  padding: 10px 12px;
-  border-radius: 8px;
-  border: 1px solid var(--line);
-  background: var(--surface, var(--app-panel-soft));
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--app-border, var(--line));
+  background: var(--app-panel-soft, var(--surface, var(--app-panel-soft)));
 }
 .faw-admin-reset-queue__meta {
   min-width: 0;
@@ -6616,18 +6842,18 @@ a.faw-mseg__btn {
 }
 .faw-admin-reset-queue__user {
   font-weight: 650;
-  color: var(--ink);
+  color: var(--app-ink, var(--ink));
   margin-right: 8px;
 }
 .faw-admin-reset-queue__time {
   font-size: 0.75rem;
-  color: var(--ink-muted);
+  color: var(--app-muted, var(--ink-muted));
   font-family: var(--font-mono, ui-monospace, monospace);
 }
 .faw-admin-reset-queue__note {
   margin: 6px 0 0;
   font-size: 0.8125rem;
-  color: var(--ink-muted);
+  color: var(--app-muted, var(--ink-muted));
   line-height: 1.4;
   word-break: break-word;
 }
@@ -6640,31 +6866,37 @@ a.faw-mseg__btn {
 .faw-admin-stat {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding: 10px 14px;
-  min-width: 100px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--surface-raised);
+  gap: 4px;
+  padding: 12px 14px;
+  min-width: 0;
+  border: 1px solid var(--app-border, var(--line));
+  border-radius: 10px;
+  background: var(--app-panel, var(--surface-raised));
 }
 .faw-admin-stat__n {
   font-size: 1.125rem;
   font-weight: 700;
   font-family: var(--font-mono, ui-monospace, monospace);
-  color: var(--ink);
+  color: var(--app-ink, var(--ink));
+  letter-spacing: -0.02em;
 }
 .faw-admin-stat__l {
   font-size: 0.75rem;
-  color: var(--ink-muted);
+  color: var(--app-muted, var(--ink-muted));
+  line-height: 1.3;
 }
 .faw-admin-stat--ok .faw-admin-stat__n { color: var(--success, #34d399); }
-.faw-admin-stat--muted .faw-admin-stat__n { color: var(--ink-muted); }
+.faw-admin-stat--muted .faw-admin-stat__n { color: var(--app-muted, var(--ink-muted)); }
 .faw-admin-toolbar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 12px;
   margin-bottom: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--app-border, var(--line));
+  border-radius: 12px;
+  background: var(--app-panel, var(--surface-raised));
 }
 .faw-admin-toolbar__search {
   flex: 1;
@@ -6676,19 +6908,20 @@ a.faw-mseg__btn {
   align-items: center;
   gap: 8px;
   font-size: 0.8125rem;
-  color: var(--ink-muted);
+  color: var(--app-muted, var(--ink-muted));
   cursor: pointer;
+  user-select: none;
 }
 .faw-admin-empty {
   text-align: center;
   padding: 48px 16px;
-  color: var(--ink-muted);
+  color: var(--app-muted, var(--ink-muted));
 }
 .faw-admin-table-wrap {
   overflow-x: auto;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--surface-raised);
+  border: 1px solid var(--app-border, var(--line));
+  border-radius: 12px;
+  background: var(--app-panel, var(--surface-raised));
 }
 .faw-admin-table {
   width: 100%;
@@ -6702,13 +6935,13 @@ a.faw-mseg__btn {
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: var(--ink-muted);
-  border-bottom: 1px solid var(--line);
-  background: var(--surface);
+  color: var(--app-muted, var(--ink-muted));
+  border-bottom: 1px solid var(--app-border, var(--line));
+  background: var(--app-panel-soft, var(--surface));
 }
 .faw-admin-table td {
   padding: 12px 14px;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--app-border, var(--line));
   vertical-align: middle;
 }
 .faw-admin-table tbody tr:last-child td { border-bottom: none; }
@@ -6716,19 +6949,56 @@ a.faw-mseg__btn {
 .faw-admin-table__date {
   font-family: var(--font-mono, ui-monospace, monospace);
   font-size: 0.75rem;
-  color: var(--ink-muted);
+  color: var(--app-muted, var(--ink-muted));
 }
-.faw-admin-user-cell__name { font-weight: 600; color: var(--ink); }
+.faw-admin-user-cell__name { font-weight: 600; color: var(--app-ink, var(--ink)); }
 .faw-admin-user-cell__sub {
   display: block;
   font-size: 0.75rem;
-  color: var(--ink-muted);
+  color: var(--app-muted, var(--ink-muted));
   margin-top: 2px;
 }
 .faw-admin-user-cell__you {
   margin-left: 6px;
   font-size: 0.6875rem;
-  color: var(--accent);
+  color: var(--app-accent, var(--accent));
+}
+.faw-admin-role-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.faw-admin-role-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  min-width: 4.5rem;
+  padding: 6px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--app-border, var(--line));
+  background: var(--app-panel-soft, var(--surface));
+  color: var(--app-muted, var(--ink-muted));
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    border-color 0.15s ease;
+}
+.faw-admin-role-chip:hover {
+  color: var(--app-ink, var(--ink));
+  border-color: var(--app-border-strong, var(--line));
+}
+.faw-admin-role-chip.is-active {
+  border-color: var(--app-accent);
+  color: var(--app-accent);
+  background: var(--accent-dim);
+}
+.faw-admin-role-chip:focus-visible {
+  outline: 2px solid var(--app-accent);
+  outline-offset: 2px;
 }
 .faw-admin-role-tags { display: flex; flex-wrap: wrap; gap: 4px; }
 .faw-admin-role-tag {
@@ -6736,13 +7006,13 @@ a.faw-mseg__btn {
   border-radius: 4px;
   font-size: 0.6875rem;
   font-weight: 600;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  color: var(--ink-muted);
+  background: var(--app-panel-soft, var(--surface));
+  border: 1px solid var(--app-border, var(--line));
+  color: var(--app-muted, var(--ink-muted));
 }
 .faw-admin-role-tag--admin {
   border-color: rgba(76, 141, 255, 0.35);
-  color: var(--accent);
+  color: var(--app-accent, var(--accent));
   background: rgba(76, 141, 255, 0.08);
 }
 .faw-admin-status {
@@ -6767,18 +7037,31 @@ a.faw-mseg__btn {
   padding: 4px 8px;
   border-radius: 5px;
   font-size: 0.75rem;
-  color: var(--ink-muted);
+  color: var(--app-muted, var(--ink-muted));
 }
 .faw-admin-action:hover:not(:disabled) {
-  background: var(--surface);
-  color: var(--ink);
+  background: var(--app-panel-soft, var(--surface));
+  color: var(--app-ink, var(--ink));
 }
 .faw-admin-action:disabled { opacity: 0.4; cursor: default; }
 .faw-admin-action--danger:hover:not(:disabled) { color: var(--danger, #f0546b); }
 .faw-admin-card-list li {
-  border: 1px solid var(--line);
+  border: 1px solid var(--app-border, var(--line));
   border-radius: 10px;
-  background: var(--surface-raised);
+  background: var(--app-panel, var(--surface-raised));
+}
+.faw-admin-users-table,
+.faw-admin-cursor-table,
+.faw-admin-chatbox-table {
+  border: 1px solid var(--app-border, var(--line));
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--app-panel, var(--surface-raised));
+}
+.faw-admin-users-table .ant-table,
+.faw-admin-cursor-table .ant-table,
+.faw-admin-chatbox-table .ant-table {
+  background: transparent;
 }
 .faw-admin-users-table .faw-admin-users-table__row--off td {
   opacity: 0.55;
@@ -6787,7 +7070,20 @@ a.faw-mseg__btn {
   background: color-mix(in srgb, var(--accent, #5b8def) 6%, transparent);
 }
 @media (max-width: 768px) {
-  .faw-admin-page { padding: 16px 12px 32px; }
+  .faw-admin-page { padding: 12px 14px 32px; }
   .faw-admin-page__head { flex-direction: column; }
+  .faw-admin-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .faw-admin-toolbar__search {
+    max-width: none;
+  }
+}
+@media (max-width: 1023px) {
+  .faw-admin-page__title {
+    /* Mobile panel-head already shows section — keep page title for context */
+    font-size: 1.125rem;
+  }
 }
 
