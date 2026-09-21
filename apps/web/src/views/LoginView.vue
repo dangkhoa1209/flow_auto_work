@@ -569,31 +569,28 @@ async function onForgotPassword(e?: Event) {
               :aria-busy="loading"
               @submit.prevent="onRegister"
             >
-              <fieldset class="faw-login__group">
-                <legend class="faw-login__group-label">Identity</legend>
-                <label class="faw-login__field">
-                  <span>Username or email</span>
-                  <a-input
-                    ref="usernameInputRef"
-                    v-model:value="form.username"
-                    size="large"
-                    autocomplete="username"
-                    placeholder="username or you@company.com"
-                    :disabled="loading"
-                    :aria-invalid="!!errorText"
-                  />
-                </label>
-                <label class="faw-login__field">
-                  <span>Display name <em>(optional)</em></span>
-                  <a-input
-                    v-model:value="form.displayName"
-                    size="large"
-                    autocomplete="nickname"
-                    placeholder="How you appear in the bench"
-                    :disabled="loading"
-                  />
-                </label>
-              </fieldset>
+              <label class="faw-login__field">
+                <span>Username or email</span>
+                <a-input
+                  ref="usernameInputRef"
+                  v-model:value="form.username"
+                  size="large"
+                  autocomplete="username"
+                  placeholder="username or you@company.com"
+                  :disabled="loading"
+                  :aria-invalid="!!errorText"
+                />
+              </label>
+              <label class="faw-login__field">
+                <span>Display name <em>(optional)</em></span>
+                <a-input
+                  v-model:value="form.displayName"
+                  size="large"
+                  autocomplete="nickname"
+                  placeholder="How you appear in the bench"
+                  :disabled="loading"
+                />
+              </label>
 
               <fieldset class="faw-login__group">
                 <legend class="faw-login__group-label">Role</legend>
@@ -621,32 +618,29 @@ async function onForgotPassword(e?: Event) {
                 </p>
               </fieldset>
 
-              <fieldset class="faw-login__group">
-                <legend class="faw-login__group-label">Password</legend>
-                <label class="faw-login__field">
-                  <span>Password</span>
-                  <a-input-password
-                    v-model:value="form.password"
-                    size="large"
-                    autocomplete="new-password"
-                    placeholder="At least 6 characters"
-                    :disabled="loading"
-                    :aria-invalid="!!errorText"
-                  />
-                </label>
-                <label class="faw-login__field">
-                  <span>Confirm password</span>
-                  <a-input-password
-                    v-model:value="form.password2"
-                    size="large"
-                    autocomplete="new-password"
-                    placeholder="Re-enter password"
-                    :disabled="loading"
-                    :aria-invalid="!!errorText"
-                    @pressEnter="onRegister"
-                  />
-                </label>
-              </fieldset>
+              <label class="faw-login__field">
+                <span>Password</span>
+                <a-input-password
+                  v-model:value="form.password"
+                  size="large"
+                  autocomplete="new-password"
+                  placeholder="At least 6 characters"
+                  :disabled="loading"
+                  :aria-invalid="!!errorText"
+                />
+              </label>
+              <label class="faw-login__field">
+                <span>Confirm password</span>
+                <a-input-password
+                  v-model:value="form.password2"
+                  size="large"
+                  autocomplete="new-password"
+                  placeholder="Re-enter password"
+                  :disabled="loading"
+                  :aria-invalid="!!errorText"
+                  @pressEnter="onRegister"
+                />
+              </label>
 
               <p
                 v-if="errorText"
