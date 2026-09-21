@@ -459,7 +459,7 @@ async function onRegister(e?: Event) {
       </div>
 
       <p class="faw-login__foot">
-        Same account as your Flow Auto workspace
+        One account · all of Flow Auto
       </p>
     </div>
   </div>
