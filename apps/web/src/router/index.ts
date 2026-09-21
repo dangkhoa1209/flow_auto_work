@@ -147,7 +147,8 @@ const router = createRouter({
       children: [
         {
           path: "",
-          redirect: { name: "admin-users" },
+          name: "admin-dashboard",
+          component: () => import("@/views/admin/AdminDashboardView.vue"),
         },
         {
           path: "users",

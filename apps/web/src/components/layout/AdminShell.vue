@@ -5,6 +5,7 @@ import {
   ApiOutlined,
   BarChartOutlined,
   CloudSyncOutlined,
+  DashboardOutlined,
   MessageOutlined,
   RobotOutlined,
   TagOutlined,
@@ -18,6 +19,7 @@ import {
 } from "@/config/adminNav";
 
 const ICON_MAP: Record<AdminIconKey, Component> = {
+  dashboard: DashboardOutlined,
   users: TeamOutlined,
   usage: BarChartOutlined,
   chatbox: MessageOutlined,

@@ -19,7 +19,7 @@ const inSettings = computed(() => route.path.startsWith("/admin/settings"));
     class="faw-app-shell faw-admin-shell h-[100dvh] max-h-[100dvh] flex flex-col overflow-hidden bg-[var(--app-bg)]"
   >
     <header class="faw-topbar faw-topbar--admin">
-      <RouterLink to="/admin/users" class="faw-brand" title="Admin">
+      <RouterLink to="/admin" class="faw-brand" title="Admin">
         <img
           class="faw-brand__logo faw-brand__logo--full"
           src="/logo.svg"

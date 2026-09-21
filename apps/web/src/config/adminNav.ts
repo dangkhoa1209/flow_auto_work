@@ -4,6 +4,7 @@
  */
 
 export type AdminSectionId =
+  | "dashboard"
   | "users"
   | "usage"
   | "chatbox"
@@ -13,6 +14,7 @@ export type AdminSectionId =
   | "sync-db";
 
 export type AdminIconKey =
+  | "dashboard"
   | "users"
   | "usage"
   | "chatbox"
@@ -31,6 +33,14 @@ export type AdminTab = {
 };
 
 export const ADMIN_TABS: AdminTab[] = [
+  {
+    id: "dashboard",
+    to: "/admin",
+    label: "Dashboard",
+    short: "Home",
+    description: "Overview and alerts",
+    icon: "dashboard",
+  },
   {
     id: "users",
     to: "/admin/users",
@@ -90,8 +100,8 @@ export const ADMIN_TABS: AdminTab[] = [
 ];
 
 export function isAdminTabActive(tab: AdminTab, path: string): boolean {
-  if (tab.id === "users") {
-    return path === "/admin" || path.startsWith("/admin/users");
+  if (tab.id === "dashboard") {
+    return path === "/admin" || path === "/admin/";
   }
   return path === tab.to || path.startsWith(`${tab.to}/`);
 }

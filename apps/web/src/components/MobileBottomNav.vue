@@ -89,7 +89,7 @@ const tabs = computed(() => {
 
   if (session.isAdmin) {
     items.push({
-      to: "/admin/users",
+      to: "/admin",
       label: "Admin",
       icon: ControlOutlined,
       match: (p) => p.startsWith("/admin") && !p.startsWith("/admin/settings"),

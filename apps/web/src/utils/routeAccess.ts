@@ -22,7 +22,7 @@ function isDevAppPath(path: string): boolean {
 
 /** First route the user is allowed to land on after login. */
 export function resolveHomeRoute(session: SessionAccess): string {
-  if (session.isAdmin) return "/admin/users";
+  if (session.isAdmin) return "/admin";
   if (session.canAccessWork) return "/dev";
   if (session.isDevopsAudience) return "/devops";
   if (session.isQcAudience) return "/qc";

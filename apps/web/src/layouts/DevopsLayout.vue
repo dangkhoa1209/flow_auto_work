@@ -188,7 +188,7 @@ async function onCancelQueued(id: string) {
           </span>
         </template>
         <template #extra>
-          <RouterLink v-if="session.isAdmin" to="/admin/users" class="faw-btn">
+          <RouterLink v-if="session.isAdmin" to="/admin" class="faw-btn">
             Admin
           </RouterLink>
         </template>
