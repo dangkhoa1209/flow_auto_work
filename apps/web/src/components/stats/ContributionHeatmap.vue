@@ -63,14 +63,8 @@ const columns = computed(() => {
         <div
           v-for="cell in col"
           :key="cell.date"
-          class="h-[11px] w-[11px] rounded-[2px]"
-          :class="{
-            'bg-line': !cell.cell || level(cell.cell) === 0,
-            'bg-accent/25': cell.cell && level(cell.cell) === 1,
-            'bg-accent/45': cell.cell && level(cell.cell) === 2,
-            'bg-accent/65': cell.cell && level(cell.cell) === 3,
-            'bg-accent': cell.cell && level(cell.cell) === 4,
-          }"
+          class="h-[11px] w-[11px] rounded-[2px] faw-heat-cell"
+          :class="`faw-heat-cell--${cell.cell ? level(cell.cell) : 0}`"
           :title="
             cell.cell
               ? `${cell.date} · ${cell.cell.jobs} task`
@@ -81,12 +75,30 @@ const columns = computed(() => {
     </div>
     <div class="mt-1 flex items-center gap-1 text-[10px] text-ink-muted">
       Less
-      <span class="inline-block h-[10px] w-[10px] rounded-[2px] bg-line" />
-      <span class="inline-block h-[10px] w-[10px] rounded-[2px] bg-accent/25" />
-      <span class="inline-block h-[10px] w-[10px] rounded-[2px] bg-accent/45" />
-      <span class="inline-block h-[10px] w-[10px] rounded-[2px] bg-accent/65" />
-      <span class="inline-block h-[10px] w-[10px] rounded-[2px] bg-accent" />
+      <span class="inline-block h-[10px] w-[10px] rounded-[2px] faw-heat-cell faw-heat-cell--0" />
+      <span class="inline-block h-[10px] w-[10px] rounded-[2px] faw-heat-cell faw-heat-cell--1" />
+      <span class="inline-block h-[10px] w-[10px] rounded-[2px] faw-heat-cell faw-heat-cell--2" />
+      <span class="inline-block h-[10px] w-[10px] rounded-[2px] faw-heat-cell faw-heat-cell--3" />
+      <span class="inline-block h-[10px] w-[10px] rounded-[2px] faw-heat-cell faw-heat-cell--4" />
       More tasks
     </div>
   </div>
 </template>
+
+<style scoped>
+.faw-heat-cell--0 {
+  background: var(--hm-empty);
+}
+.faw-heat-cell--1 {
+  background: var(--hm-1);
+}
+.faw-heat-cell--2 {
+  background: var(--hm-2);
+}
+.faw-heat-cell--3 {
+  background: var(--hm-3);
+}
+.faw-heat-cell--4 {
+  background: var(--hm-4);
+}
+</style>

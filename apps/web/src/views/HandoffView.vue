@@ -143,14 +143,14 @@ async function mergeBranch() {
         class="col-span-4 min-h-0 overflow-y-auto p-3 rounded-2xl panel-glass shadow-panel"
       >
         <h2
-          class="text-sm font-semibold text-ink mb-3 sticky top-0 bg-surface-raised/90 py-1 backdrop-blur"
+          class="text-sm font-semibold text-ink mb-3 sticky top-0 bg-surface-raised py-1 backdrop-blur"
         >
           Done awaiting handoff
         </h2>
         <div
           v-for="j in handoffJobs"
           :key="j.id"
-          class="rounded-xl border border-line p-3 mb-2 cursor-pointer hover:border-accent/50 bg-surface-raised/60 transition"
+          class="rounded-xl border border-line p-3 mb-2 cursor-pointer hover:border-accent/50 bg-surface-raised transition"
           :class="
             selectedId === j.id ? '!border-accent !bg-accent-soft shadow-sm' : ''
           "

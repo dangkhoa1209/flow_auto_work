@@ -58,10 +58,11 @@ export default {
           glow: "rgb(var(--c-accent) / <alpha-value>)",
         },
         status: {
-          done: "#34D399",
-          wip: "#F0B429",
-          bug: "#F0576B",
-          good: "#34D399",
+          // Theme-aware (see --done / --wip / --bug in style.css)
+          done: "var(--done)",
+          wip: "var(--wip)",
+          bug: "var(--bug)",
+          good: "var(--done)",
         },
       },
       boxShadow: {

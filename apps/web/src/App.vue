@@ -33,20 +33,20 @@ const darkToken = {
 };
 
 const lightToken = {
-  colorPrimary: "#3B6FD1",
-  colorInfo: "#3B6FD1",
-  colorSuccess: "#0EA56E",
-  colorWarning: "#C4880A",
-  colorError: "#D63A54",
-  colorText: "#111827",
-  colorTextSecondary: "#333E4D",
-  colorTextTertiary: "#525E6E",
-  colorBgBase: "#F3F5F8",
+  colorPrimary: "#2563C7",
+  colorInfo: "#2563C7",
+  colorSuccess: "#047857",
+  colorWarning: "#B45309",
+  colorError: "#DC2626",
+  colorText: "#0F172A",
+  colorTextSecondary: "#2D3748",
+  colorTextTertiary: "#475569",
+  colorBgBase: "#E8ECF2",
   colorBgContainer: "#FFFFFF",
   colorBgElevated: "#FFFFFF",
-  colorBgLayout: "#F3F5F8",
-  colorBorder: "#DDE2EA",
-  colorBorderSecondary: "#E7EBF1",
+  colorBgLayout: "#E8ECF2",
+  colorBorder: "#C4CDDA",
+  colorBorderSecondary: "#CFD6E2",
 };
 
 const themeConfig = computed(() =>

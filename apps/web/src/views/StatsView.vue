@@ -547,7 +547,7 @@ watch(
             />
 
             <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <div class="rounded-xl border border-line bg-surface-raised/40 p-4">
+              <div class="rounded-xl border border-line bg-surface-muted p-4">
                 <div class="text-[11px] text-ink-muted uppercase tracking-wide">
                   Total tasks
                 </div>
@@ -558,7 +558,7 @@ watch(
                   {{ fmtPct(periodComparePct) }} {{ periodCompareLabel }}
                 </div>
               </div>
-              <div class="rounded-xl border border-line bg-surface-raised/40 p-4">
+              <div class="rounded-xl border border-line bg-surface-muted p-4">
                 <div class="text-[11px] text-ink-muted uppercase tracking-wide">
                   Completed
                 </div>
@@ -575,7 +575,7 @@ watch(
                   · pending {{ levelCounts.awaitingHandoff || 0 }}
                 </div>
               </div>
-              <div class="rounded-xl border border-line bg-surface-raised/40 p-4">
+              <div class="rounded-xl border border-line bg-surface-muted p-4">
                 <div class="text-[11px] text-ink-muted uppercase tracking-wide">
                   Avg tasks / day
                 </div>
@@ -692,7 +692,7 @@ watch(
 
             <div
               v-if="displayTasks.length"
-              class="rounded-xl border border-line bg-surface-raised/30 p-4"
+              class="rounded-xl border border-line bg-surface-muted p-4"
             >
               <div class="text-sm font-medium text-ink mb-3">
                 {{
@@ -740,7 +740,7 @@ watch(
 
             <div
               v-if="payload.failReasons?.length"
-              class="rounded-xl border border-line bg-surface-raised/30 p-4"
+              class="rounded-xl border border-line bg-surface-muted p-4"
             >
               <div class="text-sm font-medium text-ink mb-2">Fail reasons</div>
               <div
@@ -761,12 +761,12 @@ watch(
 
 <style scoped>
 .stats-drill-card {
-  background: rgb(var(--c-surface-raised) / 0.35);
+  background: rgb(var(--c-surface-muted));
   color: rgb(var(--c-ink));
 }
 .stats-drill-card:hover {
-  background: rgb(var(--c-surface-soft));
-  border-color: rgb(var(--c-accent) / 0.35);
+  background: rgb(var(--c-surface-raised));
+  border-color: rgb(var(--c-accent) / 0.45);
 }
 
 .stats-collapse :deep(.ant-collapse) {
@@ -778,14 +778,14 @@ watch(
   background: transparent;
 }
 .stats-collapse :deep(.ant-collapse-header) {
-  background: rgb(var(--c-surface-raised) / 0.35) !important;
+  background: rgb(var(--c-surface-muted)) !important;
   color: rgb(var(--c-ink)) !important;
   border-radius: 8px !important;
 }
 .stats-collapse :deep(.ant-collapse-content) {
   background: transparent;
   border-color: rgb(var(--c-line));
-  color: rgb(var(--c-ink-soft));
+  color: rgb(var(--c-ink-muted));
 }
 .stats-collapse :deep(.ant-collapse-content-box) {
   padding-top: 8px;
