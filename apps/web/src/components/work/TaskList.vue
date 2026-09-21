@@ -294,55 +294,6 @@ function jobDisplayIid(j: Job) {
   return `#${iid}`;
 }
 
-function jobMilestone(j: Job) {
-  const fromIssue = (j.issue?.milestone?.title || "").trim();
-  if (fromIssue) return fromIssue;
-  const iid = j.issue?.issueIid;
-  if (!iid || iid <= 0) return "";
-  return (
-    props.filteredTasks.find((t) => t.issueIid === iid)?.milestone?.title || ""
-  ).trim();
-}
-
-function jobLabels(j: Job) {
-  const fromIssue = (j.issue?.labels || []).filter(Boolean);
-  if (fromIssue.length) return fromIssue;
-  const iid = j.issue?.issueIid;
-  if (!iid || iid <= 0) return [];
-  return (
-    props.filteredTasks.find((t) => t.issueIid === iid)?.labels || []
-  ).filter(Boolean);
-}
-
-function contextQualityShort(level?: string) {
-  if (level === "good") return "Good";
-  if (level === "searchable") return "Search";
-  if (level === "bad") return "Bad";
-  return "";
-}
-
-function jobSecondaryChip(j: Job): { label: string; title?: string; awaiting?: boolean } | null {
-  if (j.status.startsWith("awaiting_")) {
-    return {
-      label: statusLabel(j.status).replace(/^Awaiting\s+/i, ""),
-      title: statusLabel(j.status),
-      awaiting: true,
-    };
-  }
-  const cq = j.contextQuality?.level;
-  if (cq) {
-    return {
-      label: contextQualityShort(cq),
-      title: j.contextQuality?.reason || undefined,
-    };
-  }
-  const labels = jobLabels(j);
-  if (labels.length) return { label: labels[0], title: labels[0] };
-  const ms = jobMilestone(j);
-  if (ms) return { label: ms, title: ms };
-  return null;
-}
-
 const flashIds = ref<Set<string>>(new Set());
 const prevStatus = ref<Map<string, string>>(new Map());
 
@@ -638,14 +589,12 @@ watch(
                   type="button"
                   class="faw-job-status"
                   :title="`Change status · ${statusLabel(j.status)}`"
+                  :aria-label="`Status: ${statusLabel(j.status)}`"
                 >
                   <span
                     class="faw-job-dot"
                     :class="statusDotClass(j.status)"
                   />
-                  <span class="faw-job-status__lbl">{{
-                    statusLabel(j.status)
-                  }}</span>
                 </button>
                 <template #overlay>
                   <a-menu
@@ -686,22 +635,13 @@ watch(
               link-class="faw-job-id !no-underline"
             />
 
-            <div class="faw-job-main min-w-0 flex-1">
-              <span class="faw-job-t" :title="j.issue?.title">{{
-                j.issue?.title
-              }}</span>
-              <span v-if="jobMetaLine(j)" class="faw-job-meta">{{
-                jobMetaLine(j)
-              }}</span>
-            </div>
+            <span class="faw-job-t" :title="j.issue?.title">{{
+              j.issue?.title
+            }}</span>
 
-            <span
-              v-if="jobSecondaryChip(j)"
-              class="faw-job-tag"
-              :class="{ 'faw-job-tag--await': jobSecondaryChip(j)?.awaiting }"
-              :title="jobSecondaryChip(j)?.title"
-              >{{ jobSecondaryChip(j)?.label }}</span
-            >
+            <span v-if="jobMetaLine(j)" class="faw-job-meta">{{
+              jobMetaLine(j)
+            }}</span>
 
             <button
               type="button"

@@ -1210,20 +1210,13 @@ code {
 .faw-job-row.pinned {
   background: color-mix(in srgb, var(--app-accent) 6%, transparent);
 }
-.faw-job-main {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  min-width: 0;
-}
 .faw-job-meta {
   font-size: 9px;
   color: var(--app-faint);
   font-variant-numeric: tabular-nums;
   line-height: 1.2;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  flex-shrink: 0;
 }
 .faw-job-dot-btn {
   border: 0;
@@ -1236,27 +1229,17 @@ code {
 .faw-job-status {
   border: 0;
   background: transparent;
-  padding: 1px 4px 1px 2px;
+  padding: 3px;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  min-width: 0;
-  max-width: 6.25rem;
+  justify-content: center;
+  flex-shrink: 0;
   color: var(--app-muted);
-  font-family: var(--font-mono);
-  font-size: 9.5px;
-  line-height: 1.2;
   border-radius: 3px;
 }
 .faw-job-status:hover {
-  color: var(--app-ink);
   background: var(--app-hover);
-}
-.faw-job-status__lbl {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .faw-job-dot {
   width: 6px;
@@ -1291,24 +1274,7 @@ code {
   overflow: hidden;
   text-overflow: ellipsis;
   min-width: 0;
-  display: block;
-}
-.faw-job-tag {
-  font-family: var(--font-mono);
-  font-size: 9px;
-  color: var(--app-faint);
-  flex-shrink: 0;
-  max-width: 4.5rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.faw-job-tag--await {
-  color: var(--wip);
-  background: var(--wip-dim);
-  border-radius: 3px;
-  padding: 1px 5px;
-  max-width: 5.5rem;
+  flex: 1 1 auto;
 }
 .faw-job-pin {
   border: 0;
@@ -2192,10 +2158,6 @@ a.faw-mseg__btn {
   }
   .faw-app-shell .faw-job-t {
     font-size: 10.5px;
-  }
-  .faw-app-shell .faw-job-tag {
-    font-size: 8.5px;
-    max-width: 3.5rem;
   }
 
   .faw-app-shell .faw-issue-scroll {
