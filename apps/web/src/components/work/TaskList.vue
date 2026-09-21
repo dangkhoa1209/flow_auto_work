@@ -592,6 +592,9 @@ watch(
                     class="faw-job-dot"
                     :class="statusDotClass(j.status)"
                   />
+                  <span class="faw-job-status__lbl">{{
+                    statusLabel(j.status)
+                  }}</span>
                 </button>
                 <template #overlay>
                   <a-menu
