@@ -1,10 +1,14 @@
-import type { InteractionUpdate, SDKMessage } from "@cursor/sdk";
+import type {
+  ConversationStep,
+  InteractionUpdate,
+  SDKMessage,
+} from "@cursor/sdk";
 import { publishRealtime } from "../realtime/hub.js";
 import { workSubagentLabel } from "../cursor/workSubagents.js";
 
 /**
- * Nested subagent step (SDK 1.0.x has no NestedTaskUpdate / tool-call-delta).
- * Used when we synthesize nest lines from stream agent_id or Task conversationSteps.
+ * Nested subagent step (from SDK `tool-call-delta`.taskUpdate / NestedTaskUpdate,
+ * stream agent_id, or Task conversationSteps).
  */
 export type SubagentNestUpdate =
   | { type: "text-delta"; text: string }
@@ -516,8 +520,9 @@ function expandTaskConversationSteps(
     (typeof value?.agentId === "string" && value.agentId) ||
     (typeof rec.agentId === "string" && rec.agentId) ||
     callId;
-  if (nestedAgentsSeenByJob.get(jobId)?.has(agentId)) {
-    // Live stream already prefixed tools for this subagent — avoid duplicate replay.
+  const seen = nestedAgentsSeenByJob.get(jobId);
+  // Live tool-call-delta notes the Task callId; skip replay if we already streamed.
+  if (seen?.has(agentId) || seen?.has(callId)) {
     return;
   }
   const tag = nestTag(agentId);
@@ -548,7 +553,7 @@ function expandTaskConversationSteps(
   if (emitted > 0) noteNestedAgent(jobId, agentId);
 }
 
-/** Wire into Agent.send for /work — createPlan capture + nest via stream agent_id. */
+/** Wire into Agent.send for /work — createPlan capture + live nest via tool-call-delta. */
 export function workRunOnDelta(
   jobId: string | undefined,
 ):
@@ -556,9 +561,20 @@ export function workRunOnDelta(
   | ((args: { update: InteractionUpdate }) => void) {
   if (!jobId) return undefined;
   return ({ update }) => {
-    // SDK 1.0.x: no tool-call-delta / NestedTaskUpdate. Nested tools arrive on
-    // run.stream() with a different agent_id (handled in appendSdkMessage), or
-    // as Task conversationSteps when the Task tool_call completes.
+    // SDK ≥1.0.31: nested Task tools stream as tool-call-delta.taskUpdate.
+    // Fallbacks: run.stream() with a different agent_id (appendSdkMessage),
+    // Task conversationSteps / onStep / run.conversation() when live nest is thin.
+    if (update.type === "tool-call-delta") {
+      const delta = update as {
+        callId?: string;
+        taskUpdate?: SubagentNestUpdate;
+      };
+      if (delta.taskUpdate && delta.callId) {
+        noteNestedAgent(jobId, delta.callId);
+        appendSubagentDelta(jobId, delta.callId, delta.taskUpdate);
+      }
+      return;
+    }
     if (
       update.type === "tool-call-started" ||
       update.type === "tool-call-completed" ||
@@ -574,6 +590,73 @@ export function workRunOnDelta(
       }
     }
   };
+}
+
+/**
+ * send() onStep — expand nested Task conversationSteps (complements stream).
+ * Does not re-emit every parent tool (stream already mirrors those).
+ */
+export function workRunOnStep(
+  jobId: string | undefined,
+):
+  | undefined
+  | ((args: { step: ConversationStep }) => void) {
+  if (!jobId) return undefined;
+  return ({ step }) => {
+    expandTaskStepIfPresent(jobId, step);
+  };
+}
+
+function expandTaskStepIfPresent(
+  jobId: string,
+  step: ConversationStep,
+): void {
+  const s = step as unknown as Record<string, unknown>;
+  if (s.type !== "toolCall" && s.type !== "tool_call") return;
+  const tool = s.message ?? s.toolCall ?? s.tool_call ?? s;
+  const toolRec = asRecord(tool);
+  if (!toolRec) return;
+  const toolType =
+    (typeof toolRec.type === "string" && toolRec.type) ||
+    (typeof toolRec.name === "string" && toolRec.name) ||
+    "";
+  if (toolType !== "task" && toolType !== "Task" && toolType !== "agent") {
+    return;
+  }
+  const result =
+    toolRec.result ?? asRecord(toolRec.message)?.result ?? toolRec;
+  const callId =
+    (typeof toolRec.callId === "string" && toolRec.callId) ||
+    (typeof toolRec.call_id === "string" && toolRec.call_id) ||
+    "task";
+  expandTaskConversationSteps(jobId, callId, result);
+}
+
+/**
+ * Best-effort Process backfill from run.conversation() when live nest was thin.
+ */
+export async function appendRunConversationIfNeeded(
+  jobId: string | undefined,
+  run: { conversation?: () => Promise<unknown> },
+): Promise<void> {
+  if (!jobId || typeof run.conversation !== "function") return;
+  if (nestedAgentsSeenByJob.get(jobId)?.size) return;
+  try {
+    const turns = await run.conversation();
+    if (!Array.isArray(turns)) return;
+    for (const turn of turns) {
+      const t = asRecord(turn);
+      const steps = t?.steps;
+      if (!Array.isArray(steps)) continue;
+      for (const step of steps) {
+        if (step && typeof step === "object") {
+          expandTaskStepIfPresent(jobId, step as ConversationStep);
+        }
+      }
+    }
+  } catch {
+    /* conversation() optional / unsupported — ignore */
+  }
 }
 
 type UsageLike = {

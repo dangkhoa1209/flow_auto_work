@@ -1,4 +1,5 @@
 import { Agent, CursorAgentError } from "@cursor/sdk";
+import type { SendOptions, SteerAckOutcome } from "@cursor/sdk";
 import { setMaxListeners } from "node:events";
 import { collectLinkedIssueContext } from "../gitlab/linked-context.js";
 import { logger } from "../../logger.js";
@@ -21,6 +22,7 @@ import {
   codingAgentPolicy,
   planAgentPolicy,
 } from "../cursor/agentPolicy.js";
+import { prewarmLocalWorkspaceBestEffort } from "../cursor/prewarm.js";
 import {
   buildAdhocFollowUpPrompt,
   buildDocsPhasePrompt,
@@ -33,11 +35,13 @@ import {
 import {
   appendJobProgress,
   appendPromptSending,
+  appendRunConversationIfNeeded,
   appendSdkMessage,
   clearJobProgress,
   getJobTokenUsage,
   recordTokenUsage,
   workRunOnDelta,
+  workRunOnStep,
   type JobTokenSnapshot,
 } from "./progress.js";
 import { persistCursorUsage } from "../cursor/recordUsage.js";
@@ -216,13 +220,16 @@ async function withTimeout<T>(
 
 type CancellableRun = {
   cancel: () => Promise<void>;
+  steer?: (text: string) => Promise<SteerAckOutcome>;
 };
 
 type SdkRun = Awaited<
   ReturnType<Awaited<ReturnType<typeof Agent.create>>["send"]>
 >;
 
-/** Active Cursor runs keyed by jobId — used by Force Stop. */
+type SdkAgent = Awaited<ReturnType<typeof Agent.create>>;
+
+/** Active Cursor runs keyed by jobId — used by Force Stop + mid-run steer. */
 const activeRunsByJob = new Map<string, CancellableRun>();
 
 /** Monotonic generation so a superseded run's end() does not untrack the next. */
@@ -265,6 +272,77 @@ export async function cancelActiveAgentRun(jobId: string): Promise<boolean> {
   }
 }
 
+/**
+ * Inject guidance into an in-flight local run (SDK `run.steer`).
+ * Returns delivered | revert (send as follow-up later) | unavailable.
+ */
+export async function steerActiveAgentRun(
+  jobId: string,
+  text: string,
+): Promise<"delivered" | "revert" | "unavailable"> {
+  const msg = text.trim();
+  if (!msg) return "unavailable";
+  const entry = activeRunsByJob.get(jobId);
+  if (!entry?.steer) return "unavailable";
+  try {
+    const outcome = await entry.steer(msg);
+    if (outcome === "complete_delivered") return "delivered";
+    return "revert";
+  } catch (err) {
+    logger.warn("steerActiveAgentRun failed", {
+      jobId,
+      err: err instanceof Error ? err.message : String(err),
+    });
+    return "unavailable";
+  }
+}
+
+function isWedgeActiveRunError(err: unknown): boolean {
+  const msg =
+    err instanceof Error
+      ? `${err.message} ${String((err as Error & { cause?: unknown }).cause ?? "")}`
+      : String(err);
+  return (
+    /already has active run/i.test(msg) ||
+    /agent_busy|agent busy/i.test(msg) ||
+    /active run/i.test(msg) ||
+    /wedged/i.test(msg)
+  );
+}
+
+/** send() with one local.force retry when a prior run is wedged. */
+export async function sendWithLocalForceRetry(
+  agent: SdkAgent,
+  prompt: string,
+  options?: SendOptions,
+): Promise<SdkRun> {
+  try {
+    return await agent.send(prompt, options);
+  } catch (err) {
+    if (!isWedgeActiveRunError(err)) throw err;
+    logger.warn("agent.send hit active/wedged run — retrying with local.force", {
+      err: err instanceof Error ? err.message : String(err),
+    });
+    return await agent.send(prompt, {
+      ...options,
+      local: { ...options?.local, force: true },
+    });
+  }
+}
+
+/** @deprecated use sendWithLocalForceRetry — kept as internal alias */
+const sendPrompt = sendWithLocalForceRetry;
+
+function workSendOptions(jobId: string | undefined, mode?: SendOptions["mode"]): SendOptions {
+  const onDelta = workRunOnDelta(jobId);
+  const onStep = workRunOnStep(jobId);
+  return {
+    ...(mode ? { mode } : {}),
+    ...(onDelta ? { onDelta } : {}),
+    ...(onStep ? { onStep } : {}),
+  };
+}
+
 /** Track job as cancellable from create/send (Force Stop mid-chat / mid-Run). */
 export function beginCancellableJob(jobId: string | undefined): {
   check: () => void;
@@ -287,6 +365,12 @@ export function beginCancellableJob(jobId: string | undefined): {
           ? (attached as { supports: (f: string) => boolean }).supports("cancel")
           : true;
       if (supports) await attached.cancel();
+    },
+    steer: async (text: string) => {
+      if (!attached || typeof attached.steer !== "function") {
+        throw new Error("steer unavailable");
+      }
+      return attached.steer(text);
     },
   });
   return {
@@ -398,6 +482,7 @@ async function collectAssistantText(
 
   let result: Awaited<ReturnType<SdkRun["wait"]>>;
   try {
+    // SDK ≥1.0.31: wait()/stream() include background-subagent follow-up turns.
     result = await run.wait();
   } catch (err) {
     appendJobProgress(jobId, "status", `wait error: ${String(err)}`);
@@ -410,6 +495,8 @@ async function collectAssistantText(
     }
     throw err instanceof Error ? err : new Error(String(err));
   }
+
+  await appendRunConversationIfNeeded(jobId, run);
   if (result.status === "cancelled") {
     appendJobProgress(jobId, "status", "cancelled");
     throw new Error("Agent run cancelled (force stop)");
@@ -488,6 +575,10 @@ async function collectAssistantText(
 
 function trackRun(jobId: string | undefined, run: SdkRun): void {
   if (!jobId) return;
+  const steerFn =
+    typeof run.steer === "function"
+      ? (text: string) => run.steer!(text)
+      : undefined;
   activeRunsByJob.set(jobId, {
     cancel: async () => {
       const supports =
@@ -499,6 +590,7 @@ function trackRun(jobId: string | undefined, run: SdkRun): void {
         await run.cancel();
       }
     },
+    ...(steerFn ? { steer: steerFn } : {}),
   });
 }
 
@@ -676,6 +768,13 @@ export async function runNewAgent(
 
   try {
     session.check();
+    await prewarmLocalWorkspaceBestEffort({
+      apiKey: resolveCursorApiKey(),
+      model,
+      ...sdkPolicy,
+      local: workAgentLocal(),
+    });
+    session.check();
     const graphifyBlock = await loadWorkGraphifyBlock(opts?.jobId);
     session.check();
     if (existing) {
@@ -739,11 +838,11 @@ export async function runNewAgent(
       );
       appendPromptSending(opts.jobId, prompt);
     }
-    const onDelta = workRunOnDelta(opts?.jobId);
-    const run = await disposed.send(prompt, {
-      mode: sdkPolicy.mode,
-      ...(onDelta ? { onDelta } : {}),
-    });
+    const run = await sendPrompt(
+      disposed,
+      prompt,
+      workSendOptions(opts?.jobId, sdkPolicy.mode),
+    );
     logger.info("Agent run started", {
       runId: run.id,
       agentId: disposed.agentId,
@@ -798,8 +897,11 @@ export async function resumeAgent(
   if (opts?.jobId) {
     appendPromptSending(opts.jobId, prompt);
   }
-  const onDelta = workRunOnDelta(opts?.jobId);
-  const run = await agent.send(prompt, onDelta ? { onDelta } : undefined);
+  const run = await sendPrompt(
+    agent,
+    prompt,
+    workSendOptions(opts?.jobId),
+  );
   logger.info("Resume run started", { runId: run.id, agentId: agent.agentId });
   trackRun(opts?.jobId, run);
   try {
@@ -876,6 +978,13 @@ export async function continueAgentWindow(
   const session = beginCancellableJob(opts?.jobId);
   try {
     session.check();
+    await prewarmLocalWorkspaceBestEffort({
+      apiKey: resolveCursorApiKey(),
+      model,
+      ...codingAgentPolicy(),
+      local: workAgentLocal(),
+    });
+    session.check();
     const agent = await Agent.create({
       apiKey: resolveCursorApiKey(),
       model,
@@ -907,10 +1016,9 @@ export async function continueAgentWindow(
 
     session.check();
     let run: SdkRun;
-    const onDelta = workRunOnDelta(opts?.jobId);
     try {
       run = await withTimeout(
-        disposed.send(prompt, onDelta ? { onDelta } : undefined),
+        sendPrompt(disposed, prompt, workSendOptions(opts?.jobId)),
         60_000,
         "agent.send",
       );

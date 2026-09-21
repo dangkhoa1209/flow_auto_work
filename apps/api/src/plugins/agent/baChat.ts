@@ -1,8 +1,11 @@
-import { Agent } from "@cursor/sdk";
+import { Agent, type LocalAgentOptions } from "@cursor/sdk";
 import { setMaxListeners } from "node:events";
 import { logger } from "../../logger.js";
 import { publishRealtime } from "../realtime/hub.js";
 import { getConfig } from "../../config.js";
+import { persistCursorUsage } from "../cursor/recordUsage.js";
+import { readOnlyAgentPolicy } from "../cursor/agentPolicy.js";
+import { prewarmLocalWorkspaceBestEffort } from "../cursor/prewarm.js";
 import {
   beginCancellableJob,
   cancelActiveAgentRun,
@@ -13,9 +16,8 @@ import {
   isJobKillRequested,
   isTransientCursorTransportError,
   markCursorTransient,
+  sendWithLocalForceRetry,
 } from "./run.js";
-import { persistCursorUsage } from "../cursor/recordUsage.js";
-import { readOnlyAgentPolicy } from "../cursor/agentPolicy.js";
 import {
   appendBaMessage,
   getBaProject,
@@ -894,6 +896,22 @@ export async function runBaChatAgent(opts: {
         project.localPath,
         dbCfg ? (buildBaDbCustomTools(dbCfg) as never) : null,
       );
+      const localOpts: LocalAgentOptions = {
+        cwd: project.localPath,
+        ...(BA_GITLAB_INTERACTION_ENABLED
+          ? {}
+          : { settingSources: [] }),
+        ...(Object.keys(customTools).length
+          ? { customTools: customTools as never }
+          : {}),
+      };
+      await prewarmLocalWorkspaceBestEffort({
+        apiKey,
+        model,
+        ...readOnlyAgentPolicy(),
+        local: localOpts,
+      });
+      session.check();
       const agent = await Agent.create({
         apiKey,
         model,
@@ -904,17 +922,7 @@ export async function runBaChatAgent(opts: {
               // Empty MCP map so Cursor GitLab plugin tools are not attached.
               mcpServers: {},
             }),
-        local: {
-          cwd: project.localPath,
-          ...(BA_GITLAB_INTERACTION_ENABLED
-            ? {}
-            : { settingSources: [] }),
-          // Không bật sandboxOptions: customTools đi qua MCP custom-user-tools;
-          // sandbox headless chặn phê duyệt → agent báo "tool bị chặn".
-          ...(Object.keys(customTools).length
-            ? { customTools: customTools as never }
-            : {}),
-        },
+        local: localOpts,
       });
 
       await using disposed = agent;
@@ -931,7 +939,7 @@ export async function runBaChatAgent(opts: {
         detail: project.displayName,
       });
 
-      const run = await disposed.send(prompt);
+      const run = await sendWithLocalForceRetry(disposed, prompt);
       session.attach(run);
 
       let streamed = "";

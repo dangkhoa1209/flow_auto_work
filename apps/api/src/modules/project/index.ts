@@ -37,6 +37,7 @@ import {
 import { assertProjectCloneReady } from "../../workspace/resolve.js";
 import { buildCloneUrl, isGitRepo, runGitClone } from "../../workspace/clone.js";
 import { scheduleProjectGraphify } from "../../workspace/graphify.js";
+import { scheduleCloneWorkspacePrewarm } from "../../plugins/cursor/prewarm.js";
 import { AppError } from "../../utils/AppError.js";
 import { logger } from "../../logger.js";
 
@@ -268,6 +269,7 @@ export async function startProjectClone(
       cloneError: null,
     });
     scheduleProjectGraphify(project.localPath, "already-cloned");
+    scheduleCloneWorkspacePrewarm(project.localPath);
     return {
       ok: true,
       alreadyCloned: true,
@@ -301,6 +303,7 @@ export async function startProjectClone(
       });
       logger.info("Project clone ready", { projectId, localPath });
       scheduleProjectGraphify(localPath, "clone");
+      scheduleCloneWorkspacePrewarm(localPath);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       await updateProjectFields(projectId, {

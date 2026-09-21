@@ -9,8 +9,32 @@ import {
 type CustomTool = {
   description: string;
   inputSchema: Record<string, unknown>;
+  /** MCP Tool.outputSchema — descriptive only; results are not validated. */
+  outputSchema?: Record<string, unknown>;
+  /** MCP tool annotations (hints for the model). */
+  annotations?: {
+    title?: string;
+    readOnlyHint?: boolean;
+    destructiveHint?: boolean;
+    idempotentHint?: boolean;
+    openWorldHint?: boolean;
+  };
   execute: (args: Record<string, unknown>) => Promise<string>;
 };
+
+const READ_ONLY_MAP_ANNOTATIONS = {
+  readOnlyHint: true,
+  destructiveHint: false,
+  idempotentHint: true,
+  openWorldHint: false,
+} as const;
+
+const TEXT_OUTPUT_SCHEMA = {
+  type: "object",
+  properties: {
+    text: { type: "string", description: "Graphify result text" },
+  },
+} as const;
 
 /**
  * Cursor SDK custom tools — agents must use these before Grep/Shell when exploring source.
@@ -42,6 +66,11 @@ export function buildBaGraphifyCustomTools(
         },
         required: ["question"],
       },
+      outputSchema: TEXT_OUTPUT_SCHEMA,
+      annotations: {
+        title: "Code map query",
+        ...READ_ONLY_MAP_ANNOTATIONS,
+      },
       async execute(args) {
         const question = String(args?.question || "").trim();
         if (!question) return "code_map_query failed: question required";
@@ -67,6 +96,11 @@ export function buildBaGraphifyCustomTools(
         },
         required: ["from", "to"],
       },
+      outputSchema: TEXT_OUTPUT_SCHEMA,
+      annotations: {
+        title: "Code map path",
+        ...READ_ONLY_MAP_ANNOTATIONS,
+      },
       async execute(args) {
         const from = String(args?.from || "").trim();
         const to = String(args?.to || "").trim();
@@ -88,6 +122,11 @@ export function buildBaGraphifyCustomTools(
           },
         },
         required: ["concept"],
+      },
+      outputSchema: TEXT_OUTPUT_SCHEMA,
+      annotations: {
+        title: "Code map explain",
+        ...READ_ONLY_MAP_ANNOTATIONS,
       },
       async execute(args) {
         const concept = String(args?.concept || "").trim();

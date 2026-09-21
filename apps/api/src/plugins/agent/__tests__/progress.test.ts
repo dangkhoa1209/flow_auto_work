@@ -9,6 +9,8 @@ import {
   getJobCapturedPlan,
   getJobProgress,
   PROGRESS_PUBLISH_MS,
+  workRunOnDelta,
+  workRunOnStep,
 } from "../progress.js";
 
 const JOB = "progress-format-job";
@@ -209,6 +211,58 @@ describe("subagent progress", () => {
     expect(lines.some((l) => l.kind === "task" && l.text.includes("Found progress.ts"))).toBe(
       true,
     );
+  });
+
+  it("workRunOnStep expands Task conversationSteps without duplicating parent tools", () => {
+    const onStep = workRunOnStep(JOB);
+    expect(onStep).toBeDefined();
+    onStep!({
+      step: {
+        type: "toolCall",
+        message: {
+          type: "task",
+          args: { description: "Explore" },
+          result: {
+            status: "success",
+            value: {
+              agentId: "sub-onstep-1",
+              conversationSteps: [
+                {
+                  type: "toolCall",
+                  message: {
+                    type: "Shell",
+                    args: { command: "pwd" },
+                  },
+                },
+              ],
+            },
+          },
+        },
+      } as never,
+    });
+    const { lines } = getJobProgress(JOB);
+    expect(lines.some((l) => l.text.includes("[sub sub-onst]"))).toBe(true);
+    expect(lines.some((l) => l.text.includes("Shell: pwd"))).toBe(true);
+  });
+
+  it("workRunOnDelta maps tool-call-delta.taskUpdate to [sub …] Process lines", () => {
+    const onDelta = workRunOnDelta(JOB);
+    expect(onDelta).toBeDefined();
+    onDelta!({
+      update: {
+        type: "tool-call-delta",
+        callId: "task-live-1",
+        modelCallId: "m1",
+        taskUpdate: {
+          type: "tool-call-started",
+          callId: "inner-shell",
+          toolCall: { type: "shell", args: { command: "ls" } },
+        },
+      } as never,
+    });
+    const { lines } = getJobProgress(JOB);
+    expect(lines.some((l) => l.text.includes("[sub task-liv]"))).toBe(true);
+    expect(lines.some((l) => /shell:\s*ls/i.test(l.text))).toBe(true);
   });
 });
 
