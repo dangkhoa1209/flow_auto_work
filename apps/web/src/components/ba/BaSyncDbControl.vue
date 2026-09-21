@@ -3,12 +3,12 @@ import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { message } from "ant-design-vue";
 import {
   CloudSyncOutlined,
-  HistoryOutlined,
 } from "@ant-design/icons-vue";
-import type { SyncDbJob } from "@/api/syncDbApi";
+import type { SyncDbJob, SyncDbStatus } from "@/api/syncDbApi";
 import { useBaChatStore } from "@/stores/baChat";
 import { useSyncDbStore } from "@/stores/syncDb";
 import { formatBuildDurationMs } from "@/utils/formatBuildDuration";
+import { formatChatTime } from "@/utils/formatChatTime";
 
 const ba = useBaChatStore();
 const sync = useSyncDbStore();
@@ -56,6 +56,26 @@ const progressText = computed(() => {
   return `${p.phase} · ${cur}`;
 });
 
+/** Active jobs first, then history — deduped, newest first. */
+const timeline = computed(() => {
+  const byId = new Map<string, SyncDbJob>();
+  for (const j of sync.history) byId.set(j.id, j);
+  for (const j of sync.jobs) byId.set(j.id, j);
+  return [...byId.values()]
+    .sort((a, b) => {
+      const ta = Date.parse(a.startedAt || a.queuedAt || a.createdAt) || 0;
+      const tb = Date.parse(b.startedAt || b.queuedAt || b.createdAt) || 0;
+      return tb - ta;
+    })
+    .slice(0, 12);
+});
+
+const pendingJob = computed(() =>
+  timeline.value.find((j) => j.status === "running" || j.status === "queued"),
+);
+
+const latestJob = computed(() => timeline.value[0] ?? null);
+
 watch(
   projectId,
   (id) => {
@@ -96,20 +116,29 @@ async function onCancel(id: string) {
   }
 }
 
-function statusColor(status: string): string {
-  if (status === "success") return "text-emerald-600";
-  if (status === "failed" || status === "timeout") return "text-red-600";
-  if (status === "running") return "text-amber-600";
-  if (status === "queued") return "text-sky-600";
-  return "text-ink-muted";
+function statusLabel(status: SyncDbStatus | string): string {
+  if (status === "success") return "Success";
+  if (status === "failed") return "Failed";
+  if (status === "timeout") return "Timeout";
+  if (status === "cancelled") return "Cancelled";
+  if (status === "running") return "Running";
+  if (status === "queued") return "Queued";
+  return status;
 }
 
-function formatSyncAt(job: SyncDbJob): string {
-  const iso = job.startedAt || job.queuedAt || job.createdAt;
-  if (!iso) return "—";
-  const t = new Date(iso);
-  if (Number.isNaN(t.getTime())) return "—";
-  return t.toLocaleString("en-US", { hour12: false });
+function statusTone(
+  status: SyncDbStatus | string,
+): "ok" | "warn" | "err" | "run" | "muted" {
+  if (status === "success") return "ok";
+  if (status === "failed" || status === "timeout") return "err";
+  if (status === "running") return "run";
+  if (status === "queued") return "warn";
+  if (status === "cancelled") return "muted";
+  return "muted";
+}
+
+function jobAtIso(job: SyncDbJob): string {
+  return job.startedAt || job.queuedAt || job.createdAt;
 }
 
 function formatDuration(job: SyncDbJob): string {
@@ -122,6 +151,12 @@ function formatDuration(job: SyncDbJob): string {
   }
   return "—";
 }
+
+function errorPreview(job: SyncDbJob, max = 120): string {
+  const msg = (job.errorMessage || "").trim();
+  if (!msg) return "";
+  return msg.length > max ? `${msg.slice(0, max)}…` : msg;
+}
 </script>
 
 <template>
@@ -130,78 +165,182 @@ function formatDuration(job: SyncDbJob): string {
     v-model:open="popOpen"
     trigger="click"
     placement="bottomRight"
+    overlay-class-name="faw-sync-db-pop-overlay"
   >
     <template #content>
-      <div class="faw-sync-pop">
-        <div class="faw-sync-pop__head">
+      <div class="faw-sync-db">
+        <div class="faw-sync-db__head">
           <div class="min-w-0">
-            <div class="text-sm font-medium text-ink truncate">
+            <div class="faw-sync-db__title">
               Sync Database
-              <span v-if="sync.capability?.dbName" class="text-ink-muted font-normal">
-                · {{ sync.capability.dbName }}
-              </span>
+              <span
+                v-if="timeline.length"
+                class="faw-sync-db__count"
+                >{{ timeline.length }}</span
+              >
             </div>
-            <div v-if="progressText" class="text-xs text-amber-700 mt-0.5 truncate">
-              {{ progressText }}
-            </div>
-            <div v-else-if="sync.queue.queued" class="text-xs text-ink-muted mt-0.5">
-              Queue: {{ sync.queue.queued }} waiting (1 at a time system-wide)
-            </div>
-            <div v-else class="text-xs text-ink-muted mt-0.5">
-              Idle — dump live → restore project Connect DB
-            </div>
+            <p class="faw-sync-db__hint">
+              Dump live → restore
+              <template v-if="sync.capability?.dbName">
+                <code>{{ sync.capability.dbName }}</code>
+              </template>
+              <template v-else> project Connect DB</template>
+              . One sync at a time system-wide.
+            </p>
           </div>
           <button
             type="button"
             class="faw-btn faw-btn--primary shrink-0"
             :disabled="syncDisabled"
+            :title="
+              syncDisabled
+                ? 'A sync is already queued or running for this project'
+                : 'Queue a sync for this project DB'
+            "
             @click="onSync"
           >
             <CloudSyncOutlined />
-            Sync
+            {{ sync.triggering ? "Queuing…" : "Sync" }}
           </button>
         </div>
 
-        <div class="faw-sync-pop__hist">
-          <div class="flex items-center gap-1 text-xs text-ink-muted mb-1.5">
-            <HistoryOutlined />
-            Recent
-          </div>
-          <p v-if="!sync.history.length" class="text-xs text-ink-muted m-0 py-2">
-            No sync history yet
-          </p>
-          <div
-            v-for="job in sync.history.slice(0, 12)"
-            :key="job.id"
-            class="faw-sync-pop__row"
-          >
-            <div class="min-w-0 flex-1">
-              <div class="text-xs text-ink truncate">
-                {{ job.dbName }}
-                <span :class="statusColor(job.status)">· {{ job.status }}</span>
-                <span class="text-ink-muted font-normal"> · {{ formatDuration(job) }}</span>
-              </div>
-              <div class="text-[11px] text-ink-muted truncate">
-                @{{ job.triggeredBy }}
-                · sync at {{ formatSyncAt(job) }}
-                <template v-if="job.progress?.total">
-                  · {{ job.progress.done }}/{{ job.progress.total }}
-                </template>
-                <template v-if="job.errorMessage">
-                  · {{ job.errorMessage }}
-                </template>
-              </div>
+        <div
+          v-if="pendingJob || progressText || sync.queue.queued"
+          class="faw-sync-db__live"
+          role="status"
+        >
+          <span class="faw-sync-db__live-dot" aria-hidden="true" />
+          <div class="min-w-0">
+            <div class="faw-sync-db__live-title">
+              <template v-if="pendingJob?.status === 'queued'">
+                Sync queued…
+              </template>
+              <template v-else-if="pendingJob || sync.queue.running">
+                Sync in progress…
+              </template>
+              <template v-else> Queue busy </template>
             </div>
-            <a-popconfirm
-              v-if="job.status === 'queued' || job.status === 'running'"
-              title="Cancel this sync?"
-              ok-text="Cancel job"
-              cancel-text="Keep"
-              ok-type="danger"
-              @confirm="onCancel(job.id)"
+            <div class="faw-sync-db__live-meta">
+              <template v-if="progressText">{{ progressText }}</template>
+              <template v-else-if="sync.queue.queued">
+                {{ sync.queue.queued }} waiting (1 at a time)
+              </template>
+              <template v-else-if="pendingJob">
+                {{ pendingJob.dbName }} · {{ formatDuration(pendingJob) }}
+              </template>
+            </div>
+          </div>
+          <a-popconfirm
+            v-if="pendingJob"
+            title="Cancel this sync?"
+            ok-text="Cancel job"
+            cancel-text="Keep"
+            ok-type="danger"
+            @confirm="onCancel(pendingJob.id)"
+          >
+            <button type="button" class="faw-sync-db__cancel">Cancel</button>
+          </a-popconfirm>
+        </div>
+
+        <div
+          v-else-if="latestJob"
+          class="faw-sync-db__latest"
+        >
+          <div class="faw-sync-db__latest-label">Latest</div>
+          <div class="faw-sync-db__latest-row">
+            <span class="faw-sync-db__pill">{{ latestJob.dbName }}</span>
+            <span
+              class="faw-sync-db__status"
+              :class="`faw-sync-db__status--${statusTone(latestJob.status)}`"
+              >{{ statusLabel(latestJob.status) }}</span
             >
-              <button type="button" class="faw-sync-pop__cancel">Cancel</button>
-            </a-popconfirm>
+            <span class="faw-sync-db__time tabular-nums">{{
+              formatChatTime(jobAtIso(latestJob))
+            }}</span>
+            <span
+              v-if="formatDuration(latestJob) !== '—'"
+              class="faw-sync-db__dur tabular-nums"
+              >{{ formatDuration(latestJob) }}</span
+            >
+          </div>
+        </div>
+
+        <ul v-if="timeline.length" class="faw-sync-db__list">
+          <li
+            v-for="job in timeline"
+            :key="job.id"
+            class="faw-sync-db__item"
+            :class="`faw-sync-db__item--${statusTone(job.status)}`"
+          >
+            <div class="faw-sync-db__item-top">
+              <div class="faw-sync-db__item-badges">
+                <span class="faw-sync-db__pill">{{ job.dbName }}</span>
+                <span
+                  class="faw-sync-db__status"
+                  :class="`faw-sync-db__status--${statusTone(job.status)}`"
+                  >{{ statusLabel(job.status) }}</span
+                >
+              </div>
+              <time
+                class="faw-sync-db__time tabular-nums"
+                :datetime="jobAtIso(job)"
+                >{{ formatChatTime(jobAtIso(job)) }}</time
+              >
+            </div>
+            <div class="faw-sync-db__meta">
+              <span>@{{ job.triggeredBy }}</span>
+              <span
+                v-if="formatDuration(job) !== '—'"
+                class="tabular-nums"
+                >· {{ formatDuration(job) }}</span
+              >
+              <span
+                v-if="job.progress?.total"
+                class="tabular-nums"
+                >· {{ job.progress.done }}/{{ job.progress.total }}</span
+              >
+            </div>
+            <p v-if="errorPreview(job)" class="faw-sync-db__msg">
+              {{ errorPreview(job) }}
+            </p>
+            <div
+              v-if="
+                (job.status === 'queued' || job.status === 'running') &&
+                pendingJob?.id !== job.id
+              "
+              class="faw-sync-db__actions"
+            >
+              <a-popconfirm
+                title="Cancel this sync?"
+                ok-text="Cancel job"
+                cancel-text="Keep"
+                ok-type="danger"
+                @confirm="onCancel(job.id)"
+              >
+                <button type="button" class="faw-sync-db__cancel">
+                  Cancel
+                </button>
+              </a-popconfirm>
+            </div>
+          </li>
+        </ul>
+
+        <div v-else class="faw-sync-db__empty">
+          <div class="faw-sync-db__empty-title">No syncs yet</div>
+          <p class="faw-sync-db__empty-body">
+            Pull a fresh copy of live Mongo into this project’s Connect DB.
+          </p>
+          <div class="faw-sync-db__empty-cta">
+            <a-button
+              size="small"
+              type="primary"
+              :loading="sync.triggering"
+              :disabled="syncDisabled"
+              @click="onSync"
+            >
+              <CloudSyncOutlined />
+              Sync now
+            </a-button>
           </div>
         </div>
       </div>
@@ -221,37 +360,3 @@ function formatDuration(job: SyncDbJob): string {
     </button>
   </a-popover>
 </template>
-
-<style scoped>
-.faw-sync-pop {
-  width: min(360px, 92vw);
-  max-height: 420px;
-  overflow: auto;
-}
-.faw-sync-pop__head {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding-bottom: 10px;
-  border-bottom: 1px solid var(--line, #e5e7eb);
-  margin-bottom: 8px;
-}
-.faw-sync-pop__row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 0;
-  border-bottom: 1px solid var(--line, #f0f0f0);
-}
-.faw-sync-pop__row:last-child {
-  border-bottom: none;
-}
-.faw-sync-pop__cancel {
-  font-size: 11px;
-  color: #b91c1c;
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  padding: 2px 4px;
-}
-</style>
