@@ -12,6 +12,7 @@ import BaProjectSelect from "@/components/ba/BaProjectSelect.vue";
 import BaGitPatModal from "@/components/ba/BaGitPatModal.vue";
 import BaSyncDbControl from "@/components/ba/BaSyncDbControl.vue";
 import MobileBottomNav from "@/components/MobileBottomNav.vue";
+import { settingsDefaultPath } from "@/config/settingsNav";
 
 const router = useRouter();
 const route = useRoute();
@@ -19,6 +20,8 @@ const session = useSessionStore();
 const ba = useBaChatStore();
 const { basePath, routeName } = useProjectChatBase();
 const sideOpen = ref(false);
+
+const settingsTo = computed(() => settingsDefaultPath(basePath.value));
 
 const statusDot = computed(() => (ba.streaming ? "wip" : "idle"));
 const statusText = computed(() =>
@@ -173,7 +176,7 @@ onMounted(() => {
       <div class="faw-topbar__spacer hidden lg:block" />
 
       <!-- One instance: mobile CSS already hides desktop chrome + settings -->
-      <AppTopbarRight :settings-to="`${basePath}/settings/gitlab`">
+      <AppTopbarRight :settings-to="settingsTo">
         <template #status>
           <span class="faw-idle faw-ba-idle">
             <span class="faw-idle__dot" :class="statusDot" />

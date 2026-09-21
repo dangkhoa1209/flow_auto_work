@@ -13,6 +13,7 @@ import { useSessionStore } from "@/stores/session";
 import { useSettingsStore } from "@/stores/settings";
 import { useWorkStore } from "@/stores/work";
 import MobileBottomNav from "@/components/MobileBottomNav.vue";
+import { settingsDefaultPath } from "@/config/settingsNav";
 
 const route = useRoute();
 const router = useRouter();
@@ -116,7 +117,7 @@ async function onSwitchProject(projectId: string) {
 
 function goManageProjects() {
   projectPickerOpen.value = false;
-  router.push("/settings/project");
+  router.push(settingsDefaultPath("code"));
 }
 
 async function onKillAll() {
@@ -220,7 +221,7 @@ async function onKillAll() {
 
       <div class="faw-topbar__spacer hidden lg:block" />
 
-      <AppTopbarRight settings-to="/settings/project">
+      <AppTopbarRight :settings-to="settingsDefaultPath('code')">
         <template #status>
           <span class="faw-idle">
             <span class="faw-idle__dot" :class="idleDot" />

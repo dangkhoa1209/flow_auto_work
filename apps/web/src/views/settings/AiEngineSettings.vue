@@ -10,9 +10,9 @@ const activeId = ref<ProviderId>("cursor");
 
 const cursorStatusLabel = computed(() => {
   const pats = session.me?.cursorPats ?? [];
-  if (!pats.length) return "Chưa có PAT";
+  if (!pats.length) return "No PAT";
   const active = pats.find((p) => p.isActive);
-  if (!active) return `${pats.length} PAT · chưa active`;
+  if (!active) return `${pats.length} PAT · none active`;
   return `Active: ${active.label}`;
 });
 
@@ -22,7 +22,7 @@ const providers = computed(() => [
   {
     id: "cursor" as const,
     label: "Cursor",
-    hint: "Provider agent · mọi project",
+    hint: "Agent provider · all projects",
     status: cursorStatusLabel.value,
     ok: cursorStatusOk.value,
   },
@@ -38,12 +38,12 @@ function selectProvider(id: ProviderId) {
     <header class="faw-settings-detail faw-integrations__head">
       <h2>AI Engine</h2>
       <p class="faw-settings-detail__lead m-0 mt-1">
-        Nền tảng chạy agent — chọn provider và cấu hình PAT / model.
+        Agent runtime — pick a provider and configure PATs / model.
       </p>
     </header>
 
     <div class="faw-integrations__shell">
-      <aside class="faw-integrations__list" aria-label="Danh sách providers">
+      <aside class="faw-integrations__list" aria-label="Providers list">
         <button
           v-for="item in providers"
           :key="item.id"

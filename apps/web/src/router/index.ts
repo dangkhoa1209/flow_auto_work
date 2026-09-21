@@ -41,7 +41,7 @@ const router = createRouter({
         },
         {
           path: "settings",
-          component: () => import("@/layouts/BaSettingsLayout.vue"),
+          component: () => import("@/layouts/SettingsLayout.vue"),
           children: [
             { path: "", redirect: "/ba/settings/gitlab" },
             {
@@ -92,7 +92,7 @@ const router = createRouter({
         },
         {
           path: "settings",
-          component: () => import("@/layouts/BaSettingsLayout.vue"),
+          component: () => import("@/layouts/SettingsLayout.vue"),
           children: [
             { path: "", redirect: "/qc/settings/gitlab" },
             {
@@ -128,7 +128,7 @@ const router = createRouter({
         },
         {
           path: "settings",
-          component: () => import("@/layouts/DevopsSettingsLayout.vue"),
+          component: () => import("@/layouts/SettingsLayout.vue"),
           children: [
             { path: "", redirect: "/devops/settings/account" },
             {
@@ -190,7 +190,7 @@ const router = createRouter({
         },
         {
           path: "settings",
-          component: () => import("@/layouts/AdminSettingsLayout.vue"),
+          component: () => import("@/layouts/SettingsLayout.vue"),
           children: [
             { path: "", redirect: "/admin/settings/account" },
             {

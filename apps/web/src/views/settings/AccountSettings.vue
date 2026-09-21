@@ -33,19 +33,19 @@ onMounted(async () => {
 
 async function changePassword() {
   if (!newPassword.value.trim()) {
-    message.warning("Nhập mật khẩu mới");
+    message.warning("Enter a new password");
     return;
   }
   if (newPassword.value.length < 6) {
-    message.warning("Mật khẩu mới tối thiểu 6 ký tự");
+    message.warning("New password must be at least 6 characters");
     return;
   }
   if (newPassword.value !== confirmPassword.value) {
-    message.warning("Mật khẩu xác nhận không khớp");
+    message.warning("Passwords do not match");
     return;
   }
   if (hasPassword.value && !currentPassword.value.trim()) {
-    message.warning("Nhập mật khẩu hiện tại");
+    message.warning("Enter your current password");
     return;
   }
 
@@ -68,7 +68,7 @@ async function changePassword() {
     currentPassword.value = "";
     newPassword.value = "";
     confirmPassword.value = "";
-    message.success("Đã đổi mật khẩu");
+    message.success("Password updated");
   } catch (e) {
     message.error(e instanceof Error ? e.message : String(e));
   } finally {
@@ -78,7 +78,7 @@ async function changePassword() {
 
 async function logout() {
   await session.logout();
-  message.success("Đã đăng xuất");
+  message.success("Signed out");
   await router.replace({ name: "login" });
 }
 </script>
@@ -86,6 +86,9 @@ async function logout() {
 <template>
   <div class="faw-settings-detail faw-account">
     <h2>Account</h2>
+    <p class="faw-settings-detail__lead">
+      Profile, password, and sign-out for this workspace.
+    </p>
 
     <section class="faw-account__profile">
       <div class="faw-account__field">
@@ -99,34 +102,34 @@ async function logout() {
     </section>
 
     <section class="faw-account__section">
-      <h3 class="faw-account__section-title">Đổi mật khẩu</h3>
+      <h3 class="faw-account__section-title">Change password</h3>
       <a-form layout="vertical" class="faw-account__form">
-        <a-form-item v-if="hasPassword" label="Mật khẩu hiện tại">
+        <a-form-item v-if="hasPassword" label="Current password">
           <a-input-password
             v-model:value="currentPassword"
             autocomplete="current-password"
           />
         </a-form-item>
-        <a-form-item label="Mật khẩu mới">
+        <a-form-item label="New password">
           <a-input-password
             v-model:value="newPassword"
             autocomplete="new-password"
           />
         </a-form-item>
-        <a-form-item label="Xác nhận mật khẩu mới">
+        <a-form-item label="Confirm new password">
           <a-input-password
             v-model:value="confirmPassword"
             autocomplete="new-password"
           />
         </a-form-item>
         <a-button type="primary" :loading="loading" @click="changePassword">
-          Lưu mật khẩu
+          Save password
         </a-button>
       </a-form>
     </section>
 
     <section class="faw-account__section faw-account__logout">
-      <a-button danger @click="logout">Đăng xuất</a-button>
+      <a-button danger @click="logout">Sign out</a-button>
     </section>
   </div>
 </template>

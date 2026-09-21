@@ -4,9 +4,12 @@ import { useRoute, RouterLink, RouterView } from "vue-router";
 import AppTopbarRight from "@/components/layout/AppTopbarRight.vue";
 import MobileBottomNav from "@/components/MobileBottomNav.vue";
 import { useSessionStore } from "@/stores/session";
+import { settingsDefaultPath } from "@/config/settingsNav";
 
 const route = useRoute();
 const session = useSessionStore();
+
+const settingsTo = settingsDefaultPath("admin");
 
 const tabs = [
   { to: "/admin/users", label: "Users", short: "Users" },
@@ -66,7 +69,7 @@ function isTabActive(tab: (typeof tabs)[0]): boolean {
 
       <div class="faw-topbar__spacer" />
 
-      <AppTopbarRight settings-to="/admin/settings/account">
+      <AppTopbarRight :settings-to="settingsTo">
         <template #extra>
           <RouterLink to="/ba" class="faw-btn">ChatBox</RouterLink>
           <RouterLink to="/qc" class="faw-btn">QC</RouterLink>
