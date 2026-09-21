@@ -4465,8 +4465,14 @@ a.faw-mseg__btn {
   align-items: center;
   gap: 6px 8px;
 }
+.faw-sync-db__latest-row,
 .faw-sync-db__item-top {
   justify-content: space-between;
+  flex-wrap: nowrap;
+  gap: 8px;
+}
+.faw-sync-db__item-badges {
+  min-width: 0;
 }
 .faw-sync-db__list {
   list-style: none;
@@ -4558,6 +4564,9 @@ a.faw-mseg__btn {
   font-size: 11px;
   color: var(--app-faint);
   flex-shrink: 0;
+  margin-left: auto;
+  text-align: right;
+  white-space: nowrap;
 }
 .faw-sync-db__meta {
   font-size: 11px;
@@ -4727,8 +4736,14 @@ a.faw-mseg__btn {
   align-items: center;
   gap: 6px 8px;
 }
+.faw-merge-hist__latest-row,
 .faw-merge-hist__item-top {
   justify-content: space-between;
+  flex-wrap: nowrap;
+  gap: 8px;
+}
+.faw-merge-hist__item-badges {
+  min-width: 0;
 }
 .faw-merge-hist__list {
   list-style: none;
@@ -4832,6 +4847,9 @@ a.faw-mseg__btn {
   font-size: 11px;
   color: var(--app-faint);
   flex-shrink: 0;
+  margin-left: auto;
+  text-align: right;
+  white-space: nowrap;
 }
 .faw-merge-hist__flow {
   display: flex;

@@ -248,20 +248,25 @@ function errorPreview(job: SyncDbJob, max = 120): string {
         >
           <div class="faw-sync-db__latest-label">Latest</div>
           <div class="faw-sync-db__latest-row">
-            <span class="faw-sync-db__pill">{{ latestJob.dbName }}</span>
-            <span
-              class="faw-sync-db__status"
-              :class="`faw-sync-db__status--${statusTone(latestJob.status)}`"
-              >{{ statusLabel(latestJob.status) }}</span
+            <div class="faw-sync-db__item-badges">
+              <span class="faw-sync-db__pill">{{ latestJob.dbName }}</span>
+              <span
+                class="faw-sync-db__status"
+                :class="`faw-sync-db__status--${statusTone(latestJob.status)}`"
+                >{{ statusLabel(latestJob.status) }}</span
+              >
+            </div>
+            <time
+              class="faw-sync-db__time tabular-nums"
+              :datetime="jobAtIso(latestJob)"
+              >{{ formatChatTime(jobAtIso(latestJob)) }}</time
             >
-            <span class="faw-sync-db__time tabular-nums">{{
-              formatChatTime(jobAtIso(latestJob))
-            }}</span>
-            <span
-              v-if="formatDuration(latestJob) !== '—'"
-              class="faw-sync-db__dur tabular-nums"
-              >{{ formatDuration(latestJob) }}</span
-            >
+          </div>
+          <div
+            v-if="formatDuration(latestJob) !== '—'"
+            class="faw-sync-db__meta"
+          >
+            <span class="tabular-nums">{{ formatDuration(latestJob) }}</span>
           </div>
         </div>
 
