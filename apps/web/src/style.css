@@ -54,68 +54,53 @@
   /* Shared Work AgentConsole + BA Chat message density (keep in sync) */
   --app-chat-size: 12px;
   --app-chat-leading: 1.5;
-
-  /* Contribution heatmap (Stats) — dark defaults */
-  --hm-empty: rgb(var(--c-line));
-  --hm-1: rgb(var(--c-accent) / 0.25);
-  --hm-2: rgb(var(--c-accent) / 0.45);
-  --hm-3: rgb(var(--c-accent) / 0.65);
-  --hm-4: rgb(var(--c-accent));
 }
 
 /* ===== Theme tokens — light ===== */
 :root[data-theme="light"] {
   color-scheme: light;
-  /* Darker canvas + stronger lines so Work / Handoff / Stats panels read clearly */
-  --c-surface: 232 236 242;
+  --c-surface: 243 245 248;
   --c-surface-raised: 255 255 255;
-  --c-surface-soft: 243 246 250;
-  --c-surface-muted: 220 226 235;
-  --c-ink: 15 23 42;
-  --c-ink-muted: 45 55 72;
-  --c-ink-faint: 71 85 105;
-  --c-line: 196 205 218;
-  --c-line-strong: 148 163 184;
-  --c-accent: 37 99 199;
-  --c-accent-bright: 29 78 176;
+  --c-surface-soft: 246 247 250;
+  --c-surface-muted: 235 239 245;
+  --c-ink: 17 24 39;
+  --c-ink-muted: 51 62 77;
+  --c-ink-faint: 82 94 110;
+  --c-line: 221 226 234;
+  --c-line-strong: 198 205 217;
+  --c-accent: 59 111 209;
+  --c-accent-bright: 44 88 184;
 
-  --app-panel-hover: #dde4ee;
-  --app-panel-alt: #e6ebf3;
-  --app-deep: #dfe5ee;
-  --app-border-strong: #94a3b8;
-  --app-ghost: #64748b;
-  --app-code-ink: #0f172a;
-  --app-scroll: #a8b2c1;
-  --app-scroll-hover: #8793a6;
-  --app-hover-weak: rgba(15, 23, 42, 0.05);
-  --app-hover: rgba(15, 23, 42, 0.09);
-  --app-glass: rgba(255, 255, 255, 0.96);
-  --app-grid: rgba(15, 23, 42, 0.12);
+  --app-panel-hover: #e8ecf3;
+  --app-panel-alt: #eef1f6;
+  --app-deep: #e9edf3;
+  --app-border-strong: #c6cdd9;
+  --app-ghost: #8b96a8;
+  --app-code-ink: #1e293b;
+  --app-scroll: #c4cbd6;
+  --app-scroll-hover: #a8b1c0;
+  --app-hover-weak: rgba(15, 23, 42, 0.04);
+  --app-hover: rgba(15, 23, 42, 0.07);
+  --app-glass: rgba(255, 255, 255, 0.92);
+  --app-grid: rgba(30, 41, 59, 0.1);
   --app-danger-bg: #fdecec;
   --app-danger-border: #f2b8b8;
   --app-danger-border-strong: #e39a9a;
-  --app-danger-ink: #c6283a;
-  --app-danger-ink-strong: #9f1d2e;
+  --app-danger-ink: #d33b4e;
+  --app-danger-ink-strong: #b02a3c;
   --shadow-panel:
-    0 1px 2px rgba(16, 24, 40, 0.06), 0 8px 24px rgba(16, 24, 40, 0.1);
-  --shadow-float: 0 12px 32px rgba(16, 24, 40, 0.2);
+    0 1px 2px rgba(16, 24, 40, 0.05), 0 8px 24px rgba(16, 24, 40, 0.08);
+  --shadow-float: 0 12px 32px rgba(16, 24, 40, 0.18);
 
   /* Workbench status tokens (dark defaults live in the workbench block) */
-  --line-soft: #cfd6e2;
-  --done: #047857;
-  --done-dim: #04785722;
-  --wip: #b45309;
-  --wip-dim: #b4530924;
-  --bug: #dc2626;
-  --bug-dim: #dc262622;
-  --accent-dim: #2563eb33;
-
-  /* Contribution heatmap empty / steps (Stats) */
-  --hm-empty: #c5cdd8;
-  --hm-1: rgb(var(--c-accent) / 0.22);
-  --hm-2: rgb(var(--c-accent) / 0.4);
-  --hm-3: rgb(var(--c-accent) / 0.62);
-  --hm-4: rgb(var(--c-accent));
+  --line-soft: #e7ebf1;
+  --done: #0ea56e;
+  --done-dim: #0ea56e22;
+  --wip: #c4880a;
+  --wip-dim: #c4880a22;
+  --bug: #d63a54;
+  --bug-dim: #d63a5422;
+  --accent-dim: #3b6fd140;
 }
 
 html,
@@ -650,15 +635,6 @@ code {
 .chat-md-rich :where(tbody tr:nth-child(even) td) {
   background: rgba(255, 255, 255, 0.02);
 }
-:root[data-theme="light"] .chat-md-rich :where(tbody tr:nth-child(even) td) {
-  background: rgba(15, 23, 42, 0.035);
-}
-:root[data-theme="light"] .chat-md-rich :where(th) {
-  background: rgb(var(--c-accent) / 0.1);
-}
-:root[data-theme="light"] .chat-md-rich :where(blockquote) {
-  border-left-color: rgb(var(--c-accent) / 0.45);
-}
 .chat-md-rich :where(td:first-child) {
   color: var(--app-ink);
   font-weight: 500;
@@ -1083,10 +1059,6 @@ code {
   filter: brightness(1.05);
   color: #04150e;
 }
-:root[data-theme="light"] .faw-btn--run,
-:root[data-theme="light"] .faw-btn--run:hover:not(:disabled) {
-  color: #ffffff;
-}
 .faw-btn--danger {
   border-color: var(--app-danger-border);
   background: var(--app-danger-bg);
@@ -1400,9 +1372,6 @@ code {
 }
 .faw-send-btn.ant-btn-primary:hover:not(:disabled) {
   filter: brightness(1.06);
-}
-:root[data-theme="light"] .faw-send-btn.ant-btn-primary {
-  color: #ffffff !important;
 }
 
 .faw-btn--send {
@@ -2132,9 +2101,6 @@ a.faw-mseg__btn {
   border: 0;
   background: var(--done);
   color: #04150e;
-}
-:root[data-theme="light"] .faw-m-btn--primary {
-  color: #ffffff;
 }
 .faw-m-btn--primary:active:not(:disabled) {
   filter: brightness(1.06);
@@ -3874,14 +3840,8 @@ a.faw-mseg__btn {
   cursor: pointer;
 }
 .faw-handoff-card:active {
-  border-color: color-mix(in srgb, var(--app-accent) 50%, var(--app-border));
-  background: color-mix(in srgb, var(--app-accent) 10%, var(--app-panel));
-}
-:root[data-theme="light"] .faw-handoff-list-summary .chat-md-rich {
-  color: var(--app-muted);
-}
-:root[data-theme="light"] .faw-handoff-detail-summary .chat-md-rich {
-  color: var(--app-ink);
+  border-color: rgba(91, 141, 239, 0.5);
+  background: rgba(91, 141, 239, 0.08);
 }
 .faw-handoff-actions {
   display: flex;
