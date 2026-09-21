@@ -1210,20 +1210,13 @@ code {
 .faw-job-row.pinned {
   background: color-mix(in srgb, var(--app-accent) 6%, transparent);
 }
-.faw-job-main {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  min-width: 0;
-}
 .faw-job-meta {
   font-size: 9px;
   color: var(--app-faint);
   font-variant-numeric: tabular-nums;
   line-height: 1.2;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  flex-shrink: 0;
 }
 .faw-job-dot-btn {
   border: 0;
@@ -1236,27 +1229,17 @@ code {
 .faw-job-status {
   border: 0;
   background: transparent;
-  padding: 1px 4px 1px 2px;
+  padding: 3px;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  min-width: 0;
-  max-width: 6.25rem;
+  justify-content: center;
+  flex-shrink: 0;
   color: var(--app-muted);
-  font-family: var(--font-mono);
-  font-size: 9.5px;
-  line-height: 1.2;
   border-radius: 3px;
 }
 .faw-job-status:hover {
-  color: var(--app-ink);
   background: var(--app-hover);
-}
-.faw-job-status__lbl {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .faw-job-dot {
   width: 6px;
@@ -1291,24 +1274,7 @@ code {
   overflow: hidden;
   text-overflow: ellipsis;
   min-width: 0;
-  display: block;
-}
-.faw-job-tag {
-  font-family: var(--font-mono);
-  font-size: 9px;
-  color: var(--app-faint);
-  flex-shrink: 0;
-  max-width: 4.5rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.faw-job-tag--await {
-  color: var(--wip);
-  background: var(--wip-dim);
-  border-radius: 3px;
-  padding: 1px 5px;
-  max-width: 5.5rem;
+  flex: 1 1 auto;
 }
 .faw-job-pin {
   border: 0;
@@ -1414,6 +1380,24 @@ code {
 }
 .faw-console-actions .faw-btn {
   flex: none;
+  height: 26px;
+  padding: 0 10px;
+  box-sizing: border-box;
+}
+/* Status / context chips match Process · Terminal · Reset button size */
+.faw-console-actions .faw-chip {
+  font: 600 11px var(--font-ui);
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 5px;
+  border-width: 1px;
+  border-style: solid;
+  letter-spacing: 0;
+  max-width: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
 }
 
 /* —— Topbar (mockup) —— */
@@ -1591,20 +1575,21 @@ code {
 .faw-brand__logo--mark {
   display: none;
 }
+/* Match Agent console action chips (Process · Terminal · Reset) */
 .faw-topbar-chip {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  justify-content: center;
+  gap: 5px;
   flex-shrink: 0;
-  height: 36px;
+  height: 26px;
   padding: 0 10px;
-  border-radius: 8px;
+  box-sizing: border-box;
+  border-radius: 5px;
   border: 1px solid var(--app-border);
   background: var(--app-panel-soft);
   color: var(--app-ink);
-  font-size: 12px;
-  font-weight: 600;
-  font-family: var(--font-mono, ui-monospace, monospace);
+  font: 600 11px var(--font-mono, ui-monospace, monospace);
   cursor: pointer;
   white-space: nowrap;
 }
@@ -1646,9 +1631,9 @@ code {
     display: none !important;
   }
   .faw-topbar-chip {
-    height: 30px;
-    padding: 0 8px;
-    border-radius: 6px;
+    height: 26px;
+    padding: 0 10px;
+    border-radius: 5px;
     font-size: 11px;
   }
 }
@@ -2193,10 +2178,6 @@ a.faw-mseg__btn {
   .faw-app-shell .faw-job-t {
     font-size: 10.5px;
   }
-  .faw-app-shell .faw-job-tag {
-    font-size: 8.5px;
-    max-width: 3.5rem;
-  }
 
   .faw-app-shell .faw-issue-scroll {
     padding: 10px 10px 20px;
@@ -2292,6 +2273,7 @@ a.faw-mseg__btn {
     font-size: 9px;
   }
   .faw-app-shell .faw-console-actions .faw-btn,
+  .faw-app-shell .faw-console-actions .faw-chip,
   .faw-app-shell .faw-console-actions .ant-btn {
     height: 28px !important;
     padding: 0 8px !important;

@@ -6,10 +6,6 @@ import RepoTerminal from "@/components/work/RepoTerminal.vue";
 import { useAutoScroll } from "@/composables/useAutoScroll";
 import { api } from "@/api/client";
 import { API } from "@/api/endpoints";
-import {
-  statusLabel,
-  contextQualityLabel,
-} from "@/utils/status";
 import { formatChatTime } from "@/utils/formatChatTime";
 import type { Job } from "@/stores/work";
 
@@ -292,34 +288,6 @@ const showJumpProgress = computed(
     (visibleProgressLines.value.length > 0 || props.progressLive),
 );
 
-const contextStripBits = computed(() => {
-  const j = props.currentJob;
-  if (!j) return [] as Array<{ text: string; tone?: "accent" | "warn" }>;
-  const bits: Array<{ text: string; tone?: "accent" | "warn" }> = [];
-  const iid = j.issue?.issueIid;
-  if (iid && iid > 0) bits.push({ text: `#${iid}`, tone: "accent" });
-  else bits.push({ text: "Session" });
-  const branch = (j.workBranch || j.branch || "").trim();
-  if (branch) bits.push({ text: branch });
-  bits.push({
-    text: statusLabel(j.status),
-    tone:
-      j.status === "failed"
-        ? "warn"
-        : j.status.startsWith("awaiting_")
-          ? "warn"
-          : undefined,
-  });
-  const cq = props.contextQuality?.level || j.contextQuality?.level;
-  if (cq) {
-    bits.push({
-      text: contextQualityLabel(cq),
-      tone: cq === "bad" ? "warn" : cq === "good" ? "accent" : undefined,
-    });
-  }
-  return bits;
-});
-
 async function copyVisibleProgress() {
   const text = visibleProgressLines.value
     .map((l) => l.text)
@@ -495,53 +463,7 @@ watch(chatBox, (el, prev) => {
               ⟲ Reset
             </button>
           </a-popconfirm>
-          <span
-            v-if="currentJob"
-            class="faw-chip"
-            :class="{
-              'faw-chip--good': currentJob.status === 'succeeded',
-              'faw-chip--wip':
-                currentJob.status === 'running' ||
-                currentJob.status === 'queued' ||
-                currentJob.status.startsWith('awaiting_'),
-              'faw-chip--bug': currentJob.status === 'failed',
-            }"
-            >{{ statusLabel(currentJob.status) }}</span
-          >
-          <span
-            v-if="contextQuality?.level === 'good'"
-            class="faw-btn faw-btn--run"
-            style="flex: none; padding: 4px 8px; cursor: default"
-            :title="contextQuality.reason || ''"
-            >Good context</span
-          >
-          <span
-            v-else-if="contextQuality?.level"
-            class="faw-chip"
-            :title="contextQuality.reason || ''"
-            >{{ contextQualityLabel(contextQuality.level) }}</span
-          >
         </div>
-      </div>
-
-      <div
-        v-if="contextStripBits.length"
-        class="faw-console-context"
-        aria-label="Job context"
-      >
-        <template v-for="(bit, i) in contextStripBits" :key="i">
-          <span v-if="i > 0" class="faw-console-context__sep" aria-hidden="true"
-            >·</span
-          >
-          <span
-            class="faw-console-context__bit"
-            :class="{
-              'faw-console-context__bit--accent': bit.tone === 'accent',
-              'faw-console-context__bit--warn': bit.tone === 'warn',
-            }"
-            >{{ bit.text }}</span
-          >
-        </template>
       </div>
 
       <!-- Mobile: Chat | Logs | Terminal switcher -->
