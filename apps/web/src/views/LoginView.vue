@@ -545,17 +545,7 @@ async function onForgotPassword(e?: Event) {
                 />
               </label>
               <label class="faw-login__field">
-                <span class="faw-login__field-row">
-                  <span>Password</span>
-                  <button
-                    type="button"
-                    class="faw-login__forgot-link"
-                    :disabled="loading"
-                    @click="switchMode('forgot')"
-                  >
-                    Forgot password?
-                  </button>
-                </span>
+                <span>Password</span>
                 <a-input-password
                   v-model:value="form.password"
                   size="large"
@@ -593,6 +583,14 @@ async function onForgotPassword(e?: Event) {
                     </span>
                   </Transition>
                 </span>
+              </button>
+              <button
+                type="button"
+                class="faw-login__forgot-link"
+                :disabled="loading"
+                @click="switchMode('forgot')"
+              >
+                Forgot password?
               </button>
             </form>
 

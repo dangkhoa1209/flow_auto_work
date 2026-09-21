@@ -3088,38 +3088,28 @@ a.faw-mseg__btn {
   gap: 7px;
   margin: 0;
 }
-.faw-login__field > span,
-.faw-login__field-row {
+.faw-login__field > span {
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.45px;
   text-transform: uppercase;
   color: var(--app-faint);
 }
-.faw-login__field-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-.faw-login__field-row > span {
-  font: inherit;
-  letter-spacing: inherit;
-  text-transform: inherit;
-  color: inherit;
-}
 .faw-login__forgot-link {
   appearance: none;
-  margin: 0;
-  padding: 0;
+  display: block;
+  width: 100%;
+  margin: 2px 0 0;
+  padding: 8px 0;
   border: 0;
   background: none;
-  font: 600 12px var(--font-ui);
+  font: 600 13px var(--font-ui);
   letter-spacing: 0;
   text-transform: none;
   color: var(--app-accent);
   cursor: pointer;
-  min-height: 28px;
+  text-align: center;
+  min-height: 40px;
 }
 .faw-login__forgot-link:hover:not(:disabled) {
   color: var(--app-accent-bright);
