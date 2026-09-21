@@ -16,6 +16,7 @@ import { message } from "ant-design-vue";
 import { api } from "@/api/client";
 import { API } from "@/api/endpoints";
 import { syncDbApi } from "@/api/syncDbApi";
+import { useGreeting } from "@/composables/useGreeting";
 import { useSessionStore } from "@/stores/session";
 import { ADMIN_TABS } from "@/config/adminNav";
 
@@ -88,6 +89,7 @@ const QUICK_ICONS = {
 
 const session = useSessionStore();
 const loading = ref(true);
+const { greeting, displayName, todayLabel } = useGreeting("Admin");
 
 const users = ref<AdminUser[]>([]);
 const resetRequests = ref<PasswordResetRequest[]>([]);
@@ -97,27 +99,6 @@ const cursor = ref<CursorSettings | null>(null);
 const features = ref<BaFeaturesResponse | null>(null);
 const syncEnabled = ref(false);
 const syncConfigured = ref(false);
-
-const greeting = computed(() => {
-  const h = new Date().getHours();
-  if (h < 12) return "Good morning";
-  if (h < 18) return "Good afternoon";
-  return "Good evening";
-});
-
-const displayName = computed(() => {
-  const me = session.me;
-  if (!me) return "Admin";
-  return me.displayName || me.gitlabUsername || "Admin";
-});
-
-const todayLabel = computed(() =>
-  new Intl.DateTimeFormat("en-US", {
-    weekday: "long",
-    month: "short",
-    day: "numeric",
-  }).format(new Date()),
-);
 
 const userStats = computed(() => {
   const list = users.value;

@@ -9,6 +9,7 @@ import { LAST_LOGIN_KEY } from "@/api/tokenStorage";
 import { useAuthStore } from "@/stores/auth";
 import { useSessionStore, type Membership } from "@/stores/session";
 import { isPathAllowed, resolveHomeRoute } from "@/utils/routeAccess";
+import { markPostLoginGreeting } from "@/utils/postLoginGreeting";
 
 const router = useRouter();
 const route = useRoute();
@@ -289,6 +290,7 @@ async function applyAuthAndGo(res: AuthTokensResponse) {
     }),
   );
 
+  markPostLoginGreeting();
   const target = postAuthPath();
   await router.replace(target);
   if (router.currentRoute.value.name === "login") {

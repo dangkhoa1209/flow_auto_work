@@ -5,6 +5,7 @@ import { message } from "ant-design-vue";
 import { MenuOutlined } from "@ant-design/icons-vue";
 import AppTopbarRight from "@/components/layout/AppTopbarRight.vue";
 import AppSwitcher from "@/components/layout/AppSwitcher.vue";
+import PostLoginGreeting from "@/components/layout/PostLoginGreeting.vue";
 import { useSessionStore } from "@/stores/session";
 import { useBaChatStore } from "@/stores/baChat";
 import { useProjectChatBase } from "@/composables/useProjectChatBase";
@@ -191,6 +192,8 @@ onMounted(() => {
         </template>
       </AppTopbarRight>
     </header>
+
+    <PostLoginGreeting />
 
     <nav
       v-if="navActive !== 'settings'"

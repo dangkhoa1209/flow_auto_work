@@ -1571,6 +1571,101 @@ code {
   height: 22px;
 }
 
+/* —— Post-login welcome (user shells) —— */
+.faw-welcome {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-shrink: 0;
+  margin: 8px 12px 0;
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px solid
+    color-mix(in srgb, var(--app-accent, #5b8def) 28%, var(--app-border, var(--line)));
+  background:
+    radial-gradient(
+      120% 100% at 0% 50%,
+      color-mix(in srgb, var(--app-accent, #5b8def) 14%, transparent),
+      transparent 55%
+    ),
+    var(--app-panel, var(--surface-raised));
+  box-shadow: var(--shadow-panel, 0 4px 18px rgba(0, 0, 0, 0.18));
+}
+@media (min-width: 1024px) {
+  .faw-welcome {
+    margin: 8px 16px 0;
+    padding: 12px 18px;
+  }
+}
+.faw-welcome__date {
+  margin: 0 0 2px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--app-accent-bright, #7aa2f7);
+}
+.faw-welcome__hello {
+  margin: 0;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--app-ink, var(--ink));
+  line-height: 1.3;
+}
+.faw-welcome__hello strong {
+  font-weight: 700;
+}
+.faw-welcome__close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--app-muted, var(--ink-muted));
+  cursor: pointer;
+}
+.faw-welcome__close:hover {
+  background: var(--app-panel-soft, rgba(255, 255, 255, 0.06));
+  color: var(--app-ink, var(--ink));
+}
+.faw-welcome-enter-active,
+.faw-welcome-leave-active {
+  transition:
+    opacity 0.32s ease,
+    transform 0.32s ease,
+    max-height 0.32s ease,
+    margin 0.32s ease,
+    padding 0.32s ease;
+  max-height: 88px;
+  overflow: hidden;
+}
+.faw-welcome-enter-from,
+.faw-welcome-leave-to {
+  opacity: 0;
+  transform: translateY(-8px);
+  max-height: 0;
+  margin-top: 0;
+  margin-bottom: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .faw-welcome-enter-active,
+  .faw-welcome-leave-active {
+    transition: opacity 0.15s ease;
+  }
+  .faw-welcome-enter-from,
+  .faw-welcome-leave-to {
+    transform: none;
+  }
+}
+
 /* —— Mobile topbar (Work / BA / Build — same chrome) —— */
 .faw-brand__logo--mark {
   display: none;

@@ -24,6 +24,13 @@ const username = computed(
     session.session.username ||
     "—",
 );
+
+const chipLabel = computed(() => {
+  const name = session.me?.displayName?.trim();
+  if (name) return name;
+  const u = username.value;
+  return u === "—" ? u : `@${u}`;
+});
 </script>
 
 <template>
@@ -32,9 +39,9 @@ const username = computed(
     <div class="faw-topbar__right-desktop">
       <slot name="status" />
       <slot name="extra" />
-      <div class="faw-user-chip">
+      <div class="faw-user-chip" :title="username === '—' ? undefined : `@${username}`">
         <span class="faw-avatar" />
-        @{{ username }}
+        {{ chipLabel }}
       </div>
     </div>
     <button

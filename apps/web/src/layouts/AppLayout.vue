@@ -9,6 +9,7 @@ import {
 } from "@ant-design/icons-vue";
 import AppTopbarRight from "@/components/layout/AppTopbarRight.vue";
 import AppSwitcher from "@/components/layout/AppSwitcher.vue";
+import PostLoginGreeting from "@/components/layout/PostLoginGreeting.vue";
 import { useSessionStore } from "@/stores/session";
 import { useSettingsStore } from "@/stores/settings";
 import { useWorkStore } from "@/stores/work";
@@ -249,6 +250,8 @@ async function onKillAll() {
         </template>
       </AppTopbarRight>
     </header>
+
+    <PostLoginGreeting />
 
     <nav class="faw-mseg lg:hidden" aria-label="Workbench sections">
       <RouterLink
