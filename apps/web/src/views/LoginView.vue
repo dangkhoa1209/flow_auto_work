@@ -27,6 +27,16 @@ const glowX = ref(50);
 const glowY = ref(28);
 const glowActive = ref(false);
 const reduceMotion = ref(false);
+/** Form slide direction + brief panel pulse on mode change. */
+const formDir = ref<"fwd" | "back">("fwd");
+const modeMorphing = ref(false);
+let morphTimer: ReturnType<typeof setTimeout> | null = null;
+
+const modeTransitionName = computed(() =>
+  formDir.value === "fwd" ? "faw-login-fwd" : "faw-login-back",
+);
+
+const MODE_ORDER = { login: 0, register: 1, forgot: 2 } as const;
 
 const form = reactive({
   username: "",
@@ -126,10 +136,13 @@ onMounted(() => {
 
 onUnmounted(() => {
   document.removeEventListener("visibilitychange", onLoginVisible);
+  if (morphTimer) clearTimeout(morphTimer);
 });
 
 function switchMode(next: "login" | "register" | "forgot") {
   if (mode.value === next) return;
+  formDir.value =
+    MODE_ORDER[next] >= MODE_ORDER[mode.value] ? "fwd" : "back";
   mode.value = next;
   errorText.value = "";
   forgotSent.value = false;
@@ -137,6 +150,14 @@ function switchMode(next: "login" | "register" | "forgot") {
   form.password = "";
   form.password2 = "";
   if (next !== "forgot") form.note = "";
+  if (!reduceMotion.value) {
+    modeMorphing.value = true;
+    if (morphTimer) clearTimeout(morphTimer);
+    morphTimer = setTimeout(() => {
+      modeMorphing.value = false;
+      morphTimer = null;
+    }, 520);
+  }
   focusUsername();
 }
 
@@ -347,13 +368,21 @@ async function onForgotPassword(e?: Event) {
       </aside>
 
       <div class="faw-login__main">
-        <div class="faw-login__panel">
+        <div
+          class="faw-login__panel"
+          :class="{ 'is-morphing': modeMorphing }"
+        >
           <div
             v-if="mode !== 'forgot'"
             class="faw-seg faw-login__seg"
             role="tablist"
             aria-label="Auth mode"
           >
+            <span
+              class="faw-login__seg-thumb"
+              :class="{ 'is-register': mode === 'register' }"
+              aria-hidden="true"
+            />
             <button
               type="button"
               class="faw-seg__btn"
@@ -378,8 +407,9 @@ async function onForgotPassword(e?: Event) {
             </button>
           </div>
 
+          <div class="faw-login__stage">
           <Transition
-            name="faw-login-mode"
+            :name="modeTransitionName"
             mode="out-in"
             :css="!reduceMotion"
           >
@@ -642,6 +672,7 @@ async function onForgotPassword(e?: Event) {
               </button>
             </form>
           </Transition>
+          </div>
         </div>
 
         <p class="faw-login__foot">

@@ -2916,20 +2916,60 @@ a.faw-mseg__btn {
   border-radius: 12px;
   padding: 20px;
   box-shadow: var(--shadow-panel);
+  transition:
+    border-color 0.45s ease,
+    box-shadow 0.45s ease;
+}
+.faw-login__panel.is-morphing {
+  border-color: color-mix(in srgb, var(--app-accent) 45%, var(--app-border));
+  box-shadow:
+    var(--shadow-panel),
+    0 0 0 1px color-mix(in srgb, var(--app-accent) 35%, transparent),
+    0 12px 40px -12px color-mix(in srgb, var(--app-accent) 28%, transparent);
 }
 .faw-login__seg {
+  position: relative;
   width: 100%;
   margin-bottom: 18px;
   padding: 3px;
   border-radius: 8px;
+  overflow: hidden;
+}
+.faw-login__seg-thumb {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  left: 3px;
+  width: calc(50% - 3px);
+  border-radius: 6px;
+  background: var(--app-accent);
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.18),
+    0 0 12px color-mix(in srgb, var(--app-accent) 40%, transparent);
+  transform: translateX(0);
+  transition: transform 0.48s cubic-bezier(0.22, 1.15, 0.36, 1);
+  pointer-events: none;
+  z-index: 0;
+}
+.faw-login__seg-thumb.is-register {
+  transform: translateX(100%);
 }
 .faw-login__seg .faw-seg__btn {
+  position: relative;
+  z-index: 1;
   flex: 1;
   text-align: center;
   min-height: 36px;
   padding: 8px 12px;
   font-size: 13px;
   border-radius: 6px;
+  transition:
+    color 0.28s ease,
+    background-color 0.28s ease;
+}
+.faw-login__seg .faw-seg__btn.active {
+  background: transparent;
+  color: #fff;
 }
 .faw-login__seg .faw-seg__btn:disabled {
   opacity: 0.55;
@@ -2939,10 +2979,16 @@ a.faw-mseg__btn {
   outline: 2px solid var(--app-accent);
   outline-offset: 1px;
 }
+.faw-login__stage {
+  position: relative;
+  overflow: hidden;
+  min-height: 0;
+}
 .faw-login__form {
   display: flex;
   flex-direction: column;
   gap: 14px;
+  will-change: transform, opacity, filter;
 }
 .faw-login__group {
   margin: 0;
@@ -3224,16 +3270,78 @@ a.faw-mseg__btn {
   line-height: 1.4;
 }
 
-.faw-login-mode-enter-active,
-.faw-login-mode-leave-active {
+/* Directional Sign in ↔ Register (and Forgot) form swap */
+.faw-login-fwd-enter-active,
+.faw-login-fwd-leave-active,
+.faw-login-back-enter-active,
+.faw-login-back-leave-active {
   transition:
-    opacity 0.18s ease,
-    transform 0.18s ease;
+    opacity 0.32s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.42s cubic-bezier(0.22, 1.15, 0.36, 1),
+    filter 0.32s ease;
 }
-.faw-login-mode-enter-from,
-.faw-login-mode-leave-to {
+.faw-login-fwd-leave-active,
+.faw-login-back-leave-active {
+  transition-duration: 0.22s, 0.28s, 0.22s;
+  transition-timing-function: ease-in, cubic-bezier(0.4, 0, 1, 1), ease-in;
+}
+.faw-login-fwd-enter-from {
   opacity: 0;
-  transform: translateY(6px);
+  transform: translateX(28px) scale(0.96);
+  filter: blur(6px);
+}
+.faw-login-fwd-leave-to {
+  opacity: 0;
+  transform: translateX(-18px) scale(0.98);
+  filter: blur(4px);
+}
+.faw-login-back-enter-from {
+  opacity: 0;
+  transform: translateX(-28px) scale(0.96);
+  filter: blur(6px);
+}
+.faw-login-back-leave-to {
+  opacity: 0;
+  transform: translateX(18px) scale(0.98);
+  filter: blur(4px);
+}
+.faw-login-fwd-enter-active .faw-login__group,
+.faw-login-fwd-enter-active .faw-login__field,
+.faw-login-fwd-enter-active .faw-login__forgot-head,
+.faw-login-fwd-enter-active .faw-login__submit,
+.faw-login-fwd-enter-active .faw-login__back,
+.faw-login-fwd-enter-active .faw-login__forgot-ok,
+.faw-login-back-enter-active .faw-login__group,
+.faw-login-back-enter-active .faw-login__field,
+.faw-login-back-enter-active .faw-login__forgot-head,
+.faw-login-back-enter-active .faw-login__submit,
+.faw-login-back-enter-active .faw-login__back,
+.faw-login-back-enter-active .faw-login__forgot-ok {
+  animation: faw-login-field-in 0.48s cubic-bezier(0.22, 1.15, 0.36, 1) both;
+}
+.faw-login-fwd-enter-active .faw-login__form > *:nth-child(1),
+.faw-login-back-enter-active .faw-login__form > *:nth-child(1) {
+  animation-delay: 0.04s;
+}
+.faw-login-fwd-enter-active .faw-login__form > *:nth-child(2),
+.faw-login-back-enter-active .faw-login__form > *:nth-child(2) {
+  animation-delay: 0.09s;
+}
+.faw-login-fwd-enter-active .faw-login__form > *:nth-child(3),
+.faw-login-back-enter-active .faw-login__form > *:nth-child(3) {
+  animation-delay: 0.14s;
+}
+.faw-login-fwd-enter-active .faw-login__form > *:nth-child(4),
+.faw-login-back-enter-active .faw-login__form > *:nth-child(4) {
+  animation-delay: 0.18s;
+}
+.faw-login-fwd-enter-active .faw-login__form > *:nth-child(5),
+.faw-login-back-enter-active .faw-login__form > *:nth-child(5) {
+  animation-delay: 0.22s;
+}
+.faw-login-fwd-enter-active .faw-login__form > *:nth-child(n + 6),
+.faw-login-back-enter-active .faw-login__form > *:nth-child(n + 6) {
+  animation-delay: 0.26s;
 }
 
 @media (min-width: 900px) {
@@ -3308,6 +3416,16 @@ a.faw-mseg__btn {
     transform: translateY(0);
   }
 }
+@keyframes faw-login-field-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
 @keyframes faw-login-grid {
   from {
     background-position: 0 0, 0 0;
@@ -3330,9 +3448,32 @@ a.faw-mseg__btn {
   .faw-login__glow {
     transition: none;
   }
-  .faw-login-mode-enter-active,
-  .faw-login-mode-leave-active {
+  .faw-login__panel,
+  .faw-login__seg-thumb {
     transition: none;
+  }
+  .faw-login__panel.is-morphing {
+    box-shadow: var(--shadow-panel);
+  }
+  .faw-login-fwd-enter-active,
+  .faw-login-fwd-leave-active,
+  .faw-login-back-enter-active,
+  .faw-login-back-leave-active {
+    transition: none;
+  }
+  .faw-login-fwd-enter-active .faw-login__group,
+  .faw-login-fwd-enter-active .faw-login__field,
+  .faw-login-fwd-enter-active .faw-login__forgot-head,
+  .faw-login-fwd-enter-active .faw-login__submit,
+  .faw-login-fwd-enter-active .faw-login__back,
+  .faw-login-fwd-enter-active .faw-login__forgot-ok,
+  .faw-login-back-enter-active .faw-login__group,
+  .faw-login-back-enter-active .faw-login__field,
+  .faw-login-back-enter-active .faw-login__forgot-head,
+  .faw-login-back-enter-active .faw-login__submit,
+  .faw-login-back-enter-active .faw-login__back,
+  .faw-login-back-enter-active .faw-login__forgot-ok {
+    animation: none;
   }
   .faw-login__spinner {
     animation: none;
