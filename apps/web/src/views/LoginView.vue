@@ -287,7 +287,7 @@ async function onRegister(e?: Event) {
           draggable="false"
         />
         <p class="faw-login__tagline">
-          GitLab issues → Cursor agent → commit &amp; handoff
+          From ticket to commit — steered by you
         </p>
       </header>
 
