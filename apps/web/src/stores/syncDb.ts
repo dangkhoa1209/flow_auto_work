@@ -89,7 +89,7 @@ export const useSyncDbStore = defineStore("syncDb", () => {
     else jobs.value = [job, ...jobs.value].slice(0, 80);
     const hi = history.value.findIndex((j) => j.id === job.id);
     if (hi >= 0) history.value[hi] = job;
-    else if (job.status !== "queued" && job.status !== "running") {
+    else {
       history.value = [job, ...history.value].slice(0, 40);
     }
   }
