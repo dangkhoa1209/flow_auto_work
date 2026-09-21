@@ -1575,20 +1575,21 @@ code {
 .faw-brand__logo--mark {
   display: none;
 }
+/* Match Agent console action chips (Process · Terminal · Reset) */
 .faw-topbar-chip {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  justify-content: center;
+  gap: 5px;
   flex-shrink: 0;
-  height: 36px;
+  height: 26px;
   padding: 0 10px;
-  border-radius: 8px;
+  box-sizing: border-box;
+  border-radius: 5px;
   border: 1px solid var(--app-border);
   background: var(--app-panel-soft);
   color: var(--app-ink);
-  font-size: 12px;
-  font-weight: 600;
-  font-family: var(--font-mono, ui-monospace, monospace);
+  font: 600 11px var(--font-mono, ui-monospace, monospace);
   cursor: pointer;
   white-space: nowrap;
 }
@@ -1630,9 +1631,9 @@ code {
     display: none !important;
   }
   .faw-topbar-chip {
-    height: 30px;
-    padding: 0 8px;
-    border-radius: 6px;
+    height: 26px;
+    padding: 0 10px;
+    border-radius: 5px;
     font-size: 11px;
   }
 }
