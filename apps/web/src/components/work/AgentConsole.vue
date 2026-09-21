@@ -511,7 +511,7 @@ watch(chatBox, (el, prev) => {
           <span
             v-if="contextQuality?.level === 'good'"
             class="faw-btn faw-btn--run"
-            style="flex: none; padding: 4px 8px; cursor: default"
+            style="cursor: default"
             :title="contextQuality.reason || ''"
             >Good context</span
           >

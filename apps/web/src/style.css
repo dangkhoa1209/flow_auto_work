@@ -1380,6 +1380,24 @@ code {
 }
 .faw-console-actions .faw-btn {
   flex: none;
+  height: 26px;
+  padding: 0 10px;
+  box-sizing: border-box;
+}
+/* Status / context chips match Process · Terminal · Reset button size */
+.faw-console-actions .faw-chip {
+  font: 600 11px var(--font-ui);
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 5px;
+  border-width: 1px;
+  border-style: solid;
+  letter-spacing: 0;
+  max-width: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
 }
 
 /* —— Topbar (mockup) —— */
@@ -2254,6 +2272,7 @@ a.faw-mseg__btn {
     font-size: 9px;
   }
   .faw-app-shell .faw-console-actions .faw-btn,
+  .faw-app-shell .faw-console-actions .faw-chip,
   .faw-app-shell .faw-console-actions .ant-btn {
     height: 28px !important;
     padding: 0 8px !important;
