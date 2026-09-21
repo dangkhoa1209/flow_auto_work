@@ -6,6 +6,7 @@ import { createRepositoryCommit } from "../gitlab/commits.js";
 import { logger } from "../../logger.js";
 import { gitStdout as git } from "./exec.js";
 import { hasUncommittedChanges } from "./prep.js";
+import { fetchWithPat } from "./remote-auth.js";
 
 async function gitOk(
   repoPath: string,
@@ -42,8 +43,8 @@ export async function revertCommitViaGitlab(opts: {
 
   // Sync tip from origin
   const refspec = `+refs/heads/${branch}:refs/remotes/origin/${branch}`;
-  await git(opts.repoPath, ["fetch", "origin", refspec]).catch(async () => {
-    await git(opts.repoPath, ["fetch", "origin", sha]);
+  await fetchWithPat(opts.repoPath, [refspec]).catch(async () => {
+    await fetchWithPat(opts.repoPath, [sha]);
   });
 
   const tip =

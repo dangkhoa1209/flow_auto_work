@@ -1,37 +1,11 @@
 import { logger } from "../../logger.js";
-import {
-  buildCloneUrl,
-  gitHttpAuthEnvFromCloneUrl,
-  stripCloneUrlCredentials,
-} from "../../workspace/clone.js";
 import { resolveRepoPath } from "../../workspace/creds.js";
 import { scheduleProjectGraphify } from "../../workspace/graphify.js";
 import { getRuntimeContext } from "../../workspace/runtime.js";
 import { autoWorkBranchName } from "./branch-name.js";
 import { git } from "./exec.js";
 import { redactGitCredentials } from "./redact.js";
-
-/**
- * Push remote URL with current runtime PAT (same scheme as clone).
- * Avoids relying on a stale `origin` that may lack / have an old token.
- */
-function resolvePatPushUrl(): string {
-  const rt = getRuntimeContext();
-  const token = rt?.gitlabToken?.trim();
-  const gitlabPath = rt?.gitlabPath?.trim();
-  if (!rt || !token || !gitlabPath) {
-    throw new Error(
-      "No remote PAT in runtime — cannot push (clone/login with token first)",
-    );
-  }
-  const host = rt.gitlabHost || "https://gitlab.com";
-  return buildCloneUrl({
-    provider: rt.gitProvider,
-    host,
-    token,
-    path: gitlabPath,
-  });
-}
+import { fetchWithPat, resolvePatGitAuth } from "./remote-auth.js";
 
 function isTransientGitNetworkError(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err);
@@ -107,20 +81,10 @@ async function integrateRemoteBranchTip(
   repoPath: string,
   branch: string,
 ): Promise<void> {
-  const patUrl = resolvePatPushUrl();
-  const publicUrl = stripCloneUrlCredentials(patUrl);
-  const authEnv = gitHttpAuthEnvFromCloneUrl(patUrl);
   try {
-    await git(
-      repoPath,
-      [
-        "fetch",
-        publicUrl,
-        `+refs/heads/${branch}:refs/remotes/origin/${branch}`,
-      ],
-      undefined,
-      authEnv,
-    );
+    await fetchWithPat(repoPath, [
+      `+refs/heads/${branch}:refs/remotes/origin/${branch}`,
+    ]);
   } catch {
     await git(repoPath, [
       "fetch",
@@ -190,9 +154,7 @@ async function pushWithPatUrl(
   branch: string,
   force: boolean,
 ): Promise<void> {
-  const patUrl = resolvePatPushUrl();
-  const publicUrl = stripCloneUrlCredentials(patUrl);
-  const authEnv = gitHttpAuthEnvFromCloneUrl(patUrl);
+  const { publicUrl, authEnv } = resolvePatGitAuth();
   const args = force
     ? ["push", "--force", publicUrl, `HEAD:refs/heads/${branch}`]
     : ["push", publicUrl, `HEAD:refs/heads/${branch}`];
@@ -490,9 +452,7 @@ async function refreshOriginBranchRef(
   branch: string,
 ): Promise<void> {
   try {
-    await git(repoPath, [
-      "fetch",
-      "origin",
+    await fetchWithPat(repoPath, [
       `+refs/heads/${branch}:refs/remotes/origin/${branch}`,
     ]);
     await git(repoPath, ["branch", `--set-upstream-to=origin/${branch}`, branch]);

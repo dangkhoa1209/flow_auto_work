@@ -3,6 +3,7 @@ import path from "node:path";
 import { logger } from "../../logger.js";
 import { git } from "./exec.js";
 import { detectDefaultBranch, getHeadSha } from "./prep.js";
+import { fetchWithPat } from "./remote-auth.js";
 
 /** True if file body still contains unresolved merge conflict markers. */
 export function fileHasConflictMarkers(content: string): boolean {
@@ -223,9 +224,7 @@ export async function attemptMergeIntoBase(opts: {
   // Fetch the source tip FIRST — the chosen branch may be stale locally or
   // exist only on origin (never checked out on this machine).
   try {
-    await git(opts.repoPath, [
-      "fetch",
-      "origin",
+    await fetchWithPat(opts.repoPath, [
       `+refs/heads/${source}:refs/remotes/origin/${source}`,
     ]);
   } catch (err) {
@@ -263,7 +262,10 @@ export async function attemptMergeIntoBase(opts: {
   // Prefer ff-only; if diverged, merge remote tip (no force) so we do not
   // build on a stale local target and then hit non-fast-forward on push.
   try {
-    await git(opts.repoPath, ["fetch", "origin", target, "--depth=50"]);
+    await fetchWithPat(opts.repoPath, [
+      `+refs/heads/${target}:refs/remotes/origin/${target}`,
+      "--depth=50",
+    ]);
   } catch {
     // offline / no remote — continue with local target
   }

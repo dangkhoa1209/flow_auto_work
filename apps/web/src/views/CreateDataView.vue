@@ -129,9 +129,6 @@ function restoreCreateDataDraft(): boolean {
     if (draft.planning || draft.waitingForSse) {
       planning.value = true;
       waitingForSse.value = true;
-      message.info(
-        "Restored planner session after reload — waiting for realtime updates…",
-      );
     }
     return true;
   } catch {
@@ -469,18 +466,6 @@ const nextAction = computed(() => {
     return {
       type: "warning" as const,
       text: `Plan is ready (${planSteps.value.length} steps), but Execute is blocked: ${saveDisabledReason.value}`,
-    };
-  }
-  if (planSteps.value.length && !activeBatch.value) {
-    return {
-      type: "info" as const,
-      text: `Plan ready · ${planSteps.value.length} steps. Review the steps below, then click Execute to write to the seed Connect DB.`,
-    };
-  }
-  if (activeBatch.value?.status === "preview") {
-    return {
-      type: "info" as const,
-      text: `Batch ${activeBatch.value.batchId} ready (${planSteps.value.length} steps). Click Execute to write to the seed Connect DB.`,
     };
   }
   if (
@@ -841,9 +826,6 @@ async function generatePlan() {
       waitingForSse.value = true;
       planning.value = true;
       persistCreateDataDraft();
-      message.warning(
-        "Request timed out (gateway). Waiting for planner result via realtime — do not close this tab.",
-      );
       return;
     }
     message.error(e instanceof Error ? e.message : String(e));
@@ -912,9 +894,6 @@ async function refinePlan() {
       waitingForSse.value = true;
       planning.value = true;
       persistCreateDataDraft();
-      message.warning(
-        "Request timed out (gateway). Waiting for refined plan via realtime…",
-      );
       return;
     }
     message.error(e instanceof Error ? e.message : String(e));
@@ -1288,14 +1267,6 @@ onUnmounted(() => {
             'faw-create-data-alert--error': nextAction.type === 'error',
           }"
           :message="nextAction.text"
-        />
-
-        <a-alert
-          v-if="waitingForSse && planning"
-          type="info"
-          show-icon
-          class="text-xs faw-create-data-alert faw-create-data-alert--info"
-          message="HTTP timed out — still waiting for the planner over realtime. Keep this tab open."
         />
 
         <!-- Humanized progress (default) -->
