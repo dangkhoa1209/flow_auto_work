@@ -4088,6 +4088,249 @@ a.faw-mseg__btn {
   font-size: 13px;
   opacity: 0.9;
 }
+.faw-project-empty {
+  border: 1px dashed var(--app-border);
+  border-radius: 12px;
+  background: var(--app-panel-soft);
+}
+
+/* Add / Edit project wizard */
+.faw-add-project {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+.faw-add-project__hint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--app-muted);
+}
+.faw-add-project__strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--app-border);
+  background: var(--app-panel-soft);
+}
+.faw-add-project__chip {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 550;
+  color: var(--app-ink);
+  background: var(--app-panel);
+  border: 1px solid var(--app-border);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.faw-add-project__chip--mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-weight: 500;
+}
+.faw-add-project__body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+.faw-add-project__label {
+  display: block;
+  font-size: 13px;
+  font-weight: 550;
+  color: var(--app-muted);
+}
+.faw-add-project__help {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--app-faint);
+}
+.faw-add-project__help code {
+  font-size: 11px;
+}
+.faw-add-project__footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 2px;
+  border-top: 1px solid var(--app-border);
+  padding-top: 12px;
+}
+.faw-add-project__footer .ant-btn-primary {
+  min-width: 148px;
+}
+.faw-forge-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 6px;
+}
+.faw-forge-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  text-align: left;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--app-border);
+  background: var(--app-panel);
+  color: var(--app-ink);
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease,
+    box-shadow 0.15s ease;
+}
+.faw-forge-card:hover:not(:disabled) {
+  border-color: var(--app-border-strong);
+  background: var(--app-panel-soft);
+}
+.faw-forge-card:focus-visible {
+  outline: 2px solid var(--app-accent);
+  outline-offset: 2px;
+}
+.faw-forge-card:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+.faw-forge-card--active {
+  border-color: var(--app-accent);
+  background: var(--app-accent-soft);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--app-accent) 35%, transparent);
+}
+.faw-forge-card__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  background: var(--app-panel-soft);
+  border: 1px solid var(--app-border);
+  flex-shrink: 0;
+}
+.faw-forge-card__gh {
+  font-size: 22px;
+  line-height: 1;
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+.faw-forge-card__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+.faw-forge-card__text strong {
+  font-size: 13px;
+  font-weight: 650;
+}
+.faw-forge-card__text small {
+  font-size: 11px;
+  color: var(--app-faint);
+  line-height: 1.3;
+}
+.faw-forge-card__check {
+  color: var(--app-accent);
+  font-size: 14px;
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+.faw-add-project__selected {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--app-accent) 35%, var(--app-border));
+  background: var(--app-accent-soft);
+}
+.faw-add-project__grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.faw-add-project__switch-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--app-border);
+  background: var(--app-panel-soft);
+}
+.faw-add-project__review {
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid var(--app-border);
+  background: var(--app-panel-soft);
+}
+.faw-add-project__review-title {
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--app-muted);
+  margin-bottom: 8px;
+}
+.faw-add-project__review-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 12px;
+  margin: 0;
+}
+.faw-add-project__review-grid dt {
+  margin: 0;
+  font-size: 11px;
+  color: var(--app-faint);
+}
+.faw-add-project__review-grid dd {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: var(--app-ink);
+  word-break: break-word;
+}
+.faw-add-project__review-path {
+  grid-column: 1 / -1;
+}
+.faw-add-project__advanced .ant-collapse-header {
+  padding-inline: 0 !important;
+  font-size: 13px !important;
+  color: var(--app-muted) !important;
+}
+.faw-add-project__advanced .ant-collapse-content-box {
+  padding-inline: 0 !important;
+}
+@media (max-width: 560px) {
+  .faw-forge-cards,
+  .faw-add-project__grid,
+  .faw-add-project__review-grid {
+    grid-template-columns: 1fr;
+  }
+  .faw-add-project__footer {
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
+  .faw-add-project__footer .ant-btn {
+    width: 100%;
+  }
+}
+
 .faw-project-card {
   border: 1px solid var(--app-border);
   border-radius: 10px;
@@ -4370,6 +4613,9 @@ a.faw-mseg__btn {
   }
   .faw-wizard-steps .ant-steps-item-title {
     font-size: 11px !important;
+  }
+  .faw-wizard-steps .ant-steps-item-description {
+    display: none !important;
   }
 }
 

@@ -3,6 +3,9 @@ import { logger } from "../../logger.js";
 import { resolveGitlabProjectPath } from "../../workspace/creds.js";
 import { requireRuntimeContext } from "../../workspace/runtime.js";
 
+/** Per-request ceiling — avoids hung GitLab calls stacking into Cloudflare 504. */
+const GITLAB_FETCH_TIMEOUT_MS = 20_000;
+
 async function gitlabFetch(
   method: string,
   apiPath: string,
@@ -19,6 +22,7 @@ async function gitlabFetch(
       "Content-Type": "application/json",
     },
     body: body === undefined ? undefined : JSON.stringify(body),
+    signal: AbortSignal.timeout(GITLAB_FETCH_TIMEOUT_MS),
   });
   return res;
 }
@@ -74,7 +78,10 @@ export async function fetchGitlabProject(
 }
 
 /** Projects the token owner is a member of. */
-export async function listMyGitlabProjects(token: string): Promise<
+export async function listMyGitlabProjects(
+  token: string,
+  opts?: { maxPages?: number },
+): Promise<
   Array<{
     id: number;
     pathWithNamespace: string;
@@ -82,6 +89,7 @@ export async function listMyGitlabProjects(token: string): Promise<
     defaultBranch?: string;
   }>
 > {
+  const maxPages = Math.max(1, Math.min(opts?.maxPages ?? 10, 10));
   const out: Array<{
     id: number;
     pathWithNamespace: string;
@@ -89,7 +97,7 @@ export async function listMyGitlabProjects(token: string): Promise<
     defaultBranch?: string;
   }> = [];
   let page = 1;
-  while (page <= 10) {
+  while (page <= maxPages) {
     const qs = new URLSearchParams({
       membership: "true",
       simple: "true",
@@ -134,12 +142,14 @@ export async function listMyGitlabProjects(token: string): Promise<
 export async function listGitlabBranches(
   gitlabPathOrId: string | number,
   token: string,
+  opts?: { maxPages?: number },
 ): Promise<Array<{ name: string; default?: boolean; protected?: boolean }>> {
   const project = encodeURIComponent(String(gitlabPathOrId));
+  const maxPages = Math.max(1, Math.min(opts?.maxPages ?? 20, 20));
   const out: Array<{ name: string; default?: boolean; protected?: boolean }> =
     [];
   let page = 1;
-  while (page <= 20) {
+  while (page <= maxPages) {
     const qs = new URLSearchParams({
       per_page: "100",
       page: String(page),

@@ -129,6 +129,8 @@ export const projectController = {
     const body = (req.body ?? {}) as {
       gitlabToken?: string;
       gitlabPath?: string;
+      gitlabHost?: string;
+      gitProvider?: string;
     };
     res.formatter.ok(await previewGitlab(headerUserFromExpress(req), body));
   }),

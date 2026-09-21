@@ -632,7 +632,11 @@ export async function listProjectBranches(opts: {
   }
 }
 
-/** Preview remote projects/branches/milestones with a raw PAT (wizard, before project saved). */
+/**
+ * Preview remote projects/branches/milestones with a raw PAT (wizard, before project saved).
+ * When gitlabPath is set, skip listing all memberships — wizard already has that list from step 1.
+ * Caps project pages so Cloudflare (~100s) does not 504 on large PATs.
+ */
 export async function previewGitlab(
   username: string,
   body: {
@@ -647,40 +651,70 @@ export async function previewGitlab(
   if (!token) throw new AppError("gitlabToken required", 400);
   const gitProvider = normalizeGitProvider(body.gitProvider);
   const host = normalizeRemoteHost(gitProvider, body.gitlabHost);
+  const gitlabPath = body.gitlabPath?.trim();
+  /** Wizard list step — recent activity only; enough for picker, stays under edge timeouts. */
+  const previewProjectPages = 5;
   try {
     if (gitProvider === "github") {
       await verifyGithubToken(token, host);
-      const projects = await listMyGithubRepos(token, host);
-      let branches: Array<{ name: string; default?: boolean }> = [];
-      let defaultBranch: string | null = null;
-      let milestones: string[] = [];
-      const gitlabPath = body.gitlabPath?.trim();
       if (gitlabPath) {
-        branches = await listGithubBranches(gitlabPath, token, host);
-        defaultBranch = branches.find((b) => b.default)?.name ?? null;
-        const ms = await listGithubMilestones(gitlabPath, token, host);
-        milestones = [
+        const [branches, ms] = await Promise.all([
+          listGithubBranches(gitlabPath, token, host),
+          listGithubMilestones(gitlabPath, token, host),
+        ]);
+        const defaultBranch = branches.find((b) => b.default)?.name ?? null;
+        const milestones = [
           ...new Set(ms.map((m) => m.title.trim()).filter(Boolean)),
         ].sort((a, b) => a.localeCompare(b));
+        return {
+          projects: [],
+          branches,
+          defaultBranch,
+          milestones,
+          gitProvider,
+        };
       }
-      return { projects, branches, defaultBranch, milestones, gitProvider };
+      const projects = await listMyGithubRepos(token, host, {
+        maxPages: previewProjectPages,
+      });
+      return {
+        projects,
+        branches: [],
+        defaultBranch: null,
+        milestones: [],
+        gitProvider,
+      };
     }
 
     await verifyGitlabTokenUser(token);
-    const projects = await listMyGitlabProjects(token);
-    let branches: Array<{ name: string; default?: boolean }> = [];
-    let defaultBranch: string | null = null;
-    let milestones: string[] = [];
-    const gitlabPath = body.gitlabPath?.trim();
     if (gitlabPath) {
-      branches = await listGitlabBranches(gitlabPath, token);
-      defaultBranch = branches.find((b) => b.default)?.name ?? null;
-      const ms = await listProjectMilestones(gitlabPath, token);
-      milestones = [
+      const [branches, ms] = await Promise.all([
+        listGitlabBranches(gitlabPath, token, { maxPages: 5 }),
+        listProjectMilestones(gitlabPath, token),
+      ]);
+      const defaultBranch = branches.find((b) => b.default)?.name ?? null;
+      const milestones = [
         ...new Set(ms.map((m) => m.title.trim()).filter(Boolean)),
       ].sort((a, b) => a.localeCompare(b));
+      return {
+        projects: [],
+        branches,
+        defaultBranch,
+        milestones,
+        gitProvider,
+      };
     }
-    return { projects, branches, defaultBranch, milestones, gitProvider };
+
+    const projects = await listMyGitlabProjects(token, {
+      maxPages: previewProjectPages,
+    });
+    return {
+      projects,
+      branches: [],
+      defaultBranch: null,
+      milestones: [],
+      gitProvider,
+    };
   } catch (err) {
     throw asAppError(err, 400);
   }
