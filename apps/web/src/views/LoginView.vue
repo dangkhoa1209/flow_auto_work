@@ -61,16 +61,12 @@ const form = reactive({
 });
 
 const roleOptions = [
-  { value: "dev" as const, short: "Dev", hint: "WorkBench" },
-  { value: "ba" as const, short: "BA", hint: "Project chat" },
-  { value: "pd" as const, short: "PD", hint: "Project chat" },
-  { value: "qc" as const, short: "QC", hint: "QC chat" },
-  { value: "devops" as const, short: "Build", hint: "Devops" },
+  { value: "dev" as const, short: "Dev" },
+  { value: "ba" as const, short: "BA" },
+  { value: "pd" as const, short: "PD" },
+  { value: "qc" as const, short: "QC" },
+  { value: "devops" as const, short: "Build" },
 ];
-
-const selectedRoleHint = computed(
-  () => roleOptions.find((r) => r.value === form.role)?.hint ?? "",
-);
 
 /** Only allow same-origin relative paths (block open redirects). */
 function safeRedirectTarget(): string | null {
@@ -741,9 +737,6 @@ async function onForgotPassword(e?: Event) {
                     {{ opt.short }}
                   </button>
                 </div>
-                <p class="faw-login__role-hint" aria-live="polite">
-                  {{ selectedRoleHint }}
-                </p>
               </fieldset>
 
               <label class="faw-login__field">
