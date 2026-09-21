@@ -9,7 +9,7 @@ const themeStore = useThemeStore();
 const sharedToken = {
   borderRadius: 6,
   fontFamily:
-    '"IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif',
+    '"Montserrat", system-ui, -apple-system, "Segoe UI", sans-serif',
   fontSize: 13,
   controlHeight: 28,
   controlHeightSM: 24,
