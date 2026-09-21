@@ -416,7 +416,6 @@ watch(
   () => {
     googleAuthModalKey.value = null;
     googleAuthModalOpen.value = false;
-    mergeOpFilter.value = "all";
     mergeOpDetailOpen.value = false;
     mergeOpDetailRow.value = null;
   },
@@ -448,27 +447,10 @@ onUnmounted(() => {
 });
 
 type MergeOpHistoryRow = NonNullable<Job["mergeOpHistory"]>[number];
-type MergeOpFilter = "all" | "sync-base" | "merge";
 
 const mergeOpHistory = computed(() => props.currentJob?.mergeOpHistory ?? []);
-const mergeOpFilter = ref<MergeOpFilter>("all");
-
-const mergeOpFiltered = computed(() => {
-  const list = mergeOpHistory.value;
-  if (mergeOpFilter.value === "all") return list;
-  return list.filter((h) => h.kind === mergeOpFilter.value);
-});
 
 const mergeOpLatest = computed(() => mergeOpHistory.value[0] ?? null);
-
-const mergeOpCounts = computed(() => {
-  const list = mergeOpHistory.value;
-  return {
-    all: list.length,
-    sync: list.filter((h) => h.kind === "sync-base").length,
-    merge: list.filter((h) => h.kind === "merge").length,
-  };
-});
 
 const mergeOpPending = computed(() => {
   const p = props.currentJob?.pendingMergeOp;
@@ -1215,9 +1197,9 @@ const runTooltip = computed(() => {
                     <div class="faw-merge-hist__title">
                       Sync base / Merge
                       <span
-                        v-if="mergeOpCounts.all"
+                        v-if="mergeOpHistory.length"
                         class="faw-merge-hist__count"
-                        >{{ mergeOpCounts.all }}</span
+                        >{{ mergeOpHistory.length }}</span
                       >
                     </div>
                     <p class="faw-merge-hist__hint">
@@ -1289,67 +1271,12 @@ const runTooltip = computed(() => {
                   </div>
                 </div>
 
-                <div
-                  v-if="mergeOpHistory.length"
-                  class="faw-merge-hist__filters"
-                  role="tablist"
-                  aria-label="Filter history"
-                >
-                  <button
-                    type="button"
-                    role="tab"
-                    class="faw-merge-hist__filter"
-                    :class="{
-                      'faw-merge-hist__filter--active': mergeOpFilter === 'all',
-                    }"
-                    :aria-selected="mergeOpFilter === 'all'"
-                    @click="mergeOpFilter = 'all'"
-                  >
-                    All
-                    <span class="faw-merge-hist__filter-n">{{
-                      mergeOpCounts.all
-                    }}</span>
-                  </button>
-                  <button
-                    type="button"
-                    role="tab"
-                    class="faw-merge-hist__filter"
-                    :class="{
-                      'faw-merge-hist__filter--active':
-                        mergeOpFilter === 'sync-base',
-                    }"
-                    :aria-selected="mergeOpFilter === 'sync-base'"
-                    @click="mergeOpFilter = 'sync-base'"
-                  >
-                    Sync
-                    <span class="faw-merge-hist__filter-n">{{
-                      mergeOpCounts.sync
-                    }}</span>
-                  </button>
-                  <button
-                    type="button"
-                    role="tab"
-                    class="faw-merge-hist__filter"
-                    :class="{
-                      'faw-merge-hist__filter--active':
-                        mergeOpFilter === 'merge',
-                    }"
-                    :aria-selected="mergeOpFilter === 'merge'"
-                    @click="mergeOpFilter = 'merge'"
-                  >
-                    Merge
-                    <span class="faw-merge-hist__filter-n">{{
-                      mergeOpCounts.merge
-                    }}</span>
-                  </button>
-                </div>
-
                 <ul
-                  v-if="mergeOpFiltered.length"
+                  v-if="mergeOpHistory.length"
                   class="faw-merge-hist__list"
                 >
                   <li
-                    v-for="(h, i) in mergeOpFiltered"
+                    v-for="(h, i) in mergeOpHistory"
                     :key="`${h.at}-${h.kind}-${i}`"
                     class="faw-merge-hist__item"
                     :class="`faw-merge-hist__item--${mergeOpStatusTone(h.status)}`"
@@ -1407,28 +1334,6 @@ const runTooltip = computed(() => {
                     </div>
                   </li>
                 </ul>
-
-                <div
-                  v-else-if="mergeOpHistory.length"
-                  class="faw-merge-hist__empty faw-merge-hist__empty--filter"
-                >
-                  No
-                  {{
-                    mergeOpFilter === "sync-base"
-                      ? "Sync base"
-                      : mergeOpFilter === "merge"
-                        ? "Merge"
-                        : ""
-                  }}
-                  attempts in this filter.
-                  <button
-                    type="button"
-                    class="faw-merge-hist__detail-btn"
-                    @click="mergeOpFilter = 'all'"
-                  >
-                    Show all
-                  </button>
-                </div>
 
                 <div v-else class="faw-merge-hist__empty">
                   <div class="faw-merge-hist__empty-title">No attempts yet</div>
