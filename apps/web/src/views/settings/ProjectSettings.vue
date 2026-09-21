@@ -18,9 +18,6 @@ const pollTimer = ref<ReturnType<typeof setInterval> | null>(null);
 const wizardOpen = ref(false);
 const wizardStep = ref(0);
 const editId = ref<string | null>(null);
-/** projectName when edit opened — detect rename vs other field updates */
-const editOriginalName = ref<string | null>(null);
-const repoFilter = ref("");
 const showAdvanced = ref(false);
 const previewPhase = ref<"idle" | "repos" | "branches" | "saving">("idle");
 
@@ -54,7 +51,6 @@ const form = reactive({
   displayName: "",
   mainBranch: "main",
   workingBranch: "",
-  localPath: "",
   /** Project default for new jobs — per-job toggle can still override */
   defaultCommitMode: "auto" as "manual" | "auto",
   /** Empty = use Flow/GitLab username as commit author */
@@ -89,7 +85,7 @@ const pathPlaceholder = computed(() =>
 const steps = computed(() => [
   { title: "Connect", description: "Forge & PAT" },
   { title: "Repository", description: "Repo & name" },
-  { title: "Configure", description: "Branch & path" },
+  { title: "Configure", description: "Branch & defaults" },
 ]);
 
 const stepHint = computed(() => {
@@ -99,13 +95,14 @@ const stepHint = computed(() => {
       : `Paste a ${forgeLabel.value} personal access token to list your repositories.`;
   }
   if (wizardStep.value === 1) {
-    return `Pick a ${forgeLabel.value} repo and set a unique Flow project name.`;
+    return `Search or pick a ${forgeLabel.value} repo and set a unique Flow project name.`;
   }
-  return "Confirm branches, defaults, and where source will be cloned.";
+  return "Confirm branches and defaults. Source clones to the default project folder.";
 });
 
+/** Filter repo list from the same autocomplete input (typed path/name). */
 const filteredGitlabProjects = computed(() => {
-  const q = repoFilter.value.trim().toLowerCase();
+  const q = form.gitlabPath.trim().toLowerCase();
   if (!q) return gitlabProjects.value;
   return gitlabProjects.value.filter((p) => {
     const path = (p.pathWithNamespace || "").toLowerCase();
@@ -134,9 +131,7 @@ const canSave = computed(() =>
   Boolean(form.mainBranch.trim() && form.projectName.trim() && form.gitlabPath.trim()),
 );
 
-const resolvedClonePath = computed(() =>
-  form.localPath.trim() || previewDefaultPath.value || "…",
-);
+const resolvedClonePath = computed(() => previewDefaultPath.value || "…");
 
 const connectLoadingLabel = computed(() => {
   if (previewPhase.value === "repos") return "Loading repositories…";
@@ -220,8 +215,6 @@ watch(
 function resetWizard() {
   wizardStep.value = 0;
   editId.value = null;
-  editOriginalName.value = null;
-  repoFilter.value = "";
   showAdvanced.value = false;
   previewPhase.value = "idle";
   form.gitProvider = "gitlab";
@@ -232,7 +225,6 @@ function resetWizard() {
   form.displayName = "";
   form.mainBranch = "main";
   form.workingBranch = "";
-  form.localPath = "";
   form.defaultCommitMode = "auto";
   form.commitAuthorName = "";
   form.allowedMilestones = [];
@@ -253,7 +245,6 @@ function onProviderChange(v: "gitlab" | "github") {
   form.gitlabPath = "";
   form.projectName = "";
   form.displayName = "";
-  repoFilter.value = "";
   gitlabProjects.value = [];
   branches.value = [];
 }
@@ -281,12 +272,10 @@ function openEdit(row: (typeof tableRows.value)[0]) {
   form.gitlabPath = p?.gitlabPath || row.gitlabPath;
   form.projectName = p?.projectName || row.name;
   form.displayName = p?.displayName || form.projectName;
-  editOriginalName.value = form.projectName;
   form.mainBranch =
     (p?.mainBranch || m?.baseBranch || "main") as string;
   form.workingBranch =
     (p?.workingBranch || m?.workBranch || "") as string;
-  form.localPath = (p?.localPath || p?.repoPath || "") as string;
   form.defaultCommitMode =
     p?.defaultCommitMode === "manual" ? "manual" : "auto";
   form.commitAuthorName = (p?.commitAuthorName || "").trim();
@@ -379,9 +368,6 @@ async function loadBranchesForEdit() {
     gitlabPath: form.gitlabPath.trim(),
     projectId: editId.value,
   });
-  if (form.localPath.trim()) {
-    params.set("repoPath", form.localPath.trim());
-  }
   const res = await api<{
     remote?: Array<{ name: string }>;
     local?: string[];
@@ -535,10 +521,7 @@ async function saveWizard() {
   loading.value = true;
   previewPhase.value = "saving";
   try {
-    const pathEmpty = !form.localPath.trim();
-    const resolvedPath = pathEmpty
-      ? previewDefaultPath.value
-      : form.localPath.trim();
+    const resolvedPath = previewDefaultPath.value;
 
     // Flow name drives list label + local folder …/{name}/source
     const flowName = form.projectName.trim();
@@ -565,9 +548,6 @@ async function saveWizard() {
         previewPhase.value = "idle";
         return;
       }
-      const renaming =
-        Boolean(editOriginalName.value) &&
-        flowName !== editOriginalName.value;
       const res = await api<{
         folderRenamed?: boolean;
         project?: ProjectPublic;
@@ -579,7 +559,8 @@ async function saveWizard() {
           defaultCommitMode: form.defaultCommitMode,
           commitAuthorName: form.commitAuthorName.trim(),
           allowedMilestones: form.allowedMilestones,
-          localPath: renaming ? undefined : resolvedPath || undefined,
+          // Path follows Flow name; no wizard override
+          localPath: undefined,
           gitlabToken: form.gitlabToken || undefined,
           gitProvider: form.gitProvider,
           gitlabHost: form.gitlabHost || undefined,
@@ -593,14 +574,6 @@ async function saveWizard() {
       const newPath = res.project?.localPath || resolvedPath;
       if (res.folderRenamed) {
         message.success(`Renamed + folder moved:\n${newPath}`);
-      } else if (pathEmpty && newPath && !renaming) {
-        message.success(
-          `Saved. Empty path → using default folder:\n${newPath}`,
-        );
-        await startClone(editId.value, {
-          localPath: newPath,
-          silentConfirm: true,
-        });
       } else {
         message.success(
           newPath ? `Project updated\n${newPath}` : "Project updated",
@@ -646,7 +619,7 @@ async function saveWizard() {
             ? "https://github.com"
             : "https://gitlab.com"),
         gitlabToken: form.gitlabToken,
-        localPath: pathEmpty ? undefined : form.localPath.trim(),
+        localPath: undefined,
         mainBranch: form.mainBranch || undefined,
         workingBranch: form.workingBranch || undefined,
         defaultCommitMode: form.defaultCommitMode,
@@ -664,14 +637,7 @@ async function saveWizard() {
 
     const clonePath =
       res.project.localPath || res.defaultLocalPath || resolvedPath;
-    if (res.usedDefaultPath || pathEmpty) {
-      message.success(
-        `Project created. Empty path → cloning to default folder:\n${clonePath}`,
-        6,
-      );
-    } else {
-      message.success(`Project created. Cloning to:\n${clonePath}`, 5);
-    }
+    message.success(`Project created. Cloning to:\n${clonePath}`, 5);
 
     await startClone(res.project.id, {
       localPath: clonePath,
@@ -1075,23 +1041,25 @@ onMounted(async () => {
                 class="text-xs text-ink-muted"
               >
                 {{ filteredGitlabProjects.length }}
-                <template v-if="repoFilter.trim()">
+                <template
+                  v-if="
+                    form.gitlabPath.trim() &&
+                    filteredGitlabProjects.length !== gitlabProjects.length
+                  "
+                >
                   / {{ gitlabProjects.length }}
                 </template>
                 repos
               </span>
             </div>
-            <a-input
-              v-if="gitlabProjects.length > 8"
-              v-model:value="repoFilter"
-              class="mt-1"
-              allow-clear
-              placeholder="Filter repositories…"
-            />
             <a-auto-complete
               v-model:value="form.gitlabPath"
               class="w-full mt-1"
-              :placeholder="pathPlaceholder"
+              :placeholder="
+                gitlabProjects.length
+                  ? `Search or type ${pathPlaceholder}…`
+                  : pathPlaceholder
+              "
               :options="repoSelectOptions"
               @select="onRepoSelect"
             />
@@ -1161,7 +1129,7 @@ onMounted(async () => {
           </div>
         </div>
 
-        <!-- Step 2: Configure + path -->
+        <!-- Step 2: Configure -->
         <div v-else class="faw-add-project__body">
           <div class="faw-add-project__grid">
             <div>
@@ -1221,15 +1189,6 @@ onMounted(async () => {
                 (v: boolean) =>
                   (form.defaultCommitMode = v ? 'auto' : 'manual')
               "
-            />
-          </div>
-
-          <div>
-            <label class="faw-add-project__label">Local path</label>
-            <a-input
-              v-model:value="form.localPath"
-              class="mt-1"
-              placeholder="Leave blank → project/user/name/source"
             />
           </div>
 

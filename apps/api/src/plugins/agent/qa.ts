@@ -26,6 +26,7 @@ import {
   cancelActiveAgentRun,
   errorFromCursorRunStatus,
   loadWorkGraphifyBlock,
+  sendWithLocalForceRetry,
   workAgentLocal,
 } from "./run.js";
 import { persistCursorUsage } from "../cursor/recordUsage.js";
@@ -252,7 +253,7 @@ ${opts.question}`;
       }
 
       session.check();
-      const run = await disposed.send(prompt);
+      const run = await sendWithLocalForceRetry(disposed, prompt);
       logger.info("Q&A run started", {
         runId: run.id,
         agentId: disposed.agentId,

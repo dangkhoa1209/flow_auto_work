@@ -18,7 +18,7 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@cursor/sdk": "^1.0.18",
+    "@cursor/sdk": "^1.0.31",
     "@flow/shared": "*",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",

@@ -9,6 +9,8 @@ import {
   getJobCapturedPlan,
   getJobProgress,
   PROGRESS_PUBLISH_MS,
+  workRunOnDelta,
+  workRunOnStep,
 } from "../progress.js";
 
 const JOB = "progress-format-job";
@@ -114,10 +116,8 @@ describe("subagent progress", () => {
     });
     appendSubagentDelta(JOB, "call-abc", {
       type: "tool-call-started",
-      callId: "inner",
       toolCall: { type: "grep", args: { pattern: "foo" } },
-      modelCallId: "m",
-    } as Parameters<typeof appendSubagentDelta>[2]);
+    });
 
     const { lines } = getJobProgress(JOB);
     expect(lines[0]!.kind).toBe("task");
@@ -125,6 +125,144 @@ describe("subagent progress", () => {
     expect(lines[1]!.kind).toBe("tool");
     expect(lines[1]!.text).toContain("[sub call-abc]");
     expect(lines[1]!.text).toContain("grep: foo");
+  });
+
+  it("prefixes tools from a nested agent_id on the stream", () => {
+    appendSdkMessage(JOB, {
+      type: "system",
+      agent_id: "root-agent-1",
+      run_id: "r",
+      subtype: "init",
+    } as Parameters<typeof appendSdkMessage>[1]);
+    appendSdkMessage(JOB, {
+      type: "tool_call",
+      agent_id: "root-agent-1",
+      run_id: "r",
+      call_id: "t1",
+      name: "task",
+      status: "running",
+      args: {
+        description: "Explore progress",
+        prompt: "…",
+        subagentType: { kind: "custom", name: "explore" },
+      },
+    } as Parameters<typeof appendSdkMessage>[1]);
+    appendSdkMessage(JOB, {
+      type: "tool_call",
+      agent_id: "nested-sub-99",
+      run_id: "r2",
+      call_id: "c2",
+      name: "Shell",
+      status: "running",
+      args: { command: "pwd" },
+    } as Parameters<typeof appendSdkMessage>[1]);
+
+    const { lines } = getJobProgress(JOB);
+    const tools = lines.filter((l) => l.kind === "tool");
+    expect(tools[0]!.text).toBe("subagent · explore: Explore progress…");
+    expect(tools[1]!.text).toBe("[sub nested-s] Shell: pwd…");
+  });
+
+  it("replays Task conversationSteps when nested tools were not streamed live", () => {
+    appendSdkMessage(JOB, {
+      type: "system",
+      agent_id: "root-a",
+      run_id: "r",
+      subtype: "init",
+    } as Parameters<typeof appendSdkMessage>[1]);
+    appendSdkMessage(JOB, {
+      type: "tool_call",
+      agent_id: "root-a",
+      run_id: "r",
+      call_id: "task-1",
+      name: "task",
+      status: "completed",
+      args: {
+        description: "Find files",
+        prompt: "…",
+        subagentType: { kind: "custom", name: "explore" },
+      },
+      result: {
+        status: "success",
+        value: {
+          isBackground: false,
+          backgroundReason: "agentRequest",
+          agentId: "sub-xyz-001",
+          conversationSteps: [
+            {
+              type: "toolCall",
+              message: {
+                type: "Shell",
+                args: { command: "ls apps/api" },
+              },
+            },
+            {
+              type: "assistantMessage",
+              message: { text: "Found progress.ts" },
+            },
+          ],
+        },
+      },
+    } as Parameters<typeof appendSdkMessage>[1]);
+
+    const { lines } = getJobProgress(JOB);
+    expect(lines.some((l) => l.text.includes("[sub sub-xyz-]"))).toBe(true);
+    expect(lines.some((l) => l.text.includes("Shell: ls apps/api"))).toBe(true);
+    expect(lines.some((l) => l.kind === "task" && l.text.includes("Found progress.ts"))).toBe(
+      true,
+    );
+  });
+
+  it("workRunOnStep expands Task conversationSteps without duplicating parent tools", () => {
+    const onStep = workRunOnStep(JOB);
+    expect(onStep).toBeDefined();
+    onStep!({
+      step: {
+        type: "toolCall",
+        message: {
+          type: "task",
+          args: { description: "Explore" },
+          result: {
+            status: "success",
+            value: {
+              agentId: "sub-onstep-1",
+              conversationSteps: [
+                {
+                  type: "toolCall",
+                  message: {
+                    type: "Shell",
+                    args: { command: "pwd" },
+                  },
+                },
+              ],
+            },
+          },
+        },
+      } as never,
+    });
+    const { lines } = getJobProgress(JOB);
+    expect(lines.some((l) => l.text.includes("[sub sub-onst]"))).toBe(true);
+    expect(lines.some((l) => l.text.includes("Shell: pwd"))).toBe(true);
+  });
+
+  it("workRunOnDelta maps tool-call-delta.taskUpdate to [sub …] Process lines", () => {
+    const onDelta = workRunOnDelta(JOB);
+    expect(onDelta).toBeDefined();
+    onDelta!({
+      update: {
+        type: "tool-call-delta",
+        callId: "task-live-1",
+        modelCallId: "m1",
+        taskUpdate: {
+          type: "tool-call-started",
+          callId: "inner-shell",
+          toolCall: { type: "shell", args: { command: "ls" } },
+        },
+      } as never,
+    });
+    const { lines } = getJobProgress(JOB);
+    expect(lines.some((l) => l.text.includes("[sub task-liv]"))).toBe(true);
+    expect(lines.some((l) => /shell:\s*ls/i.test(l.text))).toBe(true);
   });
 });
 

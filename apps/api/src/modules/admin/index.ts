@@ -29,6 +29,7 @@ import {
 } from "../../workspace/baStore.js";
 import { buildOauthCloneUrl, isGitRepo, runGitClone } from "../../workspace/clone.js";
 import { scheduleProjectGraphify } from "../../workspace/graphify.js";
+import { scheduleCloneWorkspacePrewarm } from "../../plugins/cursor/prewarm.js";
 import { AppError } from "../../utils/AppError.js";
 import { logger } from "../../logger.js";
 import { testBaDbConnection } from "../../plugins/baDb/query.js";
@@ -301,7 +302,7 @@ export async function adminRefreshCreateDataKnowledge(idRaw: string) {
   if (!project) throw new AppError("BA project not found", 404);
   const result = await refreshCreateDataKnowledgeFromHistory(id);
   const knowledge = await getCreateDataKnowledge(id);
-  return { ok: true as const, ...result, knowledge };
+  return { ...result, knowledge };
 }
 
 export async function adminPatchCreateDataKnowledge(
@@ -363,6 +364,7 @@ export async function adminCloneBaProject(
   if (await isGitRepo(project.localPath)) {
     await updateBaProject(id, { cloneStatus: "ready", cloneError: null });
     scheduleProjectGraphify(project.localPath, "ba-already-cloned");
+    scheduleCloneWorkspacePrewarm(project.localPath);
     return {
       ok: true,
       alreadyCloned: true,
@@ -389,6 +391,7 @@ export async function adminCloneBaProject(
       await updateBaProject(id, { cloneStatus: "ready", cloneError: null });
       logger.info("BA project clone ready", { id, localPath });
       scheduleProjectGraphify(localPath, "ba-clone");
+      scheduleCloneWorkspacePrewarm(localPath);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       await updateBaProject(id, { cloneStatus: "failed", cloneError: msg });

@@ -57,6 +57,16 @@ describe("pickUsageFromCandidates", () => {
     );
     expect(picked?.inputTokens).toBe(50);
   });
+
+  it("merges AgentUsage cost.chargedCents onto usage", () => {
+    const picked = pickUsageFromCandidates({
+      usage: { inputTokens: 100, outputTokens: 20, totalTokens: 120 },
+      cost: { rawCostCents: 5, chargedCents: 3 },
+      runs: [],
+    });
+    expect(picked?.inputTokens).toBe(100);
+    expect(picked?.chargedCents).toBe(3);
+  });
 });
 
 describe("maybeDeltaFromCumulative", () => {

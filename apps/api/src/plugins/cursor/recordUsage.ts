@@ -70,9 +70,11 @@ async function previousAgentCounters(agentId?: string) {
 
 async function readGetUsage(obj: unknown): Promise<unknown> {
   if (!obj || typeof obj !== "object") return null;
-  const fn = (obj as { getUsage?: () => unknown }).getUsage;
+  const fn = (obj as { getUsage?: (opts?: { runId?: string }) => unknown })
+    .getUsage;
   if (typeof fn !== "function") return null;
   try {
+    // Local getUsage({ runId }) expects a usage UUID, not run-<uuid> — omit runId.
     return await Promise.resolve(fn.call(obj));
   } catch {
     return null;

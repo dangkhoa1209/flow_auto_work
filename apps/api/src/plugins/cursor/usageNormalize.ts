@@ -190,12 +190,24 @@ export function pickUsageFromCandidates(
   ...candidates: unknown[]
 ): Record<string, unknown> | null {
   for (const c of candidates) {
-    const rec = asUsageRecord(c);
-    if (rec && hasTokenLikeFields(rec)) return rec;
-    if (rec && rec.usage && typeof rec.usage === "object") {
-      const nested = rec.usage as Record<string, unknown>;
+    if (!c || typeof c !== "object") continue;
+    const raw = c as Record<string, unknown>;
+    // agent.getUsage() → AgentUsage: { usage, cost?, runs[] }
+    if (raw.usage && typeof raw.usage === "object") {
+      const nested = { ...(raw.usage as Record<string, unknown>) };
+      const cost = raw.cost;
+      if (cost && typeof cost === "object") {
+        const charged = Number(
+          (cost as { chargedCents?: unknown }).chargedCents,
+        );
+        if (Number.isFinite(charged) && charged > 0) {
+          nested.chargedCents = charged;
+        }
+      }
       if (hasTokenLikeFields(nested)) return nested;
     }
+    const rec = asUsageRecord(c);
+    if (rec && hasTokenLikeFields(rec)) return rec;
   }
   return null;
 }

@@ -353,6 +353,19 @@ function clarifyBudgetLine(roundsLeft?: number): string {
   return `You have ${roundsLeft} clarification rounds left for this job — batch questions, don't spend a round on a single small question.`;
 }
 
+/**
+ * Stop ~10min hangs when Cursor "environment tools" flake: agents were
+ * AwaitShell-sleeping (no shell_id / escalating block_until) waiting to recover.
+ */
+export function envToolsFailFastBlock(): string {
+  return `# TOOL / ENVIRONMENT FAILURES (fail fast — do not hang)
+If Shell / MCP / "environment tools" fail, hang, or show recovery messages:
+- Do **not** call \`AwaitShell\` to sleep or "wait for recovery" (especially without \`shell_id\`, or with escalating \`block_until_ms\` like 30s→60s→120s). That can burn ~10 minutes doing nothing.
+- Prefer \`Read\` / \`Grep\` / \`Write\` / \`StrReplace\` / \`code_map_*\` — they often still work when Shell does not.
+- Retry a failed tool **at most once**; if still broken, continue without it or report blocked in DONE — **do not poll**.
+- After launching Task: do **not** \`AwaitShell\`-poll the subagent — rely on end-of-turn completion (or keep doing independent parent work). Skip Task entirely for known single-file edits.`;
+}
+
 export function buildWorkPrompt(
   issue: IssueJob,
   extra?: string,
@@ -479,6 +492,8 @@ Flow — skip any step that does not apply:
 4. \`test-writer\` — **only if** behavior changed **and** a nearby test harness exists. Skip when no tests nearby or the change is docs/copy-only.
 5. You keep ownership of DONE / VERIFY; subagents help one step each — they do not replace your final check.
 
+${envToolsFailFastBlock()}
+
 If mid-way you find the requirement contradicts codebase reality (screen/field/API named in the ticket doesn't exist or behaves differently), STOP and use NEED_CLARIFICATION **with evidence** (file + what you found) instead of forcing a wrong change.
 Do not silently drop scope; anything skipped goes under \`RISKS:\` in the DONE block.
 
@@ -574,9 +589,10 @@ ${message.trim()}
 1. If they ask a question → answer clearly (Vietnamese if they wrote Vietnamese). Start repo lookup with \`code_map_query\` when that tool is attached. If they pasted \`#id\` / issue link, use the **GitLab task (chỉ đọc)** block above — do not call GitLab yourself.
 2. If they ask to fix / add / change / re-test / seed data / run something → **do it** on the CURRENT branch (do not switch branches). Subagent flow (skip steps that do not apply — do not spawn all three by default): Task \`explore\` only if path still unclear after map/search; Task \`code-reviewer\` only after multi-file / shared-logic / risky diffs; Task \`test-writer\` only when nearby tests exist. Skip subagents for Q&A-only or trivial one-file edits. **Data fidelity:** if they named a specific NV/id/code and DB returns 0 — STOP and report not found; do **not** switch to another person/row.
 3. Prefer small, correct changes. Stay scoped to this issue unless they explicitly expand scope.
-4. If the request is vague: search the repo/docs first; minor gaps → proceed with the standard interpretation and say so in your reply; only end with NEED_CLARIFICATION when truly blocked (batch ALL questions, numbered, with options + your recommended default).
-5. Do NOT \`git commit\`, \`git push\`, force-push, amend remote commits, or open/merge MRs. Flow Auto Work commits to GitLab via API after you finish.
-6. If finished this follow-up, end with DONE (SUMMARY in Vietnamese; linked issue → Flow commits \`feat #<iid> <title>\`; note any assumptions).
+4. If Shell / "environment tools" fail: do **not** \`AwaitShell\`-sleep or escalate waits — retry once then continue with Read/Write/StrReplace/code_map or report blocked. Do not poll Task with \`AwaitShell\`.
+5. If the request is vague: search the repo/docs first; minor gaps → proceed with the standard interpretation and say so in your reply; only end with NEED_CLARIFICATION when truly blocked (batch ALL questions, numbered, with options + your recommended default).
+6. Do NOT \`git commit\`, \`git push\`, force-push, amend remote commits, or open/merge MRs. Flow Auto Work commits to GitLab via API after you finish.
+7. If finished this follow-up, end with DONE (SUMMARY in Vietnamese; linked issue → Flow commits \`feat #<iid> <title>\`; note any assumptions).
 
 ## Chat reply style (UI is a narrow chat panel — keep it readable)
 - Put the **full answer the human asked for in the readable body** (above any machine tags). Flow shows that body in chat — NOT the DONE line alone.
@@ -645,9 +661,10 @@ ${message.trim()}
 1. If they ask a question → answer clearly (Vietnamese if they wrote Vietnamese). Start repo lookup with \`code_map_query\` when that tool is attached. If a **GitLab task (chỉ đọc)** block is present, use it for issue title/description/comments.
 2. If they ask to fix / add / change / re-test / seed data / run something → **do it** on the CURRENT branch (do not switch branches). Subagent flow (skip steps that do not apply — do not spawn all three by default): Task \`explore\` only if path still unclear after map/search; Task \`code-reviewer\` only after multi-file / shared-logic / risky diffs; Task \`test-writer\` only when nearby tests exist. Skip subagents for Q&A-only or trivial one-file edits. **Data fidelity:** if they named a specific NV/id/code and DB returns 0 — STOP and report not found; do **not** switch to another person/row.
 3. Prefer small, correct changes. Stay scoped to the request.
-4. If the request is vague: search the repo first; minor gaps → proceed with the standard interpretation and say so in your reply; only end with NEED_CLARIFICATION when truly blocked (batch ALL questions, numbered, with options + your recommended default).
-5. Do NOT \`git commit\`, \`git push\`, force-push, amend remote commits, or open/merge MRs. Flow Auto Work commits to GitLab via API after you finish.
-6. If finished this follow-up, end with DONE (SUMMARY in Vietnamese — useful as issue description later; COMMIT in English when you changed files; note any assumptions).
+4. If Shell / "environment tools" fail: do **not** \`AwaitShell\`-sleep or escalate waits — retry once then continue with Read/Write/StrReplace/code_map or report blocked. Do not poll Task with \`AwaitShell\`.
+5. If the request is vague: search the repo first; minor gaps → proceed with the standard interpretation and say so in your reply; only end with NEED_CLARIFICATION when truly blocked (batch ALL questions, numbered, with options + your recommended default).
+6. Do NOT \`git commit\`, \`git push\`, force-push, amend remote commits, or open/merge MRs. Flow Auto Work commits to GitLab via API after you finish.
+7. If finished this follow-up, end with DONE (SUMMARY in Vietnamese — useful as issue description later; COMMIT in English when you changed files; note any assumptions).
 
 ## Chat reply style (UI is a narrow chat panel — keep it readable)
 - Put the **full answer the human asked for in the readable body** (above any machine tags). Flow shows that body in chat — NOT the DONE line alone.

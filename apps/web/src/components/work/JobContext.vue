@@ -1236,24 +1236,28 @@ const runTooltip = computed(() => {
                 >
                   <div class="faw-merge-hist__latest-label">Latest</div>
                   <div class="faw-merge-hist__latest-row">
-                    <span
-                      class="faw-merge-hist__pill"
-                      :class="`faw-merge-hist__pill--${mergeOpLatest.kind === 'merge' ? 'merge' : 'sync'}`"
-                      >{{ mergeOpKindLabel(mergeOpLatest.kind) }}</span
+                    <div class="faw-merge-hist__item-badges">
+                      <span
+                        class="faw-merge-hist__pill"
+                        :class="`faw-merge-hist__pill--${mergeOpLatest.kind === 'merge' ? 'merge' : 'sync'}`"
+                        >{{ mergeOpKindLabel(mergeOpLatest.kind) }}</span
+                      >
+                      <span
+                        class="faw-merge-hist__status"
+                        :class="`faw-merge-hist__status--${mergeOpStatusTone(mergeOpLatest.status)}`"
+                        >{{ mergeOpStatusLabel(mergeOpLatest.status) }}</span
+                      >
+                      <span
+                        v-if="mergeOpLatest.aiResolved"
+                        class="faw-merge-hist__ai"
+                        >AI resolved</span
+                      >
+                    </div>
+                    <time
+                      class="faw-merge-hist__time tabular-nums"
+                      :datetime="mergeOpLatest.at"
+                      >{{ formatChatTime(mergeOpLatest.at) }}</time
                     >
-                    <span
-                      class="faw-merge-hist__status"
-                      :class="`faw-merge-hist__status--${mergeOpStatusTone(mergeOpLatest.status)}`"
-                      >{{ mergeOpStatusLabel(mergeOpLatest.status) }}</span
-                    >
-                    <span
-                      v-if="mergeOpLatest.aiResolved"
-                      class="faw-merge-hist__ai"
-                      >AI resolved</span
-                    >
-                    <span class="faw-merge-hist__time tabular-nums">{{
-                      formatChatTime(mergeOpLatest.at)
-                    }}</span>
                   </div>
                   <div
                     v-if="mergeOpLatest.source || mergeOpLatest.target"

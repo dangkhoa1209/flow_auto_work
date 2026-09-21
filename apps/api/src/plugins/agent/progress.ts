@@ -1,10 +1,20 @@
 import type {
+  ConversationStep,
   InteractionUpdate,
-  NestedTaskUpdate,
   SDKMessage,
 } from "@cursor/sdk";
 import { publishRealtime } from "../realtime/hub.js";
 import { workSubagentLabel } from "../cursor/workSubagents.js";
+
+/**
+ * Nested subagent step (from SDK `tool-call-delta`.taskUpdate / NestedTaskUpdate,
+ * stream agent_id, or Task conversationSteps).
+ */
+export type SubagentNestUpdate =
+  | { type: "text-delta"; text: string }
+  | { type: "thinking-delta"; text: string }
+  | { type: "tool-call-started"; toolCall: unknown }
+  | { type: "tool-call-completed"; toolCall: unknown };
 
 /** Fixed estimate for context % UI (SDK has no remaining-% API). */
 const CONTEXT_WINDOW_TOKENS = 200_000;
@@ -47,6 +57,10 @@ const buffers = new Map<string, ProgressLine[]>();
 const tokenByJob = new Map<string, JobTokenSnapshot>();
 /** Full Cursor plan-mode body from `createPlan` tool (not the clipped tool label). */
 const capturedPlanByJob = new Map<string, string>();
+/** First SDKMessage.agent_id for the job — later different ids are nested subagents. */
+const rootAgentByJob = new Map<string, string>();
+/** Subagent agent_ids already seen live (skip conversationSteps replay). */
+const nestedAgentsSeenByJob = new Map<string, Set<string>>();
 const pendingPublish = new Map<string, ReturnType<typeof setTimeout>>();
 let seq = 0;
 
@@ -110,6 +124,8 @@ export function clearJobProgress(jobId: string): void {
   cancelPendingPublish(jobId);
   buffers.set(jobId, []);
   capturedPlanByJob.delete(jobId);
+  rootAgentByJob.delete(jobId);
+  nestedAgentsSeenByJob.delete(jobId);
 }
 
 /** Full plan text from Cursor `createPlan` (if any) for this job run. */
@@ -412,23 +428,54 @@ function summarizeToolArgs(name: string, args: unknown): string {
 
 function summarizeNestedToolCall(toolCall: unknown): string {
   if (!toolCall || typeof toolCall !== "object") return "tool";
-  const tc = toolCall as { type?: string; args?: unknown };
-  const type = typeof tc.type === "string" ? tc.type : "tool";
+  const tc = toolCall as { type?: string; name?: string; args?: unknown };
+  const type =
+    (typeof tc.type === "string" && tc.type) ||
+    (typeof tc.name === "string" && tc.name) ||
+    "tool";
   return summarizeToolArgs(type, tc.args);
 }
 
+function nestTag(id: string | undefined): string {
+  const raw = (id || "sub").trim();
+  return raw.slice(0, 8) || "sub";
+}
+
+function noteNestedAgent(jobId: string, agentId: string): void {
+  let set = nestedAgentsSeenByJob.get(jobId);
+  if (!set) {
+    set = new Set();
+    nestedAgentsSeenByJob.set(jobId, set);
+  }
+  set.add(agentId);
+}
+
+function trackRootAgent(
+  jobId: string,
+  agentId: string | undefined,
+): { nested: boolean; tag: string } | null {
+  if (!agentId) return null;
+  const root = rootAgentByJob.get(jobId);
+  if (!root) {
+    rootAgentByJob.set(jobId, agentId);
+    return null;
+  }
+  if (agentId === root) return null;
+  noteNestedAgent(jobId, agentId);
+  return { nested: true, tag: nestTag(agentId) };
+}
+
 /**
- * Nested subagent process from SDK `onDelta` (`tool-call-delta` → taskUpdate).
- * Main-agent text/tools still come from `run.stream()` — only nest here.
+ * Nested subagent process lines (prefix `[sub …]` on tools).
  * Text deltas use kind `task` (no per-chunk prefix) so Process can coalesce.
  */
 export function appendSubagentDelta(
   jobId: string | undefined,
   callId: string,
-  update: NestedTaskUpdate,
+  update: SubagentNestUpdate,
 ): void {
   if (!jobId) return;
-  const tag = callId ? callId.slice(0, 8) : "sub";
+  const tag = nestTag(callId);
   switch (update.type) {
     case "text-delta":
       if (update.text) appendJobProgress(jobId, "task", update.text);
@@ -450,17 +497,63 @@ export function appendSubagentDelta(
         `[sub ${tag}] ${summarizeNestedToolCall(update.toolCall)} ✓`,
       );
       break;
-    case "partial-tool-call":
-    case "thinking-completed":
-    case "step-started":
-    case "step-completed":
-      break;
     default:
       break;
   }
 }
 
-/** Wire into Agent.send for /work so Process tab shows nested subagent steps. */
+/** Replay nested toolCalls from Task result.conversationSteps (post-hoc). */
+function expandTaskConversationSteps(
+  jobId: string,
+  callId: string,
+  result: unknown,
+): void {
+  const rec = asRecord(result);
+  if (!rec) return;
+  const value =
+    asRecord(rec.value) ||
+    (rec.status === "success" ? rec : null) ||
+    rec;
+  const steps = value?.conversationSteps;
+  if (!Array.isArray(steps) || steps.length === 0) return;
+  const agentId =
+    (typeof value?.agentId === "string" && value.agentId) ||
+    (typeof rec.agentId === "string" && rec.agentId) ||
+    callId;
+  const seen = nestedAgentsSeenByJob.get(jobId);
+  // Live tool-call-delta notes the Task callId; skip replay if we already streamed.
+  if (seen?.has(agentId) || seen?.has(callId)) {
+    return;
+  }
+  const tag = nestTag(agentId);
+  let emitted = 0;
+  for (const step of steps) {
+    const s = asRecord(step);
+    if (!s) continue;
+    if (s.type === "toolCall" || s.type === "tool_call") {
+      const tool = s.message ?? s.toolCall ?? s.tool_call ?? s;
+      appendJobProgress(
+        jobId,
+        "tool",
+        `[sub ${tag}] ${summarizeNestedToolCall(tool)} ✓`,
+      );
+      emitted++;
+    } else if (s.type === "assistantMessage" || s.type === "assistant") {
+      const msg = asRecord(s.message) || s;
+      const text =
+        (typeof msg?.text === "string" && msg.text) ||
+        (typeof s.text === "string" && s.text) ||
+        "";
+      if (text.trim()) {
+        appendJobProgress(jobId, "task", text.trim().slice(0, 2000));
+        emitted++;
+      }
+    }
+  }
+  if (emitted > 0) noteNestedAgent(jobId, agentId);
+}
+
+/** Wire into Agent.send for /work — createPlan capture + live nest via tool-call-delta. */
 export function workRunOnDelta(
   jobId: string | undefined,
 ):
@@ -468,13 +561,20 @@ export function workRunOnDelta(
   | ((args: { update: InteractionUpdate }) => void) {
   if (!jobId) return undefined;
   return ({ update }) => {
-    // Parent task start/end already arrive via run.stream() tool_call.
-    // Only nest here — otherwise Process would duplicate the Task line.
-    if (update.type === "tool-call-delta" && update.taskUpdate) {
-      appendSubagentDelta(jobId, update.callId, update.taskUpdate);
+    // SDK ≥1.0.31: nested Task tools stream as tool-call-delta.taskUpdate.
+    // Fallbacks: run.stream() with a different agent_id (appendSdkMessage),
+    // Task conversationSteps / onStep / run.conversation() when live nest is thin.
+    if (update.type === "tool-call-delta") {
+      const delta = update as {
+        callId?: string;
+        taskUpdate?: SubagentNestUpdate;
+      };
+      if (delta.taskUpdate && delta.callId) {
+        noteNestedAgent(jobId, delta.callId);
+        appendSubagentDelta(jobId, delta.callId, delta.taskUpdate);
+      }
       return;
     }
-    // Plan mode: full plan lives in createPlan args (stream tool lines are clipped).
     if (
       update.type === "tool-call-started" ||
       update.type === "tool-call-completed" ||
@@ -490,6 +590,73 @@ export function workRunOnDelta(
       }
     }
   };
+}
+
+/**
+ * send() onStep — expand nested Task conversationSteps (complements stream).
+ * Does not re-emit every parent tool (stream already mirrors those).
+ */
+export function workRunOnStep(
+  jobId: string | undefined,
+):
+  | undefined
+  | ((args: { step: ConversationStep }) => void) {
+  if (!jobId) return undefined;
+  return ({ step }) => {
+    expandTaskStepIfPresent(jobId, step);
+  };
+}
+
+function expandTaskStepIfPresent(
+  jobId: string,
+  step: ConversationStep,
+): void {
+  const s = step as unknown as Record<string, unknown>;
+  if (s.type !== "toolCall" && s.type !== "tool_call") return;
+  const tool = s.message ?? s.toolCall ?? s.tool_call ?? s;
+  const toolRec = asRecord(tool);
+  if (!toolRec) return;
+  const toolType =
+    (typeof toolRec.type === "string" && toolRec.type) ||
+    (typeof toolRec.name === "string" && toolRec.name) ||
+    "";
+  if (toolType !== "task" && toolType !== "Task" && toolType !== "agent") {
+    return;
+  }
+  const result =
+    toolRec.result ?? asRecord(toolRec.message)?.result ?? toolRec;
+  const callId =
+    (typeof toolRec.callId === "string" && toolRec.callId) ||
+    (typeof toolRec.call_id === "string" && toolRec.call_id) ||
+    "task";
+  expandTaskConversationSteps(jobId, callId, result);
+}
+
+/**
+ * Best-effort Process backfill from run.conversation() when live nest was thin.
+ */
+export async function appendRunConversationIfNeeded(
+  jobId: string | undefined,
+  run: { conversation?: () => Promise<unknown> },
+): Promise<void> {
+  if (!jobId || typeof run.conversation !== "function") return;
+  if (nestedAgentsSeenByJob.get(jobId)?.size) return;
+  try {
+    const turns = await run.conversation();
+    if (!Array.isArray(turns)) return;
+    for (const turn of turns) {
+      const t = asRecord(turn);
+      const steps = t?.steps;
+      if (!Array.isArray(steps)) continue;
+      for (const step of steps) {
+        if (step && typeof step === "object") {
+          expandTaskStepIfPresent(jobId, step as ConversationStep);
+        }
+      }
+    }
+  } catch {
+    /* conversation() optional / unsupported — ignore */
+  }
 }
 
 type UsageLike = {
@@ -557,6 +724,13 @@ export function appendSdkMessage(
   message: SDKMessage,
 ): void {
   if (!jobId) return;
+  const nest = trackRootAgent(
+    jobId,
+    "agent_id" in message && typeof message.agent_id === "string"
+      ? message.agent_id
+      : undefined,
+  );
+  const nestPrefix = nest ? `[sub ${nest.tag}] ` : "";
   switch (message.type) {
     case "status":
       appendJobProgress(
@@ -568,21 +742,28 @@ export function appendSdkMessage(
       );
       break;
     case "thinking":
-      appendJobProgress(jobId, "thinking", message.text);
+      if (nest) {
+        // Nested thinking → kind task (SUBAGENT badge); avoid breaking coalesce with prefixes.
+        appendJobProgress(jobId, "task", message.text);
+      } else {
+        appendJobProgress(jobId, "thinking", message.text);
+      }
       break;
     case "assistant": {
       const texts = message.message.content
         .filter((b): b is { type: "text"; text: string } => b.type === "text")
         .map((b) => b.text)
         .join("");
-      if (texts) appendJobProgress(jobId, "assistant", texts);
+      if (texts) {
+        appendJobProgress(jobId, nest ? "task" : "assistant", texts);
+      }
       for (const b of message.message.content) {
         if (b.type === "tool_use") {
           captureCreatePlanFromTool(jobId, b.name, b.input);
           appendJobProgress(
             jobId,
             "tool",
-            summarizeToolArgs(b.name, b.input),
+            `${nestPrefix}${summarizeToolArgs(b.name, b.input)}`,
           );
         }
       }
@@ -600,7 +781,17 @@ export function appendSdkMessage(
           : message.status === "error"
             ? " ✗"
             : " ✓";
-      appendJobProgress(jobId, "tool", `${label}${suffix}`);
+      // Parent Task spawn stays unprefixed; nested agent tools get [sub …].
+      appendJobProgress(jobId, "tool", `${nestPrefix}${label}${suffix}`);
+      if (
+        (message.name === "task" ||
+          message.name === "Task" ||
+          message.name === "agent") &&
+        message.status === "completed" &&
+        message.result != null
+      ) {
+        expandTaskConversationSteps(jobId, message.call_id, message.result);
+      }
       break;
     }
     case "task":

@@ -26,6 +26,7 @@ import {
   isStartupError,
   isTransientCursorTransportError,
   runNewAgent,
+  steerActiveAgentRun,
 } from "./plugins/agent/run.js";
 import { runVerifyCommand } from "./plugins/verify/run.js";
 import { answerTaskQuestion } from "./plugins/agent/qa.js";
@@ -542,7 +543,41 @@ export class JobQueue {
       }
     }
 
-    if (hasActiveAgentRun(jobId) || isJobBusy(job.status)) {
+    if (hasActiveAgentRun(jobId)) {
+      const steered = await steerActiveAgentRun(jobId, msg);
+      if (steered === "delivered") {
+        await addChatMessage({
+          jobId: job.id,
+          issueIid: job.issue.issueIid,
+          role: "user",
+          kind: "qa",
+          body: msg,
+        });
+        appendJobProgress(
+          job.id,
+          "status",
+          "Steered running agent (mid-run guidance)",
+        );
+        logger.info("Steered in-flight agent from chat Send", {
+          jobId,
+          msgPreview: msg.slice(0, 120),
+        });
+        const updated = (await loadJob(job.id)) || job;
+        return {
+          ok: true,
+          queued: false,
+          job: updated,
+          kind: "steered",
+        };
+      }
+      throw new Error(
+        steered === "revert"
+          ? "Agent is finishing this turn — wait a moment then send again (steer reverted to follow-up)"
+          : "Agent is running on this job — wait for it to finish or Force Stop, then send again",
+      );
+    }
+
+    if (isJobBusy(job.status)) {
       throw new Error(
         "Agent is running on this job — wait for it to finish or Force Stop, then send again",
       );
