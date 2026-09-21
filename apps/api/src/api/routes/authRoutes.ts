@@ -9,6 +9,7 @@ export function createAuthRoutes(): Router {
   router.post("/resolve-token", authController.resolveToken);
   router.post("/register", authController.register);
   router.post("/login", authController.login);
+  router.post("/forgot-password", authController.forgotPassword);
   router.post("/refresh", authController.refresh);
   router.post("/logout", authController.logout);
   return router;

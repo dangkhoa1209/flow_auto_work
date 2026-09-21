@@ -24,6 +24,7 @@ import {
   upsertUserLogin,
 } from "../../workspace/store.js";
 import { WorkspaceUserModel } from "../../models/workspace.js";
+import { PasswordResetRequestModel } from "../../models/passwordResetRequest.js";
 import { isRegisterableRole, toPublicUser } from "../../workspace/types.js";
 import { AppError } from "../../utils/AppError.js";
 import { listPublicMemberships } from "../project/index.js";
@@ -59,6 +60,7 @@ export function getAuthBootstrap() {
     defaultCursorModel: "auto",
     authMode: "password",
     bypassEnabled: Boolean(config.AUTH_BYPASS_PASSWORD?.trim()),
+    forgotPassword: "contact_admin" as const,
   };
 }
 
@@ -284,4 +286,46 @@ export async function logoutUser(
     }
   }
   return { ok: true };
+}
+
+const FORGOT_PASSWORD_OK = {
+  ok: true as const,
+  message:
+    "If that account exists, your workspace admin will see a reset request. Contact them to get a new password.",
+};
+
+/**
+ * Public forgot-password: queue a request for admin (no email/self-reset).
+ * Always returns the same message so usernames are not enumerable.
+ */
+export async function requestPasswordReset(body: {
+  username?: string;
+  note?: string;
+}) {
+  const username = normalizeAuthUsername(body.username || "");
+  if (!username) throw new AppError("Enter your username", 400);
+  if (!isValidAuthUsername(username)) {
+    throw new AppError(AUTH_USERNAME_HINT, 400);
+  }
+
+  const noteRaw = typeof body.note === "string" ? body.note.trim() : "";
+  const note = noteRaw ? noteRaw.slice(0, 280) : null;
+
+  const user = await getUserByUsername(username);
+  if (user) {
+    const now = new Date().toISOString();
+    await PasswordResetRequestModel.upsertOne(
+      { id: username },
+      {
+        id: username,
+        username,
+        note,
+        status: "pending",
+        requestedAt: now,
+        updatedAt: now,
+      },
+    );
+  }
+
+  return FORGOT_PASSWORD_OK;
 }

@@ -25,6 +25,13 @@ type AdminUser = {
   baChatThreadCount?: number;
 };
 
+type PasswordResetRequest = {
+  id: string;
+  username: string;
+  note: string | null;
+  requestedAt: string;
+};
+
 const ALL_ROLES: UserRole[] = ["dev", "admin", "qc", "ba", "pd", "devops"];
 
 const ROLE_LABELS: Record<UserRole, string> = {
@@ -55,6 +62,7 @@ const session = useSessionStore();
 const loading = ref(false);
 const saving = ref(false);
 const users = ref<AdminUser[]>([]);
+const resetRequests = ref<PasswordResetRequest[]>([]);
 const search = ref("");
 const showDisabled = ref(true);
 const page = ref(1);
@@ -165,8 +173,14 @@ async function copyCredential() {
 async function load() {
   loading.value = true;
   try {
-    const data = await api<{ users?: AdminUser[] }>(API.admin.users);
-    users.value = data.users || [];
+    const [usersData, resetData] = await Promise.all([
+      api<{ users?: AdminUser[] }>(API.admin.users),
+      api<{ requests?: PasswordResetRequest[] }>(
+        API.admin.passwordResetRequests,
+      ).catch(() => ({ requests: [] as PasswordResetRequest[] })),
+    ]);
+    users.value = usersData.users || [];
+    resetRequests.value = resetData.requests || [];
   } catch (e) {
     message.error(e instanceof Error ? e.message : String(e));
   } finally {
@@ -246,6 +260,52 @@ async function resetPassword(u: AdminUser) {
   } finally {
     saving.value = false;
   }
+}
+
+function findUserByUsername(username: string): AdminUser | undefined {
+  const key = username.trim().toLowerCase();
+  return users.value.find(
+    (u) =>
+      u.id.toLowerCase() === key ||
+      u.gitlabUsername.toLowerCase() === key,
+  );
+}
+
+function confirmResetFromRequest(req: PasswordResetRequest) {
+  const u = findUserByUsername(req.username);
+  if (!u) {
+    message.warning(`User @${req.username} not found`);
+    return;
+  }
+  if (u.isRootAdmin) {
+    message.warning("Root admin account cannot be reset");
+    return;
+  }
+  confirmResetPassword(u);
+}
+
+async function dismissResetRequest(req: PasswordResetRequest) {
+  saving.value = true;
+  try {
+    await api(API.admin.passwordResetRequest(req.id), { method: "DELETE" });
+    message.success(`Dismissed request for @${req.username}`);
+    await load();
+  } catch (e) {
+    message.error(e instanceof Error ? e.message : String(e));
+  } finally {
+    saving.value = false;
+  }
+}
+
+function formatDateTime(iso: string): string {
+  const d = new Date(iso);
+  if (!Number.isFinite(d.getTime())) return "—";
+  return d.toLocaleString("en-US", {
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 function confirmResetPassword(u: AdminUser) {
@@ -363,6 +423,52 @@ onMounted(() => {
         + User
       </a-button>
     </header>
+
+    <section
+      v-if="resetRequests.length"
+      class="faw-admin-reset-queue"
+      aria-label="Password reset requests"
+    >
+      <div class="faw-admin-reset-queue__head">
+        <h2 class="faw-admin-reset-queue__title">
+          Password reset requests
+          <span class="faw-admin-reset-queue__count">{{ resetRequests.length }}</span>
+        </h2>
+        <p class="faw-admin-reset-queue__desc">
+          Users asked for a new password from the login screen. Generate one and share it with them.
+        </p>
+      </div>
+      <ul class="faw-admin-reset-queue__list">
+        <li
+          v-for="req in resetRequests"
+          :key="req.id"
+          class="faw-admin-reset-queue__item"
+        >
+          <div class="faw-admin-reset-queue__meta">
+            <span class="faw-admin-reset-queue__user">@{{ req.username }}</span>
+            <span class="faw-admin-reset-queue__time">{{ formatDateTime(req.requestedAt) }}</span>
+            <p v-if="req.note" class="faw-admin-reset-queue__note">{{ req.note }}</p>
+          </div>
+          <div class="faw-admin-reset-queue__actions">
+            <a-button
+              type="primary"
+              size="small"
+              :loading="saving"
+              @click="confirmResetFromRequest(req)"
+            >
+              Reset password
+            </a-button>
+            <a-button
+              size="small"
+              :disabled="saving"
+              @click="dismissResetRequest(req)"
+            >
+              Dismiss
+            </a-button>
+          </div>
+        </li>
+      </ul>
+    </section>
 
     <div class="faw-admin-stats">
       <div class="faw-admin-stat">

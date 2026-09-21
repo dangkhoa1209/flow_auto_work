@@ -171,6 +171,20 @@ export const adminController = {
     );
   }),
 
+  listPasswordResetRequests: asyncHandler(async (_req: Request, res: Response) => {
+    res.formatter.ok(await admin.adminListPasswordResetRequests());
+  }),
+
+  dismissPasswordResetRequest: asyncHandler(
+    async (req: Request, res: Response) => {
+      res.formatter.ok(
+        await admin.adminDismissPasswordResetRequest(
+          String(req.params.id || ""),
+        ),
+      );
+    },
+  ),
+
   cursorUsage: asyncHandler(async (req: Request, res: Response) => {
     res.formatter.ok(
       await admin.adminGetCursorUsage({

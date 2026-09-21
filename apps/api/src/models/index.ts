@@ -23,6 +23,7 @@ import {
   WorkspaceProjectModel,
   WorkspaceUserModel,
 } from "./workspace.js";
+import { PasswordResetRequestModel } from "./passwordResetRequest.js";
 import { connectMongo } from "./connection.js";
 import { logger } from "../logger.js";
 
@@ -50,6 +51,7 @@ const ALL_MODELS = [
   CreateDataKnowledgeModel,
   StatsAnalysisCacheModel,
   CursorUsageModel,
+  PasswordResetRequestModel,
 ] as const;
 
 /** Drop legacy unique indexes that conflict with soft-delete partial uniques. */
@@ -112,4 +114,5 @@ export {
   SyncDbJobModel,
   StatsAnalysisCacheModel,
   CursorUsageModel,
+  PasswordResetRequestModel,
 };

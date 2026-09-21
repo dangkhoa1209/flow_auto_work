@@ -6,6 +6,7 @@ import {
   logoutUser,
   refreshAuthTokens,
   registerUser,
+  requestPasswordReset,
   resolveTokenUser,
   type LoginBody,
   type RegisterBody,
@@ -30,6 +31,11 @@ export const authController = {
   login: asyncHandler(async (req: Request, res: Response) => {
     const body = (req.body ?? {}) as LoginBody;
     res.formatter.ok(await loginUser(body));
+  }),
+
+  forgotPassword: asyncHandler(async (req: Request, res: Response) => {
+    const body = (req.body ?? {}) as { username?: string; note?: string };
+    res.formatter.ok(await requestPasswordReset(body));
   }),
 
   refresh: asyncHandler(async (req: Request, res: Response) => {

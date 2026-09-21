@@ -7,6 +7,7 @@ export const API = {
     bootstrap: "/api/auth/bootstrap",
     login: "/api/auth/login",
     register: "/api/auth/register",
+    forgotPassword: "/api/auth/forgot-password",
     refresh: "/api/auth/refresh",
     logout: "/api/auth/logout",
   },
@@ -66,6 +67,9 @@ export const API = {
       `/api/admin/users/${encodeURIComponent(id)}/enable`,
     userPassword: (id: string) =>
       `/api/admin/users/${encodeURIComponent(id)}/password`,
+    passwordResetRequests: "/api/admin/password-reset-requests",
+    passwordResetRequest: (id: string) =>
+      `/api/admin/password-reset-requests/${encodeURIComponent(id)}`,
     cursorUsage: "/api/admin/cursor-usage",
   },
   ba: {
@@ -265,5 +269,6 @@ export const PUBLIC_AUTH_PATHS = new Set<string>([
   API.auth.bootstrap,
   API.auth.login,
   API.auth.register,
+  API.auth.forgotPassword,
   API.auth.refresh,
 ]);

@@ -22,6 +22,7 @@ import {
 } from "../../workspace/types.js";
 import { AppError } from "../../utils/AppError.js";
 import { requireRoleContext } from "../../api/middleware/roleAuth.js";
+import { PasswordResetRequestModel } from "../../models/passwordResetRequest.js";
 
 function parseSingleRole(raw: unknown, field = "role"): UserRole | undefined {
   if (raw === undefined || raw === null || raw === "") return undefined;
@@ -185,9 +186,50 @@ export async function adminResetPasswordHandler(
       newPassword: generatedPassword,
     });
     await revokeAllRefreshSessions(username);
+    await markPasswordResetFulfilled(username);
     return { user, generatedPassword };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     throw new AppError(msg, msg === "User not found" ? 404 : 400);
   }
+}
+
+async function markPasswordResetFulfilled(username: string): Promise<void> {
+  const now = new Date().toISOString();
+  await PasswordResetRequestModel.updateOne(
+    { id: username, status: "pending" },
+    { $set: { status: "fulfilled", updatedAt: now } },
+    { raw: true },
+  );
+}
+
+export async function adminListPasswordResetRequests() {
+  const rows = await PasswordResetRequestModel.findMany({
+    filter: { status: "pending" },
+    sort: { requestedAt: -1 },
+    limit: 100,
+  });
+  return {
+    requests: rows.map((r) => ({
+      id: r.id,
+      username: r.username,
+      note: r.note,
+      requestedAt: r.requestedAt,
+    })),
+  };
+}
+
+export async function adminDismissPasswordResetRequest(id: string) {
+  const username = normTarget(id);
+  const existing = await PasswordResetRequestModel.findById(username);
+  if (!existing || existing.status !== "pending") {
+    throw new AppError("Reset request not found", 404);
+  }
+  const now = new Date().toISOString();
+  await PasswordResetRequestModel.updateOne(
+    { id: username },
+    { $set: { status: "dismissed", updatedAt: now } },
+    { raw: true },
+  );
+  return { ok: true };
 }

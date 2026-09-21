@@ -64,5 +64,14 @@ export function createAdminRoutes(): Router {
   router.delete("/users/:id", adminController.deleteUser);
   router.put("/users/:id/password", adminController.resetUserPassword);
 
+  router.get(
+    "/password-reset-requests",
+    adminController.listPasswordResetRequests,
+  );
+  router.delete(
+    "/password-reset-requests/:id",
+    adminController.dismissPasswordResetRequest,
+  );
+
   return router;
 }

@@ -2968,12 +2968,112 @@ a.faw-mseg__btn {
   gap: 7px;
   margin: 0;
 }
-.faw-login__field > span {
+.faw-login__field > span,
+.faw-login__field-row {
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.45px;
   text-transform: uppercase;
   color: var(--app-faint);
+}
+.faw-login__field-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.faw-login__field-row > span {
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: inherit;
+}
+.faw-login__forgot-link {
+  appearance: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: 600 12px var(--font-ui);
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--app-accent);
+  cursor: pointer;
+  min-height: 28px;
+}
+.faw-login__forgot-link:hover:not(:disabled) {
+  color: var(--app-accent-bright);
+  text-decoration: underline;
+}
+.faw-login__forgot-link:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.faw-login__forgot-link:focus-visible {
+  outline: 2px solid var(--app-accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+.faw-login__forgot-head {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 2px;
+}
+.faw-login__forgot-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 650;
+  color: var(--app-ink);
+  letter-spacing: -0.01em;
+}
+.faw-login__forgot-copy {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--app-muted);
+}
+.faw-login__forgot-ok {
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: var(--app-accent-soft);
+  border: 1px solid var(--app-border);
+}
+.faw-login__forgot-ok-title {
+  margin: 0 0 6px;
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--app-accent-bright);
+}
+.faw-login__forgot-ok-body {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--app-muted);
+}
+.faw-login__back {
+  appearance: none;
+  margin: 0;
+  padding: 8px 0;
+  border: 0;
+  background: none;
+  font: 600 13px var(--font-ui);
+  color: var(--app-muted);
+  cursor: pointer;
+  text-align: left;
+  min-height: 40px;
+}
+.faw-login__back:hover:not(:disabled) {
+  color: var(--app-ink);
+}
+.faw-login__back:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.faw-login__back:focus-visible {
+  outline: 2px solid var(--app-accent);
+  outline-offset: 2px;
+  border-radius: 4px;
 }
 .faw-login__field > span em {
   font-style: normal;
@@ -2986,7 +3086,8 @@ a.faw-mseg__btn {
 .faw-login__field .ant-input,
 .faw-login__field .ant-input-affix-wrapper,
 .faw-login__field .ant-input-affix-wrapper-lg,
-.faw-login__field .ant-input-lg {
+.faw-login__field .ant-input-lg,
+.faw-login__field .ant-input-textarea textarea {
   background: var(--app-panel-soft) !important;
   border-color: var(--app-border) !important;
   border-radius: 8px !important;
@@ -2995,6 +3096,10 @@ a.faw-mseg__btn {
   padding: 10px 14px !important;
   min-height: 44px !important;
   line-height: 1.35 !important;
+}
+.faw-login__field .ant-input-textarea textarea {
+  min-height: 72px !important;
+  resize: vertical;
 }
 .faw-login__field .ant-input-affix-wrapper .ant-input {
   background: transparent !important;
@@ -6091,6 +6196,91 @@ a.faw-mseg__btn {
   flex-wrap: wrap;
   gap: 10px;
   margin-bottom: 16px;
+}
+.faw-admin-reset-queue {
+  margin-bottom: 16px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-raised);
+}
+.faw-admin-reset-queue__head {
+  margin-bottom: 12px;
+}
+.faw-admin-reset-queue__title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 650;
+  color: var(--ink);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.faw-admin-reset-queue__count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  background: var(--app-accent-soft, rgba(91, 141, 239, 0.18));
+  color: var(--app-accent-bright, #7aa2f7);
+}
+.faw-admin-reset-queue__desc {
+  margin: 6px 0 0;
+  font-size: 0.8125rem;
+  color: var(--ink-muted);
+  line-height: 1.45;
+}
+.faw-admin-reset-queue__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.faw-admin-reset-queue__item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--surface, var(--app-panel-soft));
+}
+.faw-admin-reset-queue__meta {
+  min-width: 0;
+  flex: 1;
+}
+.faw-admin-reset-queue__user {
+  font-weight: 650;
+  color: var(--ink);
+  margin-right: 8px;
+}
+.faw-admin-reset-queue__time {
+  font-size: 0.75rem;
+  color: var(--ink-muted);
+  font-family: var(--font-mono, ui-monospace, monospace);
+}
+.faw-admin-reset-queue__note {
+  margin: 6px 0 0;
+  font-size: 0.8125rem;
+  color: var(--ink-muted);
+  line-height: 1.4;
+  word-break: break-word;
+}
+.faw-admin-reset-queue__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  flex-shrink: 0;
 }
 .faw-admin-stat {
   display: flex;

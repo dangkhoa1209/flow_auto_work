@@ -3,6 +3,7 @@ import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { message } from "ant-design-vue";
 import type { AuthTokensResponse } from "@/api/authApi";
+import { authApi } from "@/api/authApi";
 import { recoverAuthRefreshLocks } from "@/api/http";
 import { LAST_LOGIN_KEY } from "@/api/tokenStorage";
 import { useAuthStore } from "@/stores/auth";
@@ -14,9 +15,11 @@ const route = useRoute();
 const auth = useAuthStore();
 const session = useSessionStore();
 
-const mode = ref<"login" | "register">("login");
+const mode = ref<"login" | "register" | "forgot">("login");
 const loading = ref(false);
 const errorText = ref("");
+const forgotSent = ref(false);
+const forgotMessage = ref("");
 const usernameInputRef = ref<{ focus?: () => void } | null>(null);
 
 /** Glow follows pointer (%, relative to login root). */
@@ -30,6 +33,7 @@ const form = reactive({
   password: "",
   password2: "",
   displayName: "",
+  note: "",
   role: "dev" as "dev" | "qc" | "pd" | "ba" | "devops",
 });
 
@@ -124,12 +128,15 @@ onUnmounted(() => {
   document.removeEventListener("visibilitychange", onLoginVisible);
 });
 
-function switchMode(next: "login" | "register") {
+function switchMode(next: "login" | "register" | "forgot") {
   if (mode.value === next) return;
   mode.value = next;
   errorText.value = "";
+  forgotSent.value = false;
+  forgotMessage.value = "";
   form.password = "";
   form.password2 = "";
+  if (next !== "forgot") form.note = "";
   focusUsername();
 }
 
@@ -267,6 +274,41 @@ async function onRegister(e?: Event) {
     loading.value = false;
   }
 }
+
+async function onForgotPassword(e?: Event) {
+  e?.preventDefault?.();
+  if (loading.value) return;
+
+  errorText.value = "";
+  forgotSent.value = false;
+  forgotMessage.value = "";
+  const username = normalizeUsername(form.username);
+  if (!username) {
+    errorText.value = "Enter your username";
+    message.warning(errorText.value);
+    return;
+  }
+  form.username = username;
+
+  loading.value = true;
+  try {
+    const res = await authApi.forgotPassword({
+      username,
+      note: form.note.trim() || undefined,
+    });
+    forgotSent.value = true;
+    forgotMessage.value =
+      res.message ||
+      "If that account exists, your workspace admin will see a reset request.";
+    message.success("Request sent");
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    errorText.value = msg;
+    message.error(msg);
+  } finally {
+    loading.value = false;
+  }
+}
 </script>
 
 <template>
@@ -307,6 +349,7 @@ async function onRegister(e?: Event) {
       <div class="faw-login__main">
         <div class="faw-login__panel">
           <div
+            v-if="mode !== 'forgot'"
             class="faw-seg faw-login__seg"
             role="tablist"
             aria-label="Auth mode"
@@ -361,7 +404,17 @@ async function onRegister(e?: Event) {
                 />
               </label>
               <label class="faw-login__field">
-                <span>Password</span>
+                <span class="faw-login__field-row">
+                  <span>Password</span>
+                  <button
+                    type="button"
+                    class="faw-login__forgot-link"
+                    :disabled="loading"
+                    @click="switchMode('forgot')"
+                  >
+                    Forgot password?
+                  </button>
+                </span>
                 <a-input-password
                   v-model:value="form.password"
                   size="large"
@@ -393,6 +446,89 @@ async function onRegister(e?: Event) {
                   aria-hidden="true"
                 />
                 {{ loading ? "Signing in…" : "Sign in" }}
+              </button>
+            </form>
+
+            <form
+              v-else-if="mode === 'forgot'"
+              key="forgot"
+              class="faw-login__form"
+              :aria-busy="loading"
+              @submit.prevent="onForgotPassword"
+            >
+              <div class="faw-login__forgot-head">
+                <h2 class="faw-login__forgot-title">Reset password</h2>
+                <p class="faw-login__forgot-copy">
+                  Passwords are reset by a workspace admin. Send a request with
+                  your username — they will generate a new password and share it
+                  with you.
+                </p>
+              </div>
+
+              <template v-if="!forgotSent">
+                <label class="faw-login__field">
+                  <span>Username</span>
+                  <a-input
+                    ref="usernameInputRef"
+                    v-model:value="form.username"
+                    size="large"
+                    autocomplete="username"
+                    placeholder="Your username"
+                    :disabled="loading"
+                    :aria-invalid="!!errorText"
+                  />
+                </label>
+                <label class="faw-login__field">
+                  <span>Note for admin <em>(optional)</em></span>
+                  <a-textarea
+                    v-model:value="form.note"
+                    :rows="2"
+                    :maxlength="280"
+                    placeholder="How can they reach you?"
+                    :disabled="loading"
+                  />
+                </label>
+                <p
+                  v-if="errorText"
+                  id="forgot-error"
+                  class="faw-login__error"
+                  role="alert"
+                  aria-live="assertive"
+                >
+                  {{ errorText }}
+                </p>
+                <button
+                  type="submit"
+                  class="faw-btn faw-btn--run faw-login__submit"
+                  :disabled="loading"
+                  :aria-busy="loading"
+                >
+                  <span
+                    v-if="loading"
+                    class="faw-login__spinner"
+                    aria-hidden="true"
+                  />
+                  {{ loading ? "Sending…" : "Ask admin to reset" }}
+                </button>
+              </template>
+
+              <div
+                v-else
+                class="faw-login__forgot-ok"
+                role="status"
+                aria-live="polite"
+              >
+                <p class="faw-login__forgot-ok-title">Request sent</p>
+                <p class="faw-login__forgot-ok-body">{{ forgotMessage }}</p>
+              </div>
+
+              <button
+                type="button"
+                class="faw-login__back"
+                :disabled="loading"
+                @click="switchMode('login')"
+              >
+                ← Back to Sign in
               </button>
             </form>
 

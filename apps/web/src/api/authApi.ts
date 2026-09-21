@@ -44,6 +44,16 @@ export const authApi = {
     });
   },
 
+  forgotPassword(opts: { username: string; note?: string }) {
+    return request<{ ok: boolean; message: string }>({
+      url: API.auth.forgotPassword,
+      method: "POST",
+      data: opts,
+      skipAuth: true,
+      skipRefresh: true,
+    });
+  },
+
   refresh(refreshToken: string) {
     return request<AuthTokensResponse>({
       url: API.auth.refresh,
