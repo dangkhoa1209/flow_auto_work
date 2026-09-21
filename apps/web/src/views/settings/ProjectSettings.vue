@@ -1,7 +1,11 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 import { message, Modal } from "ant-design-vue";
-import { MoreOutlined } from "@ant-design/icons-vue";
+import {
+  CheckCircleOutlined,
+  GithubOutlined,
+  MoreOutlined,
+} from "@ant-design/icons-vue";
 import { api } from "@/api/client";
 import { API } from "@/api/endpoints";
 import { useSessionStore } from "@/stores/session";
@@ -16,6 +20,9 @@ const wizardStep = ref(0);
 const editId = ref<string | null>(null);
 /** projectName when edit opened — detect rename vs other field updates */
 const editOriginalName = ref<string | null>(null);
+const repoFilter = ref("");
+const showAdvanced = ref(false);
+const previewPhase = ref<"idle" | "repos" | "branches" | "saving">("idle");
 
 type ProjectPublic = {
   id: string;
@@ -80,12 +87,74 @@ const pathPlaceholder = computed(() =>
 );
 
 const steps = computed(() => [
-  `${forgeLabel.value} PAT`,
-  "Project",
-  "Main branch",
-  "Work branch",
-  "Local path",
+  { title: "Connect", description: "Forge & PAT" },
+  { title: "Repository", description: "Repo & name" },
+  { title: "Configure", description: "Branch & path" },
 ]);
+
+const stepHint = computed(() => {
+  if (wizardStep.value === 0) {
+    return editId.value
+      ? "Update the token if it expired, or keep the existing one."
+      : `Paste a ${forgeLabel.value} personal access token to list your repositories.`;
+  }
+  if (wizardStep.value === 1) {
+    return `Pick a ${forgeLabel.value} repo and set a unique Flow project name.`;
+  }
+  return "Confirm branches, defaults, and where source will be cloned.";
+});
+
+const filteredGitlabProjects = computed(() => {
+  const q = repoFilter.value.trim().toLowerCase();
+  if (!q) return gitlabProjects.value;
+  return gitlabProjects.value.filter((p) => {
+    const path = (p.pathWithNamespace || "").toLowerCase();
+    const name = (p.name || "").toLowerCase();
+    return path.includes(q) || name.includes(q);
+  });
+});
+
+const repoSelectOptions = computed(() =>
+  filteredGitlabProjects.value.map((p) => ({
+    value: p.pathWithNamespace,
+    label: p.pathWithNamespace,
+  })),
+);
+
+const canConnectNext = computed(() => {
+  if (editId.value && !form.gitlabToken.trim()) return true;
+  return Boolean(form.gitlabToken.trim() && form.gitlabHost.trim());
+});
+
+const canRepoNext = computed(() =>
+  Boolean(form.gitlabPath.trim() && form.projectName.trim()),
+);
+
+const canSave = computed(() =>
+  Boolean(form.mainBranch.trim() && form.projectName.trim() && form.gitlabPath.trim()),
+);
+
+const resolvedClonePath = computed(() =>
+  form.localPath.trim() || previewDefaultPath.value || "…",
+);
+
+const connectLoadingLabel = computed(() => {
+  if (previewPhase.value === "repos") return "Loading repositories…";
+  if (editId.value && !form.gitlabToken.trim()) return "Next · keep existing PAT";
+  return "Next · load projects";
+});
+
+const repoLoadingLabel = computed(() => {
+  if (previewPhase.value === "branches") return "Loading branches…";
+  return "Next · configure";
+});
+
+const saveLoadingLabel = computed(() => {
+  if (previewPhase.value === "saving") {
+    return editId.value ? "Saving…" : "Creating & cloning…";
+  }
+  return editId.value ? "Save changes" : "Create & clone";
+});
 
 const tableRows = computed(() =>
   session.memberships.map((m) => {
@@ -122,8 +191,8 @@ const columns = [
 ];
 
 const wizardWidth = computed(() => {
-  if (typeof window === "undefined") return 640;
-  return window.innerWidth < 640 ? "calc(100vw - 24px)" : 640;
+  if (typeof window === "undefined") return 720;
+  return window.innerWidth < 640 ? "calc(100vw - 24px)" : 720;
 });
 
 onUnmounted(() => {
@@ -152,6 +221,9 @@ function resetWizard() {
   wizardStep.value = 0;
   editId.value = null;
   editOriginalName.value = null;
+  repoFilter.value = "";
+  showAdvanced.value = false;
+  previewPhase.value = "idle";
   form.gitProvider = "gitlab";
   form.gitlabHost = "https://gitlab.com";
   form.gitlabToken = "";
@@ -179,8 +251,20 @@ function onProviderChange(v: "gitlab" | "github") {
   form.gitlabHost =
     v === "github" ? "https://github.com" : "https://gitlab.com";
   form.gitlabPath = "";
+  form.projectName = "";
+  form.displayName = "";
+  repoFilter.value = "";
   gitlabProjects.value = [];
   branches.value = [];
+}
+
+function onRepoSelect(v: string) {
+  form.gitlabPath = v;
+  const leaf = v.split("/").pop() || v;
+  if (!form.projectName.trim() || form.projectName === form.displayName) {
+    form.projectName = leaf;
+    form.displayName = leaf;
+  }
 }
 
 function openEdit(row: (typeof tableRows.value)[0]) {
@@ -210,6 +294,9 @@ function openEdit(row: (typeof tableRows.value)[0]) {
     ? [...p.allowedMilestones]
     : [];
   form.gitlabToken = "";
+  showAdvanced.value = Boolean(
+    form.commitAuthorName.trim() || form.allowedMilestones.length,
+  );
   wizardStep.value = 0;
   wizardOpen.value = true;
   void loadMilestoneOptionsForEdit();
@@ -234,11 +321,16 @@ async function loadMilestoneOptionsForEdit() {
 }
 
 async function loadPreviewProjects() {
-  if (!form.gitlabToken.trim()) {
+  if (!canConnectNext.value) {
     message.warning(`Enter ${forgeLabel.value} PAT`);
     return;
   }
+  if (editId.value && !form.gitlabToken.trim()) {
+    wizardStep.value = 1;
+    return;
+  }
   loading.value = true;
+  previewPhase.value = "repos";
   try {
     const res = await api<{
       projects: Array<{
@@ -259,11 +351,16 @@ async function loadPreviewProjects() {
       message.warning("PAT found no repositories");
       return;
     }
+    message.success(
+      `Found ${gitlabProjects.value.length} repositor${gitlabProjects.value.length === 1 ? "y" : "ies"}`,
+      2,
+    );
     wizardStep.value = 1;
   } catch (e) {
     message.error(e instanceof Error ? e.message : String(e));
   } finally {
     loading.value = false;
+    previewPhase.value = "idle";
   }
 }
 
@@ -312,8 +409,10 @@ async function loadBranchesForPath() {
   if (!form.projectName.trim()) {
     form.projectName =
       form.gitlabPath.trim().split("/").pop() || form.gitlabPath;
+    form.displayName = form.projectName;
   }
   loading.value = true;
+  previewPhase.value = "branches";
   try {
     if (form.gitlabToken.trim()) {
       const res = await api<{
@@ -342,24 +441,16 @@ async function loadBranchesForPath() {
       // Keep existing PAT: preview needs a raw token; use /gitlab/branches with stored secrets
       await Promise.all([loadMilestoneOptionsForEdit(), loadBranchesForEdit()]);
     }
+    showAdvanced.value = Boolean(
+      form.commitAuthorName.trim() || form.allowedMilestones.length,
+    );
     wizardStep.value = 2;
   } catch (e) {
     message.error(e instanceof Error ? e.message : String(e));
   } finally {
     loading.value = false;
+    previewPhase.value = "idle";
   }
-}
-
-function nextFromMain() {
-  if (!form.mainBranch.trim()) {
-    message.warning("Select main branch");
-    return;
-  }
-  wizardStep.value = 3;
-}
-
-function nextFromWork() {
-  wizardStep.value = 4;
 }
 
 async function pollClone(projectId: string) {
@@ -376,7 +467,7 @@ async function pollClone(projectId: string) {
         if (pollTimer.value) clearInterval(pollTimer.value);
         await session.refreshMe();
         message.success(
-          `Clone xong → ${st.project?.localPath || st.project?.repoPath || ""}`,
+          `Clone ready → ${st.project?.localPath || st.project?.repoPath || ""}`,
         );
       } else if (status === "failed") {
         cloningId.value = null;
@@ -437,7 +528,12 @@ async function startClone(
 }
 
 async function saveWizard() {
+  if (!canSave.value) {
+    message.warning("Select main branch and project name");
+    return;
+  }
   loading.value = true;
+  previewPhase.value = "saving";
   try {
     const pathEmpty = !form.localPath.trim();
     const resolvedPath = pathEmpty
@@ -452,6 +548,7 @@ async function saveWizard() {
       if (!flowName) {
         message.warning("Enter Flow project name");
         loading.value = false;
+        previewPhase.value = "idle";
         return;
       }
       const dup = session.memberships.find(
@@ -465,6 +562,7 @@ async function saveWizard() {
           `Name "${flowName}" is already used — conflicts with source save path. Choose another name.`,
         );
         loading.value = false;
+        previewPhase.value = "idle";
         return;
       }
       const renaming =
@@ -512,7 +610,7 @@ async function saveWizard() {
     }
 
     if (!form.gitlabToken.trim()) {
-      message.warning("GitLab PAT required");
+      message.warning(`${forgeLabel.value} PAT required`);
       return;
     }
     if (!form.gitlabPath.trim() || !flowName) {
@@ -583,6 +681,7 @@ async function saveWizard() {
     message.error(e instanceof Error ? e.message : String(e));
   } finally {
     loading.value = false;
+    previewPhase.value = "idle";
   }
 }
 
@@ -639,12 +738,12 @@ onMounted(async () => {
       <div class="min-w-0">
         <h2 class="text-lg font-medium m-0">Project management</h2>
         <p class="text-sm text-ink-muted m-0 mt-1 hidden sm:block">
-          GitLab or GitHub classic PAT → repository → branch → local path
+          Connect a forge → pick a repository → configure branches &amp; clone path
         </p>
       </div>
-      <a-button type="primary" size="small" :loading="loading" @click="openCreate"
-        >Add project</a-button
-      >
+      <a-button type="primary" size="small" :loading="loading" @click="openCreate">
+        Add project
+      </a-button>
     </div>
 
     <!-- Desktop table -->
@@ -656,6 +755,17 @@ onMounted(async () => {
         :pagination="false"
         :scroll="{ x: 960 }"
       >
+        <template #emptyText>
+          <div class="faw-project-empty py-10 px-4 text-center">
+            <p class="text-ink-soft font-medium m-0 mb-1">No projects yet</p>
+            <p class="text-sm text-ink-muted m-0 mb-4">
+              Add a GitLab or GitHub repo to start working in Flow.
+            </p>
+            <a-button type="primary" size="small" @click="openCreate">
+              Add project
+            </a-button>
+          </div>
+        </template>
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'name'">
             <span class="inline-flex items-center gap-1.5 min-w-0">
@@ -670,7 +780,7 @@ onMounted(async () => {
             </span>
           </template>
           <template v-else-if="column.key === 'gitProvider'">
-            <a-tag :color="record.gitProvider === 'github' ? 'purple' : 'geekblue'">
+            <a-tag :color="record.gitProvider === 'github' ? 'default' : 'geekblue'">
               {{ record.gitProvider === "github" ? "GitHub" : "GitLab" }}
             </a-tag>
           </template>
@@ -746,7 +856,7 @@ onMounted(async () => {
             <div class="text-[11px] text-ink-faint font-mono truncate mt-0.5">
               <a-tag
                 class="!m-0 !mr-1 !text-[10px]"
-                :color="record.gitProvider === 'github' ? 'purple' : 'geekblue'"
+                :color="record.gitProvider === 'github' ? 'default' : 'geekblue'"
               >
                 {{ record.gitProvider === "github" ? "GH" : "GL" }}
               </a-tag>
@@ -803,7 +913,15 @@ onMounted(async () => {
           {{ record.localPath }}
         </div>
       </div>
-      <a-empty v-if="!tableRows.length" description="No projects yet" />
+      <div v-if="!tableRows.length" class="faw-project-empty py-10 px-4 text-center">
+        <p class="text-ink-soft font-medium m-0 mb-1">No projects yet</p>
+        <p class="text-sm text-ink-muted m-0 mb-4">
+          Add a GitLab or GitHub repo to start working in Flow.
+        </p>
+        <a-button type="primary" size="small" @click="openCreate">
+          Add project
+        </a-button>
+      </div>
     </div>
 
     <a-modal
@@ -811,274 +929,406 @@ onMounted(async () => {
       :title="editId ? 'Edit project' : 'Add project'"
       :footer="null"
       :width="wizardWidth"
-      wrap-class-name="faw-settings-modal"
+      wrap-class-name="faw-settings-modal faw-add-project-modal"
       destroy-on-close
       @cancel="wizardOpen = false"
     >
-      <a-steps
-        size="small"
-        class="mb-5 faw-wizard-steps"
-        :current="wizardStep"
-        :items="steps.map((t) => ({ title: t }))"
-      />
+      <div class="faw-add-project">
+        <a-steps
+          size="small"
+          class="faw-wizard-steps"
+          :current="wizardStep"
+          :items="steps"
+        />
 
-      <!-- Step 0: PAT -->
-      <div v-if="wizardStep === 0" class="space-y-3">
-        <div>
-          <label class="text-sm text-slate-600">Forge</label>
-          <a-radio-group
-            class="mt-1 flex flex-wrap gap-3"
-            :value="form.gitProvider"
-            :disabled="Boolean(editId)"
-            @update:value="onProviderChange"
-          >
-            <a-radio value="gitlab">GitLab</a-radio>
-            <a-radio value="github">GitHub (classic PAT)</a-radio>
-          </a-radio-group>
-          <p v-if="editId" class="text-xs text-ink-muted m-0 mt-1">
-            Forge cannot be changed after create — create a new project instead.
-          </p>
-        </div>
-        <div>
-          <label class="text-sm text-slate-600">{{ forgeLabel }} host</label>
-          <a-input
-            v-model:value="form.gitlabHost"
-            class="mt-1"
-            :placeholder="
-              isGithub ? 'https://github.com' : 'https://gitlab.com'
-            "
-          />
-        </div>
-        <div>
-          <label class="text-sm text-slate-600">{{ forgeLabel }} PAT</label>
-          <a-input-password
-            v-model:value="form.gitlabToken"
-            class="mt-1"
-            :placeholder="
-              editId ? 'Leave blank to keep existing token' : patHint
-            "
-          />
-          <p class="text-xs text-ink-muted m-0 mt-1">
-            <a :href="patCreateUrl" target="_blank" rel="noopener noreferrer">
-              Create {{ forgeLabel }} personal access token
-            </a>
-            <template v-if="isGithub">
-              — use a
-              <strong>classic</strong> token (<code>ghp_</code>) with
-              <code>repo</code> scope. Fine-grained tokens
-              <strong>cannot</strong> access invited repos (outside collaborator).
-              Org with SAML SSO → Authorize SSO for that token.
-            </template>
-          </p>
-        </div>
-        <div class="flex justify-end gap-2 pt-2">
-          <a-button @click="wizardOpen = false">Cancel</a-button>
-          <a-button
-            v-if="editId && !form.gitlabToken"
-            type="primary"
-            @click="wizardStep = 1"
-            >Next (keep existing PAT)</a-button
-          >
-          <a-button
-            type="primary"
-            :loading="loading"
-            @click="loadPreviewProjects"
-            >Next · load projects</a-button
-          >
-        </div>
-      </div>
+        <p class="faw-add-project__hint">{{ stepHint }}</p>
 
-      <!-- Step 1: Project -->
-      <div v-else-if="wizardStep === 1" class="space-y-3">
-        <div>
-          <label class="text-sm text-slate-600"
-            >Select {{ forgeLabel }} repository</label
-          >
-          <!-- AutoComplete: pick from PAT list OR type owner/repo when invite missing from list -->
-          <a-auto-complete
-            v-model:value="form.gitlabPath"
-            class="w-full mt-1"
-            :placeholder="pathPlaceholder"
-            :options="
-              gitlabProjects.map((p) => ({
-                value: p.pathWithNamespace,
-              }))
-            "
-            @select="
-              (v: string) => {
-                form.projectName = v.split('/').pop() || v;
-                form.displayName = form.projectName;
-              }
-            "
-          />
-          <p v-if="isGithub" class="text-xs text-ink-muted m-0 mt-1">
-            Invited repo missing from the dropdown? Type
-            <code>owner/repo</code> manually (after Accept invite on GitHub).
-            The token must have access to that repo.
-          </p>
-        </div>
-        <div>
-          <label class="text-sm text-slate-600">Flow project name</label>
-          <a-input
-            v-model:value="form.projectName"
-            class="mt-1"
-            placeholder="ykk"
-            @update:value="(v: string) => { form.displayName = v; }"
-          />
-          <p class="text-xs text-ink-muted m-0 mt-1">
-            This name appears in the list, must be
-            <strong>unique</strong>, and is the folder
-            <code>…/name/source</code>.
-            <template v-if="editId">
-              Renaming will move the folder when using the default path.
-            </template>
-          </p>
-        </div>
-        <div class="flex justify-between gap-2 pt-2">
-          <a-button @click="wizardStep = 0">Back</a-button>
-          <a-button
-            type="primary"
-            :loading="loading"
-            @click="loadBranchesForPath"
-            >Next · main branch</a-button
-          >
-        </div>
-      </div>
-
-      <!-- Step 2: Main branch -->
-      <div v-else-if="wizardStep === 2" class="space-y-3">
-        <div>
-          <label class="text-sm text-slate-600">Main branch (base)</label>
-          <a-select
-            v-model:value="form.mainBranch"
-            class="w-full mt-1"
-            show-search
-            :options="
-              (branches.length
-                ? branches
-                : [form.mainBranch || 'main']
-              ).map((b) => ({ value: b, label: b }))
-            "
-          />
-        </div>
-        <div class="flex justify-between gap-2 pt-2">
-          <a-button @click="wizardStep = 1">Back</a-button>
-          <a-button type="primary" @click="nextFromMain"
-            >Next · work branch</a-button
-          >
-        </div>
-      </div>
-
-      <!-- Step 3: Work branch + default commit mode -->
-      <div v-else-if="wizardStep === 3" class="space-y-3">
-        <div>
-          <label class="text-sm text-slate-600"
-            >Work branch (optional)</label
-          >
-          <a-select
-            v-model:value="form.workingBranch"
-            class="w-full mt-1"
-            show-search
-            allow-clear
-            placeholder="Select existing branch (or leave blank)"
-            :options="
-              (branches.length
-                ? branches
-                : form.workingBranch
-                  ? [form.workingBranch]
-                  : []
-              ).map((b) => ({ value: b, label: b }))
-            "
-          />
-          <a-input
-            v-model:value="form.workingBranch"
-            class="mt-2"
-            placeholder="Or type a new branch name"
-          />
-        </div>
         <div
-          class="rounded-lg border border-[var(--app-border)] bg-[var(--app-panel-soft)] px-3 py-2.5 flex items-center justify-between gap-3"
+          v-if="wizardStep > 0 && (form.gitlabPath || form.projectName)"
+          class="faw-add-project__strip"
         >
-          <div class="min-w-0">
-            <div class="text-sm text-ink-soft font-medium">
-              Default Auto commit
+          <span class="faw-add-project__chip">
+            {{ forgeLabel }}
+          </span>
+          <span v-if="form.gitlabPath" class="faw-add-project__chip faw-add-project__chip--mono">
+            {{ form.gitlabPath }}
+          </span>
+          <span v-if="form.projectName" class="faw-add-project__chip">
+            {{ form.projectName }}
+          </span>
+          <span v-if="wizardStep >= 2 && form.mainBranch" class="faw-add-project__chip">
+            {{ form.mainBranch }}
+          </span>
+        </div>
+
+        <!-- Step 0: Connect -->
+        <div v-if="wizardStep === 0" class="faw-add-project__body">
+          <div>
+            <label class="faw-add-project__label">Forge</label>
+            <div class="faw-forge-cards" role="radiogroup" aria-label="Forge">
+              <button
+                type="button"
+                class="faw-forge-card"
+                :class="{ 'faw-forge-card--active': form.gitProvider === 'gitlab' }"
+                :disabled="Boolean(editId)"
+                @click="onProviderChange('gitlab')"
+              >
+                <span class="faw-forge-card__icon" aria-hidden="true">GL</span>
+                <span class="faw-forge-card__text">
+                  <strong>GitLab</strong>
+                  <small>glpat · api + read_repository</small>
+                </span>
+                <CheckCircleOutlined
+                  v-if="form.gitProvider === 'gitlab'"
+                  class="faw-forge-card__check"
+                />
+              </button>
+              <button
+                type="button"
+                class="faw-forge-card"
+                :class="{ 'faw-forge-card--active': form.gitProvider === 'github' }"
+                :disabled="Boolean(editId)"
+                @click="onProviderChange('github')"
+              >
+                <GithubOutlined class="faw-forge-card__gh" />
+                <span class="faw-forge-card__text">
+                  <strong>GitHub</strong>
+                  <small>classic PAT · repo scope</small>
+                </span>
+                <CheckCircleOutlined
+                  v-if="form.gitProvider === 'github'"
+                  class="faw-forge-card__check"
+                />
+              </button>
             </div>
-            <div class="text-xs text-ink-muted mt-0.5">
-              New jobs in this project use this default. You can still change it
-              per task (Diff tab).
+            <p v-if="editId" class="faw-add-project__help">
+              Forge cannot be changed after create — create a new project instead.
+            </p>
+          </div>
+
+          <div>
+            <label class="faw-add-project__label">{{ forgeLabel }} host</label>
+            <a-input
+              v-model:value="form.gitlabHost"
+              class="mt-1"
+              :placeholder="
+                isGithub ? 'https://github.com' : 'https://gitlab.com'
+              "
+              @pressEnter="loadPreviewProjects"
+            />
+          </div>
+
+          <div>
+            <label class="faw-add-project__label">{{ forgeLabel }} PAT</label>
+            <a-input-password
+              v-model:value="form.gitlabToken"
+              class="mt-1"
+              :placeholder="
+                editId ? 'Leave blank to keep existing token' : patHint
+              "
+              @pressEnter="loadPreviewProjects"
+            />
+            <p class="faw-add-project__help">
+              <a :href="patCreateUrl" target="_blank" rel="noopener noreferrer">
+                Create {{ forgeLabel }} personal access token
+              </a>
+              <template v-if="isGithub">
+                — use a
+                <strong>classic</strong> token (<code>ghp_</code>) with
+                <code>repo</code> scope. Fine-grained tokens
+                <strong>cannot</strong> access invited repos (outside collaborator).
+                Org with SAML SSO → Authorize SSO for that token.
+              </template>
+            </p>
+          </div>
+
+          <div class="faw-add-project__footer">
+            <a-button @click="wizardOpen = false">Cancel</a-button>
+            <a-tooltip
+              :title="
+                canConnectNext
+                  ? ''
+                  : `Enter a ${forgeLabel} personal access token`
+              "
+            >
+              <a-button
+                type="primary"
+                :loading="loading"
+                :disabled="!canConnectNext || loading"
+                @click="loadPreviewProjects"
+              >
+                {{ connectLoadingLabel }}
+              </a-button>
+            </a-tooltip>
+          </div>
+        </div>
+
+        <!-- Step 1: Repository -->
+        <div v-else-if="wizardStep === 1" class="faw-add-project__body">
+          <div>
+            <div class="flex items-center justify-between gap-2 flex-wrap">
+              <label class="faw-add-project__label m-0"
+                >{{ forgeLabel }} repository</label
+              >
+              <span
+                v-if="gitlabProjects.length"
+                class="text-xs text-ink-muted"
+              >
+                {{ filteredGitlabProjects.length }}
+                <template v-if="repoFilter.trim()">
+                  / {{ gitlabProjects.length }}
+                </template>
+                repos
+              </span>
+            </div>
+            <a-input
+              v-if="gitlabProjects.length > 8"
+              v-model:value="repoFilter"
+              class="mt-1"
+              allow-clear
+              placeholder="Filter repositories…"
+            />
+            <a-auto-complete
+              v-model:value="form.gitlabPath"
+              class="w-full mt-1"
+              :placeholder="pathPlaceholder"
+              :options="repoSelectOptions"
+              @select="onRepoSelect"
+            />
+            <p v-if="isGithub" class="faw-add-project__help">
+              Invited repo missing from the list? Type
+              <code>owner/repo</code> manually (after Accept invite on GitHub).
+            </p>
+            <p
+              v-else-if="!gitlabProjects.length && editId"
+              class="faw-add-project__help"
+            >
+              Keeping existing PAT — type the path or go Back to reload the list.
+            </p>
+          </div>
+
+          <div
+            v-if="form.gitlabPath.trim()"
+            class="faw-add-project__selected"
+          >
+            <CheckCircleOutlined class="text-[var(--app-accent)] shrink-0" />
+            <div class="min-w-0">
+              <div class="text-sm font-medium text-ink truncate">
+                {{ form.gitlabPath.trim() }}
+              </div>
+              <div class="text-xs text-ink-muted">
+                Selected {{ forgeLabel }} repository
+              </div>
             </div>
           </div>
-          <a-switch
-            :checked="form.defaultCommitMode === 'auto'"
-            checked-children="Auto"
-            un-checked-children="Manual"
-            @change="
-              (v: boolean) =>
-                (form.defaultCommitMode = v ? 'auto' : 'manual')
-            "
-          />
-        </div>
-        <div>
-          <label class="text-sm text-slate-600">Commit author name</label>
-          <a-input
-            v-model:value="form.commitAuthorName"
-            class="mt-1"
-            allow-clear
-            :placeholder="`Leave empty → ${session.me?.gitlabUsername || session.session.username || 'GitLab username'}`"
-          />
-          <p class="text-xs text-ink-muted mt-1 mb-0">
-            Name shown on commits (GIT_AUTHOR_NAME). Leave empty to use the
-            signed-in Flow/GitLab user. Not taken from GHP/PAT.
-          </p>
-        </div>
-        <div>
-          <label class="text-sm text-slate-600">Allowed milestones</label>
-          <a-select
-            v-model:value="form.allowedMilestones"
-            mode="multiple"
-            allow-clear
-            show-search
-            class="w-full mt-1"
-            placeholder="Leave empty → all milestones"
-            :options="
-              milestoneOptions.map((m) => ({ value: m, label: m }))
-            "
-          />
-          <p class="text-xs text-ink-muted mt-1 mb-0">
-            If set, Workbench only shows open tasks whose milestone is in this
-            list.
-          </p>
-        </div>
-        <div class="flex justify-between gap-2 pt-2">
-          <a-button @click="wizardStep = 2">Back</a-button>
-          <a-button type="primary" @click="nextFromWork">Next · path</a-button>
-        </div>
-      </div>
 
-      <!-- Step 4: Path + save -->
-      <div v-else class="space-y-3">
-        <div>
-          <label class="text-sm text-slate-600">Local path</label>
-          <a-input
-            v-model:value="form.localPath"
-            class="mt-1"
-            placeholder="Leave blank → project/user/name/source"
-          />
+          <div>
+            <label class="faw-add-project__label">Flow project name</label>
+            <a-input
+              v-model:value="form.projectName"
+              class="mt-1"
+              placeholder="my-app"
+              @update:value="(v: string) => { form.displayName = v; }"
+              @pressEnter="loadBranchesForPath"
+            />
+            <p class="faw-add-project__help">
+              Unique name for the list and folder
+              <code>…/name/source</code>.
+              <template v-if="editId">
+                Renaming moves the folder when using the default path.
+              </template>
+            </p>
+          </div>
+
+          <div class="faw-add-project__footer">
+            <a-button @click="wizardStep = 0">Back</a-button>
+            <a-tooltip
+              :title="
+                canRepoNext
+                  ? ''
+                  : 'Select a repository and enter a Flow project name'
+              "
+            >
+              <a-button
+                type="primary"
+                :loading="loading"
+                :disabled="!canRepoNext || loading"
+                @click="loadBranchesForPath"
+              >
+                {{ repoLoadingLabel }}
+              </a-button>
+            </a-tooltip>
+          </div>
         </div>
-        <a-alert
-          type="info"
-          show-icon
-          :message="
-            form.localPath.trim()
-              ? `Will use path: ${form.localPath.trim()}`
-              : `Empty path → clone to: ${previewDefaultPath || '…'}`
-          "
-        />
-        <div class="flex justify-between gap-2 pt-2">
-          <a-button @click="wizardStep = 3">Back</a-button>
-          <a-button type="primary" :loading="loading" @click="saveWizard">
-            Save &amp; clone
-          </a-button>
+
+        <!-- Step 2: Configure + path -->
+        <div v-else class="faw-add-project__body">
+          <div class="faw-add-project__grid">
+            <div>
+              <label class="faw-add-project__label">Main branch (base)</label>
+              <a-select
+                v-model:value="form.mainBranch"
+                class="w-full mt-1"
+                show-search
+                :options="
+                  (branches.length
+                    ? branches
+                    : [form.mainBranch || 'main']
+                  ).map((b) => ({ value: b, label: b }))
+                "
+              />
+            </div>
+            <div>
+              <label class="faw-add-project__label">Work branch</label>
+              <a-select
+                v-model:value="form.workingBranch"
+                class="w-full mt-1"
+                show-search
+                allow-clear
+                placeholder="Optional"
+                :options="
+                  (branches.length
+                    ? branches
+                    : form.workingBranch
+                      ? [form.workingBranch]
+                      : []
+                  ).map((b) => ({ value: b, label: b }))
+                "
+              />
+              <a-input
+                v-model:value="form.workingBranch"
+                class="mt-2"
+                allow-clear
+                placeholder="Or type a new branch name"
+              />
+            </div>
+          </div>
+
+          <div class="faw-add-project__switch-row">
+            <div class="min-w-0">
+              <div class="text-sm text-ink-soft font-medium">
+                Default Auto commit
+              </div>
+              <div class="text-xs text-ink-muted mt-0.5">
+                New jobs use this default. Override per task on the Diff tab.
+              </div>
+            </div>
+            <a-switch
+              :checked="form.defaultCommitMode === 'auto'"
+              checked-children="Auto"
+              un-checked-children="Manual"
+              @change="
+                (v: boolean) =>
+                  (form.defaultCommitMode = v ? 'auto' : 'manual')
+              "
+            />
+          </div>
+
+          <div>
+            <label class="faw-add-project__label">Local path</label>
+            <a-input
+              v-model:value="form.localPath"
+              class="mt-1"
+              placeholder="Leave blank → project/user/name/source"
+            />
+          </div>
+
+          <div class="faw-add-project__review">
+            <div class="faw-add-project__review-title">Ready to clone</div>
+            <dl class="faw-add-project__review-grid">
+              <div>
+                <dt>Forge</dt>
+                <dd>{{ forgeLabel }}</dd>
+              </div>
+              <div>
+                <dt>Repo</dt>
+                <dd class="font-mono">{{ form.gitlabPath || "—" }}</dd>
+              </div>
+              <div>
+                <dt>Flow name</dt>
+                <dd>{{ form.projectName || "—" }}</dd>
+              </div>
+              <div>
+                <dt>Main</dt>
+                <dd>{{ form.mainBranch || "—" }}</dd>
+              </div>
+              <div>
+                <dt>Work</dt>
+                <dd>{{ form.workingBranch || "—" }}</dd>
+              </div>
+              <div>
+                <dt>Commit</dt>
+                <dd>{{ form.defaultCommitMode === "auto" ? "Auto" : "Manual" }}</dd>
+              </div>
+              <div class="faw-add-project__review-path">
+                <dt>Clone to</dt>
+                <dd class="font-mono">{{ resolvedClonePath }}</dd>
+              </div>
+            </dl>
+          </div>
+
+          <a-collapse
+            ghost
+            class="faw-add-project__advanced"
+            :active-key="showAdvanced ? ['adv'] : []"
+            @change="
+              (keys: string | string[]) => {
+                const k = Array.isArray(keys) ? keys : [keys];
+                showAdvanced = k.includes('adv');
+              }
+            "
+          >
+            <a-collapse-panel key="adv" header="Advanced (author &amp; milestones)">
+              <div class="space-y-3 pt-1">
+                <div>
+                  <label class="faw-add-project__label">Commit author name</label>
+                  <a-input
+                    v-model:value="form.commitAuthorName"
+                    class="mt-1"
+                    allow-clear
+                    :placeholder="`Leave empty → ${session.me?.gitlabUsername || session.session.username || 'GitLab username'}`"
+                  />
+                  <p class="faw-add-project__help">
+                    Name on commits (GIT_AUTHOR_NAME). Empty uses the signed-in
+                    Flow/GitLab user.
+                  </p>
+                </div>
+                <div>
+                  <label class="faw-add-project__label">Allowed milestones</label>
+                  <a-select
+                    v-model:value="form.allowedMilestones"
+                    mode="multiple"
+                    allow-clear
+                    show-search
+                    class="w-full mt-1"
+                    placeholder="Leave empty → all milestones"
+                    :options="
+                      milestoneOptions.map((m) => ({ value: m, label: m }))
+                    "
+                  />
+                  <p class="faw-add-project__help">
+                    If set, Workbench only shows open tasks in these milestones.
+                  </p>
+                </div>
+              </div>
+            </a-collapse-panel>
+          </a-collapse>
+
+          <div class="faw-add-project__footer">
+            <a-button @click="wizardStep = 1">Back</a-button>
+            <a-tooltip
+              :title="canSave ? '' : 'Main branch and project name are required'"
+            >
+              <a-button
+                type="primary"
+                :loading="loading"
+                :disabled="!canSave || loading"
+                @click="saveWizard"
+              >
+                {{ saveLoadingLabel }}
+              </a-button>
+            </a-tooltip>
+          </div>
         </div>
       </div>
     </a-modal>
