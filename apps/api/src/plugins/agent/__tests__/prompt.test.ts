@@ -227,6 +227,13 @@ describe("buildWorkPrompt graphify", () => {
     expect(prompt).toMatch(/Task `test-writer`/);
   });
 
+  it("forbids AwaitShell sleep when environment tools fail", () => {
+    const prompt = buildWorkPrompt(issue);
+    expect(prompt).toMatch(/TOOL \/ ENVIRONMENT FAILURES/);
+    expect(prompt).toMatch(/Do \*\*not\*\* call `AwaitShell` to sleep/);
+    expect(prompt).toMatch(/at most once/);
+  });
+
   it("forbids substituting another entity when named DB lookup misses", () => {
     const prompt = buildWorkPrompt(issue);
     expect(prompt).toMatch(/DATA \/ ENTITY FIDELITY/);
@@ -272,6 +279,16 @@ describe("follow-up GitLab task + subagents", () => {
     expect(prompt).toMatch(/Task `explore`/);
     expect(prompt).toMatch(/Skip subagents for Q&A-only/);
     expect(prompt).toMatch(/Data fidelity/);
+  });
+
+  it("follow-up prompts forbid AwaitShell sleep on env tool failure", () => {
+    const linked = buildFollowUpPrompt("fix UI", issue);
+    const adhoc = buildAdhocFollowUpPrompt("fix UX", "hotfix");
+    for (const prompt of [linked, adhoc]) {
+      expect(prompt).toMatch(/environment tools/);
+      expect(prompt).toMatch(/AwaitShell/);
+      expect(prompt).toMatch(/retry once/);
+    }
   });
 
   it("adhoc without block still mentions paste #id / link", () => {

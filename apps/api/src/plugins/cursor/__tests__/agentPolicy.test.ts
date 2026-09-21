@@ -32,6 +32,7 @@ describe("agentPolicy", () => {
       "code-reviewer": expect.objectContaining({ description: expect.any(String) }),
       "test-writer": expect.objectContaining({ prompt: expect.any(String) }),
     });
+    expect(coding.agents?.explore?.prompt).toMatch(/AwaitShell-sleep/);
     expect(coding).not.toHaveProperty("disallowedTools");
   });
 });
