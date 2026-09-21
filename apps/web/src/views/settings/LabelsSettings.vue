@@ -56,10 +56,10 @@ async function save() {
 </script>
 
 <template>
-  <div class="space-y-4">
-    <h2 class="text-lg font-medium m-0">Labels & handoff</h2>
-    <p class="text-sm text-ink-muted m-0">
-      Prefill on Start / Done awaiting handoff.
+  <div class="faw-settings-detail">
+    <h2>Labels & handoff</h2>
+    <p class="faw-settings-detail__lead">
+      Prefill labels on Start / Done when handing off to QC.
     </p>
     <a-form layout="vertical">
       <a-form-item label="In-progress label (Start + / handoff −)">

@@ -19,10 +19,13 @@ type AdminUser = {
   isRootAdmin: boolean;
   createdAt: string;
   updatedAt: string;
-  baChatMessageCount?: number;
-  baChatMessageActiveCount?: number;
-  baChatMessageDeletedCount?: number;
-  baChatThreadCount?: number;
+};
+
+type PasswordResetRequest = {
+  id: string;
+  username: string;
+  note: string | null;
+  requestedAt: string;
 };
 
 const ALL_ROLES: UserRole[] = ["dev", "admin", "qc", "ba", "pd", "devops"];
@@ -33,18 +36,12 @@ const ROLE_LABELS: Record<UserRole, string> = {
   qc: "QC",
   ba: "BA",
   pd: "PD",
-  devops: "Devops",
+  devops: "Build",
 };
-
-const roleOptions = ALL_ROLES.map((r) => ({
-  value: r,
-  label: ROLE_LABELS[r],
-}));
 
 const columns = [
   { title: "User", key: "user", width: 220 },
   { title: "Role", key: "roles", width: 120 },
-  { title: "Chatbox", key: "chatbox", width: 130 },
   { title: "Status", key: "status", width: 120 },
   { title: "Password", key: "password", width: 100 },
   { title: "Updated", key: "updatedAt", width: 110 },
@@ -55,6 +52,7 @@ const session = useSessionStore();
 const loading = ref(false);
 const saving = ref(false);
 const users = ref<AdminUser[]>([]);
+const resetRequests = ref<PasswordResetRequest[]>([]);
 const search = ref("");
 const showDisabled = ref(true);
 const page = ref(1);
@@ -117,14 +115,6 @@ function isProtected(u: AdminUser): boolean {
   return u.isRootAdmin;
 }
 
-function chatboxUsageTitle(u: AdminUser): string {
-  const total = u.baChatMessageCount ?? 0;
-  const active = u.baChatMessageActiveCount ?? 0;
-  const deleted = u.baChatMessageDeletedCount ?? 0;
-  const threads = u.baChatThreadCount ?? 0;
-  return `Project Chatbox usage (includes soft-deleted)\nMessages: ${total} total · ${active} active · ${deleted} deleted\nThreads: ${threads}`;
-}
-
 function resetCreateForm() {
   createForm.username = "";
   createForm.displayName = "";
@@ -165,8 +155,14 @@ async function copyCredential() {
 async function load() {
   loading.value = true;
   try {
-    const data = await api<{ users?: AdminUser[] }>(API.admin.users);
-    users.value = data.users || [];
+    const [usersData, resetData] = await Promise.all([
+      api<{ users?: AdminUser[] }>(API.admin.users),
+      api<{ requests?: PasswordResetRequest[] }>(
+        API.admin.passwordResetRequests,
+      ).catch(() => ({ requests: [] as PasswordResetRequest[] })),
+    ]);
+    users.value = usersData.users || [];
+    resetRequests.value = resetData.requests || [];
   } catch (e) {
     message.error(e instanceof Error ? e.message : String(e));
   } finally {
@@ -246,6 +242,52 @@ async function resetPassword(u: AdminUser) {
   } finally {
     saving.value = false;
   }
+}
+
+function findUserByUsername(username: string): AdminUser | undefined {
+  const key = username.trim().toLowerCase();
+  return users.value.find(
+    (u) =>
+      u.id.toLowerCase() === key ||
+      u.gitlabUsername.toLowerCase() === key,
+  );
+}
+
+function confirmResetFromRequest(req: PasswordResetRequest) {
+  const u = findUserByUsername(req.username);
+  if (!u) {
+    message.warning(`User @${req.username} not found`);
+    return;
+  }
+  if (u.isRootAdmin) {
+    message.warning("Root admin account cannot be reset");
+    return;
+  }
+  confirmResetPassword(u);
+}
+
+async function dismissResetRequest(req: PasswordResetRequest) {
+  saving.value = true;
+  try {
+    await api(API.admin.passwordResetRequest(req.id), { method: "DELETE" });
+    message.success(`Dismissed request for @${req.username}`);
+    await load();
+  } catch (e) {
+    message.error(e instanceof Error ? e.message : String(e));
+  } finally {
+    saving.value = false;
+  }
+}
+
+function formatDateTime(iso: string): string {
+  const d = new Date(iso);
+  if (!Number.isFinite(d.getTime())) return "—";
+  return d.toLocaleString("en-US", {
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 function confirmResetPassword(u: AdminUser) {
@@ -356,13 +398,59 @@ onMounted(() => {
       <div>
         <h1 class="faw-admin-page__title">Users</h1>
         <p class="faw-admin-page__desc">
-          Create accounts, assign roles, and regenerate passwords. Chatbox column shows Project Chat message totals (including soft-deleted).
+          Create accounts, assign roles, and regenerate passwords.
         </p>
       </div>
       <a-button type="primary" size="small" :loading="loading" @click="openCreate">
         + User
       </a-button>
     </header>
+
+    <section
+      v-if="resetRequests.length"
+      class="faw-admin-reset-queue"
+      aria-label="Password reset requests"
+    >
+      <div class="faw-admin-reset-queue__head">
+        <h2 class="faw-admin-reset-queue__title">
+          Password reset requests
+          <span class="faw-admin-reset-queue__count">{{ resetRequests.length }}</span>
+        </h2>
+        <p class="faw-admin-reset-queue__desc">
+          Users asked for a new password from the login screen. Generate one and share it with them.
+        </p>
+      </div>
+      <ul class="faw-admin-reset-queue__list">
+        <li
+          v-for="req in resetRequests"
+          :key="req.id"
+          class="faw-admin-reset-queue__item"
+        >
+          <div class="faw-admin-reset-queue__meta">
+            <span class="faw-admin-reset-queue__user">@{{ req.username }}</span>
+            <span class="faw-admin-reset-queue__time">{{ formatDateTime(req.requestedAt) }}</span>
+            <p v-if="req.note" class="faw-admin-reset-queue__note">{{ req.note }}</p>
+          </div>
+          <div class="faw-admin-reset-queue__actions">
+            <a-button
+              type="primary"
+              size="small"
+              :loading="saving"
+              @click="confirmResetFromRequest(req)"
+            >
+              Reset password
+            </a-button>
+            <a-button
+              size="small"
+              :disabled="saving"
+              @click="dismissResetRequest(req)"
+            >
+              Dismiss
+            </a-button>
+          </div>
+        </li>
+      </ul>
+    </section>
 
     <div class="faw-admin-stats">
       <div class="faw-admin-stat">
@@ -399,7 +487,7 @@ onMounted(() => {
       :columns="columns"
       :data-source="filteredUsers"
       :loading="loading"
-      :scroll="{ x: 980 }"
+      :scroll="{ x: 820 }"
       :pagination="{
         current: page,
         pageSize,
@@ -458,29 +546,6 @@ onMounted(() => {
           >
             {{ ROLE_LABELS[primaryRole(record as AdminUser)] }}
           </a-tag>
-        </template>
-
-        <template v-else-if="column.key === 'chatbox'">
-          <a-tooltip
-            :title="
-              chatboxUsageTitle(record as AdminUser)
-            "
-          >
-            <div class="leading-tight">
-              <span class="font-mono text-sm text-ink font-semibold">
-                {{ (record as AdminUser).baChatMessageCount ?? 0 }}
-              </span>
-              <span class="text-[11px] text-ink-muted ml-1">msgs</span>
-              <div class="text-[10px] text-ink-faint">
-                {{ (record as AdminUser).baChatThreadCount ?? 0 }} threads
-                <template
-                  v-if="((record as AdminUser).baChatMessageDeletedCount ?? 0) > 0"
-                >
-                  · {{ (record as AdminUser).baChatMessageDeletedCount }} deleted
-                </template>
-              </div>
-            </div>
-          </a-tooltip>
         </template>
 
         <template v-else-if="column.key === 'status'">
@@ -573,14 +638,23 @@ onMounted(() => {
             placeholder="Optional"
           />
         </label>
-        <label class="flex flex-col gap-1 text-sm">
+        <div class="flex flex-col gap-2 text-sm">
           <span class="text-ink-muted">Role</span>
-          <a-select
-            v-model:value="createForm.role"
-            :options="roleOptions"
-            class="w-full"
-          />
-        </label>
+          <div class="faw-admin-role-chips" role="radiogroup" aria-label="Role">
+            <button
+              v-for="r in ALL_ROLES"
+              :key="r"
+              type="button"
+              class="faw-admin-role-chip"
+              :class="{ 'is-active': createForm.role === r }"
+              role="radio"
+              :aria-checked="createForm.role === r"
+              @click="createForm.role = r"
+            >
+              {{ ROLE_LABELS[r] }}
+            </button>
+          </div>
+        </div>
       </div>
     </a-modal>
 
@@ -597,14 +671,23 @@ onMounted(() => {
           <span class="text-ink-muted">Display name</span>
           <a-input v-model:value="editForm.displayName" />
         </label>
-        <label class="flex flex-col gap-1 text-sm">
+        <div class="flex flex-col gap-2 text-sm">
           <span class="text-ink-muted">Role</span>
-          <a-select
-            v-model:value="editForm.role"
-            :options="roleOptions"
-            class="w-full"
-          />
-        </label>
+          <div class="faw-admin-role-chips" role="radiogroup" aria-label="Role">
+            <button
+              v-for="r in ALL_ROLES"
+              :key="r"
+              type="button"
+              class="faw-admin-role-chip"
+              :class="{ 'is-active': editForm.role === r }"
+              role="radio"
+              :aria-checked="editForm.role === r"
+              @click="editForm.role = r"
+            >
+              {{ ROLE_LABELS[r] }}
+            </button>
+          </div>
+        </div>
       </div>
     </a-modal>
 

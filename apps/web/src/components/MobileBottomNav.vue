@@ -9,6 +9,10 @@ import {
   ControlOutlined,
 } from "@ant-design/icons-vue";
 import { useSessionStore } from "@/stores/session";
+import {
+  resolveSettingsShell,
+  settingsDefaultPath,
+} from "@/config/settingsNav";
 
 const route = useRoute();
 const router = useRouter();
@@ -16,56 +20,60 @@ const session = useSessionStore();
 const navigating = ref(false);
 
 function settingsTarget(): { to: string; match: (path: string) => boolean } {
-  if (route.path.startsWith("/admin")) {
+  const path = route.path;
+  if (
+    path.startsWith("/admin") ||
+    path.startsWith("/ba") ||
+    path.startsWith("/qc") ||
+    path.startsWith("/devops") ||
+    path.startsWith("/settings") ||
+    path.startsWith("/dev") ||
+    path.startsWith("/handoff") ||
+    path.startsWith("/stats")
+  ) {
+    const shell = resolveSettingsShell(path);
+    const base = settingsDefaultPath(path);
+    const matchPrefix =
+      shell === "code"
+        ? "/settings"
+        : shell === "chatbox"
+          ? path.startsWith("/qc")
+            ? "/qc/settings"
+            : "/ba/settings"
+          : shell === "build"
+            ? "/devops/settings"
+            : "/admin/settings";
     return {
-      to: "/admin/settings/account",
-      match: (p) => p.startsWith("/admin/settings"),
-    };
-  }
-  if (route.path.startsWith("/ba")) {
-    return {
-      to: "/ba/settings/gitlab",
-      match: (p) => p.startsWith("/ba/settings"),
-    };
-  }
-  if (route.path.startsWith("/qc")) {
-    return {
-      to: "/qc/settings/gitlab",
-      match: (p) => p.startsWith("/qc/settings"),
-    };
-  }
-  if (route.path.startsWith("/devops")) {
-    return {
-      to: "/devops/settings/account",
-      match: (p) => p.startsWith("/devops/settings"),
+      to: base,
+      match: (p) => p.startsWith(matchPrefix),
     };
   }
   if (session.canAccessWork) {
     return {
-      to: "/settings/project",
+      to: settingsDefaultPath("code"),
       match: (p) => p.startsWith("/settings"),
     };
   }
   if (session.canAccessBa) {
     return {
-      to: "/ba/settings/gitlab",
+      to: settingsDefaultPath("/ba"),
       match: (p) => p.startsWith("/ba/settings"),
     };
   }
   if (session.canAccessQc) {
     return {
-      to: "/qc/settings/gitlab",
+      to: settingsDefaultPath("/qc"),
       match: (p) => p.startsWith("/qc/settings"),
     };
   }
   if (session.isAdmin) {
     return {
-      to: "/admin/settings/account",
+      to: settingsDefaultPath("admin"),
       match: (p) => p.startsWith("/admin/settings"),
     };
   }
   return {
-    to: "/devops/settings/account",
+    to: settingsDefaultPath("build"),
     match: (p) => p.startsWith("/devops/settings"),
   };
 }
@@ -81,7 +89,7 @@ const tabs = computed(() => {
 
   if (session.isAdmin) {
     items.push({
-      to: "/admin/users",
+      to: "/admin",
       label: "Admin",
       icon: ControlOutlined,
       match: (p) => p.startsWith("/admin") && !p.startsWith("/admin/settings"),

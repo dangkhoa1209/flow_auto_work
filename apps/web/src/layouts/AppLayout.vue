@@ -13,6 +13,7 @@ import { useSessionStore } from "@/stores/session";
 import { useSettingsStore } from "@/stores/settings";
 import { useWorkStore } from "@/stores/work";
 import MobileBottomNav from "@/components/MobileBottomNav.vue";
+import { settingsDefaultPath } from "@/config/settingsNav";
 
 const route = useRoute();
 const router = useRouter();
@@ -116,7 +117,7 @@ async function onSwitchProject(projectId: string) {
 
 function goManageProjects() {
   projectPickerOpen.value = false;
-  router.push("/settings/project");
+  router.push(settingsDefaultPath("code"));
 }
 
 async function onKillAll() {
@@ -220,7 +221,7 @@ async function onKillAll() {
 
       <div class="faw-topbar__spacer hidden lg:block" />
 
-      <AppTopbarRight settings-to="/settings/project">
+      <AppTopbarRight :settings-to="settingsDefaultPath('code')">
         <template #status>
           <span class="faw-idle">
             <span class="faw-idle__dot" :class="idleDot" />
@@ -283,7 +284,7 @@ async function onKillAll() {
       <div class="faw-project-sheet__head">
         <div>
           <p class="faw-project-sheet__eyebrow">Workspace</p>
-          <h3 class="faw-project-sheet__title">Chọn project</h3>
+          <h3 class="faw-project-sheet__title">Select project</h3>
         </div>
         <button
           type="button"
@@ -320,7 +321,7 @@ async function onKillAll() {
           v-if="!projectOptions.length"
           class="px-4 py-8 text-center text-ink-faint text-sm"
         >
-          Chưa có project — thêm trong Settings.
+          No projects yet — add one in Settings.
         </p>
       </div>
     </a-drawer>

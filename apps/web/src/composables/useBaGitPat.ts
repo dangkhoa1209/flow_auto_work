@@ -56,7 +56,7 @@ export function useBaGitPat() {
   async function saveGitPat(token: string) {
     const trimmed = token.trim();
     if (!trimmed) {
-      message.warning("Dán GitLab PAT trước khi lưu");
+      message.warning("Paste a GitLab PAT before saving");
       return false;
     }
     await api(API.me.secrets, {
@@ -64,7 +64,7 @@ export function useBaGitPat() {
       body: JSON.stringify({ gitlabToken: trimmed }),
     });
     await session.refreshMe();
-    message.success("Đã lưu GitLab PAT — có thể lên task GitLab");
+    message.success("GitLab PAT saved — you can publish GitLab tasks");
     modalOpen.value = false;
     const resume = pendingAction;
     pendingAction = null;

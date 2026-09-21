@@ -567,6 +567,8 @@ export {
   adminEnableUser,
   adminDeleteUser,
   adminResetPasswordHandler,
+  adminListPasswordResetRequests,
+  adminDismissPasswordResetRequest,
 } from "./users.js";
 
 export { adminGetCursorUsage } from "./cursorUsage.js";

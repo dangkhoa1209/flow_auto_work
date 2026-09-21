@@ -8,7 +8,7 @@ export default {
     extend: {
       fontFamily: {
         sans: [
-          '"IBM Plex Sans"',
+          '"Montserrat"',
           "system-ui",
           "-apple-system",
           "Segoe UI",

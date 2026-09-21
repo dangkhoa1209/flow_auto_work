@@ -229,12 +229,14 @@ Ghi chú:
 
 ## 8. Settings theo shell (không đếm vào 3 trụ)
 
-| Shell | Settings |
-|-------|----------|
-| Code | Project, Integrations (Cursor/Git), Account |
-| ChatBox / QC | Git PAT, Google, Account |
-| Build | Account |
-| Admin | Account (+ toàn bộ tabs quản trị ở trên) |
+Một layout động (`SettingsLayout.vue` + registry `config/settingsNav.ts`) — tabs ẩn/hiện theo shell; giữ prefix route riêng.
+
+| Shell | Settings tabs |
+|-------|----------------|
+| Code (`/settings/*`) | Project, Integrations, AI Engine, Labels, Account |
+| ChatBox / QC (`/ba|qc/settings/*`) | GitLab PAT, Google, Account |
+| Build (`/devops/settings/*`) | Account |
+| Admin (`/admin/settings/*`) | Account |
 
 Auth session (access ~10m, refresh ~30d): [AUTH_SESSION.md](./AUTH_SESSION.md).
 

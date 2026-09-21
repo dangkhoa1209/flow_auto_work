@@ -36,9 +36,9 @@ const columns = [
 ];
 
 const statusLabel = computed(() => {
-  if (!pats.value.length) return "Chưa có API key";
+  if (!pats.value.length) return "No API key";
   const active = pats.value.find((p) => p.isActive);
-  if (!active) return "Chưa chọn key active";
+  if (!active) return "No active key selected";
   return `Active: ${active.label}`;
 });
 
@@ -81,7 +81,7 @@ async function saveModel(storedValue: string) {
       body: JSON.stringify({ cursorModel: storedValue }),
     });
     await session.refreshMe();
-    message.success("Đã lưu model");
+    message.success("Model saved");
   } catch (e) {
     message.error(e instanceof Error ? e.message : String(e));
   } finally {
@@ -91,7 +91,7 @@ async function saveModel(storedValue: string) {
 
 async function submitPatModal() {
   if (patModalMode.value === "create" && !patKey.value.trim()) {
-    message.warning("Dán API key từ Cursor");
+    message.warning("Paste an API key from Cursor");
     return;
   }
 
@@ -110,7 +110,7 @@ async function submitPatModal() {
       );
       await refreshMe(res.user);
       patModalOpen.value = false;
-      message.success("Đã thêm API key");
+      message.success("API key added");
       const created = (
         res.user?.cursorPats as CursorPatPublic[] | undefined
       )?.at(-1);
@@ -128,7 +128,7 @@ async function submitPatModal() {
     if (patLabel.value.trim()) body.label = patLabel.value.trim();
     if (patKey.value.trim()) body.apiKey = patKey.value.trim();
     if (!body.label && !body.apiKey) {
-      message.warning("Đổi tên hoặc dán key mới");
+      message.warning("Change the label or paste a new key");
       return;
     }
     const res = await api<{ user?: Record<string, unknown> }>(
@@ -137,7 +137,7 @@ async function submitPatModal() {
     );
     await refreshMe(res.user);
     patModalOpen.value = false;
-    message.success("Đã cập nhật API key");
+    message.success("API key updated");
     await loadModelsForPat(editingPatId.value ?? session.me?.activeCursorPatId);
   } catch (e) {
     message.error(e instanceof Error ? e.message : String(e));
@@ -156,7 +156,7 @@ async function setActiveById(patId: string) {
       { method: "PUT", body: JSON.stringify({}) },
     );
     await refreshMe(res.user);
-    message.success("Đã chọn key active — Run task sẽ dùng key này");
+    message.success("Active key set — Run task will use this key");
     await loadModelsForPat(patId);
   } catch (e) {
     message.error(e instanceof Error ? e.message : String(e));
@@ -167,13 +167,13 @@ async function setActiveById(patId: string) {
 
 function confirmDelete(pat: CursorPatPublic) {
   Modal.confirm({
-    title: "Xóa API key này?",
+    title: "Delete this API key?",
     content: pat.isActive
-      ? "Đây là key đang active. Key khác sẽ được chọn active nếu còn."
-      : "Run task sẽ không còn dùng được key này.",
+      ? "This is the active key. Another key will become active if any remain."
+      : "Run task will no longer be able to use this key.",
     okType: "danger",
-    okText: "Xóa",
-    cancelText: "Hủy",
+    okText: "Delete",
+    cancelText: "Cancel",
     onOk: () => deletePat(pat.id),
   });
 }
@@ -186,7 +186,7 @@ async function deletePat(patId: string) {
       { method: "DELETE" },
     );
     await refreshMe(res.user);
-    message.success("Đã xóa API key");
+    message.success("API key deleted");
     await loadModelsForPat(
       session.me?.activeCursorPatId ||
         pats.value.find((p) => p.isActive)?.id ||
@@ -209,7 +209,7 @@ function onPatAction(key: string, pat: CursorPatPublic) {
 function formatDate(iso: string): string {
   const d = new Date(iso);
   if (!Number.isFinite(d.getTime())) return "—";
-  return d.toLocaleDateString("vi-VN", {
+  return d.toLocaleDateString("en-US", {
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
@@ -231,8 +231,8 @@ onMounted(async () => {
   <div class="faw-settings-detail faw-ai-engine-provider">
     <h2>Cursor</h2>
     <p class="faw-settings-detail__lead m-0 mb-4">
-      Quản lý nhiều API key; chỉ một key
-      <strong>active</strong> được dùng khi Run task.
+      Manage multiple API keys; only one
+      <strong>active</strong> key is used when running a task.
     </p>
 
     <div class="p-4 rounded-lg border border-line bg-surface-raised space-y-4 mb-4">
@@ -240,7 +240,7 @@ onMounted(async () => {
         ref="modelFieldsRef"
         :models-url="API.me.cursorModels"
         :loading="loading"
-        save-label="Lưu model"
+        save-label="Save model"
         @save="saveModel"
       />
     </div>
@@ -252,8 +252,8 @@ onMounted(async () => {
       :message="statusLabel"
       :description="
         hasKey
-          ? 'Run task dùng key đang active.'
-          : 'Thêm API key từ Cursor Dashboard để Run.'
+          ? 'Run task uses the active key.'
+          : 'Add an API key from the Cursor Dashboard to run tasks.'
       "
     />
 
@@ -262,7 +262,7 @@ onMounted(async () => {
         {{ pats.length }} key{{ pats.length === 1 ? "" : "s" }}
       </span>
       <a-button type="primary" size="small" @click="openCreateModal">
-        + Thêm key
+        + Add key
       </a-button>
     </div>
 
@@ -282,9 +282,9 @@ onMounted(async () => {
     >
       <template #emptyText>
         <div class="faw-admin-empty py-8">
-          <p class="mb-3">Chưa có API key.</p>
+          <p class="mb-3">No API key yet.</p>
           <a-button type="primary" size="small" @click="openCreateModal">
-            + Thêm key
+            + Add key
           </a-button>
         </div>
       </template>
@@ -294,7 +294,7 @@ onMounted(async () => {
           <a-radio
             :checked="(record as CursorPatPublic).isActive"
             :disabled="loading"
-            :aria-label="`Đặt ${(record as CursorPatPublic).label} active`"
+            :aria-label="`Set ${(record as CursorPatPublic).label} active`"
             @change="setActiveById((record as CursorPatPublic).id)"
           />
         </template>
@@ -311,7 +311,7 @@ onMounted(async () => {
             >
               Active
             </a-tag>
-            <div class="text-xs text-ink-muted mt-0.5">Mọi project</div>
+            <div class="text-xs text-ink-muted mt-0.5">All projects</div>
           </div>
         </template>
 
@@ -354,10 +354,10 @@ onMounted(async () => {
 
     <a-modal
       v-model:open="patModalOpen"
-      :title="patModalMode === 'create' ? 'Thêm API key' : 'Sửa API key'"
+      :title="patModalMode === 'create' ? 'Add API key' : 'Edit API key'"
       :confirm-loading="patSaving"
-      :ok-text="patModalMode === 'create' ? 'Thêm key' : 'Lưu'"
-      cancel-text="Hủy"
+      :ok-text="patModalMode === 'create' ? 'Add key' : 'Save'"
+      cancel-text="Cancel"
       @ok="submitPatModal"
     >
       <div class="space-y-3 py-2">
@@ -365,7 +365,7 @@ onMounted(async () => {
           <span class="text-ink-muted">Label</span>
           <a-input
             v-model:value="patLabel"
-            placeholder="VD: Cá nhân, Team A…"
+            placeholder="e.g. Personal, Team A…"
           />
         </label>
         <label class="flex flex-col gap-1 text-sm">
@@ -373,15 +373,15 @@ onMounted(async () => {
             {{
               patModalMode === "create"
                 ? "API key"
-                : "API key mới (tuỳ chọn)"
+                : "New API key (optional)"
             }}
           </span>
           <a-input-password
             v-model:value="patKey"
             :placeholder="
               patModalMode === 'create'
-                ? 'Dán key từ cursor.com…'
-                : 'Để trống nếu không đổi key'
+                ? 'Paste key from cursor.com…'
+                : 'Leave blank to keep current key'
             "
             autocomplete="new-password"
           />

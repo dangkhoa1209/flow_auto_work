@@ -8,10 +8,13 @@ import AppSwitcher from "@/components/layout/AppSwitcher.vue";
 import { useSessionStore } from "@/stores/session";
 import { useDevopsStore, type DevopsTab } from "@/stores/devops";
 import MobileBottomNav from "@/components/MobileBottomNav.vue";
+import { settingsDefaultPath } from "@/config/settingsNav";
 
 const router = useRouter();
 const session = useSessionStore();
 const devops = useDevopsStore();
+
+const settingsTo = settingsDefaultPath("build");
 
 const queuePopOpen = ref(false);
 
@@ -177,7 +180,7 @@ async function onCancelQueued(id: string) {
         </button>
       </a-popover>
 
-      <AppTopbarRight settings-to="/devops/settings/account">
+      <AppTopbarRight :settings-to="settingsTo">
         <template #status>
           <span class="faw-idle" :title="workerLabel">
             <span class="faw-idle__dot" :class="idleDot" />
@@ -185,7 +188,7 @@ async function onCancelQueued(id: string) {
           </span>
         </template>
         <template #extra>
-          <RouterLink v-if="session.isAdmin" to="/admin/users" class="faw-btn">
+          <RouterLink v-if="session.isAdmin" to="/admin" class="faw-btn">
             Admin
           </RouterLink>
         </template>

@@ -863,11 +863,11 @@ onMounted(async () => {
               Create {{ forgeLabel }} personal access token
             </a>
             <template v-if="isGithub">
-              — dùng
-              <strong>classic</strong> (<code>ghp_</code>) scope
-              <code>repo</code>. Fine-grained
-              <strong>không</strong> lấy được repo invite (outside collaborator). Org
-              có SAML SSO → Authorize SSO trên token đó.
+              — use a
+              <strong>classic</strong> token (<code>ghp_</code>) with
+              <code>repo</code> scope. Fine-grained tokens
+              <strong>cannot</strong> access invited repos (outside collaborator).
+              Org with SAML SSO → Authorize SSO for that token.
             </template>
           </p>
         </div>
@@ -912,9 +912,9 @@ onMounted(async () => {
             "
           />
           <p v-if="isGithub" class="text-xs text-ink-muted m-0 mt-1">
-            Không thấy repo invite trong dropdown? Gõ tay
-            <code>owner/repo</code> (đã Accept invite trên GitHub). Token phải
-            truy cập được repo đó.
+            Invited repo missing from the dropdown? Type
+            <code>owner/repo</code> manually (after Accept invite on GitHub).
+            The token must have access to that repo.
           </p>
         </div>
         <div>
@@ -1004,8 +1004,8 @@ onMounted(async () => {
               Default Auto commit
             </div>
             <div class="text-xs text-ink-muted mt-0.5">
-              Job mới trong project lấy mặc định này. Vẫn đổi được trên từng
-              task (tab Diff).
+              New jobs in this project use this default. You can still change it
+              per task (Diff tab).
             </div>
           </div>
           <a-switch
@@ -1027,8 +1027,8 @@ onMounted(async () => {
             :placeholder="`Leave empty → ${session.me?.gitlabUsername || session.session.username || 'GitLab username'}`"
           />
           <p class="text-xs text-ink-muted mt-1 mb-0">
-            Tên hiện trên commit (GIT_AUTHOR_NAME). Để trống thì dùng user
-            Flow/GitLab đang đăng nhập. Không lấy từ GHP/PAT.
+            Name shown on commits (GIT_AUTHOR_NAME). Leave empty to use the
+            signed-in Flow/GitLab user. Not taken from GHP/PAT.
           </p>
         </div>
         <div>

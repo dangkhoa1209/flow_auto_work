@@ -976,7 +976,7 @@ onUnmounted(() => {
 
     <div
       v-if="showForm"
-      class="mb-6 p-4 rounded-lg border border-line bg-surface-raised shadow-sm"
+      class="faw-admin-panel mb-6"
     >
       <h2 class="text-base font-semibold text-ink mt-0 mb-3">
         {{ editingId ? "Edit project chatbox" : "Create project chatbox" }}

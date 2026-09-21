@@ -36,13 +36,13 @@ export function useUserGoogleAuth() {
     googleBusy.value = true;
     try {
       const data = await api<{ authUrl: string }>(API.me.googleAuthUrl);
-      if (!data.authUrl) throw new Error("Không lấy được URL Google");
+      if (!data.authUrl) throw new Error("Could not get Google auth URL");
       const w = window.open(
         data.authUrl,
         "flow-google-oauth",
         "width=520,height=720",
       );
-      if (!w) message.warning("Cho phép popup để Authorize Google");
+      if (!w) message.warning("Allow popups to authorize Google");
     } catch (e) {
       message.error(e instanceof Error ? e.message : String(e));
     } finally {
@@ -54,7 +54,7 @@ export function useUserGoogleAuth() {
     googleBusy.value = true;
     try {
       await api(API.me.googleRevoke, { method: "POST" });
-      message.success("Đã thu hồi Google");
+      message.success("Google access revoked");
       await loadGoogleStatus();
       await session.refreshMe();
     } catch (e) {
@@ -72,9 +72,9 @@ export function useUserGoogleAuth() {
       await loadGoogleStatus();
       await session.refreshMe();
       if (data.ok) {
-        message.success("Đã ủy quyền Google — dùng chung cho mọi task");
+        message.success("Google authorized — shared across all tasks");
       } else {
-        message.error("Ủy quyền Google thất bại");
+        message.error("Google authorization failed");
       }
     })();
   }

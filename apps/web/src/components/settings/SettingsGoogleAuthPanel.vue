@@ -16,34 +16,34 @@ const googleAlert = computed(() => {
   if (!googleConfigured.value) {
     return {
       type: "warning" as const,
-      message: "Server chưa cấu hình Google OAuth",
+      message: "Google OAuth is not configured on the server",
     };
   }
   if (googleAuthorized.value && hasDriveScope()) {
     return {
       type: "success" as const,
       message: googleEmail.value
-        ? `Đã ủy quyền · ${googleEmail.value}`
-        : "Đã ủy quyền Google",
+        ? `Authorized · ${googleEmail.value}`
+        : "Google authorized",
       description:
-        "Áp dụng cho mọi job — task có link Google Sheets/Excel dùng token này, không cần Authorize từng task.",
+        "Applies to every job — tasks with Google Sheets/Excel links use this token; no per-task authorize needed.",
     };
   }
   if (googleAuthorized.value && !hasDriveScope()) {
     return {
       type: "warning" as const,
       message: googleEmail.value
-        ? `Đã ủy quyền · ${googleEmail.value}`
-        : "Đã ủy quyền Google",
+        ? `Authorized · ${googleEmail.value}`
+        : "Google authorized",
       description:
-        "Thiếu quyền Drive readonly — bấm Ủy quyền lại để đọc file Excel trên Drive.",
+        "Missing Drive readonly scope — re-authorize to read Excel files on Drive.",
     };
   }
   return {
     type: "info" as const,
-    message: "Chưa ủy quyền Google",
+    message: "Google not authorized",
     description:
-      "Bấm Authorize Google — popup sẽ mở để cấp quyền đọc Sheets + Drive (readonly).",
+      "Click Authorize Google — a popup will request Sheets + Drive (readonly) access.",
   };
 });
 </script>
@@ -64,14 +64,14 @@ const googleAlert = computed(() => {
         :disabled="!googleConfigured"
         @click="authorizeGoogle"
       >
-        {{ googleAuthorized ? "Ủy quyền lại" : "Authorize Google" }}
+        {{ googleAuthorized ? "Re-authorize" : "Authorize Google" }}
       </a-button>
       <a-button
         v-if="googleAuthorized"
         :loading="googleBusy"
         @click="revokeGoogle"
       >
-        Thu hồi
+        Revoke
       </a-button>
     </div>
   </div>

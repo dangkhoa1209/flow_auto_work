@@ -34,14 +34,14 @@ async function onSave() {
 <template>
   <a-modal
     :open="modalOpen"
-    title="GitLab PAT cần thiết"
+    title="GitLab PAT required"
     :width="520"
     :footer="null"
     @cancel="closePatModal"
   >
     <BaGitPatForm ref="patFormRef" :loading="saving" hide-default-actions @save="onSave" />
     <p class="text-[11px] text-[var(--app-faint)] m-0 mt-4">
-      Hoặc vào
+      Or manage your PAT later in
       <RouterLink
         :to="`${basePath}/settings`"
         class="text-[var(--app-accent)] hover:underline"
@@ -49,17 +49,17 @@ async function onSave() {
       >
         Settings
       </RouterLink>
-      để quản lý PAT sau này.
+      .
     </p>
     <div class="flex justify-end gap-2 mt-4 pt-3 border-t border-[var(--app-border)]">
-      <button type="button" class="faw-btn" @click="closePatModal">Để sau</button>
+      <button type="button" class="faw-btn" @click="closePatModal">Later</button>
       <button
         type="button"
         class="faw-btn faw-btn--run"
         :disabled="saving || !(patFormRef?.getToken() || '').trim()"
         @click="onSave"
       >
-        {{ saving ? "Đang lưu…" : "Lưu PAT" }}
+        {{ saving ? "Saving…" : "Save PAT" }}
       </button>
     </div>
   </a-modal>

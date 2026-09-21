@@ -26,12 +26,12 @@ const hasFigmaToken = computed(
 );
 
 const googleStatusLabel = computed(() => {
-  if (!googleConfigured.value) return "Chưa cấu hình server";
+  if (!googleConfigured.value) return "Server not configured";
   if (googleAuthorized.value) {
-    if (!hasDriveScope()) return "Thiếu scope Drive";
-    return "Đã ủy quyền";
+    if (!hasDriveScope()) return "Missing Drive scope";
+    return "Authorized";
   }
-  return "Chưa ủy quyền";
+  return "Not authorized";
 });
 
 const googleStatusOk = computed(
@@ -42,21 +42,21 @@ const googleStatusOk = computed(
 );
 
 const figmaStatusLabel = computed(() =>
-  hasFigmaToken.value ? "PAT đã lưu" : "Chưa có PAT",
+  hasFigmaToken.value ? "PAT saved" : "No PAT",
 );
 
 const integrations = computed(() => [
   {
     id: "google" as const,
     label: "Google Auth",
-    hint: "Tài khoản · mọi project",
+    hint: "Account · all projects",
     status: googleStatusLabel.value,
     ok: googleStatusOk.value,
   },
   {
     id: "figma" as const,
     label: "Figma",
-    hint: "Tài khoản · mọi project",
+    hint: "Account · all projects",
     status: figmaStatusLabel.value,
     ok: hasFigmaToken.value,
   },
@@ -66,14 +66,15 @@ const figmaAlert = computed(() =>
   hasFigmaToken.value
     ? {
         type: "success" as const,
-        message: "PAT đã lưu",
+        message: "PAT saved",
         description:
-          "Dùng chung mọi project — task tick link Figma sẽ dùng PAT này.",
+          "Shared across projects — tasks with Figma links use this PAT.",
       }
     : {
         type: "warning" as const,
-        message: "Chưa có Figma PAT",
-        description: "Dán Personal access token bên dưới (một lần cho mọi project).",
+        message: "No Figma PAT",
+        description:
+          "Paste a personal access token below (once for all projects).",
       },
 );
 
@@ -84,7 +85,7 @@ function selectIntegration(id: IntegrationId) {
 async function saveFigma() {
   const clearing = clearFigma.value;
   if (!clearing && !figmaToken.value.trim()) {
-    message.warning("Dán Figma PAT hoặc tick Xóa token");
+    message.warning("Paste a Figma PAT or check Clear saved token");
     return;
   }
   loading.value = true;
@@ -107,8 +108,8 @@ async function saveFigma() {
     clearFigma.value = false;
     message.success(
       clearing || res.user?.hasFigmaToken === false
-        ? "Đã xóa Figma PAT"
-        : "Đã lưu Figma PAT",
+        ? "Figma PAT removed"
+        : "Figma PAT saved",
     );
   } catch (e) {
     message.error(e instanceof Error ? e.message : String(e));
@@ -122,10 +123,13 @@ async function saveFigma() {
   <div class="faw-integrations">
     <header class="faw-settings-detail faw-integrations__head">
       <h2>Integrations</h2>
+      <p class="faw-settings-detail__lead m-0 mt-1">
+        Connect Google and Figma for this account across all projects.
+      </p>
     </header>
 
     <div class="faw-integrations__shell">
-      <aside class="faw-integrations__list" aria-label="Danh sách integrations">
+      <aside class="faw-integrations__list" aria-label="Integrations list">
         <button
           v-for="item in integrations"
           :key="item.id"
@@ -162,7 +166,7 @@ async function saveFigma() {
             <a-form-item label="Personal access token">
               <a-input-password
                 v-model:value="figmaToken"
-                placeholder="figu_… (để trống nếu chỉ xóa)"
+                placeholder="figu_… (leave blank to clear only)"
                 autocomplete="new-password"
                 :disabled="clearFigma"
               />
@@ -176,11 +180,11 @@ async function saveFigma() {
                 v-model:checked="clearFigma"
                 :disabled="!hasFigmaToken"
               >
-                Xóa Figma PAT đã lưu
+                Clear saved Figma PAT
               </a-checkbox>
             </a-form-item>
             <a-button type="primary" :loading="loading" @click="saveFigma">
-              Lưu Figma PAT
+              Save Figma PAT
             </a-button>
           </a-form>
         </div>

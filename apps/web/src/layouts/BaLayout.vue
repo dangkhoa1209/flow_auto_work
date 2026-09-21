@@ -12,6 +12,7 @@ import BaProjectSelect from "@/components/ba/BaProjectSelect.vue";
 import BaGitPatModal from "@/components/ba/BaGitPatModal.vue";
 import BaSyncDbControl from "@/components/ba/BaSyncDbControl.vue";
 import MobileBottomNav from "@/components/MobileBottomNav.vue";
+import { settingsDefaultPath } from "@/config/settingsNav";
 
 const router = useRouter();
 const route = useRoute();
@@ -19,6 +20,8 @@ const session = useSessionStore();
 const ba = useBaChatStore();
 const { basePath, routeName } = useProjectChatBase();
 const sideOpen = ref(false);
+
+const settingsTo = computed(() => settingsDefaultPath(basePath.value));
 
 const statusDot = computed(() => (ba.streaming ? "wip" : "idle"));
 const statusText = computed(() =>
@@ -44,7 +47,7 @@ const showTasksTab = computed(() => ba.featureVisible("tasks"));
 const showCreateDataTab = computed(() => ba.featureVisible("createData"));
 const chatTabLabel = "Chatbox";
 const workflowTabLabel = computed(() =>
-  ba.featureLabel("workflow", ba.features.workflowTabLabel || "Phân tích YC"),
+  ba.featureLabel("workflow", ba.features.workflowTabLabel || "Requirements"),
 );
 const tasksTabLabel = computed(() => ba.featureLabel("tasks", "Tasks"));
 const createDataTabLabel = computed(() =>
@@ -173,7 +176,7 @@ onMounted(() => {
       <div class="faw-topbar__spacer hidden lg:block" />
 
       <!-- One instance: mobile CSS already hides desktop chrome + settings -->
-      <AppTopbarRight :settings-to="`${basePath}/settings/gitlab`">
+      <AppTopbarRight :settings-to="settingsTo">
         <template #status>
           <span class="faw-idle faw-ba-idle">
             <span class="faw-idle__dot" :class="statusDot" />
@@ -182,7 +185,7 @@ onMounted(() => {
         </template>
         <template #extra>
           <BaSyncDbControl />
-          <RouterLink v-if="session.isAdmin" to="/admin/users" class="faw-btn">
+          <RouterLink v-if="session.isAdmin" to="/admin" class="faw-btn">
             Admin
           </RouterLink>
         </template>

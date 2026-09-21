@@ -25,7 +25,7 @@ async function onSavePat(token: string) {
   <div class="faw-settings-detail">
     <h2>GitLab PAT</h2>
     <p class="faw-settings-detail__lead">
-      PAT đọc GitLab cho project chat — issue, branch, MR.
+      Personal access token for ChatBox — issues, branches, and MRs.
     </p>
     <BaGitPatForm
       ref="patFormRef"
