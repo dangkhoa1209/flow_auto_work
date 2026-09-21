@@ -585,26 +585,39 @@ function confirmMergeFromMenu() {
 
     <a-modal
       v-model:open="wb.syncBaseOpen"
-      title="Choose the branch to pull"
-      ok-text="Pull"
+      title="Sync base into job branch"
+      ok-text="Pull base"
       cancel-text="Cancel"
-      :ok-button-props="{ disabled: !wb.syncBaseChoice }"
+      :ok-button-props="{ disabled: !wb.syncBaseChoice || wb.syncBaseBranchesLoading }"
+      :confirm-loading="wb.syncBaseBusy"
       wrap-class-name="work-modal-sheet"
       :centered="false"
       @ok="wb.confirmSyncBase"
     >
-      <p class="text-xs text-ink-muted mt-0 mb-2 leading-relaxed">
-        This project has no Main branch in Settings — pick the branch to pull
-        into the job branch (we will not guess a default).
-      </p>
-      <a-select
-        v-model:value="wb.syncBaseChoice"
-        class="w-full"
-        show-search
-        :loading="wb.syncBaseBranchesLoading"
-        placeholder="Choose a branch…"
-        :options="wb.syncBaseBranches.map((b: string) => ({ value: b, label: b }))"
-      />
+      <div class="faw-sync-base-modal">
+        <p class="faw-sync-base-modal__lead">
+          This project has no Main branch in Settings — pick the branch to pull
+          into the job branch. We will not guess a default.
+        </p>
+        <label class="faw-sync-base-modal__label" for="sync-base-branch">
+          Base branch
+        </label>
+        <a-select
+          id="sync-base-branch"
+          v-model:value="wb.syncBaseChoice"
+          class="w-full"
+          show-search
+          :loading="wb.syncBaseBranchesLoading"
+          placeholder="Choose a branch…"
+          :options="
+            wb.syncBaseBranches.map((b: string) => ({ value: b, label: b }))
+          "
+        />
+        <p class="faw-sync-base-modal__hint">
+          On conflict, AI tries to resolve; if it fails, use Chat Send or retry
+          Sync base. Progress appears under Sync base / Merge history.
+        </p>
+      </div>
     </a-modal>
 
     <a-modal

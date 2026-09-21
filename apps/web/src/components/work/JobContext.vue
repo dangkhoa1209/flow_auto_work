@@ -416,6 +416,9 @@ watch(
   () => {
     googleAuthModalKey.value = null;
     googleAuthModalOpen.value = false;
+    mergeOpFilter.value = "all";
+    mergeOpDetailOpen.value = false;
+    mergeOpDetailRow.value = null;
   },
 );
 
@@ -444,7 +447,34 @@ onUnmounted(() => {
   if (midFlashTimer) clearTimeout(midFlashTimer);
 });
 
+type MergeOpHistoryRow = NonNullable<Job["mergeOpHistory"]>[number];
+type MergeOpFilter = "all" | "sync-base" | "merge";
+
 const mergeOpHistory = computed(() => props.currentJob?.mergeOpHistory ?? []);
+const mergeOpFilter = ref<MergeOpFilter>("all");
+
+const mergeOpFiltered = computed(() => {
+  const list = mergeOpHistory.value;
+  if (mergeOpFilter.value === "all") return list;
+  return list.filter((h) => h.kind === mergeOpFilter.value);
+});
+
+const mergeOpLatest = computed(() => mergeOpHistory.value[0] ?? null);
+
+const mergeOpCounts = computed(() => {
+  const list = mergeOpHistory.value;
+  return {
+    all: list.length,
+    sync: list.filter((h) => h.kind === "sync-base").length,
+    merge: list.filter((h) => h.kind === "merge").length,
+  };
+});
+
+const mergeOpPending = computed(() => {
+  const p = props.currentJob?.pendingMergeOp;
+  if (!p?.kind) return null;
+  return p;
+});
 
 function mergeOpKindLabel(kind: string): string {
   if (kind === "sync-base") return "Sync base";
@@ -461,15 +491,22 @@ function mergeOpStatusLabel(status: string): string {
   return status || "—";
 }
 
-function mergeOpStatusClass(status: string): string {
-  if (status === "ok" || status === "up_to_date") return "text-emerald-600";
-  if (status === "conflict") return "text-amber-600";
-  if (status === "error") return "text-red-600";
-  if (status === "processing") return "text-sky-600";
-  return "text-ink-muted";
+function mergeOpStatusTone(
+  status: string,
+): "ok" | "warn" | "err" | "run" | "muted" {
+  if (status === "ok" || status === "up_to_date") return "ok";
+  if (status === "conflict") return "warn";
+  if (status === "error") return "err";
+  if (status === "processing") return "run";
+  return "muted";
 }
 
-type MergeOpHistoryRow = NonNullable<Job["mergeOpHistory"]>[number];
+function mergeOpMessagePreview(h: MergeOpHistoryRow, max = 140): string {
+  const raw = redactSecrets((h.message || "").trim());
+  if (!raw) return "";
+  if (raw.length <= max) return raw;
+  return `${raw.slice(0, max - 1)}…`;
+}
 
 const mergeOpDetailOpen = ref(false);
 const mergeOpDetailRow = ref<MergeOpHistoryRow | null>(null);
@@ -602,15 +639,57 @@ const runTooltip = computed(() => {
               v-if="currentJob?.pendingConflictResolve"
               type="warning"
               show-icon
-              class="mb-3"
+              class="mb-3 faw-merge-conflict-alert"
               message="Merge conflict — retry Sync base / Merge"
-              :description="
-                (currentJob.pendingConflictResolve.files?.length
-                  ? `Files: ${currentJob.pendingConflictResolve.files.slice(0, 8).join(', ')}${currentJob.pendingConflictResolve.files.length > 8 ? '…' : ''}. `
-                  : '') +
-                'Press Sync base / Merge again (or Chat to request a retry). Chat Send can still clear markers if a merge is open.'
-              "
-            />
+            >
+              <template #description>
+                <div class="text-[12px] text-ink-soft space-y-2">
+                  <p class="m-0">
+                    <template
+                      v-if="currentJob.pendingConflictResolve.files?.length"
+                    >
+                      Files:
+                      {{
+                        currentJob.pendingConflictResolve.files
+                          .slice(0, 8)
+                          .join(", ")
+                      }}{{
+                        currentJob.pendingConflictResolve.files.length > 8
+                          ? "…"
+                          : ""
+                      }}.
+                    </template>
+                    Press Sync base / Merge again (or Chat to request a retry).
+                    Chat Send can still clear markers if a merge is open.
+                  </p>
+                  <div class="flex flex-wrap gap-2">
+                    <a-button
+                      size="small"
+                      type="primary"
+                      ghost
+                      :loading="syncBaseBusy"
+                      :disabled="!canSyncBase || syncBaseBusy"
+                      @click="emit('syncBase')"
+                    >
+                      ⇣ Retry Sync base
+                    </a-button>
+                    <a-button
+                      size="small"
+                      :loading="mergeBusy"
+                      :disabled="
+                        !canQuickMerge ||
+                        mergeBusy ||
+                        handoffBusy ||
+                        createMrBusy
+                      "
+                      @click="emit('quickMerge')"
+                    >
+                      Retry Merge
+                    </a-button>
+                  </div>
+                </div>
+              </template>
+            </a-alert>
 
             <a-alert
               v-if="awaitingDocsApproval"
@@ -1130,58 +1209,197 @@ const runTooltip = computed(() => {
                 </div>
               </div>
 
-              <div
-                v-if="currentJob"
-                class="mt-4 rounded-lg border border-[var(--app-border)] bg-[var(--app-panel-soft)] px-3 py-2.5"
-              >
-                <div class="text-[12px] text-ink-soft font-medium">
-                  Sync base / Merge - History
+              <div v-if="currentJob" class="faw-merge-hist mt-4">
+                <div class="faw-merge-hist__head">
+                  <div class="min-w-0">
+                    <div class="faw-merge-hist__title">
+                      Sync base / Merge
+                      <span
+                        v-if="mergeOpCounts.all"
+                        class="faw-merge-hist__count"
+                        >{{ mergeOpCounts.all }}</span
+                      >
+                    </div>
+                    <p class="faw-merge-hist__hint">
+                      Pull base into the job branch, or merge work back — history
+                      of attempts on this job.
+                    </p>
+                  </div>
                 </div>
-                <ul
+
+                <div
+                  v-if="mergeOpPending"
+                  class="faw-merge-hist__live"
+                  role="status"
+                >
+                  <span class="faw-merge-hist__live-dot" aria-hidden="true" />
+                  <div class="min-w-0">
+                    <div class="faw-merge-hist__live-title">
+                      {{ mergeOpKindLabel(mergeOpPending.kind || "") }} in
+                      progress…
+                    </div>
+                    <div
+                      v-if="mergeOpPending.targetBranch"
+                      class="faw-merge-hist__live-meta"
+                    >
+                      Target
+                      <code>{{ mergeOpPending.targetBranch }}</code>
+                    </div>
+                  </div>
+                </div>
+
+                <div
+                  v-else-if="mergeOpLatest"
+                  class="faw-merge-hist__latest"
+                >
+                  <div class="faw-merge-hist__latest-label">Latest</div>
+                  <div class="faw-merge-hist__latest-row">
+                    <span
+                      class="faw-merge-hist__pill"
+                      :class="`faw-merge-hist__pill--${mergeOpLatest.kind === 'merge' ? 'merge' : 'sync'}`"
+                      >{{ mergeOpKindLabel(mergeOpLatest.kind) }}</span
+                    >
+                    <span
+                      class="faw-merge-hist__status"
+                      :class="`faw-merge-hist__status--${mergeOpStatusTone(mergeOpLatest.status)}`"
+                      >{{ mergeOpStatusLabel(mergeOpLatest.status) }}</span
+                    >
+                    <span
+                      v-if="mergeOpLatest.aiResolved"
+                      class="faw-merge-hist__ai"
+                      >AI resolved</span
+                    >
+                    <span class="faw-merge-hist__time tabular-nums">{{
+                      formatChatTime(mergeOpLatest.at)
+                    }}</span>
+                  </div>
+                  <div
+                    v-if="mergeOpLatest.source || mergeOpLatest.target"
+                    class="faw-merge-hist__flow"
+                  >
+                    <code class="faw-merge-hist__branch">{{
+                      mergeOpLatest.source || "?"
+                    }}</code>
+                    <span class="faw-merge-hist__arrow" aria-hidden="true"
+                      >→</span
+                    >
+                    <code class="faw-merge-hist__branch">{{
+                      mergeOpLatest.target || "?"
+                    }}</code>
+                  </div>
+                </div>
+
+                <div
                   v-if="mergeOpHistory.length"
-                  class="m-0 mt-2 p-0 list-none space-y-2 max-h-64 overflow-y-auto"
+                  class="faw-merge-hist__filters"
+                  role="tablist"
+                  aria-label="Filter history"
+                >
+                  <button
+                    type="button"
+                    role="tab"
+                    class="faw-merge-hist__filter"
+                    :class="{
+                      'faw-merge-hist__filter--active': mergeOpFilter === 'all',
+                    }"
+                    :aria-selected="mergeOpFilter === 'all'"
+                    @click="mergeOpFilter = 'all'"
+                  >
+                    All
+                    <span class="faw-merge-hist__filter-n">{{
+                      mergeOpCounts.all
+                    }}</span>
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    class="faw-merge-hist__filter"
+                    :class="{
+                      'faw-merge-hist__filter--active':
+                        mergeOpFilter === 'sync-base',
+                    }"
+                    :aria-selected="mergeOpFilter === 'sync-base'"
+                    @click="mergeOpFilter = 'sync-base'"
+                  >
+                    Sync
+                    <span class="faw-merge-hist__filter-n">{{
+                      mergeOpCounts.sync
+                    }}</span>
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    class="faw-merge-hist__filter"
+                    :class="{
+                      'faw-merge-hist__filter--active':
+                        mergeOpFilter === 'merge',
+                    }"
+                    :aria-selected="mergeOpFilter === 'merge'"
+                    @click="mergeOpFilter = 'merge'"
+                  >
+                    Merge
+                    <span class="faw-merge-hist__filter-n">{{
+                      mergeOpCounts.merge
+                    }}</span>
+                  </button>
+                </div>
+
+                <ul
+                  v-if="mergeOpFiltered.length"
+                  class="faw-merge-hist__list"
                 >
                   <li
-                    v-for="(h, i) in mergeOpHistory"
+                    v-for="(h, i) in mergeOpFiltered"
                     :key="`${h.at}-${h.kind}-${i}`"
-                    class="rounded-md border border-[var(--app-border)] bg-surface px-2.5 py-2"
+                    class="faw-merge-hist__item"
+                    :class="`faw-merge-hist__item--${mergeOpStatusTone(h.status)}`"
                   >
-                    <div
-                      class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-[11px]"
-                    >
-                      <span class="text-ink-faint tabular-nums shrink-0">{{
-                        formatChatTime(h.at)
-                      }}</span>
-                      <span class="font-medium text-ink-soft">{{
-                        mergeOpKindLabel(h.kind)
-                      }}</span>
-                      <span
-                        class="font-medium"
-                        :class="mergeOpStatusClass(h.status)"
-                        >{{ mergeOpStatusLabel(h.status) }}</span
+                    <div class="faw-merge-hist__item-top">
+                      <div class="faw-merge-hist__item-badges">
+                        <span
+                          class="faw-merge-hist__pill"
+                          :class="`faw-merge-hist__pill--${h.kind === 'merge' ? 'merge' : 'sync'}`"
+                          >{{ mergeOpKindLabel(h.kind) }}</span
+                        >
+                        <span
+                          class="faw-merge-hist__status"
+                          :class="`faw-merge-hist__status--${mergeOpStatusTone(h.status)}`"
+                          >{{ mergeOpStatusLabel(h.status) }}</span
+                        >
+                        <span v-if="h.aiResolved" class="faw-merge-hist__ai"
+                          >AI resolved</span
+                        >
+                      </div>
+                      <time
+                        class="faw-merge-hist__time tabular-nums"
+                        :datetime="h.at"
+                        >{{ formatChatTime(h.at) }}</time
                       >
-                      <span
-                        v-if="h.aiResolved"
-                        class="text-sky-700 font-medium"
-                        >AI resolved</span
-                      >
-                      <span
-                        v-if="h.source || h.target"
-                        class="text-ink-faint truncate min-w-0"
-                      >
-                        {{ h.source || "?" }} → {{ h.target || "?" }}
-                      </span>
                     </div>
                     <div
-                      v-if="h.message"
-                      class="mt-1 text-[12px] text-ink-soft whitespace-pre-wrap break-words"
+                      v-if="h.source || h.target"
+                      class="faw-merge-hist__flow"
                     >
-                      {{ redactSecrets(h.message) }}
+                      <code class="faw-merge-hist__branch">{{
+                        h.source || "?"
+                      }}</code>
+                      <span class="faw-merge-hist__arrow" aria-hidden="true"
+                        >→</span
+                      >
+                      <code class="faw-merge-hist__branch">{{
+                        h.target || "?"
+                      }}</code>
                     </div>
-                    <div v-if="mergeOpHasDetail(h)" class="mt-1.5">
+                    <p
+                      v-if="mergeOpMessagePreview(h)"
+                      class="faw-merge-hist__msg"
+                    >
+                      {{ mergeOpMessagePreview(h) }}
+                    </p>
+                    <div v-if="mergeOpHasDetail(h)" class="faw-merge-hist__actions">
                       <button
                         type="button"
-                        class="text-[11px] font-medium text-sky-600 hover:underline"
+                        class="faw-merge-hist__detail-btn"
                         @click="openMergeOpDetail(h)"
                       >
                         View detail
@@ -1189,8 +1407,87 @@ const runTooltip = computed(() => {
                     </div>
                   </li>
                 </ul>
-                <div v-else class="text-[11px] text-ink-faint mt-2">
-                  No Sync base / Merge attempts on this job yet.
+
+                <div
+                  v-else-if="mergeOpHistory.length"
+                  class="faw-merge-hist__empty faw-merge-hist__empty--filter"
+                >
+                  No
+                  {{
+                    mergeOpFilter === "sync-base"
+                      ? "Sync base"
+                      : mergeOpFilter === "merge"
+                        ? "Merge"
+                        : ""
+                  }}
+                  attempts in this filter.
+                  <button
+                    type="button"
+                    class="faw-merge-hist__detail-btn"
+                    @click="mergeOpFilter = 'all'"
+                  >
+                    Show all
+                  </button>
+                </div>
+
+                <div v-else class="faw-merge-hist__empty">
+                  <div class="faw-merge-hist__empty-title">No attempts yet</div>
+                  <p class="faw-merge-hist__empty-body">
+                    Use <strong>Sync base</strong> to pull the latest base into
+                    this job branch, or <strong>Merge</strong> when the job is
+                    ready to land.
+                  </p>
+                  <div class="faw-merge-hist__empty-cta">
+                    <a-tooltip
+                      :title="
+                        canSyncBase
+                          ? 'Pull latest base into the job branch'
+                          : 'Only when the job has a branch and is not running'
+                      "
+                    >
+                      <a-button
+                        size="small"
+                        :loading="syncBaseBusy"
+                        :disabled="!canSyncBase || syncBaseBusy"
+                        @click="emit('syncBase')"
+                      >
+                        ⇣ Sync base
+                      </a-button>
+                    </a-tooltip>
+                    <a-popconfirm
+                      title="Merge work → base (no new MR) + summary comment?"
+                      ok-text="Merge"
+                      cancel-text="Cancel"
+                      :disabled="
+                        !canQuickMerge ||
+                        mergeBusy ||
+                        handoffBusy ||
+                        createMrBusy
+                      "
+                      @confirm="emit('quickMerge')"
+                    >
+                      <a-tooltip
+                        :title="
+                          canQuickMerge
+                            ? 'Merge work → base + summary comment'
+                            : 'Only when job is Awaiting handoff / Done'
+                        "
+                      >
+                        <a-button
+                          size="small"
+                          :disabled="
+                            !canQuickMerge ||
+                            mergeBusy ||
+                            handoffBusy ||
+                            createMrBusy
+                          "
+                          :loading="mergeBusy"
+                        >
+                          Merge
+                        </a-button>
+                      </a-tooltip>
+                    </a-popconfirm>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1287,6 +1584,7 @@ const runTooltip = computed(() => {
         </button>
       </div>
       <div class="faw-bottombar__secondary">
+      <div class="faw-bottombar__git" role="group" aria-label="Git sync">
       <a-tooltip
         :title="
           canSyncBase
@@ -1302,25 +1600,6 @@ const runTooltip = computed(() => {
           @click="emit('syncBase')"
         >
           {{ syncBaseBusy ? "Syncing…" : "⇣ Sync base" }}
-        </button>
-      </a-tooltip>
-      <a-tooltip
-        :title="
-          canCreateMr
-            ? currentJob?.mrUrl
-              ? 'Open existing / refresh MR'
-              : 'Create open MR (no merge) + Ready to Release'
-            : 'Need handoff/done, branch, and no pending changes'
-        "
-      >
-        <button
-          type="button"
-          class="faw-btn"
-          :class="mobileTouch ? '!min-h-[32px]' : ''"
-          :disabled="!canCreateMr || createMrBusy || mergeBusy || handoffBusy"
-          @click="emit('createMr')"
-        >
-          {{ createMrBusy ? "MR…" : currentJob?.mrUrl ? "MR ✓" : "Create MR" }}
         </button>
       </a-tooltip>
       <a-popconfirm
@@ -1343,10 +1622,30 @@ const runTooltip = computed(() => {
             :class="mobileTouch ? '!min-h-[32px]' : ''"
             :disabled="!canQuickMerge || mergeBusy || handoffBusy || createMrBusy"
           >
-            Merge
+            {{ mergeBusy ? "Merging…" : "Merge" }}
           </button>
         </a-tooltip>
       </a-popconfirm>
+      </div>
+      <a-tooltip
+        :title="
+          canCreateMr
+            ? currentJob?.mrUrl
+              ? 'Open existing / refresh MR'
+              : 'Create open MR (no merge) + Ready to Release'
+            : 'Need handoff/done, branch, and no pending changes'
+        "
+      >
+        <button
+          type="button"
+          class="faw-btn"
+          :class="mobileTouch ? '!min-h-[32px]' : ''"
+          :disabled="!canCreateMr || createMrBusy || mergeBusy || handoffBusy"
+          @click="emit('createMr')"
+        >
+          {{ createMrBusy ? "MR…" : currentJob?.mrUrl ? "MR ✓" : "Create MR" }}
+        </button>
+      </a-tooltip>
       <a-tooltip
         :title="
           canGenerateTestcases
@@ -1397,35 +1696,47 @@ const runTooltip = computed(() => {
       :footer="null"
       destroy-on-close
       width="720px"
+      wrap-class-name="work-modal-sheet"
+      :centered="false"
     >
-      <div
-        v-if="mergeOpDetailRow"
-        class="space-y-2 text-[12px] text-ink-soft"
-      >
-        <div class="flex flex-wrap gap-x-2 gap-y-0.5 text-[11px] text-ink-faint">
-          <span class="tabular-nums">{{
-            formatChatTime(mergeOpDetailRow.at)
-          }}</span>
-          <span>{{ mergeOpKindLabel(mergeOpDetailRow.kind) }}</span>
-          <span :class="mergeOpStatusClass(mergeOpDetailRow.status)">{{
-            mergeOpStatusLabel(mergeOpDetailRow.status)
-          }}</span>
-          <span
-            v-if="mergeOpDetailRow.aiResolved"
-            class="text-sky-700 font-medium"
-            >AI resolved</span
-          >
-          <span
+      <div v-if="mergeOpDetailRow" class="faw-merge-hist-detail">
+        <div class="faw-merge-hist-detail__meta">
+          <div class="faw-merge-hist-detail__meta-row">
+            <span
+              class="faw-merge-hist__pill"
+              :class="`faw-merge-hist__pill--${mergeOpDetailRow.kind === 'merge' ? 'merge' : 'sync'}`"
+              >{{ mergeOpKindLabel(mergeOpDetailRow.kind) }}</span
+            >
+            <span
+              class="faw-merge-hist__status"
+              :class="`faw-merge-hist__status--${mergeOpStatusTone(mergeOpDetailRow.status)}`"
+              >{{ mergeOpStatusLabel(mergeOpDetailRow.status) }}</span
+            >
+            <span
+              v-if="mergeOpDetailRow.aiResolved"
+              class="faw-merge-hist__ai"
+              >AI resolved</span
+            >
+            <time
+              class="faw-merge-hist__time tabular-nums"
+              :datetime="mergeOpDetailRow.at"
+              >{{ formatChatTime(mergeOpDetailRow.at) }}</time
+            >
+          </div>
+          <div
             v-if="mergeOpDetailRow.source || mergeOpDetailRow.target"
-            class="truncate"
+            class="faw-merge-hist__flow"
           >
-            {{ mergeOpDetailRow.source || "?" }} →
-            {{ mergeOpDetailRow.target || "?" }}
-          </span>
+            <code class="faw-merge-hist__branch">{{
+              mergeOpDetailRow.source || "?"
+            }}</code>
+            <span class="faw-merge-hist__arrow" aria-hidden="true">→</span>
+            <code class="faw-merge-hist__branch">{{
+              mergeOpDetailRow.target || "?"
+            }}</code>
+          </div>
         </div>
-        <div
-          class="rounded-md border border-[var(--app-border)] bg-[var(--app-panel-soft)] px-3 py-2.5 text-ink max-h-[60vh] overflow-y-auto merge-op-detail-md"
-        >
+        <div class="faw-merge-hist-detail__body merge-op-detail-md">
           <ChatMessageBody :body="mergeOpDetailBody" :markdown="true" />
         </div>
       </div>

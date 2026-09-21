@@ -2562,6 +2562,20 @@ a.faw-mseg__btn {
   flex: 1 1 4.5rem;
   opacity: 0.92;
 }
+.faw-bottombar__git {
+  display: flex;
+  gap: 6px;
+  flex: 1.4 1 9rem;
+  min-width: 0;
+  padding: 2px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--app-panel-soft) 85%, transparent);
+  border: 1px solid var(--app-border);
+}
+.faw-bottombar__git .faw-btn {
+  flex: 1 1 0;
+  min-width: 0;
+}
 .faw-mid-col--flash {
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--app-accent) 45%, transparent);
   transition: box-shadow 0.35s ease;
@@ -4329,6 +4343,398 @@ a.faw-mseg__btn {
   .faw-add-project__footer .ant-btn {
     width: 100%;
   }
+}
+
+/* Sync base / Merge history (job Issue tab) */
+.faw-merge-hist {
+  border-radius: 12px;
+  border: 1px solid var(--app-border);
+  background: var(--app-panel-soft);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+.faw-merge-hist__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+.faw-merge-hist__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--app-ink);
+  line-height: 1.3;
+}
+.faw-merge-hist__count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.25rem;
+  height: 1.15rem;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--app-muted);
+  background: var(--app-panel);
+  border: 1px solid var(--app-border);
+}
+.faw-merge-hist__hint {
+  margin: 4px 0 0;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--app-faint);
+}
+.faw-merge-hist__live,
+.faw-merge-hist__latest {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--app-border);
+  background: var(--app-panel);
+}
+.faw-merge-hist__live {
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 10px;
+  border-color: color-mix(in srgb, var(--app-accent) 40%, var(--app-border));
+  background: var(--app-accent-soft);
+}
+.faw-merge-hist__live-dot {
+  width: 8px;
+  height: 8px;
+  margin-top: 5px;
+  border-radius: 50%;
+  background: var(--app-accent);
+  flex-shrink: 0;
+  animation: faw-merge-hist-pulse 1.2s ease-in-out infinite;
+}
+@keyframes faw-merge-hist-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.45;
+    transform: scale(0.85);
+  }
+}
+.faw-merge-hist__live-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--app-ink);
+}
+.faw-merge-hist__live-meta {
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--app-muted);
+}
+.faw-merge-hist__live-meta code {
+  font-size: 11px;
+}
+.faw-merge-hist__latest-label {
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--app-faint);
+}
+.faw-merge-hist__latest-row,
+.faw-merge-hist__item-top,
+.faw-merge-hist__item-badges,
+.faw-merge-hist-detail__meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+}
+.faw-merge-hist__item-top {
+  justify-content: space-between;
+}
+.faw-merge-hist__filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.faw-merge-hist__filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--app-border);
+  background: var(--app-panel);
+  color: var(--app-muted);
+  font-size: 11px;
+  font-weight: 550;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease,
+    color 0.15s ease;
+}
+.faw-merge-hist__filter:hover {
+  border-color: var(--app-border-strong);
+  color: var(--app-ink);
+}
+.faw-merge-hist__filter:focus-visible {
+  outline: 2px solid var(--app-accent);
+  outline-offset: 2px;
+}
+.faw-merge-hist__filter--active {
+  border-color: var(--app-accent);
+  background: var(--app-accent-soft);
+  color: var(--app-ink);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--app-accent) 30%, transparent);
+}
+.faw-merge-hist__filter-n {
+  font-variant-numeric: tabular-nums;
+  font-size: 10px;
+  font-weight: 700;
+  opacity: 0.75;
+}
+.faw-merge-hist__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 18rem;
+  overflow-y: auto;
+}
+.faw-merge-hist__item {
+  position: relative;
+  padding: 10px 12px 10px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--app-border);
+  background: var(--app-panel);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.faw-merge-hist__item::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  border-radius: 0 2px 2px 0;
+  background: var(--app-border);
+}
+.faw-merge-hist__item--ok::before {
+  background: #10b981;
+}
+.faw-merge-hist__item--warn::before {
+  background: #d97706;
+}
+.faw-merge-hist__item--err::before {
+  background: #dc2626;
+}
+.faw-merge-hist__item--run::before {
+  background: #0284c7;
+}
+.faw-merge-hist__pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  border-radius: 6px;
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+  border: 1px solid var(--app-border);
+  background: var(--app-panel-soft);
+  color: var(--app-ink-soft, var(--app-muted));
+}
+.faw-merge-hist__pill--sync {
+  border-color: color-mix(in srgb, #0284c7 35%, var(--app-border));
+  background: color-mix(in srgb, #0284c7 10%, var(--app-panel));
+  color: #0369a1;
+}
+.faw-merge-hist__pill--merge {
+  border-color: color-mix(in srgb, #059669 35%, var(--app-border));
+  background: color-mix(in srgb, #059669 10%, var(--app-panel));
+  color: #047857;
+}
+.faw-merge-hist__status {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 650;
+}
+.faw-merge-hist__status--ok {
+  color: #047857;
+  background: color-mix(in srgb, #10b981 14%, transparent);
+}
+.faw-merge-hist__status--warn {
+  color: #b45309;
+  background: color-mix(in srgb, #f59e0b 16%, transparent);
+}
+.faw-merge-hist__status--err {
+  color: #b91c1c;
+  background: color-mix(in srgb, #ef4444 14%, transparent);
+}
+.faw-merge-hist__status--run {
+  color: #0369a1;
+  background: color-mix(in srgb, #0ea5e9 14%, transparent);
+}
+.faw-merge-hist__status--muted {
+  color: var(--app-muted);
+  background: var(--app-panel-soft);
+}
+.faw-merge-hist__ai {
+  font-size: 10px;
+  font-weight: 650;
+  color: #0369a1;
+}
+.faw-merge-hist__time {
+  font-size: 11px;
+  color: var(--app-faint);
+  flex-shrink: 0;
+}
+.faw-merge-hist__flow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+.faw-merge-hist__branch {
+  display: inline-block;
+  max-width: 100%;
+  padding: 1px 6px;
+  border-radius: 5px;
+  font-size: 11px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-weight: 500;
+  color: var(--app-ink);
+  background: var(--app-panel-soft);
+  border: 1px solid var(--app-border);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.faw-merge-hist__arrow {
+  color: var(--app-faint);
+  font-size: 11px;
+  flex-shrink: 0;
+}
+.faw-merge-hist__msg {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--app-muted);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.faw-merge-hist__actions {
+  display: flex;
+  gap: 8px;
+}
+.faw-merge-hist__detail-btn {
+  padding: 0;
+  border: 0;
+  background: none;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--app-accent);
+  cursor: pointer;
+}
+.faw-merge-hist__detail-btn:hover {
+  text-decoration: underline;
+}
+.faw-merge-hist__empty {
+  padding: 14px 12px;
+  border-radius: 10px;
+  border: 1px dashed var(--app-border);
+  background: var(--app-panel);
+  text-align: left;
+}
+.faw-merge-hist__empty--filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--app-muted);
+}
+.faw-merge-hist__empty-title {
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--app-ink);
+}
+.faw-merge-hist__empty-body {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--app-muted);
+}
+.faw-merge-hist__empty-cta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+.faw-merge-hist-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.faw-merge-hist-detail__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--app-border);
+  background: var(--app-panel-soft);
+}
+.faw-merge-hist-detail__body {
+  border-radius: 10px;
+  border: 1px solid var(--app-border);
+  background: var(--app-panel-soft);
+  padding: 12px;
+  color: var(--app-ink);
+  max-height: 60vh;
+  overflow-y: auto;
+  font-size: 12px;
+}
+.faw-sync-base-modal {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.faw-sync-base-modal__lead {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--app-muted);
+}
+.faw-sync-base-modal__label {
+  display: block;
+  margin-top: 4px;
+  font-size: 13px;
+  font-weight: 550;
+  color: var(--app-muted);
+}
+.faw-sync-base-modal__hint {
+  margin: 4px 0 0;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--app-faint);
 }
 
 .faw-project-card {
