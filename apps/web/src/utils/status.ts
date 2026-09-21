@@ -88,6 +88,34 @@ export function statusToneClass(status: string | null | undefined): string {
   return "bg-gray-50 text-gray-600 border-gray-200";
 }
 
+/**
+ * Dot class for Jobs list (`.faw-job-dot.*`).
+ * Aligns with statusColor / statusToneClass — only running|queued stay amber.
+ */
+export function statusDotClass(status: string | null | undefined): string {
+  const st = status || "";
+  if (st === "succeeded") return "done";
+  if (st === "failed") return "bug";
+  if (st === "running" || st === "queued") return "wip";
+  if (
+    st === "awaiting_clarification" ||
+    st === "awaiting_google_auth" ||
+    st === "awaiting_figma_auth"
+  ) {
+    return "clarify";
+  }
+  if (st === "awaiting_handoff") return "handoff";
+  if (
+    st === "awaiting_docs_approval" ||
+    st === "awaiting_diff_approval" ||
+    st === "awaiting_plan_approval"
+  ) {
+    return "approve";
+  }
+  if (st.startsWith("awaiting")) return "clarify";
+  return "idle";
+}
+
 export type ContextQualityLevel = "good" | "searchable" | "bad";
 
 const CONTEXT_QUALITY_LABELS: Record<ContextQualityLevel, string> = {
