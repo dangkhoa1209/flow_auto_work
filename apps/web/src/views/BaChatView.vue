@@ -302,18 +302,6 @@ function onUsePrompt(prompt: string) {
 
 const contextBits = computed(() => {
   const bits: { key: string; label: string; tone?: "accent" | "warn" }[] = [];
-  if (ba.selectedProject) {
-    bits.push({
-      key: "project",
-      label: ba.selectedProject.displayName,
-    });
-    if (ba.selectedProject.gitlabPath) {
-      bits.push({
-        key: "path",
-        label: ba.selectedProject.gitlabPath,
-      });
-    }
-  }
   if (ba.analysisMode) {
     bits.push({ key: "mode", label: "BA mode", tone: "accent" });
   }
