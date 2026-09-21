@@ -16,7 +16,12 @@ import {
 } from "@ant-design/icons-vue";
 import IssueIidLink from "@/components/IssueIidLink.vue";
 import GitlabLabelChip from "@/components/GitlabLabelChip.vue";
-import { statusLabel, MANUAL_JOB_STATUSES, manualStatusMenuLabel } from "@/utils/status";
+import {
+  statusLabel,
+  statusDotClass,
+  MANUAL_JOB_STATUSES,
+  manualStatusMenuLabel,
+} from "@/utils/status";
 import { formatRelativeTime } from "@/utils/formatChatTime";
 import type { Job, Task } from "@/stores/work";
 import { useWorkStore } from "@/stores/work";
@@ -278,14 +283,6 @@ const jobsCountLabel = computed(() => {
 
 function jobMetaLine(j: Job): string {
   return formatRelativeTime(j.updatedAt || j.createdAt) || "";
-}
-
-function statusDotClass(status: string) {
-  if (status === "succeeded") return "done";
-  if (status === "failed") return "bug";
-  if (status === "running" || status === "queued") return "wip";
-  if (status.startsWith("awaiting_")) return "wip";
-  return "idle";
 }
 
 function jobDisplayIid(j: Job) {
@@ -595,6 +592,9 @@ watch(
                     class="faw-job-dot"
                     :class="statusDotClass(j.status)"
                   />
+                  <span class="faw-job-status__lbl">{{
+                    statusLabel(j.status)
+                  }}</span>
                 </button>
                 <template #overlay>
                   <a-menu

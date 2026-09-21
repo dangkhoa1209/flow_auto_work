@@ -100,6 +100,9 @@
   --wip-dim: #c4880a22;
   --bug: #d63a54;
   --bug-dim: #d63a5422;
+  --clarify: #d97706;
+  --handoff: #0d9488;
+  --approve: #7c3aed;
   --accent-dim: #3b6fd140;
 }
 
@@ -440,10 +443,18 @@ code {
 .status-dot--success {
   background: var(--done);
 }
-.status-dot--wip,
+.status-dot--wip {
+  background: var(--wip);
+}
 .status-dot--warn,
 .status-dot--clarify {
-  background: var(--wip);
+  background: var(--clarify);
+}
+.status-dot--handoff {
+  background: var(--handoff);
+}
+.status-dot--approve {
+  background: var(--approve);
 }
 .status-dot--bug,
 .status-dot--danger,
@@ -910,6 +921,9 @@ code {
   --wip-dim: #f0b42922;
   --bug: #f0576b;
   --bug-dim: #f0576b22;
+  --clarify: #fb923c;
+  --handoff: #2dd4bf;
+  --approve: #a78bfa;
   --accent-dim: #5b8def33;
   --r: 6px;
   /* Shorthand aliases used by .faw-build-* (map to --app-* tokens) */
@@ -1229,17 +1243,28 @@ code {
 .faw-job-status {
   border: 0;
   background: transparent;
-  padding: 3px;
+  padding: 1px 4px 1px 2px;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
-  justify-content: center;
+  gap: 5px;
+  min-width: 0;
+  max-width: 6.25rem;
   flex-shrink: 0;
   color: var(--app-muted);
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  line-height: 1.2;
   border-radius: 3px;
 }
 .faw-job-status:hover {
+  color: var(--app-ink);
   background: var(--app-hover);
+}
+.faw-job-status__lbl {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .faw-job-dot {
   width: 6px;
@@ -1257,6 +1282,15 @@ code {
 }
 .faw-job-dot.bug {
   background: var(--bug);
+}
+.faw-job-dot.clarify {
+  background: var(--clarify);
+}
+.faw-job-dot.handoff {
+  background: var(--handoff);
+}
+.faw-job-dot.approve {
+  background: var(--approve);
 }
 .faw-job-dot.idle {
   background: var(--app-faint);

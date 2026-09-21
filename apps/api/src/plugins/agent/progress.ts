@@ -249,25 +249,17 @@ export function appendJobProgress(
   });
 }
 
-/** Log full prompt being sent to Cursor (Progress tab). */
+/** Log that a request was sent to Cursor (Progress tab — no prompt body). */
 export function appendPromptSending(
   jobId: string | undefined,
   prompt: string,
 ): void {
   const body = String(prompt || "").trim();
   if (!body) {
-    appendJobProgress(jobId, "status", "Đang gửi prompt… (trống)");
+    appendJobProgress(jobId, "status", "Đã gửi yêu cầu (trống)");
     return;
   }
-  const truncated =
-    body.length > 15_500
-      ? `${body.slice(0, 15_500)}\n\n… (còn ${body.length - 15_500} ký tự)`
-      : body;
-  appendJobProgress(
-    jobId,
-    "prompt",
-    `Đang gửi prompt (${body.length} ký tự):\n\n${truncated}`,
-  );
+  appendJobProgress(jobId, "prompt", "Đã gửi yêu cầu");
 }
 
 function asRecord(v: unknown): Record<string, unknown> | null {
