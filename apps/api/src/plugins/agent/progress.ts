@@ -249,17 +249,37 @@ export function appendJobProgress(
   });
 }
 
-/** Log that a request was sent to Cursor (Progress tab — no prompt body). */
+/** Leave room for the part header under PRESERVE_MAX (16_000). */
+const PROMPT_LOG_CHUNK = 15_500;
+
+/** Log full prompt being sent to Cursor (Progress tab). Chunks if over line cap. */
 export function appendPromptSending(
   jobId: string | undefined,
   prompt: string,
 ): void {
   const body = String(prompt || "").trim();
   if (!body) {
-    appendJobProgress(jobId, "status", "Đã gửi yêu cầu (trống)");
+    appendJobProgress(jobId, "status", "Sent request (empty)");
     return;
   }
-  appendJobProgress(jobId, "prompt", "Đã gửi yêu cầu");
+  if (body.length <= PROMPT_LOG_CHUNK) {
+    appendJobProgress(
+      jobId,
+      "prompt",
+      `Sending prompt (${body.length} chars):\n\n${body}`,
+    );
+    return;
+  }
+  const totalChunks = Math.ceil(body.length / PROMPT_LOG_CHUNK);
+  for (let i = 0; i < totalChunks; i++) {
+    const start = i * PROMPT_LOG_CHUNK;
+    const part = body.slice(start, start + PROMPT_LOG_CHUNK);
+    const label =
+      i === 0
+        ? `Sending prompt (${body.length} chars, part ${i + 1}/${totalChunks}):\n\n`
+        : `Prompt continued (${i + 1}/${totalChunks}):\n\n`;
+    appendJobProgress(jobId, "prompt", `${label}${part}`);
+  }
 }
 
 function asRecord(v: unknown): Record<string, unknown> | null {
