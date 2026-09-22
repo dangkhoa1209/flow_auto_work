@@ -14,6 +14,7 @@ import {
   formatCursorAgentFailure,
   hasActiveAgentRun,
   isJobKillRequested,
+  isStreamStallError,
   isTransientCursorTransportError,
   markCursorTransient,
   sendWithLocalForceRetry,
@@ -1247,18 +1248,22 @@ export async function runBaChatAgent(opts: {
 
         attempt += 1;
         const delayMs = attempt * 5000;
+        const retryLabel = isStreamStallError(err)
+          ? `Agent treo stream/tool — tự retry ${attempt}/${maxRetries} sau ${delayMs / 1000}s`
+          : `Lỗi mạng Cursor tạm thời — tự retry ${attempt}/${maxRetries} sau ${delayMs / 1000}s`;
         publishBaProgress({
           userId: opts.userId,
           threadId: opts.threadId,
           messageId: opts.assistantMessageId,
           step: "start",
-          label: `Lỗi mạng Cursor tạm thời — tự retry ${attempt}/${maxRetries} sau ${delayMs / 1000}s`,
+          label: retryLabel,
           detail: raw.slice(0, 120),
         });
         logger.warn("BA chat transient Cursor error — retrying", {
           threadId: opts.threadId,
           attempt,
           maxRetries,
+          stall: isStreamStallError(err),
           err: raw,
         });
 

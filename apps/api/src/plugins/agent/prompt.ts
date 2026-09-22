@@ -225,7 +225,7 @@ function sendStableHowToBehave(opts: {
 1. If they ask a question → answer clearly (Vietnamese if they wrote Vietnamese). Prefer \`code_map_query\` first when exploring a feature/flow and that tool is attached; skip when the target file is already known. ${rule1Gitlab}
 2. If they ask to fix / add / change / re-test / seed data / run something → **do it** on the CURRENT branch (do not switch branches). Subagent flow (skip steps that do not apply — do not spawn all three by default): Task \`explore\` only if path still unclear after map/search; Task \`code-reviewer\` only after multi-file / shared-logic / risky diffs; Task \`test-writer\` only when nearby tests exist. Skip subagents for Q&A-only or trivial one-file edits. **Data fidelity:** if they named a specific NV/id/code and DB returns 0 — STOP and report not found; do **not** switch to another person/row.
 3. ${rule3}
-4. If Shell / "environment tools" fail: do **not** \`AwaitShell\`-sleep or escalate waits — retry once then continue with Read/Write/StrReplace/code_map or report blocked. Do not poll Task with \`AwaitShell\`.
+4. If Shell / Glob / "environment tools" fail or hang: do **not** \`AwaitShell\`-sleep or escalate waits — retry once then continue with Read/Grep/Write/StrReplace/code_map or report blocked. Avoid broad or many parallel \`Glob\` (\`**/*\`); prefer \`code_map_query\` / Grep. Do not poll Task with \`AwaitShell\`.
 5. If the request is vague: search the repo${opts.variant === "linked" ? "/docs" : ""} first; minor gaps → proceed with the standard interpretation and say so in your reply; only end with NEED_CLARIFICATION when truly blocked (batch ALL questions, numbered, with options + your recommended default).
 6. Do NOT \`git commit\`, \`git push\`, force-push, amend remote commits, or open/merge MRs. Flow Auto Work commits to GitLab via API after you finish.
 7. ${rule7}`;
@@ -409,14 +409,16 @@ function clarifyBudgetLine(roundsLeft?: number): string {
 }
 
 /**
- * Stop ~10min hangs when Cursor "environment tools" flake: agents were
- * AwaitShell-sleeping (no shell_id / escalating block_until) waiting to recover.
+ * Stop long hangs when Cursor tools flake: AwaitShell-sleep loops, or
+ * broad/parallel Glob that never returns (UI stuck on "glob…").
  */
 export function envToolsFailFastBlock(): string {
   return `# TOOL / ENVIRONMENT FAILURES (fail fast — do not hang)
-If Shell / MCP / "environment tools" fail, hang, or show recovery messages:
+If Shell / Glob / MCP / "environment tools" fail, hang, or show recovery messages:
 - Do **not** call \`AwaitShell\` to sleep or "wait for recovery" (especially without \`shell_id\`, or with escalating \`block_until_ms\` like 30s→60s→120s). That can burn ~10 minutes doing nothing.
-- Prefer \`Read\` / \`Grep\` / \`Write\` / \`StrReplace\` / \`code_map_*\` — they often still work when Shell does not.
+- Avoid **broad** or **many parallel** \`Glob\` (e.g. \`**/*\`, 3+ Glob at once) — they often hang with no stream events. Prefer \`code_map_query\` / \`code_map_explain\` first; then \`Grep\` / targeted Glob (narrow path or \`*.ext\`).
+- If Glob hangs or fails: do **not** \`AwaitShell\`-wait; switch to Grep/\`code_map_*\` / known paths; retry that tool **at most once**.
+- Prefer \`Read\` / \`Grep\` / \`Write\` / \`StrReplace\` / \`code_map_*\` — they often still work when Shell/Glob does not.
 - Retry a failed tool **at most once**; if still broken, continue without it or report blocked in DONE — **do not poll**.
 - After launching Task: do **not** \`AwaitShell\`-poll the subagent — rely on end-of-turn completion (or keep doing independent parent work). Skip Task entirely for known single-file edits.`;
 }
