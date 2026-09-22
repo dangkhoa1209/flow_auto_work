@@ -194,6 +194,9 @@ export const adminController = {
         userId:
           typeof req.query.userId === "string" ? req.query.userId : undefined,
         kind: typeof req.query.kind === "string" ? req.query.kind : undefined,
+        role: typeof req.query.role === "string" ? req.query.role : undefined,
+        status:
+          typeof req.query.status === "string" ? req.query.status : undefined,
       }),
     );
   }),

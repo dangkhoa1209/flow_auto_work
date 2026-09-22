@@ -3,8 +3,11 @@ import { CursorUsageModel, type CursorUsageDoc, type CursorUsageEvent } from "..
 import { WorkspaceUserModel } from "../../models/workspace.js";
 import {
   CURSOR_USAGE_KINDS,
+  CURSOR_USAGE_STATUSES,
   USAGE_KIND_LABELS,
+  USAGE_STATUS_LABELS,
   type CursorUsageKind,
+  type CursorUsageStatus,
 } from "../../plugins/cursor/usageNormalize.js";
 import {
   dayKeyFromIso,
@@ -12,9 +15,22 @@ import {
   shiftYmd,
   STATS_TZ,
 } from "../stats/calendar.js";
+import {
+  normalizeUserRoles,
+  type UserRole,
+} from "../../workspace/types.js";
 
 const EVENT_SCAN_LIMIT = 50_000;
-const DETAIL_EVENTS = 120;
+const DETAIL_EVENTS = 200;
+
+const ROLE_LABELS: Record<UserRole, string> = {
+  admin: "Admin",
+  ba: "BA",
+  pd: "PD",
+  dev: "Dev",
+  qc: "QC",
+  devops: "DevOps",
+};
 
 export type AdminCursorUsageQuery = {
   days?: number;
@@ -22,6 +38,8 @@ export type AdminCursorUsageQuery = {
   to?: string;
   userId?: string;
   kind?: string;
+  role?: string;
+  status?: string;
 };
 
 function parseYmd(s: string | undefined): string | null {
@@ -66,6 +84,18 @@ function parseKind(raw?: string): CursorUsageKind | undefined {
   return (CURSOR_USAGE_KINDS as readonly string[]).includes(k) ? k : undefined;
 }
 
+function parseStatus(raw?: string): CursorUsageStatus | undefined {
+  if (!raw?.trim()) return undefined;
+  const s = raw.trim() as CursorUsageStatus;
+  return (CURSOR_USAGE_STATUSES as readonly string[]).includes(s) ? s : undefined;
+}
+
+function parseRole(raw?: string): UserRole | undefined {
+  if (!raw?.trim()) return undefined;
+  const r = raw.trim().toLowerCase() as UserRole;
+  return r in ROLE_LABELS ? r : undefined;
+}
+
 export type UsageBucket = {
   events: number;
   inputTokens: number;
@@ -77,6 +107,8 @@ export type UsageBucket = {
   chargedCents: number;
   estimatedCents: number;
   sdkEvents: number;
+  errorEvents: number;
+  cancelledEvents: number;
 };
 
 function emptyBucket(): UsageBucket {
@@ -91,6 +123,8 @@ function emptyBucket(): UsageBucket {
     chargedCents: 0,
     estimatedCents: 0,
     sdkEvents: 0,
+    errorEvents: 0,
+    cancelledEvents: 0,
   };
 }
 
@@ -105,6 +139,9 @@ function addEvent(b: UsageBucket, e: CursorUsageEvent): void {
   b.chargedCents += e.chargedCents || 0;
   b.estimatedCents += e.estimatedCents || 0;
   if (e.costSource === "sdk") b.sdkEvents += 1;
+  const st = e.status || "ok";
+  if (st === "error") b.errorEvents += 1;
+  if (st === "cancelled") b.cancelledEvents += 1;
 }
 
 function withUsd(b: UsageBucket) {
@@ -116,14 +153,25 @@ function withUsd(b: UsageBucket) {
   };
 }
 
+function eventRoles(
+  e: CursorUsageEvent,
+  rolesByUser: Map<string, UserRole[]>,
+): UserRole[] {
+  if (e.roles?.length) return normalizeUserRoles(e.roles);
+  const uid = (e.userId || "").trim().toLowerCase();
+  return rolesByUser.get(uid) || [];
+}
+
 export function rollupCursorUsageEvents(
   events: CursorUsageEvent[],
   fromYmd: string,
   toYmd: string,
+  rolesByUser: Map<string, UserRole[]> = new Map(),
 ) {
   const totals = emptyBucket();
   const byUser = new Map<string, UsageBucket>();
   const byKind = new Map<string, UsageBucket>();
+  const byRole = new Map<string, UsageBucket>();
   const byDay = new Map<string, UsageBucket>();
   const byUserDay = new Map<string, Map<string, UsageBucket>>();
 
@@ -144,6 +192,17 @@ export function rollupCursorUsageEvents(
       byKind.set(kind, k);
     }
     addEvent(k, e);
+
+    const roles = eventRoles(e, rolesByUser);
+    const roleKeys = roles.length ? roles : (["unknown"] as const);
+    for (const role of roleKeys) {
+      let r = byRole.get(role);
+      if (!r) {
+        r = emptyBucket();
+        byRole.set(role, r);
+      }
+      addEvent(r, e);
+    }
 
     const day = dayKeyFromIso(e.createdAt) || e.createdAt.slice(0, 10);
     let d = byDay.get(day);
@@ -183,8 +242,42 @@ export function rollupCursorUsageEvents(
         ...withUsd(b),
       }))
       .sort((a, b) => b.costCents - a.costCents),
+    byRole: [...byRole.entries()]
+      .map(([role, b]) => ({
+        role,
+        label: ROLE_LABELS[role as UserRole] || role,
+        ...withUsd(b),
+      }))
+      .sort((a, b) => b.costCents - a.costCents || b.totalTokens - a.totalTokens),
     byDay: days,
     byUserDay,
+  };
+}
+
+function mapEventDetail(e: CursorUsageEvent, nameById: Map<string, string>) {
+  const roles = normalizeUserRoles(e.roles);
+  return {
+    id: e.id,
+    createdAt: e.createdAt,
+    kind: e.kind,
+    kindLabel: USAGE_KIND_LABELS[e.kind] || e.kind,
+    status: e.status || "ok",
+    statusLabel: USAGE_STATUS_LABELS[(e.status || "ok") as CursorUsageStatus],
+    roles,
+    roleLabels: roles.map((r) => ROLE_LABELS[r] || r),
+    userId: e.userId,
+    displayName: nameById.get(e.userId) || undefined,
+    model: e.model || null,
+    jobId: e.jobId || null,
+    threadId: e.threadId || null,
+    inputTokens: e.inputTokens,
+    outputTokens: e.outputTokens,
+    cacheReadTokens: e.cacheReadTokens,
+    totalTokens: e.totalTokens,
+    costCents: e.costCents,
+    costUsd: Math.round(e.costCents) / 100,
+    costSource: e.costSource,
+    fromSdk: e.fromSdk,
   };
 }
 
@@ -192,6 +285,8 @@ export async function adminGetCursorUsage(query: AdminCursorUsageQuery) {
   const { days, fromYmd, toYmd } = windowYmd(query.days ?? 30, query.from, query.to);
   const userId = query.userId?.trim().toLowerCase() || undefined;
   const kind = parseKind(query.kind);
+  const role = parseRole(query.role);
+  const status = parseStatus(query.status);
   const rangeStart = ymdToUtcRange(fromYmd, false);
   const rangeEnd = ymdToUtcRange(toYmd, true);
 
@@ -203,6 +298,9 @@ export async function adminGetCursorUsage(query: AdminCursorUsageQuery) {
   };
   if (userId) filter.userId = userId;
   if (kind) filter.kind = kind;
+  if (status) filter.status = status;
+  // Role filter is applied in memory so legacy rows (no roles[]) still match
+  // via the user's current workspace roles.
 
   const scanned = await CursorUsageModel.findMany({
     filter,
@@ -210,20 +308,31 @@ export async function adminGetCursorUsage(query: AdminCursorUsageQuery) {
     limit: EVENT_SCAN_LIMIT + 1,
   });
   const truncated = scanned.length > EVENT_SCAN_LIMIT;
-  const rows = (truncated ? scanned.slice(0, EVENT_SCAN_LIMIT) : scanned) as CursorUsageEvent[];
-
-  const rolled = rollupCursorUsageEvents(rows, fromYmd, toYmd);
+  let rows = (truncated ? scanned.slice(0, EVENT_SCAN_LIMIT) : scanned) as CursorUsageEvent[];
 
   const users = await WorkspaceUserModel.findMany({ limit: 5000 });
   const nameById = new Map<string, string>();
+  const rolesByUser = new Map<string, UserRole[]>();
   for (const u of users) {
     const id = String(u.id || u.gitlabUsername || "").toLowerCase();
-    if (id) nameById.set(id, u.displayName || u.gitlabUsername || id);
+    if (!id) continue;
+    nameById.set(id, u.displayName || u.gitlabUsername || id);
+    rolesByUser.set(id, normalizeUserRoles(u.roles));
   }
+
+  if (role) {
+    rows = rows.filter((e) => eventRoles(e, rolesByUser).includes(role));
+  }
+
+  const rolled = rollupCursorUsageEvents(rows, fromYmd, toYmd, rolesByUser);
 
   const byUser = rolled.byUser.map((row) => ({
     ...row,
     displayName: nameById.get(row.userId) || undefined,
+    roles: rolesByUser.get(row.userId) || [],
+    roleLabels: (rolesByUser.get(row.userId) || []).map(
+      (r) => ROLE_LABELS[r] || r,
+    ),
   }));
 
   const selectedUserDays =
@@ -234,25 +343,9 @@ export async function adminGetCursorUsage(query: AdminCursorUsageQuery) {
         }))
       : undefined;
 
-  const events = userId
-    ? rows.slice(0, DETAIL_EVENTS).map((e) => ({
-        id: e.id,
-        createdAt: e.createdAt,
-        kind: e.kind,
-        kindLabel: USAGE_KIND_LABELS[e.kind] || e.kind,
-        model: e.model || null,
-        jobId: e.jobId || null,
-        threadId: e.threadId || null,
-        inputTokens: e.inputTokens,
-        outputTokens: e.outputTokens,
-        cacheReadTokens: e.cacheReadTokens,
-        totalTokens: e.totalTokens,
-        costCents: e.costCents,
-        costUsd: Math.round(e.costCents) / 100,
-        costSource: e.costSource,
-        fromSdk: e.fromSdk,
-      }))
-    : undefined;
+  const events = rows.slice(0, DETAIL_EVENTS).map((e) =>
+    mapEventDetail(e, nameById),
+  );
 
   return {
     timezone: STATS_TZ,
@@ -262,13 +355,24 @@ export async function adminGetCursorUsage(query: AdminCursorUsageQuery) {
     truncated,
     userId: userId || null,
     kind: kind || null,
+    role: role || null,
+    status: status || null,
     kinds: CURSOR_USAGE_KINDS.map((k) => ({
       id: k,
       label: USAGE_KIND_LABELS[k],
     })),
+    roles: (Object.keys(ROLE_LABELS) as UserRole[]).map((r) => ({
+      id: r,
+      label: ROLE_LABELS[r],
+    })),
+    statuses: CURSOR_USAGE_STATUSES.map((s) => ({
+      id: s,
+      label: USAGE_STATUS_LABELS[s],
+    })),
     totals: rolled.totals,
     byUser,
     byKind: rolled.byKind,
+    byRole: rolled.byRole,
     byDay: rolled.byDay,
     userDays: selectedUserDays,
     events,

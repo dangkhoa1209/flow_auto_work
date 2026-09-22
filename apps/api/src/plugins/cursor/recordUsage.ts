@@ -2,9 +2,15 @@ import { getConfig } from "../../config.js";
 import { logger } from "../../logger.js";
 import { CursorUsageModel } from "../../models/cursorUsage.js";
 import { JobModel } from "../../models/job.js";
+import { WorkspaceUserModel } from "../../models/workspace.js";
+import {
+  normalizeUserRoles,
+  type UserRole,
+} from "../../workspace/types.js";
 import { getRuntimeContext } from "../../workspace/runtime.js";
 import {
   type CursorUsageKind,
+  type CursorUsageStatus,
   addUsageCounters,
   emptyUsageCounters,
   maybeDeltaFromCumulative,
@@ -28,6 +34,13 @@ export type PersistCursorUsageOpts = {
   run?: unknown;
   result?: unknown;
   extraUsage?: unknown[];
+  /** Outcome — omit / ok for successful finishes. */
+  status?: CursorUsageStatus;
+  /**
+   * When true, still insert a history row even if tokens/cost normalize to 0
+   * (e.g. cancelled before first token). Default false.
+   */
+  force?: boolean;
 };
 
 function normUserId(raw?: string): string {
@@ -52,6 +65,20 @@ async function resolveUsageUserIdWithJob(
     return normUserId(job?.ownerUsername) || "unknown";
   } catch {
     return "unknown";
+  }
+}
+
+async function resolveUsageRoles(userId: string): Promise<UserRole[] | undefined> {
+  const id = normUserId(userId);
+  if (!id || id === "unknown") return undefined;
+  try {
+    const user =
+      (await WorkspaceUserModel.findById(id)) ||
+      (await WorkspaceUserModel.findOne({ gitlabUsername: id }));
+    if (!user) return undefined;
+    return normalizeUserRoles(user.roles);
+  } catch {
+    return undefined;
   }
 }
 
@@ -129,12 +156,23 @@ export async function persistCursorUsage(
       rawFields,
       await previousAgentCounters(agentId),
     );
-    if (fields.totalTokens <= 0 && fields.costCents <= 0) return;
+    const status: CursorUsageStatus = opts.status || "ok";
+    const hasSignal =
+      fields.totalTokens > 0 ||
+      fields.costCents > 0 ||
+      Boolean(opts.force) ||
+      status !== "ok";
+    if (!hasSignal) return;
+
+    const userId = await resolveUsageUserIdWithJob(opts.userId, opts.jobId);
+    const roles = await resolveUsageRoles(userId);
 
     await CursorUsageModel.insert({
       id: `cue_${crypto.randomUUID().replace(/-/g, "").slice(0, 16)}`,
-      userId: await resolveUsageUserIdWithJob(opts.userId, opts.jobId),
+      userId,
+      ...(roles?.length ? { roles } : {}),
       kind: opts.kind,
+      status,
       model,
       jobId: opts.jobId,
       threadId: opts.threadId,
@@ -148,6 +186,7 @@ export async function persistCursorUsage(
   } catch (err) {
     logger.warn("Failed to persist Cursor usage", {
       kind: opts.kind,
+      status: opts.status || "ok",
       err: err instanceof Error ? err.message : String(err),
     });
   }

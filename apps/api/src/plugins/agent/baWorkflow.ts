@@ -690,6 +690,20 @@ export async function runBaWorkflowStep(opts: {
       session.check();
       const result = await run.wait();
       if (result.status === "error") {
+        await persistCursorUsage({
+          kind: "ba_workflow",
+          userId: opts.requirement.userId,
+          threadId: opts.requirement.linkedThreadId || undefined,
+          requirementId: opts.requirement.id,
+          agent: disposed,
+          run,
+          result,
+          promptChars: prompt.length,
+          outputChars: streamed.length,
+          model: await resolveSystemCursorModel().catch(() => undefined),
+          status: "error",
+          force: true,
+        });
         throw errorFromCursorRunStatus(
           result as {
             id: string;
@@ -720,6 +734,7 @@ export async function runBaWorkflowStep(opts: {
         promptChars: prompt.length,
         outputChars: finalText.length,
         model: await resolveSystemCursorModel(),
+        status: "ok",
       });
       return finalText;
     };

@@ -699,11 +699,7 @@ export function recordTokenUsage(
       : n >= 1000
         ? `${Math.round(n / 1000)}k`
         : String(n);
-  appendJobProgress(
-    jobId,
-    "usage",
-    `%${contextPct} - ${short(lastInput)}/${short(window)}`,
-  );
+  appendJobProgress(jobId, "usage", short(lastInput));
   return snap;
 }
 

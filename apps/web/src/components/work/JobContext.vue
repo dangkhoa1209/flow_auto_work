@@ -1575,7 +1575,7 @@ const runTooltip = computed(() => {
       <a-tooltip
         :title="
           canQuickHandoff
-            ? 'Handoff — chọn assignee tạm (không lưu Settings)'
+            ? 'Handoff — pick assignee'
             : 'Only when job is Awaiting handoff / Done'
         "
       >

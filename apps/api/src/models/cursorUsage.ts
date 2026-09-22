@@ -1,11 +1,19 @@
 import type { SoftDeleteFields } from "./base.js";
 import { createModel } from "./base.js";
-import type { CursorUsageKind } from "../plugins/cursor/usageNormalize.js";
+import type {
+  CursorUsageKind,
+  CursorUsageStatus,
+} from "../plugins/cursor/usageNormalize.js";
+import type { UserRole } from "../workspace/types.js";
 
 export type CursorUsageEvent = {
   id: string;
   userId: string;
+  /** Capability roles snapshot at record time (admin reporting). */
+  roles?: UserRole[];
   kind: CursorUsageKind;
+  /** Outcome of the Cursor action — defaults to ok for legacy rows. */
+  status?: CursorUsageStatus;
   model?: string;
   jobId?: string;
   threadId?: string;
@@ -43,6 +51,8 @@ export const CursorUsageModel = createModel<CursorUsageDoc>({
     { keys: { userId: 1, createdAt: -1 } },
     { keys: { userId: 1, kind: 1, createdAt: -1 } },
     { keys: { kind: 1, createdAt: -1 } },
+    { keys: { roles: 1, createdAt: -1 } },
+    { keys: { status: 1, createdAt: -1 } },
     { keys: { jobId: 1, createdAt: -1 } },
     { keys: { agentId: 1, createdAt: -1 } },
   ],

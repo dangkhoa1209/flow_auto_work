@@ -458,7 +458,7 @@ function confirmMergeFromMenu() {
         <a-tooltip
           :title="
             wb.canQuickHandoff
-              ? 'Handoff — chọn assignee tạm'
+              ? 'Handoff — pick assignee'
               : 'Only when job is Awaiting handoff / Done'
           "
         >
@@ -657,22 +657,36 @@ function confirmMergeFromMenu() {
 
     <a-modal
       v-model:open="wb.handoffOpen"
-      title="Handoff"
       ok-text="Handoff"
       cancel-text="Cancel"
       :confirm-loading="wb.handoffBusy"
+      :width="420"
       wrap-class-name="work-modal-sheet"
       :centered="false"
       @ok="wb.quickHandoff"
     >
-      <a-form layout="vertical" class="mt-2">
-        <a-form-item label="Assign to">
+      <template #title>
+        <div class="faw-handoff-modal__title">
+          <span class="faw-handoff-modal__title-dot" aria-hidden="true" />
+          <span>Handoff</span>
+        </div>
+      </template>
+      <div class="faw-handoff-modal">
+        <div class="faw-handoff-modal__field">
+          <div class="faw-handoff-modal__label-row">
+            <label class="faw-handoff-modal__label" for="handoff-assignee">
+              Assign to
+            </label>
+            <span class="faw-handoff-modal__chip">This time only</span>
+          </div>
           <a-select
+            id="handoff-assignee"
             v-model:value="wb.handoffAssignee"
             allow-clear
             show-search
-            class="w-full"
-            placeholder="Chọn người nhận handoff"
+            size="large"
+            class="w-full faw-handoff-modal__select"
+            placeholder="Search member…"
             :options="
               (wb.members || []).map((m) => ({
                 value: m.username,
@@ -686,12 +700,8 @@ function confirmMergeFromMenu() {
                   .includes(String(input || '').toLowerCase())
             "
           />
-        </a-form-item>
-        <p class="text-xs text-ink-soft m-0">
-          Chỉ áp dụng lần này — không lưu người handoff vào Settings → Labels.
-          Labels / comment vẫn lấy từ prefs đã lưu.
-        </p>
-      </a-form>
+        </div>
+      </div>
     </a-modal>
 
     <RelatedTaskPreviewModal

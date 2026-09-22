@@ -295,9 +295,33 @@ ${opts.question}`;
         const result = await run.wait();
         session.check();
         if (result.status === "cancelled") {
+          await persistCursorUsage({
+            kind: "job_qa",
+            jobId,
+            agent: disposed,
+            run,
+            result,
+            promptChars: prompt.length,
+            outputChars: streamed.length,
+            model: resolveCursorModel(),
+            status: "cancelled",
+            force: true,
+          });
           throw new Error("Q&A cancelled (force stop)");
         }
         if (result.status === "error") {
+          await persistCursorUsage({
+            kind: "job_qa",
+            jobId,
+            agent: disposed,
+            run,
+            result,
+            promptChars: prompt.length,
+            outputChars: streamed.length,
+            model: resolveCursorModel(),
+            status: "error",
+            force: true,
+          });
           throw errorFromCursorRunStatus(
             result as {
               id: string;
@@ -340,6 +364,7 @@ ${opts.question}`;
           promptChars: prompt.length,
           outputChars: text.length,
           model: resolveCursorModel(),
+          status: "ok",
         });
 
         // User asked to comment → post <<<GITLAB_COMMENT>>> blocks

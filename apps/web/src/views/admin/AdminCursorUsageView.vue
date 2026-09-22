@@ -15,14 +15,19 @@ type UsageBucket = {
   chargedUsd: number;
   estimatedUsd: number;
   sdkEvents: number;
+  errorEvents?: number;
+  cancelledEvents?: number;
 };
 
 type UserRow = UsageBucket & {
   userId: string;
   displayName?: string;
+  roles?: string[];
+  roleLabels?: string[];
 };
 
 type KindRow = UsageBucket & { kind: string; label: string };
+type RoleRow = UsageBucket & { role: string; label: string };
 type DayRow = UsageBucket & { date: string };
 
 type UsageEvent = {
@@ -30,6 +35,12 @@ type UsageEvent = {
   createdAt: string;
   kind: string;
   kindLabel: string;
+  status?: string;
+  statusLabel?: string;
+  roles?: string[];
+  roleLabels?: string[];
+  userId?: string;
+  displayName?: string;
   model: string | null;
   jobId: string | null;
   threadId: string | null;
@@ -48,10 +59,15 @@ type UsagePayload = {
   truncated?: boolean;
   userId?: string | null;
   kind?: string | null;
+  role?: string | null;
+  status?: string | null;
   kinds?: { id: string; label: string }[];
+  roles?: { id: string; label: string }[];
+  statuses?: { id: string; label: string }[];
   totals?: UsageBucket;
   byUser?: UserRow[];
   byKind?: KindRow[];
+  byRole?: RoleRow[];
   byDay?: DayRow[];
   userDays?: DayRow[];
   events?: UsageEvent[];
@@ -63,6 +79,8 @@ const daysPreset = ref(30);
 const customFrom = ref<string | undefined>();
 const customTo = ref<string | undefined>();
 const kindFilter = ref<string | undefined>(undefined);
+const roleFilter = ref<string | undefined>(undefined);
+const statusFilter = ref<string | undefined>(undefined);
 const selectedUser = ref<string | null>(null);
 const userSearch = ref("");
 
@@ -80,6 +98,20 @@ const kindOptions = computed(() =>
   })),
 );
 
+const roleOptions = computed(() =>
+  (payload.value?.roles || []).map((r) => ({
+    value: r.id,
+    label: r.label,
+  })),
+);
+
+const statusOptions = computed(() =>
+  (payload.value?.statuses || []).map((s) => ({
+    value: s.id,
+    label: s.label,
+  })),
+);
+
 const filteredUsers = computed(() => {
   const q = userSearch.value.trim().toLowerCase();
   const rows = payload.value?.byUser || [];
@@ -87,7 +119,8 @@ const filteredUsers = computed(() => {
   return rows.filter(
     (u) =>
       u.userId.includes(q) ||
-      (u.displayName || "").toLowerCase().includes(q),
+      (u.displayName || "").toLowerCase().includes(q) ||
+      (u.roleLabels || []).some((l) => l.toLowerCase().includes(q)),
   );
 });
 
@@ -100,6 +133,7 @@ const dayRows = computed(() => {
 
 const userColumns = [
   { title: "User", key: "user", ellipsis: true },
+  { title: "Roles", key: "roles", width: 120 },
   { title: "Runs", key: "events", width: 80, align: "right" as const },
   { title: "Tokens", key: "tokens", width: 150, align: "right" as const },
   { title: "Cost", key: "cost", width: 110, align: "right" as const },
@@ -114,10 +148,13 @@ const dayColumns = [
 ];
 
 const eventColumns = [
-  { title: "When", key: "when", width: 150 },
-  { title: "Surface", key: "kind", width: 130 },
+  { title: "When", key: "when", width: 140 },
+  { title: "User", key: "user", width: 120, ellipsis: true },
+  { title: "Surface", key: "kind", width: 120 },
+  { title: "Status", key: "status", width: 90 },
+  { title: "Roles", key: "roles", width: 100 },
   { title: "Model", key: "model", ellipsis: true },
-  { title: "Tokens", key: "tokens", width: 120, align: "right" as const },
+  { title: "Tokens", key: "tokens", width: 110, align: "right" as const },
   { title: "Cost", key: "cost", width: 100, align: "right" as const },
 ];
 
@@ -153,6 +190,8 @@ function buildQs(): string {
     params.set("days", String(daysPreset.value));
   }
   if (kindFilter.value) params.set("kind", kindFilter.value);
+  if (roleFilter.value) params.set("role", roleFilter.value);
+  if (statusFilter.value) params.set("status", statusFilter.value);
   if (selectedUser.value) params.set("userId", selectedUser.value);
   const q = params.toString();
   return q ? `${API.admin.cursorUsage}?${q}` : API.admin.cursorUsage;
@@ -193,7 +232,7 @@ function clearUser() {
 }
 
 watch(
-  [daysPreset, customFrom, customTo, kindFilter, selectedUser],
+  [daysPreset, customFrom, customTo, kindFilter, roleFilter, statusFilter, selectedUser],
   () => {
     void load();
   },
@@ -207,9 +246,10 @@ watch(
       <div>
         <h1 class="faw-admin-page__title">Cursor usage</h1>
         <p class="faw-admin-page__desc">
-          Tokens and cost for BA Chat, Create issue, workflow, Dev runs, Q&amp;A,
-          QC testcases, and merge AI. Cost uses SDK billed cents when Cursor
-          returns them; otherwise it is estimated from token rates.
+          Token and cost history for every Cursor action across BA, Dev, QC,
+          DevOps, and PD. Cost uses SDK billed cents when available; otherwise
+          estimated from token rates. End-user UIs stay minimal — detail lives
+          here.
         </p>
       </div>
     </header>
@@ -238,8 +278,24 @@ watch(
         allow-clear
         placeholder="All surfaces"
         size="small"
-        class="min-w-[180px]"
+        class="min-w-[160px]"
         :options="kindOptions"
+      />
+      <a-select
+        v-model:value="roleFilter"
+        allow-clear
+        placeholder="All roles"
+        size="small"
+        class="min-w-[120px]"
+        :options="roleOptions"
+      />
+      <a-select
+        v-model:value="statusFilter"
+        allow-clear
+        placeholder="All statuses"
+        size="small"
+        class="min-w-[120px]"
+        :options="statusOptions"
       />
     </div>
 
@@ -274,17 +330,32 @@ watch(
       </div>
       <div class="faw-admin-stat faw-admin-stat--muted">
         <span class="faw-admin-stat__n">{{
-          fmtUsd(payload?.totals?.estimatedUsd)
+          (payload?.totals?.errorEvents ?? 0) +
+          (payload?.totals?.cancelledEvents ?? 0)
         }}</span>
-        <span class="faw-admin-stat__l">Estimated</span>
+        <span class="faw-admin-stat__l">Failed / cancelled</span>
       </div>
+    </div>
+
+    <div v-if="payload?.byRole?.length" class="flex flex-wrap gap-2 mb-3">
+      <span
+        v-for="r in payload.byRole"
+        :key="r.role"
+        class="text-xs px-2 py-1 rounded-md border border-[var(--line)] bg-[var(--surface-raised)] cursor-pointer"
+        :class="roleFilter === r.role ? 'ring-1 ring-[var(--accent)]' : ''"
+        @click="roleFilter = roleFilter === r.role ? undefined : r.role"
+      >
+        {{ r.label }} · {{ fmtTokens(r.totalTokens) }} · {{ fmtUsd(r.costUsd) }}
+      </span>
     </div>
 
     <div v-if="payload?.byKind?.length" class="flex flex-wrap gap-2 mb-4">
       <span
         v-for="k in payload.byKind"
         :key="k.kind"
-        class="text-xs px-2 py-1 rounded-md border border-[var(--line)] bg-[var(--surface-raised)]"
+        class="text-xs px-2 py-1 rounded-md border border-[var(--line)] bg-[var(--surface-raised)] cursor-pointer"
+        :class="kindFilter === k.kind ? 'ring-1 ring-[var(--accent)]' : ''"
+        @click="kindFilter = kindFilter === k.kind ? undefined : k.kind"
       >
         {{ k.label }} · {{ fmtTokens(k.totalTokens) }} · {{ fmtUsd(k.costUsd) }}
       </span>
@@ -311,7 +382,7 @@ watch(
       :data-source="filteredUsers"
       :loading="loading"
       :pagination="{ pageSize: 20, showSizeChanger: true }"
-      :scroll="{ x: 720 }"
+      :scroll="{ x: 800 }"
       :custom-row="
         (record: UserRow) => ({
           onClick: () => openUser(record),
@@ -330,6 +401,11 @@ watch(
           <div v-if="record.displayName" class="text-xs text-ink-muted">
             {{ record.displayName }}
           </div>
+        </template>
+        <template v-else-if="column.key === 'roles'">
+          <span class="text-xs text-ink-muted">{{
+            (record.roleLabels || []).join(", ") || "—"
+          }}</span>
         </template>
         <template v-else-if="column.key === 'events'">{{ record.events }}</template>
         <template v-else-if="column.key === 'tokens'">
@@ -377,36 +453,63 @@ watch(
           }}</template>
         </template>
       </a-table>
-
-      <h2 class="text-sm font-semibold mt-2 mb-2">Recent runs</h2>
-      <a-table
-        size="small"
-        row-key="id"
-        :columns="eventColumns"
-        :data-source="payload?.events || []"
-        :loading="loading"
-        :pagination="{ pageSize: 20 }"
-        :scroll="{ x: 760 }"
-      >
-        <template #bodyCell="{ column, record }">
-          <template v-if="column.key === 'when'">{{
-            fmtWhen(record.createdAt)
-          }}</template>
-          <template v-else-if="column.key === 'kind'">{{
-            record.kindLabel
-          }}</template>
-          <template v-else-if="column.key === 'model'">{{
-            record.model || "—"
-          }}</template>
-          <template v-else-if="column.key === 'tokens'">{{
-            fmtTokens(record.totalTokens)
-          }}</template>
-          <template v-else-if="column.key === 'cost'">
-            {{ fmtUsd(record.costUsd) }}
-            <span class="text-xs text-ink-muted">{{ record.costSource }}</span>
-          </template>
-        </template>
-      </a-table>
     </template>
+
+    <h2 class="text-sm font-semibold mt-4 mb-2">
+      {{ selectedUser ? "Recent runs" : "Recent history" }}
+    </h2>
+    <a-table
+      size="small"
+      row-key="id"
+      :columns="eventColumns"
+      :data-source="payload?.events || []"
+      :loading="loading"
+      :pagination="{ pageSize: 25, showSizeChanger: true }"
+      :scroll="{ x: 980 }"
+    >
+      <template #emptyText>
+        <div class="faw-admin-empty py-6">No runs recorded yet.</div>
+      </template>
+      <template #bodyCell="{ column, record }">
+        <template v-if="column.key === 'when'">{{
+          fmtWhen(record.createdAt)
+        }}</template>
+        <template v-else-if="column.key === 'user'">
+          <div class="text-xs">@{{ record.userId || "—" }}</div>
+          <div v-if="record.displayName" class="text-xs text-ink-muted">
+            {{ record.displayName }}
+          </div>
+        </template>
+        <template v-else-if="column.key === 'kind'">{{
+          record.kindLabel
+        }}</template>
+        <template v-else-if="column.key === 'status'">
+          <span
+            class="text-xs"
+            :class="
+              record.status === 'ok'
+                ? 'text-ink-muted'
+                : 'text-[var(--danger, #b42318)]'
+            "
+            >{{ record.statusLabel || record.status || "OK" }}</span
+          >
+        </template>
+        <template v-else-if="column.key === 'roles'">
+          <span class="text-xs text-ink-muted">{{
+            (record.roleLabels || []).join(", ") || "—"
+          }}</span>
+        </template>
+        <template v-else-if="column.key === 'model'">{{
+          record.model || "—"
+        }}</template>
+        <template v-else-if="column.key === 'tokens'">{{
+          fmtTokens(record.totalTokens)
+        }}</template>
+        <template v-else-if="column.key === 'cost'">
+          {{ fmtUsd(record.costUsd) }}
+          <span class="text-xs text-ink-muted">{{ record.costSource }}</span>
+        </template>
+      </template>
+    </a-table>
   </div>
 </template>

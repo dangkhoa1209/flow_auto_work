@@ -212,6 +212,8 @@ async function tryAiClearConflicts(opts: {
   targetBranch: string;
   conflictedFiles: string[];
   issue?: IssueJob;
+  jobId?: string;
+  userId?: string;
 }): Promise<{ cleared: true; summary: string } | { cleared: false; files: string[]; summary: string }> {
   const { resolveMergeConflictsWithAi } = await import(
     "../../plugins/agent/merge-resolve.js"
@@ -229,6 +231,8 @@ async function tryAiClearConflicts(opts: {
         targetBranch: opts.targetBranch,
         conflictedFiles: files,
         issue: opts.issue,
+        jobId: opts.jobId,
+        userId: opts.userId,
       });
       text = text
         ? `${text}\n\n---\n\n**Round ${round + 1}**\n\n${resolved.text}`
@@ -958,6 +962,8 @@ export async function mergeJobBranch(
           targetBranch: target,
           conflictedFiles: attempt.conflictedFiles,
           issue: job.issue,
+          jobId: job.id,
+          userId: job.ownerUsername,
         });
         if (!ai.cleared) {
           const files =
