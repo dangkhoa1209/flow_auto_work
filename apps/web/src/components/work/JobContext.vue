@@ -465,7 +465,7 @@ function mergeOpKindLabel(kind: string): string {
 }
 
 function mergeOpStatusLabel(status: string): string {
-  if (status === "ok") return "OK";
+  if (status === "ok") return "Success";
   if (status === "up_to_date") return "Up to date";
   if (status === "conflict") return "Conflict";
   if (status === "error") return "Error";
