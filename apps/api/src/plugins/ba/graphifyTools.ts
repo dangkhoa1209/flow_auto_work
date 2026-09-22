@@ -37,8 +37,10 @@ const TEXT_OUTPUT_SCHEMA = {
 } as const;
 
 /**
- * Cursor SDK custom tools — agents must use these before Grep/Shell when exploring source.
+ * Cursor SDK custom tools — prefer these before broad Grep when the path is unknown.
  * Graph lives outside source/; tools never write the checkout.
+ * ChatBox (BA) and Work both treat map-first as strongly preferred, not a hard fail
+ * when the path is already known or prior chat answers the question.
  */
 export function buildBaGraphifyCustomTools(
   sourcePath: string,
@@ -48,13 +50,13 @@ export function buildBaGraphifyCustomTools(
   return {
     code_map_query: {
       description:
-        "REQUIRED first step when exploring this project's source. " +
+        "Preferred first step when exploring an unfamiliar feature/flow and the path is unknown. " +
         "Runs WorkBench graphify on the sibling graph (not inside source/). " +
         "Pass ONE short locator: screen name, feature slug, or symbol — " +
         "NOT the full GitLab issue, description, or chat. " +
         "Good: 'cấu hình rules chấm công', 'TimekeeperSync', 'staff import by column'. " +
         "Bad: pasting the ticket or 'dữ liệu như này chạy thành công chưa'. " +
-        "Call BEFORE Grep, rg, Glob, or find.",
+        "Call before broad Grep, rg, Glob, or find when the path is unknown; skip when the target file is already known.",
       inputSchema: {
         type: "object",
         properties: {

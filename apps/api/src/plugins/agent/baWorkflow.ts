@@ -311,7 +311,7 @@ ${baPresentationRules()}
 ${baGitlabBoundaryInstructions()}
 - Branch đọc: ${opts.mainBranch}
 ${dbBlock}
-- Case 3 / cần tra source: gọi tool \`code_map_query\` **trước** Grep.
+- Case 3 / cần tra source: **ưu tiên** tool \`code_map_query\` trước Grep quét rộng; bỏ qua khi đã biết path hoặc đủ ngữ cảnh trong YC/chat.
 
 ${opts.graphifyBlock ? `${opts.graphifyBlock}\n\n` : ""}## Yêu cầu gốc (từ khách hàng / PD — nguyên văn)
 **Tiêu đề:** ${opts.title}

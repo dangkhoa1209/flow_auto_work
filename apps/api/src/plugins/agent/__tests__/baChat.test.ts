@@ -37,6 +37,9 @@ describe("buildBaNormalChatPrompt", () => {
     expect(prompt).toMatch(/Nhóm 2: Thiếu ngữ cảnh/);
     expect(prompt).toMatch(/Nhóm 3: Yêu cầu phân tích/);
     expect(prompt).toMatch(/code_map_query/);
+    expect(prompt).toMatch(/Ưu tiên.*code_map_query|ưu tiên.*code_map_query/i);
+    expect(prompt).not.toMatch(/Bắt buộc gọi tool `code_map_query`/);
+    expect(prompt).not.toMatch(/Bắt buộc dùng tool `code_map_query`/);
     expect(prompt).toMatch(/Chưa tìm thấy trên hệ thống/);
     expect(prompt).toMatch(/Đang lập kế hoạch/);
     expect(prompt).toMatch(/Phong cách viết/);
@@ -75,6 +78,8 @@ describe("buildBaNormalChatPrompt", () => {
     expect(prompt).toMatch(/taskCreate/);
     expect(prompt).toMatch(/BỎ HẲN Mục 4/);
     expect(prompt).toMatch(/Câu hỏi của người dùng/);
+    expect(prompt).toMatch(/Ưu tiên.*code_map_query|ưu tiên.*code_map_query/i);
+    expect(prompt).not.toMatch(/Bắt buộc gọi tool `code_map_query`/);
     expect(prompt).not.toMatch(/Phong cách viết \(BẮT BUỘC/);
     expect(prompt).not.toMatch(/trợ lý sản phẩm cho BA \/ PD \/ QC/);
     expect(prompt).not.toMatch(/INTENT TRIAGE & SANITY CHECK/);
