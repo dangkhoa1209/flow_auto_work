@@ -5009,6 +5009,63 @@ a.faw-mseg__btn {
   color: var(--app-faint);
 }
 
+/* Quick handoff assignee (Work /dev) — ephemeral pick, no prefs copy */
+.faw-handoff-modal {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 4px;
+}
+.faw-handoff-modal__title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.faw-handoff-modal__title-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--handoff);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--handoff) 22%, transparent);
+  flex-shrink: 0;
+}
+.faw-handoff-modal__field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.faw-handoff-modal__label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 22px;
+}
+.faw-handoff-modal__label {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 550;
+  color: var(--app-muted);
+}
+.faw-handoff-modal__chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 550;
+  letter-spacing: 0.01em;
+  color: var(--handoff);
+  background: color-mix(in srgb, var(--handoff) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--handoff) 28%, transparent);
+  white-space: nowrap;
+}
+.faw-handoff-modal__select.ant-select-lg .ant-select-selector {
+  border-radius: 10px !important;
+}
+
 .faw-project-card {
   border: 1px solid var(--app-border);
   border-radius: 10px;
