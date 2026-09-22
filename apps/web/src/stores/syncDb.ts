@@ -146,12 +146,29 @@ export const useSyncDbStore = defineStore("syncDb", () => {
     const es = new EventSource(syncDbEventsUrl(projectId));
     eventsEs = es;
 
+    const promoteRunningIfNeeded = (jobId: string | null | undefined) => {
+      if (!jobId) return;
+      const job = jobs.value.find((j) => j.id === jobId);
+      if (job && job.status === "queued") {
+        upsertJob({
+          ...job,
+          status: "running",
+          startedAt: job.startedAt || new Date().toISOString(),
+        });
+      }
+    };
+
     const onQueue = (ev: MessageEvent) => {
       try {
         const data = JSON.parse(String(ev.data)) as {
           snapshot?: SyncDbQueueSnapshot;
         };
-        if (data.snapshot) queue.value = data.snapshot;
+        if (data.snapshot) {
+          queue.value = data.snapshot;
+          if (data.snapshot.running) {
+            promoteRunningIfNeeded(data.snapshot.currentJobId);
+          }
+        }
       } catch {
         /* */
       }
@@ -173,8 +190,18 @@ export const useSyncDbStore = defineStore("syncDb", () => {
         if (!data.jobId || !data.progress) return;
         const job = jobs.value.find((j) => j.id === data.jobId);
         if (job) {
-          job.progress = data.progress;
-          upsertJob({ ...job });
+          const next = {
+            ...job,
+            progress: data.progress,
+            ...(job.status === "queued" &&
+            queue.value.currentJobId === data.jobId
+              ? {
+                  status: "running" as const,
+                  startedAt: job.startedAt || new Date().toISOString(),
+                }
+              : {}),
+          };
+          upsertJob(next);
         }
         if (queue.value.currentJobId === data.jobId) {
           queue.value = {
@@ -182,6 +209,7 @@ export const useSyncDbStore = defineStore("syncDb", () => {
             currentProgress: data.progress,
             currentDbName: data.progress.dbName || queue.value.currentDbName,
           };
+          promoteRunningIfNeeded(data.jobId);
         }
       } catch {
         /* */

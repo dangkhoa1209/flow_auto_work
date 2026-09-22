@@ -70,9 +70,23 @@ const timeline = computed(() => {
     .slice(0, 12);
 });
 
-const pendingJob = computed(() =>
-  timeline.value.find((j) => j.status === "running" || j.status === "queued"),
-);
+const pendingJob = computed(() => {
+  const active = timeline.value.find(
+    (j) => j.status === "running" || j.status === "queued",
+  );
+  if (!active) return null;
+  // Queue snapshot can flip to running before the job SSE arrives.
+  if (
+    active.status === "queued" &&
+    sync.queue.running &&
+    (sync.queue.currentJobId === active.id ||
+      (sync.queue.currentDbName != null &&
+        active.dbName === sync.queue.currentDbName))
+  ) {
+    return { ...active, status: "running" as const };
+  }
+  return active;
+});
 
 const latestJob = computed(() => timeline.value[0] ?? null);
 
@@ -212,26 +226,30 @@ function errorPreview(job: SyncDbJob, max = 120): string {
           <span class="faw-sync-db__live-dot" aria-hidden="true" />
           <div class="min-w-0">
             <div class="faw-sync-db__live-title">
-              <template v-if="pendingJob?.status === 'queued'">
-                Sync queued…
-              </template>
-              <template v-else-if="pendingJob || sync.queue.running">
+              <template
+                v-if="
+                  sync.queue.running || pendingJob?.status === 'running'
+                "
+              >
                 Sync in progress…
+              </template>
+              <template v-else-if="pendingJob?.status === 'queued'">
+                Sync queued…
               </template>
               <template v-else> Queue busy </template>
             </div>
             <div class="faw-sync-db__live-meta">
               <template v-if="progressText">{{ progressText }}</template>
-              <template v-else-if="sync.queue.queued">
-                {{ sync.queue.queued }} waiting (1 at a time)
-              </template>
               <template v-else-if="pendingJob">
                 {{ pendingJob.dbName }} · {{ formatDuration(pendingJob) }}
+              </template>
+              <template v-else-if="sync.queue.queued">
+                {{ sync.queue.queued }} waiting (1 at a time)
               </template>
             </div>
           </div>
           <a-popconfirm
-            v-if="pendingJob"
+            v-if="pendingJob?.status === 'queued'"
             title="Cancel this sync?"
             ok-text="Cancel job"
             cancel-text="Keep"
@@ -309,10 +327,7 @@ function errorPreview(job: SyncDbJob, max = 120): string {
               {{ errorPreview(job) }}
             </p>
             <div
-              v-if="
-                (job.status === 'queued' || job.status === 'running') &&
-                pendingJob?.id !== job.id
-              "
+              v-if="job.status === 'queued' && pendingJob?.id !== job.id"
               class="faw-sync-db__actions"
             >
               <a-popconfirm
