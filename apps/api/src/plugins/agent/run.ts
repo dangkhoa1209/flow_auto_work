@@ -440,8 +440,13 @@ export function beginCancellableJob(jobId: string | undefined): {
   };
 }
 
-/** After first stream event: cancel if no further event for this long (hung Glob/Shell/MCP). */
-export const DEFAULT_STREAM_IDLE_TIMEOUT_MS = 120_000;
+/**
+ * After first stream event: cancel if no further event for this long.
+ * Default 0 = disabled — subagents / long tools often emit no stream events
+ * for several minutes; a 120s idle cancel false-stopped those runs.
+ * Pass a positive `streamIdleTimeoutMs` to re-enable the watchdog.
+ */
+export const DEFAULT_STREAM_IDLE_TIMEOUT_MS = 0;
 
 /**
  * Race an async iterator next() against an idle timeout.
@@ -481,7 +486,7 @@ async function collectAssistantText(
   opts?: {
     promptChars?: number;
     firstEventTimeoutMs?: number;
-    /** Idle gap between stream events before cancel (default 120s). 0 = disable. */
+    /** Idle gap between stream events before cancel. 0 / omit = disable (default). */
     streamIdleTimeoutMs?: number;
     persistKind?: CursorUsageKind;
     agent?: unknown;
