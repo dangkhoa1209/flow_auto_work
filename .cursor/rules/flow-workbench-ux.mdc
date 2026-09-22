@@ -39,9 +39,9 @@ Three columns: **TaskList** (~3/12) | **JobContext** (~5/12) | **AgentConsole** 
 
 ## BA Chat
 
-Sidebar (threads) + message list + composer. Dense conversation UI: clear empty state with **clickable prompt tips**, focus ring + elevation on composer, one typing indicator (not duplicate bubbles), streaming caret, Jump to latest when scrolled up, context strip (project · path · BA mode · draft), thread relative time + filter + **inline rename** + **pin**, hover copy + **Regenerate** / **Retry** on failed send or stream error, skeleton on thread switch, Esc stop / Enter·⌘↵ send. English copy. Respect `prefers-reduced-motion` for typing/caret/skeleton.
+Sidebar (threads) + message list + composer. Dense conversation UI: clear empty state with **clickable prompt tips**, floating composer card (focus elevation), one typing indicator (not duplicate bubbles), streaming caret, Jump to latest when scrolled up, compact head (title · BA/draft chips · status flash · Create Issue), thread title+time denser + search (≥3) + **Pinned/Recent** groups + **inline rename** + **pin**, avatar rows + hover meta (copy / Regenerate / Retry), skeleton on thread switch, Esc stop / Enter·⌘↵ send. English copy. Respect `prefers-reduced-motion` for typing/caret/skeleton/status flash.
 
-**Mobile (≤1023):** hamburger thread drawer + backdrop + close; thread rows ≥48px; keep **BA mode** + short hint (hide desktop shortcuts); Create Issue short label; hide GitLab path in context strip; tips full-width ≥52px; composer 16px / no double safe-area; Jump + Send/Stop ≥36–40px.
+**Mobile (≤1023):** hamburger thread drawer + backdrop + close; thread rows ≥48px; keep **BA** chip + short hint on focus (hide desktop shortcuts); Create Issue short label; tips full-width ≥52px; composer card 16px / no double safe-area; Jump + Send/Stop ≥36–40px.
 
 ## DevOps Build
 
