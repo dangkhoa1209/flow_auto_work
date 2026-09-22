@@ -522,24 +522,26 @@ Graph file (host): \`${graphJson}\` · out: \`${outDir}\` — **không** ghi gì
 ${map}`;
 }
 
-/** How Work agents should use graphify — no precomputed dump (title is too thin, full task is too noisy). */
+/** How Work agents should use graphify — strongly preferred for feature/flow discovery, not mandatory every turn. */
 export function formatWorkGraphifyPromptBlock(opts: {
   sourcePath: string;
 }): string {
   const graphJson = graphifyGraphJsonForSource(opts.sourcePath);
   const outDir = graphifyOutDirForSource(opts.sourcePath);
-  return `## How to use Graphify (code map)
+  return `## How to use Graphify (code map) — Flow tool, strongly preferred
 Sibling graph (host): \`${graphJson}\` · \`${outDir}\` — do **not** write inside \`source/\`.
 Tools already attached: \`code_map_query\`, \`code_map_path\`, \`code_map_explain\`.
 
+Graphify maps screen/feature → files and call paths quickly. **Prefer it** when exploring an unfamiliar feature or flow. It is **not** mandatory every turn (e.g. you already know the exact file, pure Q&A on prior chat, or a one-line edit on a known path).
+
 **You choose the query.** Do not wait for a precomputed map. Do not paste the whole GitLab issue, description, or chat.
 
-1. **Before** Grep / rg / Glob / find: call \`code_map_query\` with **one short locator** you extract from the task — a screen, module, feature slug, or symbol.
+1. **Preferred first step** when locating a feature/flow: call \`code_map_query\` with **one short locator** you extract from the task — a screen, module, feature slug, or symbol.
    - Good: \`cấu hình rules chấm công\`, \`staff import update by column\`, \`TimekeeperSync\`, \`QualityAppraisal.vue\`.
    - Bad: the full ticket text; only a vague title with no screen/symbol; chat like "dữ liệu như này chạy thành công chưa".
 2. If the map is thin or noisy, refine: \`code_map_explain\` on one name, or \`code_map_path\` from A to B.
 3. Then read 1–5 **source** files (\`.vue\`, \`.php\`, \`node_app/\`, \`resources/\`). Skip webpack bundles (\`public/js/app.js\`), CKEditor, and unrelated docs.
-4. Narrow Grep only after the map tools.`;
+4. Use Grep / rg / Glob when the path is already known, the map returned nothing useful, or you need a precise string after the map narrowed the area.`;
 }
 
 const GRAPHIFY_NOISE_SRC =

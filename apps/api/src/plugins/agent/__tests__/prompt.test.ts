@@ -203,12 +203,19 @@ describe("buildWorkPrompt graphify", () => {
     });
     expect(prompt).toMatch(/code_map_query/);
     expect(prompt).toContain("How to use Graphify");
-    expect(prompt).toMatch(/Investigate via \*\*code_map_query\*\* first/);
+    expect(prompt).toMatch(/Prefer \*\*code_map_query\*\* when locating/);
   });
 
   it("omits the map when no graphify block is passed", () => {
     const prompt = buildWorkPrompt(issue);
     expect(prompt).not.toContain("How to use Graphify");
+  });
+
+  it("softens AGENTS.md — optional when checkout has it", () => {
+    const prompt = buildWorkPrompt(issue);
+    expect(prompt).toMatch(/If present:.*AGENTS\.md/s);
+    expect(prompt).toMatch(/Do not fail or stall waiting for `AGENTS\.md`/);
+    expect(prompt).not.toMatch(/PROJECT CONVENTIONS \(MANDATORY\)/);
   });
 
   it("linked task commit label uses feat #iid title form", () => {
@@ -295,5 +302,35 @@ describe("follow-up GitLab task + subagents", () => {
     const prompt = buildAdhocFollowUpPrompt("hello", "hotfix");
     expect(prompt).toMatch(/paste a GitLab \*\*link\*\* or `#id`/);
     expect(prompt).not.toContain("GitLab task (chỉ đọc — hệ thống đã kéo sẵn)");
+  });
+
+  it("Send layout: stable rules first, human request last", () => {
+    const adhoc = buildAdhocFollowUpPrompt("sửa nút Save", "hotfix", {
+      chatHistory: "### Human\nold note",
+    });
+    const linked = buildFollowUpPrompt("xem diff", issue, {
+      chatHistory: "### Human\nold",
+    });
+    for (const prompt of [adhoc, linked]) {
+      const how = prompt.indexOf("## How to behave");
+      const sep = prompt.indexOf("\n---\n");
+      const human = Math.max(
+        prompt.indexOf("## Human request (this turn)"),
+        prompt.indexOf("## Human follow-up (this turn)"),
+      );
+      expect(how).toBeGreaterThanOrEqual(0);
+      expect(sep).toBeGreaterThan(how);
+      expect(human).toBeGreaterThan(sep);
+      expect(prompt).toMatch(/Prefer `code_map_query` first when exploring/);
+      expect(prompt).toMatch(
+        /If this checkout has `AGENTS\.md` or `\.cursor\/rules`/,
+      );
+      expect(prompt).not.toMatch(/Prefer `AGENTS\.md` \(then/);
+    }
+    expect(adhoc.indexOf("## Human request (this turn)")).toBe(
+      adhoc.lastIndexOf("## Human request (this turn)"),
+    );
+    expect(adhoc.trimEnd().endsWith("sửa nút Save")).toBe(true);
+    expect(linked.trimEnd().endsWith("xem diff")).toBe(true);
   });
 });

@@ -8,16 +8,20 @@ import {
 } from "../graphify.js";
 
 describe("formatWorkGraphifyPromptBlock", () => {
-  it("teaches the agent to query with a short locator, not the full task", () => {
+  it("teaches preferred (not hard-required) short-locator queries", () => {
     const block = formatWorkGraphifyPromptBlock({
       sourcePath: "/tmp/project/user/app/source",
     });
     expect(block).toMatch(/code_map_query/);
+    expect(block).toMatch(/strongly preferred/i);
+    expect(block).toMatch(/not\*\* mandatory every turn/i);
+    expect(block).toMatch(/Preferred first step/i);
     expect(block).toMatch(/You choose the query/i);
     expect(block).toMatch(/Do not paste the whole GitLab issue/i);
     expect(block).toMatch(/graphify-out/);
     expect(block).not.toMatch(/INTENT = case 3/);
     expect(block).not.toMatch(/Likely files/);
+    expect(block).not.toMatch(/\*\*Before\*\* Grep/);
   });
 });
 

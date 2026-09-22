@@ -168,8 +168,8 @@ When the human names a **specific** entity (mã NV / staff code / id / name / or
 }
 
 /**
- * Shared “how to load project conventions” — AGENTS.md first, then rules/skills/docs
- * that exist in the checkout (not hard-coded to one product).
+ * Shared “how to load project conventions” when the checkout has them.
+ * Many customer repos have no AGENTS.md — do not stall waiting for it.
  */
 function projectConventionsBlock(opts?: { forDocsPhase?: boolean }): string {
   const docsHint = opts?.forDocsPhase
@@ -178,7 +178,7 @@ Project knowledge (when present — adapt to this repo’s layout):
 - **Feature / product docs**: often under \`docs/\` (hub README → module → feature). Prefer \`.md\` / \`.mdc\`.
 - **Rules**: \`.cursor/rules/**/*.mdc\` — conventions for this codebase.
 - Templates / shared docs if the tree has them (e.g. \`docs/_templates/\`, \`docs/shared/\`).
-Do **not** invent a fixed product-specific docs tree if this repo uses a different layout — follow what \`AGENTS.md\` and the docs hub describe.
+Do **not** invent a fixed product-specific docs tree if this repo uses a different layout — follow what exists (\`AGENTS.md\`, docs hub, or code).
 `
     : `
 Also load (only what exists and is relevant):
@@ -187,13 +187,68 @@ Also load (only what exists and is relevant):
 - Feature/product docs under \`docs/\` (or paths named in \`AGENTS.md\`) for modules you touch — keep the set small (~3)
 `;
 
-  return `# PROJECT CONVENTIONS (MANDATORY)
+  return `# PROJECT CONVENTIONS
 This checkout may be **any** customer/product repo — follow **this** repo’s conventions, not a hard-coded product stack.
 
-**Read first:** \`AGENTS.md\` at the repo root (if missing, say so and use \`.cursor/rules\` + code exploration).
+**If present:** read \`AGENTS.md\` at the repo root and relevant \`.cursor/rules\`. Many checkouts have neither — then explore code (prefer Graphify \`code_map_*\` when attached). Do not fail or stall waiting for \`AGENTS.md\`.
 ${docsHint}
-Obey those sources. Do not invent patterns that contradict them.
+Obey sources that exist. Do not invent patterns that contradict them.
 `;
+}
+
+/** Soft AGENTS hint for Send follow-ups (Flow cannot install AGENTS.md on customer checkouts). */
+function checkoutConventionsHint(): string {
+  return `If this checkout has \`AGENTS.md\` or \`.cursor/rules\`, use them for conventions; if not, rely on code + Graphify when attached.`;
+}
+
+/**
+ * Stable Send prefix (same every turn of the same kind) — kept at the top of
+ * agent.send() for prefix stability. Do not put session/issue/path here.
+ */
+function sendStableHowToBehave(opts: {
+  variant: "adhoc" | "linked";
+}): string {
+  const rule1Gitlab =
+    opts.variant === "linked"
+      ? "If they pasted `#id` / issue link, use the **GitLab task (chỉ đọc)** block below — do not call GitLab yourself."
+      : "If a **GitLab task (chỉ đọc)** block is present, use it for issue title/description/comments.";
+  const rule3 =
+    opts.variant === "linked"
+      ? "Prefer small, correct changes. Stay scoped to this issue unless they explicitly expand scope."
+      : "Prefer small, correct changes. Stay scoped to the request.";
+  const rule7 =
+    opts.variant === "linked"
+      ? "If finished this follow-up, end with DONE (SUMMARY in Vietnamese; linked issue → Flow commits `feat #<iid> <title>`; note any assumptions)."
+      : "If finished this follow-up, end with DONE (SUMMARY in Vietnamese — useful as issue description later; COMMIT in English when you changed files; note any assumptions).";
+
+  return `## How to behave (IDE-like)
+1. If they ask a question → answer clearly (Vietnamese if they wrote Vietnamese). Prefer \`code_map_query\` first when exploring a feature/flow and that tool is attached; skip when the target file is already known. ${rule1Gitlab}
+2. If they ask to fix / add / change / re-test / seed data / run something → **do it** on the CURRENT branch (do not switch branches). Subagent flow (skip steps that do not apply — do not spawn all three by default): Task \`explore\` only if path still unclear after map/search; Task \`code-reviewer\` only after multi-file / shared-logic / risky diffs; Task \`test-writer\` only when nearby tests exist. Skip subagents for Q&A-only or trivial one-file edits. **Data fidelity:** if they named a specific NV/id/code and DB returns 0 — STOP and report not found; do **not** switch to another person/row.
+3. ${rule3}
+4. If Shell / "environment tools" fail: do **not** \`AwaitShell\`-sleep or escalate waits — retry once then continue with Read/Write/StrReplace/code_map or report blocked. Do not poll Task with \`AwaitShell\`.
+5. If the request is vague: search the repo${opts.variant === "linked" ? "/docs" : ""} first; minor gaps → proceed with the standard interpretation and say so in your reply; only end with NEED_CLARIFICATION when truly blocked (batch ALL questions, numbered, with options + your recommended default).
+6. Do NOT \`git commit\`, \`git push\`, force-push, amend remote commits, or open/merge MRs. Flow Auto Work commits to GitLab via API after you finish.
+7. ${rule7}`;
+}
+
+function sendStableChatReplyStyle(opts?: { withGitlabComment?: boolean }): string {
+  const gitlabBullet = opts?.withGitlabComment
+    ? `- If you use GITLAB_COMMENT, still put the same substance (or a clear mirror) in the readable body — Flow strips the comment block from chat.
+`
+    : "";
+  const analyzeScope = opts?.withGitlabComment
+    ? "mục tiêu, phạm vi, neo code/API, rủi ro, đề xuất bước tiếp"
+    : "mục tiêu, phạm vi, neo code, rủi ro, bước tiếp";
+  const doneExample = opts?.withGitlabComment
+    ? 'DONE chỉ ở cuối, **1 câu status** (vd. "Đã phân tích #…; chưa code.").'
+    : "DONE chỉ ở cuối, **1 câu status**.";
+
+  return `## Chat reply style (UI is a narrow chat panel — keep it readable)
+- Put the **full answer the human asked for in the readable body** (above any machine tags). Flow shows that body in chat — NOT the DONE line alone.
+${gitlabBullet}- When they ask to **phân tích / analyze / review / giải thích / plan**: write a structured analysis in Vietnamese (${analyzeScope}). Prefer bullets; skip giant Markdown tables.
+- When they ask a short status / yes-no: **1–2 câu** + vài bullet là đủ.
+- Không hiện thẻ máy kiểu \`<<<DONE>>>\` trong phần người đọc; ${doneExample}
+- Tránh lặp lại "Muốn sửa code thêm → Bật Run" trừ khi họ hỏi tiếp.`;
 }
 
 /**
@@ -465,7 +520,7 @@ Ignore image/file attachments — only use text. Do not try to download or open 
 
 # HANDLING AMBIGUITY & MISSING INFO (resolve gaps in THIS order)
 Real tickets are often incomplete. When something is unclear or missing:
-1. **SELF-RESOLVE first.** Call \`code_map_query\` when that tool is attached, then search the repo, feature docs, and the linked issues/comments above. Most "missing" info (file paths, existing patterns, field names, similar screens) is discoverable in the codebase — never ask the human for something the code can answer.
+1. **SELF-RESOLVE first.** Prefer \`code_map_query\` when exploring an unfamiliar feature/flow and that tool is attached (skip when the target file is already known); then search the repo, feature docs, and the linked issues/comments above. Most "missing" info (file paths, existing patterns, field names, similar screens) is discoverable in the codebase — never ask the human for something the code can answer.
 2. **SAFE ASSUMPTION.** If the gap is minor and one interpretation is clearly standard for this codebase (naming, placement, UI copy, default sort/validation style), proceed — but record it and report it under \`ASSUMPTIONS:\` in the DONE block.
    NEVER assume on: deleting/migrating data, permissions/security, money or regulated formulas, external API contracts, **which person/row/entity** to use when the named one is missing, or anything irreversible → those go to tier 3.
 3. **ASK (last resort).** Only when the gap genuinely blocks a correct implementation. The human answers in the **Flow Auto Work UI**. End your reply with EXACTLY this block (nothing after it):
@@ -499,7 +554,7 @@ Do not silently drop scope; anything skipped goes under \`RISKS:\` in the DONE b
 
 # EXECUTION PLAN
 1. Analyze the requirements but execute them EXACTLY as demanded in UI CHAT REQUESTS and DEV NOTES when present (those override conflicting business wording). Latest Human chat messages win for this run.
-2. Investigate via **code_map_query** first (when the tool is attached), then docs${docsFirst ? " (Docs-first: report → read → code → update/create)" : " (and the approved feature docs if listed above)"}. Launch Task \`explore\` **only** if the module is still unfamiliar or search would fan out; then write a short plan for hard tasks.
+2. Prefer **code_map_query** when locating an unfamiliar module/flow (when the tool is attached; skip when the path is already known), then docs${docsFirst ? " (Docs-first: report → read → code → update/create)" : " (and the approved feature docs if listed above)"}. Launch Task \`explore\` **only** if the module is still unfamiliar or search would fan out; then write a short plan for hard tasks.
 3. Implement on the CURRENT git branch only (do not checkout/create other branches). Keep the change scoped to this issue.
 4. Leave changes as modified files in the working tree — do NOT \`git commit\` or \`git push\`. The orchestrator commits to GitLab when you are done.
 5. VERIFY before finishing: re-read your diff against the requirements; launch Task \`code-reviewer\` and/or Task \`test-writer\` **only** when their gates above match; run the cheapest relevant check. Report what you verified under \`TESTED:\`.
@@ -539,7 +594,8 @@ ${commitLabelInstructions({ issueIid: issueCommitIid(issue) })}`;
 
 /**
  * Follow-up prompt for a (usually fresh) agent window.
- * Prior chat is injected as text — do not rely on SDK resume (often "already has active run").
+ * Layout: stable Flow rules first (prefix-cache friendly) → dynamic turn body →
+ * human request last. Prior chat is injected as text — do not rely on SDK resume.
  */
 export function buildFollowUpPrompt(
   message: string,
@@ -579,30 +635,20 @@ ${history}
     ? `${opts.conflictResolveBlock.trim()}\n\n`
     : "";
 
-  return `You are working on GitLab issue #${issue.issueIid} ("${issue.title}") in a Cursor agent window.
-This may be a **new** window — use prior chat + the repo (inspect if needed). Do not assume old tool state is still loaded.
-Prefer \`AGENTS.md\` (then \`.cursor/rules\` / project docs) when you need conventions for **this** checkout.
-${opts?.graphifyBlock ? `${opts.graphifyBlock}\n` : ""}${conflictBlock}${qualityBlock}${sheetsBlock}${figmaBlock}${gitlabTaskBlock}${historyBlock}## Human follow-up (this turn)
-${message.trim()}
+  const stable = `${sendStableHowToBehave({ variant: "linked" })}
 
-## How to behave (IDE-like)
-1. If they ask a question → answer clearly (Vietnamese if they wrote Vietnamese). Start repo lookup with \`code_map_query\` when that tool is attached. If they pasted \`#id\` / issue link, use the **GitLab task (chỉ đọc)** block above — do not call GitLab yourself.
-2. If they ask to fix / add / change / re-test / seed data / run something → **do it** on the CURRENT branch (do not switch branches). Subagent flow (skip steps that do not apply — do not spawn all three by default): Task \`explore\` only if path still unclear after map/search; Task \`code-reviewer\` only after multi-file / shared-logic / risky diffs; Task \`test-writer\` only when nearby tests exist. Skip subagents for Q&A-only or trivial one-file edits. **Data fidelity:** if they named a specific NV/id/code and DB returns 0 — STOP and report not found; do **not** switch to another person/row.
-3. Prefer small, correct changes. Stay scoped to this issue unless they explicitly expand scope.
-4. If Shell / "environment tools" fail: do **not** \`AwaitShell\`-sleep or escalate waits — retry once then continue with Read/Write/StrReplace/code_map or report blocked. Do not poll Task with \`AwaitShell\`.
-5. If the request is vague: search the repo/docs first; minor gaps → proceed with the standard interpretation and say so in your reply; only end with NEED_CLARIFICATION when truly blocked (batch ALL questions, numbered, with options + your recommended default).
-6. Do NOT \`git commit\`, \`git push\`, force-push, amend remote commits, or open/merge MRs. Flow Auto Work commits to GitLab via API after you finish.
-7. If finished this follow-up, end with DONE (SUMMARY in Vietnamese; linked issue → Flow commits \`feat #<iid> <title>\`; note any assumptions).
-
-## Chat reply style (UI is a narrow chat panel — keep it readable)
-- Put the **full answer the human asked for in the readable body** (above any machine tags). Flow shows that body in chat — NOT the DONE line alone.
-- If you use GITLAB_COMMENT, still put the same substance (or a clear mirror) in the readable body — Flow strips the comment block from chat.
-- When they ask to **phân tích / analyze / review / giải thích / plan**: write a structured analysis in Vietnamese (mục tiêu, phạm vi, neo code/API, rủi ro, đề xuất bước tiếp). Prefer bullets; skip giant Markdown tables.
-- When they ask a short status / yes-no: **1–2 câu** + vài bullet là đủ.
-- Không hiện thẻ máy kiểu \`<<<DONE>>>\` trong phần người đọc; DONE chỉ ở cuối, **1 câu status** (vd. "Đã phân tích #…; chưa code.").
-- Tránh lặp lại "Muốn sửa code thêm → Bật Run" trừ khi họ hỏi tiếp.
+${sendStableChatReplyStyle({ withGitlabComment: true })}
 
 ${commitLabelInstructions({ issueIid: issueCommitIid(issue) })}${gitlabCommentInstructions(issue)}<<<NEED_CLARIFICATION>>> / <<<DONE>>> blocks same as usual when applicable.`;
+
+  return `${stable}
+
+---
+You are working on GitLab issue #${issue.issueIid} ("${issue.title}") in a Cursor agent window.
+This may be a **new** window — use prior chat + the repo (inspect if needed). Do not assume old tool state is still loaded.
+${checkoutConventionsHint()}
+${opts?.graphifyBlock ? `${opts.graphifyBlock}\n` : ""}${conflictBlock}${qualityBlock}${sheetsBlock}${figmaBlock}${gitlabTaskBlock}${historyBlock}## Human follow-up (this turn)
+${message.trim()}`;
 }
 
 /** Free session (hotfix / adhoc) — no GitLab issue linked to the job yet. */
@@ -646,34 +692,25 @@ ${history}
     : "";
   const hasGitlabFromChat = Boolean(opts?.gitlabTaskBlock?.trim());
 
-  return `You are in a **free Cursor agent session** (hotfix / ad-hoc) titled "${title}".
+  const stable = `${sendStableHowToBehave({ variant: "adhoc" })}
+
+${sendStableChatReplyStyle()}
+
+${commitLabelInstructions()}<<<NEED_CLARIFICATION>>> / <<<DONE>>> blocks same as usual when applicable.`;
+
+  return `${stable}
+
+---
+You are in a **free Cursor agent session** (hotfix / ad-hoc) titled "${title}".
 ${
   hasGitlabFromChat
     ? `This session is **not** bound to a single GitLab issue job — but the human pasted \`#id\` / issue link(s); the system already loaded them into **GitLab task (chỉ đọc)** below. Use that block; **do not** call GitLab yourself.`
     : `There is **no GitLab issue yet** — a human may create one later from your summary. If they want task context, they can paste a GitLab **link** or \`#id\` / \`issue 123\` (same as BA chat) and the system will load it.`
 }
 This may be a **new** window — use prior chat + the repo (inspect if needed).
-Prefer \`AGENTS.md\` (then \`.cursor/rules\` / project docs) when you need conventions for **this** checkout.
+${checkoutConventionsHint()}
 ${opts?.graphifyBlock ? `${opts.graphifyBlock}\n` : ""}${conflictBlock}${qualityBlock}${sheetsBlock}${figmaBlock}${gitlabTaskBlock}${historyBlock}## Human request (this turn)
-${message.trim()}
-
-## How to behave (IDE-like)
-1. If they ask a question → answer clearly (Vietnamese if they wrote Vietnamese). Start repo lookup with \`code_map_query\` when that tool is attached. If a **GitLab task (chỉ đọc)** block is present, use it for issue title/description/comments.
-2. If they ask to fix / add / change / re-test / seed data / run something → **do it** on the CURRENT branch (do not switch branches). Subagent flow (skip steps that do not apply — do not spawn all three by default): Task \`explore\` only if path still unclear after map/search; Task \`code-reviewer\` only after multi-file / shared-logic / risky diffs; Task \`test-writer\` only when nearby tests exist. Skip subagents for Q&A-only or trivial one-file edits. **Data fidelity:** if they named a specific NV/id/code and DB returns 0 — STOP and report not found; do **not** switch to another person/row.
-3. Prefer small, correct changes. Stay scoped to the request.
-4. If Shell / "environment tools" fail: do **not** \`AwaitShell\`-sleep or escalate waits — retry once then continue with Read/Write/StrReplace/code_map or report blocked. Do not poll Task with \`AwaitShell\`.
-5. If the request is vague: search the repo first; minor gaps → proceed with the standard interpretation and say so in your reply; only end with NEED_CLARIFICATION when truly blocked (batch ALL questions, numbered, with options + your recommended default).
-6. Do NOT \`git commit\`, \`git push\`, force-push, amend remote commits, or open/merge MRs. Flow Auto Work commits to GitLab via API after you finish.
-7. If finished this follow-up, end with DONE (SUMMARY in Vietnamese — useful as issue description later; COMMIT in English when you changed files; note any assumptions).
-
-## Chat reply style (UI is a narrow chat panel — keep it readable)
-- Put the **full answer the human asked for in the readable body** (above any machine tags). Flow shows that body in chat — NOT the DONE line alone.
-- When they ask to **phân tích / analyze / review / giải thích / plan**: write a structured analysis in Vietnamese (mục tiêu, phạm vi, neo code, rủi ro, bước tiếp). Prefer bullets; skip giant Markdown tables.
-- When they ask a short status / yes-no: **1–2 câu** + vài bullet là đủ.
-- Không hiện thẻ máy kiểu \`<<<DONE>>>\` trong phần người đọc; DONE chỉ ở cuối, **1 câu status**.
-- Tránh lặp lại "Muốn sửa code thêm → Bật Run" trừ khi họ hỏi tiếp.
-
-${commitLabelInstructions()}<<<NEED_CLARIFICATION>>> / <<<DONE>>> blocks same as usual when applicable.`;
+${message.trim()}`;
 }
 
 export function parseAgentOutcome(text: string): {
