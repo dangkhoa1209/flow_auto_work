@@ -239,6 +239,8 @@ describe("buildWorkPrompt graphify", () => {
     expect(prompt).toMatch(/TOOL \/ ENVIRONMENT FAILURES/);
     expect(prompt).toMatch(/Do \*\*not\*\* call `AwaitShell` to sleep/);
     expect(prompt).toMatch(/at most once/);
+    expect(prompt).toMatch(/broad.*parallel.*`Glob`|parallel.*`Glob`/i);
+    expect(prompt).toMatch(/code_map_query/);
   });
 
   it("forbids substituting another entity when named DB lookup misses", () => {
@@ -295,6 +297,7 @@ describe("follow-up GitLab task + subagents", () => {
       expect(prompt).toMatch(/environment tools/);
       expect(prompt).toMatch(/AwaitShell/);
       expect(prompt).toMatch(/retry once/);
+      expect(prompt).toMatch(/Glob/);
     }
   });
 

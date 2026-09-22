@@ -1,8 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   errorFromCursorRunStatus,
   formatCursorAgentFailure,
   isTransientCursorTransportError,
+  nextWithStreamIdleTimeout,
 } from "../run.js";
 
 describe("errorFromCursorRunStatus", () => {
@@ -57,5 +58,43 @@ describe("formatCursorAgentFailure", () => {
       "fallback",
     );
     expect(msg).toMatch(/Cursor cắt agent run/i);
+  });
+});
+
+describe("nextWithStreamIdleTimeout", () => {
+  it("returns the next event when it arrives before idle timeout", async () => {
+    const cancel = vi.fn();
+    const result = await nextWithStreamIdleTimeout(
+      async () => ({ done: false as const, value: { type: "assistant" } }),
+      { idleTimeoutMs: 5_000, cancel },
+    );
+    expect(result).toEqual({ done: false, value: { type: "assistant" } });
+    expect(cancel).not.toHaveBeenCalled();
+  });
+
+  it("cancels and throws transient stall error when idle", async () => {
+    const cancel = vi.fn(async () => undefined);
+    const onStall = vi.fn();
+    const pending = nextWithStreamIdleTimeout(
+      () => new Promise(() => undefined),
+      { idleTimeoutMs: 40, cancel, onStall },
+    );
+    await expect(pending).rejects.toSatisfy((err: unknown) => {
+      expect(String(err)).toMatch(/timed out after .+ with no stream event/i);
+      expect(isTransientCursorTransportError(err)).toBe(true);
+      return true;
+    });
+    expect(onStall).toHaveBeenCalledTimes(1);
+    expect(cancel).toHaveBeenCalledTimes(1);
+  });
+
+  it("disables idle watchdog when idleTimeoutMs <= 0", async () => {
+    const cancel = vi.fn();
+    const result = await nextWithStreamIdleTimeout(
+      async () => ({ done: true as const, value: undefined }),
+      { idleTimeoutMs: 0, cancel },
+    );
+    expect(result.done).toBe(true);
+    expect(cancel).not.toHaveBeenCalled();
   });
 });

@@ -396,12 +396,55 @@ export function beginCancellableJob(jobId: string | undefined): {
   };
 }
 
+/** After first stream event: cancel if no further event for this long (hung Glob/Shell/MCP). */
+export const DEFAULT_STREAM_IDLE_TIMEOUT_MS = 120_000;
+
+/**
+ * Race an async iterator next() against an idle timeout.
+ * On stall: cancel the run and throw a transient-looking timeout error.
+ */
+export async function nextWithStreamIdleTimeout<T>(
+  next: () => Promise<IteratorResult<T>>,
+  opts: {
+    idleTimeoutMs: number;
+    cancel?: () => void | Promise<void>;
+    onStall?: () => void;
+  },
+): Promise<IteratorResult<T>> {
+  const idleMs = opts.idleTimeoutMs;
+  if (idleMs <= 0) return next();
+
+  let idleTimer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      next(),
+      new Promise<IteratorResult<T>>((_, reject) => {
+        idleTimer = setTimeout(() => {
+          opts.onStall?.();
+          void Promise.resolve(opts.cancel?.()).catch(() => undefined);
+          reject(
+            markCursorTransient(
+              new Error(
+                `Cursor timed out after ${Math.round(idleMs / 1000)}s with no stream event (tool/agent stall)`,
+              ),
+            ),
+          );
+        }, idleMs);
+      }),
+    ]);
+  } finally {
+    if (idleTimer) clearTimeout(idleTimer);
+  }
+}
+
 async function collectAssistantText(
   run: SdkRun,
   jobId?: string,
   opts?: {
     promptChars?: number;
     firstEventTimeoutMs?: number;
+    /** Idle gap between stream events before cancel (default 120s). 0 = disable. */
+    streamIdleTimeoutMs?: number;
     persistKind?: CursorUsageKind;
     agent?: unknown;
     model?: string;
@@ -413,26 +456,33 @@ async function collectAssistantText(
   }
 
   const firstEventMs = opts?.firstEventTimeoutMs ?? 75_000;
+  const idleMs = opts?.streamIdleTimeoutMs ?? DEFAULT_STREAM_IDLE_TIMEOUT_MS;
   let streamed = "";
   let lastTurnInput = 0;
   try {
     if (typeof run.stream === "function" && run.supports?.("stream") !== false) {
       const it = run.stream()[Symbol.asyncIterator]();
       let firstTimer: ReturnType<typeof setTimeout> | undefined;
-      const first = await Promise.race([
-        it.next(),
-        new Promise<IteratorResult<unknown>>((_, reject) => {
-          firstTimer = setTimeout(() => {
-            void run.cancel?.().catch(() => undefined);
-            reject(
-              new Error(
-                `Cursor timed out after ${Math.round(firstEventMs / 1000)}s waiting for first event`,
-              ),
-            );
-          }, firstEventMs);
-        }),
-      ]);
-      if (firstTimer) clearTimeout(firstTimer);
+      let first: IteratorResult<unknown>;
+      try {
+        first = await Promise.race([
+          it.next(),
+          new Promise<IteratorResult<unknown>>((_, reject) => {
+            firstTimer = setTimeout(() => {
+              void run.cancel?.().catch(() => undefined);
+              reject(
+                markCursorTransient(
+                  new Error(
+                    `Cursor timed out after ${Math.round(firstEventMs / 1000)}s waiting for first event`,
+                  ),
+                ),
+              );
+            }, firstEventMs);
+          }),
+        ]);
+      } finally {
+        if (firstTimer) clearTimeout(firstTimer);
+      }
       if (jobId) {
         appendJobProgress(jobId, "status", "Cursor đang stream…");
       }
@@ -463,21 +513,34 @@ async function collectAssistantText(
         if (raw?.type === "usage" && raw.usage?.inputTokens) {
           lastTurnInput = raw.usage.inputTokens;
         }
-        step = (await it.next()) as typeof step;
+        step = (await nextWithStreamIdleTimeout(() => it.next(), {
+          idleTimeoutMs: idleMs,
+          cancel: () => run.cancel?.(),
+          onStall: () => {
+            appendJobProgress(
+              jobId,
+              "status",
+              `stream idle ${Math.round(idleMs / 1000)}s — cancelling (tool/agent stall)…`,
+            );
+          },
+        })) as typeof step;
       }
     }
   } catch (err) {
     appendJobProgress(jobId, "status", `stream error: ${String(err)}`);
-    logger.warn("Agent stream failed; falling back to wait()", {
-      err: String(err),
-    });
     if (isTransientCursorTransportError(err)) {
+      logger.warn("Agent stream stalled or transport error — not falling back to wait()", {
+        err: String(err),
+      });
       throw err instanceof Error
         ? err
         : new Error(
             "Cursor stream closed (NGHTTP2_ENHANCE_YOUR_CALM) — rate limit / connection. Thử Gửi lại.",
           );
     }
+    logger.warn("Agent stream failed; falling back to wait()", {
+      err: String(err),
+    });
   }
 
   let result: Awaited<ReturnType<SdkRun["wait"]>>;

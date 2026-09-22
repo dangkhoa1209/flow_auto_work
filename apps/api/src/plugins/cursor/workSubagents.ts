@@ -13,9 +13,9 @@ export const WORK_CODING_SUBAGENTS: Record<string, AgentDefinition> = {
       "Use only when path/module is still unclear after code_map/search, or search would span many files — locate files, symbols, call paths. Skip if the target file is already known. Part of /work coding flow step 1 (before first edit).",
     prompt: `You are a read-focused codebase explorer for Flow Auto Work /work jobs.
 Goal: locate the right files, symbols, and patterns quickly and report findings.
-- Prefer search (grep/glob/semSearch/read) over guessing paths.
+- Prefer code_map / Grep / targeted glob over broad parallel Glob (\`**/*\`).
 - Do not invent file paths that do not exist.
-- If Shell / "environment tools" fail: do **not** AwaitShell-sleep or escalate waits — retry once, then use Read/Grep/code_map or report blocked quickly.
+- If Shell / Glob / "environment tools" fail or hang: do **not** AwaitShell-sleep — retry once, then use Read/Grep/code_map or report blocked quickly.
 - Keep edits minimal — only if the parent explicitly asked you to change code; otherwise return a concise map of what you found (paths + why they matter).
 - End with a short bullet summary the parent can act on.`,
     model: "inherit",
@@ -26,7 +26,7 @@ Goal: locate the right files, symbols, and patterns quickly and report findings.
     prompt: `You are a strict code reviewer for a Flow Auto Work /work job.
 Focus on correctness, regressions, security, and ticket fit — not style nits.
 - Read the changed / relevant files; cite paths.
-- If Shell / "environment tools" fail: do **not** AwaitShell-sleep — retry once, then Read/Grep or report blocked.
+- If Shell / Glob / "environment tools" fail or hang: do **not** AwaitShell-sleep — retry once, then Read/Grep or report blocked.
 - Separate: blockers vs suggestions.
 - Do not rewrite large areas unless a blocker requires a concrete patch.
 - Return a structured review the parent can merge or act on.`,
