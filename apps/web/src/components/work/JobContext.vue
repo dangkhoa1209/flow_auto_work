@@ -1572,30 +1572,23 @@ const runTooltip = computed(() => {
           {{ testcasesBusy ? "TC…" : "Testcase" }}
         </button>
       </a-tooltip>
-      <a-popconfirm
-        title="Handoff with Settings prefs (assignee / labels)?"
-        ok-text="Handoff"
-        cancel-text="Cancel"
-        :disabled="!canQuickHandoff || handoffBusy"
-        @confirm="emit('quickHandoff')"
+      <a-tooltip
+        :title="
+          canQuickHandoff
+            ? 'Handoff — chọn assignee tạm (không lưu Settings)'
+            : 'Only when job is Awaiting handoff / Done'
+        "
       >
-        <a-tooltip
-          :title="
-            canQuickHandoff
-              ? 'Quick handoff (Settings → Labels)'
-              : 'Only when job is Awaiting handoff / Done'
-          "
+        <button
+          type="button"
+          class="faw-btn"
+          :class="mobileTouch ? '!min-h-[32px]' : ''"
+          :disabled="!canQuickHandoff || handoffBusy || mergeBusy || createMrBusy"
+          @click="emit('quickHandoff')"
         >
-          <button
-            type="button"
-            class="faw-btn"
-            :class="mobileTouch ? '!min-h-[32px]' : ''"
-            :disabled="!canQuickHandoff || handoffBusy || mergeBusy || createMrBusy"
-          >
-            Handoff
-          </button>
-        </a-tooltip>
-      </a-popconfirm>
+          Handoff
+        </button>
+      </a-tooltip>
       </div>
     </div>
 
