@@ -39,7 +39,8 @@ const TEXT_OUTPUT_SCHEMA = {
 /**
  * Cursor SDK custom tools — prefer these before broad Grep when the path is unknown.
  * Graph lives outside source/; tools never write the checkout.
- * (BA prompts may still require map-first for case 3; Work treats this as strongly preferred.)
+ * ChatBox (BA) and Work both treat map-first as strongly preferred, not a hard fail
+ * when the path is already known or prior chat answers the question.
  */
 export function buildBaGraphifyCustomTools(
   sourcePath: string,

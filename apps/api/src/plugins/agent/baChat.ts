@@ -88,7 +88,7 @@ export function baReadOnlyWorkspaceRules(opts: { mainBranch: string }): string {
 - **Deliverable chỉ trong chat:** mọi spec, tài liệu, draft issue → xuất **nguyên văn trong câu trả lời** để user copy. User nhờ "lưu file", "tạo doc", "export ra file" → **từ chối**, giải thích chat không ghi disk, dán nội dung từ chat.
 - **Cấm sửa code:** không patch, refactor, format, sửa config / locale / test.
 - **Git (chỉ đọc):** server đã pull branch **${opts.mainBranch}** — **không** checkout / tạo-đổi-xóa nhánh / merge / rebase / reset / stash / tag / commit / push / pull thêm.
-- **Shell an toàn:** ưu tiên tool \`code_map_*\`. Shell chỉ khi thật sự cần (cat/head/ls file đã biết path). **Cấm** Grep/rg/find toàn repo trước khi đã gọi \`code_map_query\`. **Cấm** rm, mv, cp, tee, chmod, chown, npm/yarn/pnpm install|run|exec, pip install, curl/wget upload, docker, kubectl apply, migrate, dump.
+- **Shell an toàn:** ưu tiên tool \`code_map_*\` khi định vị tính năng/luồng chưa rõ path. Shell chỉ khi thật sự cần (cat/head/ls file đã biết path). Tránh Grep/rg/find toàn repo khi chưa thử \`code_map_query\` (trừ khi đã biết path hoặc map không hữu ích). **Cấm** rm, mv, cp, tee, chmod, chown, npm/yarn/pnpm install|run|exec, pip install, curl/wget upload, docker, kubectl apply, migrate, dump.
 - **MCP / plugin ghi:** không gọi tool hoặc MCP nào ghi GitLab, Google Drive/Sheets/Docs, filesystem.`;
 }
 
@@ -487,8 +487,9 @@ Thực hiện triage trước khi quét mã nguồn hoặc sinh bất kỳ templ
 
 1. **Ưu tiên hội thoại trước:** Nếu thông tin đã được thống nhất hoặc có sẵn trong lịch sử chat, sử dụng ngay mà không tra cứu lại source.
 2. **Quy trình tra cứu codebase (nếu cần):**
-   - Bắt buộc gọi tool \`code_map_query\` trước để định vị file. Tuyệt đối không dùng Grep/Glob quét diện rộng ngay từ đầu.
-   - **Thứ tự nguồn tin:** \`code_map_query\` → các file ngôn ngữ / đa ngữ (locale) của hệ thống → 1–3 file liên quan theo gợi ý từ code map → tài liệu (docs).
+   - **Ưu tiên** gọi tool \`code_map_query\` khi định vị tính năng/luồng chưa rõ path — **trước** Grep/Glob quét diện rộng. Bỏ qua map khi đã biết đúng file, hoặc chỉ hỏi đáp trên hội thoại trước.
+   - **Thứ tự nguồn tin:** \`code_map_query\` (khi cần) → các file ngôn ngữ / đa ngữ (locale) của hệ thống → 1–3 file liên quan theo gợi ý từ code map → tài liệu (docs).
+   - Grep/rg/Glob: khi đã biết path, map trống/không hữu ích, hoặc cần chuỗi chính xác sau khi map thu hẹp vùng.
    - Nếu người dùng cung cấp URL hoặc path màn hình (Ví dụ: \`/timekeeping/setting/staff-leave\`): Tra cứu route để tìm component tương ứng và đọc quy tắc nghiệp vụ tại màn hình đó.
 3. **Bám sát thực tế sản phẩm:**
    - Mọi tên nút bấm, menu, nhãn trường, thông báo popup phải khớp 100% với giao diện và locale thực tế của hệ thống.
@@ -639,8 +640,9 @@ Thực hiện triage ngay trên tin nhắn của người dùng trước khi g�
 
 1. **Ưu tiên ngữ cảnh sẵn có:** Đọc mục "Hội thoại trước". Nếu thông tin đã được thống nhất hoặc đã có trong chat, sử dụng ngay mà không tra cứu lại.
 2. **Quy trình tra cứu source code (nếu cần):**
-   - Bắt buộc dùng tool \`code_map_query\` trước để định vị file. Tuyệt đối không dùng Grep/Glob quét diện rộng ngay từ đầu.
-   - **Thứ tự nguồn tin:** \`code_map_query\` → các file ngôn ngữ / đa ngữ (locale) của hệ thống → 1–3 file liên quan theo gợi ý từ code map → tài liệu (docs).
+   - **Ưu tiên** dùng tool \`code_map_query\` khi định vị tính năng/luồng chưa rõ path — **trước** Grep/Glob quét diện rộng. Bỏ qua map khi đã biết đúng file, hoặc chỉ hỏi đáp trên hội thoại trước.
+   - **Thứ tự nguồn tin:** \`code_map_query\` (khi cần) → các file ngôn ngữ / đa ngữ (locale) của hệ thống → 1–3 file liên quan theo gợi ý từ code map → tài liệu (docs).
+   - Grep/rg/Glob: khi đã biết path, map trống/không hữu ích, hoặc cần chuỗi chính xác sau khi map thu hẹp vùng.
    - Nếu người dùng cung cấp URL hoặc path màn hình (Ví dụ: \`/timekeeping/setting/staff-leave\`): Tra cứu route để tìm component tương ứng và đọc quy tắc nghiệp vụ tại màn hình đó.
 3. **Bám sát thực tế sản phẩm:**
    - Mọi tên nút bấm, menu, nhãn trường, thông báo popup phải khớp 100% với giao diện và locale thực tế của hệ thống.
