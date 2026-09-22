@@ -486,6 +486,19 @@ async function collectAssistantText(
     result = await run.wait();
   } catch (err) {
     appendJobProgress(jobId, "status", `wait error: ${String(err)}`);
+    if (opts?.persistKind) {
+      await persistCursorUsage({
+        kind: opts.persistKind,
+        jobId,
+        agent: opts.agent,
+        run,
+        promptChars: opts.promptChars,
+        outputChars: streamed.length,
+        model: opts.model,
+        status: /cancel/i.test(String(err)) ? "cancelled" : "error",
+        force: true,
+      });
+    }
     if (isTransientCursorTransportError(err)) {
       throw err instanceof Error
         ? err
@@ -499,6 +512,20 @@ async function collectAssistantText(
   await appendRunConversationIfNeeded(jobId, run);
   if (result.status === "cancelled") {
     appendJobProgress(jobId, "status", "cancelled");
+    if (opts?.persistKind) {
+      await persistCursorUsage({
+        kind: opts.persistKind,
+        jobId,
+        agent: opts.agent,
+        run,
+        result,
+        promptChars: opts.promptChars,
+        outputChars: streamed.length,
+        model: opts.model,
+        status: "cancelled",
+        force: true,
+      });
+    }
     throw new Error("Agent run cancelled (force stop)");
   }
   if (result.status === "error") {
@@ -513,6 +540,20 @@ async function collectAssistantText(
       resultPreview: detail.result?.slice(0, 800),
       transient: isTransientCursorTransportError(err),
     });
+    if (opts?.persistKind) {
+      await persistCursorUsage({
+        kind: opts.persistKind,
+        jobId,
+        agent: opts.agent,
+        run,
+        result,
+        promptChars: opts.promptChars,
+        outputChars: streamed.length,
+        model: opts.model,
+        status: "error",
+        force: true,
+      });
+    }
     throw err;
   }
   const text = (result.result ?? streamed).trim();
@@ -566,6 +607,7 @@ async function collectAssistantText(
       promptChars: opts.promptChars,
       outputChars: (streamed || text).length,
       model: opts.model,
+      status: "ok",
     });
   }
 

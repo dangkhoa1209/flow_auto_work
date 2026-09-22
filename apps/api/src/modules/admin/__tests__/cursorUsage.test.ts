@@ -1,12 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { rollupCursorUsageEvents } from "../cursorUsage.js";
 import type { CursorUsageEvent } from "../../../models/cursorUsage.js";
+import type { UserRole } from "../../../workspace/types.js";
 
 function ev(partial: Partial<CursorUsageEvent>): CursorUsageEvent {
   return {
     id: partial.id || "cue_1",
     userId: partial.userId || "alice",
     kind: partial.kind || "ba_chat",
+    status: partial.status || "ok",
+    roles: partial.roles,
     inputTokens: partial.inputTokens ?? 100,
     outputTokens: partial.outputTokens ?? 20,
     cacheReadTokens: partial.cacheReadTokens ?? 0,
@@ -22,11 +25,16 @@ function ev(partial: Partial<CursorUsageEvent>): CursorUsageEvent {
 }
 
 describe("rollupCursorUsageEvents", () => {
-  it("groups by user, kind, and ICT day", () => {
+  it("groups by user, kind, role, and ICT day", () => {
+    const rolesByUser = new Map<string, UserRole[]>([
+      ["alice", ["ba"]],
+      ["bob", ["dev"]],
+    ]);
     const rows = [
       ev({
         userId: "alice",
         kind: "ba_chat",
+        roles: ["ba"],
         totalTokens: 100,
         costCents: 10,
         createdAt: "2026-09-03T17:00:00.000Z",
@@ -35,6 +43,7 @@ describe("rollupCursorUsageEvents", () => {
         id: "cue_2",
         userId: "alice",
         kind: "ba_create_issue",
+        roles: ["ba"],
         totalTokens: 50,
         costCents: 5,
         createdAt: "2026-09-04T02:00:00.000Z",
@@ -43,6 +52,8 @@ describe("rollupCursorUsageEvents", () => {
         id: "cue_3",
         userId: "bob",
         kind: "job_run",
+        roles: ["dev"],
+        status: "error",
         totalTokens: 200,
         costCents: 40,
         costSource: "sdk",
@@ -50,16 +61,45 @@ describe("rollupCursorUsageEvents", () => {
         createdAt: "2026-09-04T10:00:00.000Z",
       }),
     ];
-    const r = rollupCursorUsageEvents(rows, "2026-09-04", "2026-09-04");
+    const r = rollupCursorUsageEvents(
+      rows,
+      "2026-09-04",
+      "2026-09-04",
+      rolesByUser,
+    );
     expect(r.totals.events).toBe(3);
     expect(r.totals.totalTokens).toBe(350);
     expect(r.totals.costCents).toBe(55);
+    expect(r.totals.errorEvents).toBe(1);
     expect(r.byUser[0].userId).toBe("bob");
     expect(r.byUser.find((u) => u.userId === "alice")?.events).toBe(2);
     expect(r.byKind.map((k) => k.kind).sort()).toEqual(
       ["ba_chat", "ba_create_issue", "job_run"].sort(),
     );
+    expect(r.byRole.map((x) => x.role).sort()).toEqual(["ba", "dev"]);
+    expect(r.byRole.find((x) => x.role === "ba")?.totalTokens).toBe(150);
+    expect(r.byRole.find((x) => x.role === "dev")?.totalTokens).toBe(200);
     const day = r.byDay.find((d) => d.date === "2026-09-04");
     expect(day?.events).toBe(3);
+  });
+
+  it("falls back to rolesByUser when event has no roles snapshot", () => {
+    const rolesByUser = new Map<string, UserRole[]>([["carol", ["qc"]]]);
+    const r = rollupCursorUsageEvents(
+      [
+        ev({
+          userId: "carol",
+          kind: "job_testcase",
+          totalTokens: 80,
+          costCents: 2,
+          createdAt: "2026-09-04T08:00:00.000Z",
+        }),
+      ],
+      "2026-09-04",
+      "2026-09-04",
+      rolesByUser,
+    );
+    expect(r.byRole[0]?.role).toBe("qc");
+    expect(r.byRole[0]?.events).toBe(1);
   });
 });

@@ -19,6 +19,8 @@ export async function resolveMergeConflictsWithAi(opts: {
   targetBranch: string;
   conflictedFiles: string[];
   issue?: IssueJob;
+  jobId?: string;
+  userId?: string;
 }): Promise<{ text: string; remaining: string[] }> {
   const repoPath = resolveRepoPath();
   const files = opts.conflictedFiles.length
@@ -96,10 +98,13 @@ Rules for the reply:
   ];
   await persistCursorUsage({
     kind: "job_merge",
+    jobId: opts.jobId,
+    userId: opts.userId,
     result,
     promptChars: prompt.length,
     outputChars: (result.result ?? "").length,
     model: resolveCursorModel(),
+    status: "ok",
   });
   return {
     text: (result.result ?? "").trim() || "(đã xử lý)",

@@ -248,6 +248,18 @@ Hãy sinh bộ test case theo đúng cấu trúc mục 3.`;
         throw new Error("Testcase generation cancelled (force stop)");
       }
       if (result.status === "error") {
+        await persistCursorUsage({
+          kind: "job_testcase",
+          jobId,
+          agent: disposed,
+          run,
+          result,
+          promptChars: prompt.length,
+          outputChars: streamed.length,
+          model: resolveCursorModel(),
+          status: "error",
+          force: true,
+        });
         throw errorFromCursorRunStatus(
           result as {
             id: string;
@@ -290,6 +302,7 @@ Hãy sinh bộ test case theo đúng cấu trúc mục 3.`;
         promptChars: prompt.length,
         outputChars: text.length,
         model: resolveCursorModel(),
+        status: "ok",
       });
 
       let commented = false;

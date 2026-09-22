@@ -15,6 +15,9 @@ export const CURSOR_USAGE_KINDS = [
 
 export type CursorUsageKind = (typeof CURSOR_USAGE_KINDS)[number];
 
+export const CURSOR_USAGE_STATUSES = ["ok", "error", "cancelled"] as const;
+export type CursorUsageStatus = (typeof CURSOR_USAGE_STATUSES)[number];
+
 export type NormalizedCursorUsage = {
   inputTokens: number;
   outputTokens: number;
@@ -323,4 +326,10 @@ export const USAGE_KIND_LABELS: Record<CursorUsageKind, string> = {
   job_merge: "Merge AI",
   stats_analyze: "Dev evaluation",
   job_legacy: "Work (legacy)",
+};
+
+export const USAGE_STATUS_LABELS: Record<CursorUsageStatus, string> = {
+  ok: "OK",
+  error: "Error",
+  cancelled: "Cancelled",
 };

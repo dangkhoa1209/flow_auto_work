@@ -948,6 +948,9 @@ export async function runBaChatAgent(opts: {
       let lastFlushedToDb = "";
       let dbFlushTimer: ReturnType<typeof setTimeout> | undefined;
       let dbFlushChain: Promise<void> = Promise.resolve();
+      let usageStatus: "ok" | "error" | "cancelled" = "ok";
+      let usageOutputChars = 0;
+      let usagePersisted = false;
 
       const flushStreamToDb = (text: string, force = false) => {
         const body = text;
@@ -991,6 +994,7 @@ export async function runBaChatAgent(opts: {
         );
       };
 
+      try {
       try {
         if (
           typeof run.stream === "function" &&
@@ -1045,6 +1049,7 @@ export async function runBaChatAgent(opts: {
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         if (/Force-stopped|cancelled/i.test(msg)) {
+          usageStatus = "cancelled";
           const stopped = new Error("Force-stopped from UI") as Error & {
             partial?: string;
           };
@@ -1064,6 +1069,7 @@ export async function runBaChatAgent(opts: {
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         if (/Force-stopped|cancelled/i.test(msg)) {
+          usageStatus = "cancelled";
           const stopped = new Error("Force-stopped from UI") as Error & {
             partial?: string;
           };
@@ -1074,6 +1080,7 @@ export async function runBaChatAgent(opts: {
       }
       const result = await run.wait();
       if (result.status === "cancelled") {
+        usageStatus = "cancelled";
         const stopped = new Error("Force-stopped from UI") as Error & {
           partial?: string;
         };
@@ -1081,6 +1088,7 @@ export async function runBaChatAgent(opts: {
         throw stopped;
       }
       if (result.status === "error") {
+        usageStatus = "error";
         throw errorFromCursorRunStatus(
           result as {
             id: string;
@@ -1103,9 +1111,12 @@ export async function runBaChatAgent(opts: {
           : fromStream || fromResult;
 
       if (!finalText) {
+        usageStatus = "error";
         throw new Error("Agent returned an empty answer");
       }
 
+      usageOutputChars = finalText.length;
+      usagePersisted = true;
       await persistCursorUsage({
         kind: "ba_chat",
         userId: opts.userId,
@@ -1117,6 +1128,7 @@ export async function runBaChatAgent(opts: {
         promptChars: prompt.length,
         outputChars: finalText.length,
         model: await resolveSystemCursorModel(),
+        status: "ok",
       });
 
       if (finalText.length > lastPublished.length) {
@@ -1149,6 +1161,32 @@ export async function runBaChatAgent(opts: {
       flushStreamToDb(finalText, true);
       await dbFlushChain;
       return finalText;
+      } catch (usageErr) {
+        if (!usagePersisted) {
+          const msg =
+            usageErr instanceof Error ? usageErr.message : String(usageErr);
+          if (/Force-stopped|cancelled/i.test(msg)) {
+            usageStatus = "cancelled";
+          } else if (usageStatus === "ok") {
+            usageStatus = "error";
+          }
+          usageOutputChars = (streamed || lastPublished).length;
+          await persistCursorUsage({
+            kind: "ba_chat",
+            userId: opts.userId,
+            threadId: opts.threadId,
+            messageId: opts.assistantMessageId,
+            agent: disposed,
+            run,
+            promptChars: prompt.length,
+            outputChars: usageOutputChars,
+            model: await resolveSystemCursorModel().catch(() => undefined),
+            status: usageStatus,
+            force: true,
+          });
+        }
+        throw usageErr;
+      }
     };
 
     // Same policy as /work (`queue.runAgentWithRetry`): Cursor cut / transport
