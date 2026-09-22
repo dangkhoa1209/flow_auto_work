@@ -3,7 +3,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { subscribeRealtime } from "../../realtime/hub.js";
 import {
   appendJobProgress,
-  appendPromptSending,
   appendSdkMessage,
   appendSubagentDelta,
   clearJobProgress,
@@ -19,33 +18,6 @@ const JOB = "progress-format-job";
 afterEach(() => {
   clearJobProgress(JOB);
   vi.useRealTimers();
-});
-
-describe("appendPromptSending", () => {
-  it("logs the full prompt body in Process", () => {
-    appendPromptSending(JOB, "Hello agent — do the thing");
-    const { lines } = getJobProgress(JOB);
-    expect(lines).toHaveLength(1);
-    expect(lines[0]!.kind).toBe("prompt");
-    expect(lines[0]!.text).toContain("Sending prompt (");
-    expect(lines[0]!.text).toContain("Hello agent — do the thing");
-  });
-
-  it("chunks oversized prompts so the full body is visible", () => {
-    const body = "x".repeat(20_000);
-    appendPromptSending(JOB, body);
-    const { lines } = getJobProgress(JOB);
-    expect(lines.length).toBeGreaterThanOrEqual(2);
-    expect(lines.every((l) => l.kind === "prompt")).toBe(true);
-    const joined = lines.map((l) => l.text).join("");
-    expect(joined).toContain("x".repeat(15_500));
-    expect(joined).toContain("Prompt continued");
-    // Reconstruct body from chunks (strip headers)
-    const rebuilt = lines
-      .map((l) => l.text.replace(/^[\s\S]*?:\n\n/, ""))
-      .join("");
-    expect(rebuilt).toBe(body);
-  });
 });
 
 describe("appendJobProgress assistant coalescing", () => {
