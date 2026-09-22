@@ -173,8 +173,13 @@ export const useDevopsStore = defineStore("devops", () => {
           currentBuildId: null,
         };
       }
+      // Keep already-streamed lines — re-fetching the full log freezes the UI.
       if (lastLiveBuildId.value === job.id) {
-        liveLogsLoadedFor = null;
+        if (logLines.value.length > 0) {
+          liveLogsLoadedFor = job.id;
+        } else {
+          liveLogsLoadedFor = null;
+        }
       }
     }
 
@@ -198,8 +203,9 @@ export const useDevopsStore = defineStore("devops", () => {
 
     if (runningId) {
       lastLiveBuildId.value = runningId;
-      liveLogsLoadedFor = null;
+      // Already attached — do not clear liveLogsLoadedFor or restart the stream.
       if (streamingId === runningId && logEs) return;
+      liveLogsLoadedFor = null;
       if (streamingId !== runningId) logLines.value = [];
       closeLogStream();
       if (gen !== syncGen) return;
@@ -207,8 +213,14 @@ export const useDevopsStore = defineStore("devops", () => {
       return;
     }
 
-    closeLogStream();
     const focusId = lastLiveBuildId.value;
+    // Job may already be terminal on the queue SSE while log SSE is still
+    // flushing — do not close it or we drop the tail and re-GET a huge /log.
+    if (focusId && streamingId === focusId && logEs) {
+      return;
+    }
+
+    closeLogStream();
     if (!focusId) return;
 
     const job = findBuild(focusId);
@@ -219,7 +231,6 @@ export const useDevopsStore = defineStore("devops", () => {
     if (pendingInQueue) {
       liveLogsLoadedFor = null;
       if (streamingId !== focusId) logLines.value = [];
-      if (streamingId === focusId && logEs) return;
       closeLogStream();
       if (gen !== syncGen) return;
       await attachLogStream(focusId, gen, logLines);
@@ -227,7 +238,12 @@ export const useDevopsStore = defineStore("devops", () => {
     }
 
     if (!job || !TERMINAL_STATUSES.includes(job.status)) return;
-    if (liveLogsLoadedFor === focusId && logLines.value.length > 0) return;
+    // Prefer streamed buffer — avoid replacing tens of thousands of lines mid-paint.
+    if (logLines.value.length > 0) {
+      liveLogsLoadedFor = focusId;
+      return;
+    }
+    if (liveLogsLoadedFor === focusId) return;
 
     const res = await devopsApi.log(focusId);
     if (gen !== syncGen) return;
@@ -340,10 +356,20 @@ export const useDevopsStore = defineStore("devops", () => {
         const ev = JSON.parse((e as MessageEvent).data) as { job: BuildJob };
         if (ev.job) {
           lastLiveBuildId.value = ev.job.id;
-          liveLogsLoadedFor = null;
+          // Stream already delivered lines — mark loaded so we do not re-GET /log.
+          liveLogsLoadedFor = ev.job.id;
           const i = builds.value.findIndex((b) => b.id === ev.job.id);
           if (i >= 0) builds.value[i] = ev.job;
           else builds.value = [ev.job, ...builds.value];
+          if (TERMINAL_STATUSES.includes(ev.job.status)) {
+            if (queue.value.currentBuildId === ev.job.id) {
+              queue.value = {
+                ...queue.value,
+                running: false,
+                currentBuildId: null,
+              };
+            }
+          }
         }
       } catch {
         /* ignore */

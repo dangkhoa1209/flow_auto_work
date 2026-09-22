@@ -699,13 +699,29 @@ function onHistPageChange(page: number) {
 }
 
 watch(
-  () => devops.logLines,
-  (lines) => {
+  () => {
     const id = devops.liveBuildId;
-    if (!id || !lines.length) return;
-    logCache.value = { ...logCache.value, [id]: [...lines] };
+    const job = id
+      ? devops.builds.find((b) => b.id === id)
+      : null;
+    const terminal =
+      job &&
+      (job.status === "success" ||
+        job.status === "failed" ||
+        job.status === "cancelled" ||
+        job.status === "timeout");
+    // Snapshot only when finished — deep-watching every SSE line freezes the UI.
+    return terminal
+      ? ([id, devops.logLines.length] as const)
+      : ([null, 0] as const);
   },
-  { deep: true },
+  ([id, len]) => {
+    if (!id || !len) return;
+    logCache.value = {
+      ...logCache.value,
+      [id]: [...devops.logLines],
+    };
+  },
 );
 
 watch(
