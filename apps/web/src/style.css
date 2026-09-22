@@ -7175,6 +7175,17 @@ a.faw-mseg__btn {
 .faw-build-log.is-expanded {
   max-height: min(70vh, 720px);
 }
+.faw-build-log__trunc {
+  font-size: 11px;
+  color: var(--ink-faint, var(--ink-muted));
+  margin-bottom: 8px;
+  padding: 4px 0;
+  border-bottom: 1px dashed var(--line-soft, var(--line));
+}
+.faw-build-log__empty {
+  color: var(--ink-faint, var(--ink-muted));
+  font-style: italic;
+}
 .faw-build-log__line--cmd { color: var(--accent); }
 .faw-build-log__line--out { color: var(--ink-muted); }
 .faw-build-log__line--ok { color: var(--success, #34d399); }

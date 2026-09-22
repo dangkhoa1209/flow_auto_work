@@ -172,6 +172,13 @@ function onCopyVisible() {
         :running="isRunning"
         :errors-only="errorsOnly"
         :expanded="logExpanded"
+        v-memo="[
+          lines.length,
+          lines.at(-1)?.text,
+          isRunning,
+          errorsOnly,
+          logExpanded,
+        ]"
       />
       <p
         v-if="job.errorMessage"
