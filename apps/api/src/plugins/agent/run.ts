@@ -72,6 +72,8 @@ export function isTransientCursorTransportError(err: unknown): boolean {
     /Failed to connect to API key exchange/i.test(msg) ||
     /timed out after/i.test(msg) ||
     /waiting for first (event|message)/i.test(msg) ||
+    /không có stream event/i.test(msg) ||
+    /không gửi event đầu/i.test(msg) ||
     /already has active run/i.test(msg) ||
     /Cursor API unreachable/i.test(msg) ||
     /Cursor cắt .+ run/i.test(msg) ||
@@ -83,6 +85,37 @@ export function isTransientCursorTransportError(err: unknown): boolean {
 export function markCursorTransient(err: Error): Error {
   (err as Error & { cursorTransient?: boolean }).cursorTransient = true;
   return err;
+}
+
+/**
+ * Transient stall when Cursor stops emitting stream events (tool hang / dead connection).
+ * Message is VI so chat/progress show a concrete cause; queue auto-retries via cursorTransient.
+ */
+export function streamStallTimeoutError(
+  kind: "idle" | "first",
+  timeoutMs: number,
+): Error {
+  const secs = Math.max(1, Math.round(timeoutMs / 1000));
+  const msg =
+    kind === "first"
+      ? `Cursor không gửi event đầu sau ${secs}s (treo kết nối / agent chưa stream). Hệ thống sẽ tự thử lại nếu còn lượt.`
+      : `Cursor treo ${secs}s không có stream event (thường do tool Glob/Shell/MCP bị kẹt). Hệ thống sẽ tự thử lại nếu còn lượt; hết lượt thì Force Stop hoặc Gửi lại.`;
+  return markCursorTransient(new Error(msg));
+}
+
+/** True when the error looks like a stream/tool idle stall (vs pure network). */
+export function isStreamStallError(err: unknown): boolean {
+  const msg =
+    err instanceof Error
+      ? `${err.message} ${String((err as Error & { cause?: unknown }).cause ?? "")}`
+      : String(err);
+  return (
+    /không có stream event/i.test(msg) ||
+    /không gửi event đầu/i.test(msg) ||
+    /no stream event \(tool\/agent stall\)/i.test(msg) ||
+    /waiting for first (event|message)/i.test(msg) ||
+    /treo .+ stream|Agent treo stream/i.test(msg)
+  );
 }
 
 export type CursorRunErrorDetail = {
@@ -178,6 +211,17 @@ export function formatCursorAgentFailure(err: unknown, fallback: string): string
   }
   if (/ENHANCE_YOUR_CALM|ERR_HTTP2/i.test(msg)) {
     return "Cursor giới hạn tốc độ / HTTP2 đóng — đợi vài giây rồi Gửi lại.";
+  }
+  if (isStreamStallError(err) || /no stream event|timed out after .+ waiting for first/i.test(msg)) {
+    if (
+      /Hệ thống sẽ tự thử lại|Cursor treo|Cursor không gửi event đầu/i.test(msg)
+    ) {
+      return msg.trim();
+    }
+    return (
+      "Cursor treo / mất stream (tool Glob/Shell/MCP hoặc kết nối). " +
+      "Hệ thống có thể tự thử lại nếu còn lượt; hết lượt thì Gửi/Run lại."
+    );
   }
   if (/Cursor cắt .+ run/i.test(msg)) {
     return msg.trim();
@@ -401,7 +445,7 @@ export const DEFAULT_STREAM_IDLE_TIMEOUT_MS = 120_000;
 
 /**
  * Race an async iterator next() against an idle timeout.
- * On stall: cancel the run and throw a transient-looking timeout error.
+ * On stall: cancel the run and throw a transient VI error (queue auto-retries).
  */
 export async function nextWithStreamIdleTimeout<T>(
   next: () => Promise<IteratorResult<T>>,
@@ -422,13 +466,7 @@ export async function nextWithStreamIdleTimeout<T>(
         idleTimer = setTimeout(() => {
           opts.onStall?.();
           void Promise.resolve(opts.cancel?.()).catch(() => undefined);
-          reject(
-            markCursorTransient(
-              new Error(
-                `Cursor timed out after ${Math.round(idleMs / 1000)}s with no stream event (tool/agent stall)`,
-              ),
-            ),
-          );
+          reject(streamStallTimeoutError("idle", idleMs));
         }, idleMs);
       }),
     ]);
@@ -470,13 +508,7 @@ async function collectAssistantText(
           new Promise<IteratorResult<unknown>>((_, reject) => {
             firstTimer = setTimeout(() => {
               void run.cancel?.().catch(() => undefined);
-              reject(
-                markCursorTransient(
-                  new Error(
-                    `Cursor timed out after ${Math.round(firstEventMs / 1000)}s waiting for first event`,
-                  ),
-                ),
-              );
+              reject(streamStallTimeoutError("first", firstEventMs));
             }, firstEventMs);
           }),
         ]);
@@ -520,14 +552,18 @@ async function collectAssistantText(
             appendJobProgress(
               jobId,
               "status",
-              `stream idle ${Math.round(idleMs / 1000)}s — cancelling (tool/agent stall)…`,
+              `Treo stream ${Math.round(idleMs / 1000)}s (không event — có thể Glob/Shell/MCP kẹt) — hủy run để tự retry…`,
             );
           },
         })) as typeof step;
       }
     }
   } catch (err) {
-    appendJobProgress(jobId, "status", `stream error: ${String(err)}`);
+    const stallMsg = formatCursorAgentFailure(
+      err,
+      err instanceof Error ? err.message : String(err),
+    );
+    appendJobProgress(jobId, "status", `stream error: ${stallMsg}`);
     if (isTransientCursorTransportError(err)) {
       logger.warn("Agent stream stalled or transport error — not falling back to wait()", {
         err: String(err),

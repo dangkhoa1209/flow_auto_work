@@ -2,8 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 import {
   errorFromCursorRunStatus,
   formatCursorAgentFailure,
+  isStreamStallError,
   isTransientCursorTransportError,
   nextWithStreamIdleTimeout,
+  streamStallTimeoutError,
 } from "../run.js";
 
 describe("errorFromCursorRunStatus", () => {
@@ -59,6 +61,40 @@ describe("formatCursorAgentFailure", () => {
     );
     expect(msg).toMatch(/Cursor cắt agent run/i);
   });
+
+  it("keeps VI stream stall message", () => {
+    const err = streamStallTimeoutError("idle", 120_000);
+    const msg = formatCursorAgentFailure(err, "fallback");
+    expect(msg).toMatch(/Cursor treo 120s không có stream event/i);
+    expect(msg).toMatch(/tự thử lại/i);
+  });
+
+  it("translates legacy English stall timeout", () => {
+    const msg = formatCursorAgentFailure(
+      new Error(
+        "Cursor timed out after 120s with no stream event (tool/agent stall)",
+      ),
+      "fallback",
+    );
+    expect(msg).toMatch(/treo|mất stream/i);
+    expect(msg).toMatch(/Gửi\/Run lại|tự thử lại/i);
+  });
+});
+
+describe("streamStallTimeoutError", () => {
+  it("marks idle stall as transient with concrete VI cause", () => {
+    const err = streamStallTimeoutError("idle", 120_000);
+    expect(isTransientCursorTransportError(err)).toBe(true);
+    expect(isStreamStallError(err)).toBe(true);
+    expect(err.message).toMatch(/Glob\/Shell\/MCP/i);
+  });
+
+  it("marks first-event stall as transient", () => {
+    const err = streamStallTimeoutError("first", 45_000);
+    expect(isTransientCursorTransportError(err)).toBe(true);
+    expect(isStreamStallError(err)).toBe(true);
+    expect(err.message).toMatch(/event đầu sau 45s/i);
+  });
 });
 
 describe("nextWithStreamIdleTimeout", () => {
@@ -80,8 +116,9 @@ describe("nextWithStreamIdleTimeout", () => {
       { idleTimeoutMs: 40, cancel, onStall },
     );
     await expect(pending).rejects.toSatisfy((err: unknown) => {
-      expect(String(err)).toMatch(/timed out after .+ with no stream event/i);
       expect(isTransientCursorTransportError(err)).toBe(true);
+      expect(isStreamStallError(err)).toBe(true);
+      expect(String(err)).toMatch(/không có stream event/i);
       return true;
     });
     expect(onStall).toHaveBeenCalledTimes(1);

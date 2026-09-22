@@ -22,9 +22,12 @@ import { logger } from "./logger.js";
 import {
   cancelActiveAgentRun,
   continueAgentWindow,
+  formatCursorAgentFailure,
   hasActiveAgentRun,
   isStartupError,
+  isStreamStallError,
   isTransientCursorTransportError,
+  markCursorTransient,
   runNewAgent,
   steerActiveAgentRun,
 } from "./plugins/agent/run.js";
@@ -2457,7 +2460,7 @@ export class JobQueue {
     return `Job đã dùng ${used.toLocaleString()} tokens — vượt ngân sách ${budget.toLocaleString()} (JOB_TOKEN_BUDGET). Reset agent window hoặc tăng budget để chạy tiếp.`;
   }
 
-  /** Retry transient Cursor transport errors with linear backoff. */
+  /** Retry transient Cursor transport / stream-stall errors with linear backoff. */
   private async runAgentWithRetry<T>(
     job: JobRecord,
     fn: () => Promise<T>,
@@ -2473,19 +2476,38 @@ export class JobQueue {
           attempt >= max ||
           this.killedJobs.has(job.id)
         ) {
+          if (
+            isTransientCursorTransportError(err) &&
+            attempt >= max &&
+            max > 0 &&
+            !this.killedJobs.has(job.id)
+          ) {
+            const base = formatCursorAgentFailure(
+              err,
+              err instanceof Error ? err.message : String(err),
+            );
+            throw markCursorTransient(
+              new Error(
+                `${base.replace(/\s*$/, "")} Đã hết lượt tự thử lại (${max}) — hãy Gửi/Run lại.`,
+              ),
+            );
+          }
           throw err;
         }
         attempt += 1;
         const delayMs = attempt * 5000;
-        appendJobProgress(
-          job.id,
-          "status",
-          `Lỗi mạng Cursor tạm thời — tự retry ${attempt}/${max} sau ${delayMs / 1000}s`,
-        );
+        const detail = (
+          err instanceof Error ? err.message : String(err)
+        ).slice(0, 160);
+        const label = isStreamStallError(err)
+          ? `Agent treo stream/tool — tự retry ${attempt}/${max} sau ${delayMs / 1000}s`
+          : `Lỗi mạng Cursor tạm thời — tự retry ${attempt}/${max} sau ${delayMs / 1000}s`;
+        appendJobProgress(job.id, "status", `${label}: ${detail}`);
         logger.warn("Transient Cursor error — retrying", {
           jobId: job.id,
           attempt,
           max,
+          stall: isStreamStallError(err),
           err: String(err),
         });
         await new Promise((r) => setTimeout(r, delayMs));
