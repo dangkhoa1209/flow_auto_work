@@ -18,7 +18,6 @@ const emit = defineEmits<{
 
 const text = ref("");
 const inputWrap = ref<HTMLElement | null>(null);
-const focused = ref(false);
 
 /** Draft anytime; project gates use `disabled`. Streaming still allows Send (confirm). */
 const canSend = computed(
@@ -86,86 +85,84 @@ defineExpose({ fill, focusInput });
   <div
     ref="inputWrap"
     class="faw-console-input faw-ba-composer"
-    :class="{ 'faw-ba-composer--focused': focused }"
     role="form"
     aria-label="Message composer"
   >
-    <div class="faw-ba-composer__card">
-      <a-tooltip :title="disabled && disabledReason ? disabledReason : ''">
-        <a-textarea
-          v-model:value="text"
-          :rows="2"
-          :auto-size="{ minRows: 2, maxRows: 12 }"
-          :disabled="Boolean(disabled)"
-          aria-label="Chat message"
-          :placeholder="
-            loading
-              ? 'Follow-up… Send stops current reply'
-              : analysisMode
-                ? 'Ask or request BA analysis…'
-                : 'Ask about the product…'
-          "
-          @keydown="onKeydown"
-          @focus="focused = true"
-          @blur="focused = false"
-        />
-      </a-tooltip>
-      <div class="faw-console-input__row faw-ba-input-row">
-        <div
-          class="faw-ba-input-hint flex items-center gap-2 flex-wrap min-w-0"
-          :class="{ 'faw-ba-input-hint--visible': focused }"
+    <a-tooltip :title="disabled && disabledReason ? disabledReason : ''">
+      <a-textarea
+        v-model:value="text"
+        :rows="2"
+        :auto-size="{ minRows: 2, maxRows: 12 }"
+        :disabled="Boolean(disabled)"
+        aria-label="Chat message"
+        :placeholder="
+          loading
+            ? 'Type a follow-up — Send will ask to stop the current reply…'
+            : analysisMode
+              ? 'Ask normally or request BA analysis / specs (include requirements, issue links, docs…)…'
+              : 'Ask about the product — include a URL or screen / button name when you can'
+        "
+        @keydown="onKeydown"
+      />
+    </a-tooltip>
+    <div class="faw-console-input__row faw-ba-input-row">
+      <div class="faw-ba-input-hint flex items-center gap-2 flex-wrap min-w-0">
+        <a-tooltip
+          title="On: ready for BA analysis when you ask for it; normal Q&A still works. Off: product Q&A only."
         >
-          <span class="faw-ba-input-hint--desktop opacity-70"
-            >Enter send · Shift+Enter newline · Esc stop</span
+          <label
+            class="faw-ba-mode-toggle inline-flex items-center gap-1.5 cursor-pointer select-none shrink-0 text-[11px] text-[var(--app-muted)]"
           >
-          <span class="faw-ba-input-hint--mobile opacity-70"
-            >Enter send · Esc stop</span
-          >
-        </div>
-        <div class="faw-ba-input-actions">
-          <a-tooltip
-            title="On: ready for BA analysis when you ask; normal Q&A still works. Off: product Q&A only."
-          >
-            <label
-              class="faw-ba-mode-chip"
-              :class="{ 'faw-ba-mode-chip--on': analysisMode }"
+            <a-switch
+              size="small"
+              :checked="analysisMode"
+              :disabled="disabled"
+              @change="(v: boolean) => emit('update:analysisMode', v)"
+            />
+            <span
+              :class="
+                analysisMode
+                  ? 'text-[var(--app-ink)] font-medium'
+                  : undefined
+              "
+              >BA mode</span
             >
-              <a-switch
-                size="small"
-                :checked="analysisMode"
-                :disabled="disabled"
-                @change="(v: boolean) => emit('update:analysisMode', v)"
-              />
-              <span>BA</span>
-            </label>
-          </a-tooltip>
-          <a-popconfirm
-            v-if="loading"
-            title="Stop the running reply?"
-            ok-text="Stop"
-            cancel-text="Cancel"
-            ok-type="danger"
-            @confirm="emit('stop')"
-          >
-            <button
-              type="button"
-              class="faw-btn faw-btn--danger"
-              :disabled="stopBusy"
-              aria-label="Stop reply"
-            >
-              {{ stopBusy ? "…" : "Stop" }}
-            </button>
-          </a-popconfirm>
+          </label>
+        </a-tooltip>
+        <span class="faw-ba-input-hint--desktop opacity-70"
+          >Enter / ⌘·Ctrl+Enter send · Shift+Enter newline · Esc stop</span
+        >
+        <span class="faw-ba-input-hint--mobile opacity-70"
+          >Enter send · Esc stop</span
+        >
+      </div>
+      <div class="faw-ba-input-actions">
+        <a-popconfirm
+          v-if="loading"
+          title="Stop the running reply?"
+          ok-text="Stop"
+          cancel-text="Cancel"
+          ok-type="danger"
+          @confirm="emit('stop')"
+        >
           <button
             type="button"
-            class="faw-btn faw-btn--run faw-btn--send"
-            :disabled="!canSend"
-            aria-label="Send message"
-            @click="submit"
+            class="faw-btn faw-btn--danger"
+            :disabled="stopBusy"
+            aria-label="Stop reply"
           >
-            Send
+            {{ stopBusy ? "…" : "Stop" }}
           </button>
-        </div>
+        </a-popconfirm>
+        <button
+          type="button"
+          class="faw-btn faw-btn--run faw-btn--send"
+          :disabled="!canSend"
+          aria-label="Send message"
+          @click="submit"
+        >
+          Send
+        </button>
       </div>
     </div>
   </div>
