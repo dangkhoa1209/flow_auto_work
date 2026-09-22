@@ -33,6 +33,7 @@ export function useWorkbench() {
     loading,
     jobLoading,
     labels,
+    members,
     milestoneFilter,
     labelFilter,
     agentTyping,
@@ -62,6 +63,9 @@ export function useWorkbench() {
   const createMrBusy = ref(false);
   const testcasesBusy = ref(false);
   const handoffBusy = ref(false);
+  /** Quick handoff modal — draft assignee only for this action (not saved to prefs). */
+  const handoffOpen = ref(false);
+  const handoffAssignee = ref<string | undefined>(undefined);
   const syncBaseBusy = ref(false);
   const issueSyncBusy = ref(false);
   const syncBaseOpen = ref(false);
@@ -1088,22 +1092,41 @@ export function useWorkbench() {
     }
   }
 
-  /** Quick handoff with Settings prefs (assignee / labels / comment). */
+  /** Open handoff modal; assignee draft from Settings (editable, not saved). */
+  async function openHandoffModal() {
+    if (!selectedJobId.value || !canQuickHandoff.value || handoffBusy.value) {
+      return;
+    }
+    await settings.loadHandoffPrefs(session.projectId).catch(() => undefined);
+    if (!members.value.length) {
+      await work.loadMeta().catch(() => undefined);
+    }
+    handoffAssignee.value = settings.local.assignee || undefined;
+    handoffOpen.value = true;
+  }
+
+  /**
+   * Confirm handoff: labels/comment from Settings prefs; assignee from modal draft only.
+   * Does not persist assignee to handoff prefs.
+   * Rejects on validation/API failure so the modal stays open.
+   */
   async function quickHandoff() {
-    if (!selectedJobId.value || !canQuickHandoff.value) return;
+    if (!selectedJobId.value || !canQuickHandoff.value) {
+      return Promise.reject();
+    }
     const loc = settings.local;
-    const hasPrefs = Boolean(
-      loc.assignee ||
+    const assignee = handoffAssignee.value || null;
+    const hasPayload = Boolean(
+      assignee ||
         (loc.addLabels && loc.addLabels.length) ||
         (loc.removeLabels && loc.removeLabels.length) ||
         (loc.comment && loc.comment.trim()),
     );
-    if (!hasPrefs) {
+    if (!hasPayload) {
       message.warning(
-        "Chưa cấu hình Labels & handoff — vào Settings → Labels để set assignee/labels, rồi Save",
+        "Chưa có assignee / labels — chọn người handoff hoặc cấu hình Settings → Labels",
       );
-      router.push({ name: "settings-labels" });
-      return;
+      return Promise.reject();
     }
     handoffBusy.value = true;
     try {
@@ -1111,7 +1134,7 @@ export function useWorkbench() {
         api(`/api/jobs/${selectedJobId.value}/completion-actions`, {
           method: "POST",
           body: JSON.stringify({
-            assignees: loc.assignee ? [loc.assignee] : [],
+            assignees: assignee ? [assignee] : [],
             labels: loc.addLabels || [],
             removeLabels: loc.removeLabels || [],
             comment: loc.comment || undefined,
@@ -1119,7 +1142,8 @@ export function useWorkbench() {
           }),
         }),
       );
-      if (!ok) return;
+      if (!ok) return Promise.reject();
+      handoffOpen.value = false;
       message.success("Handoff OK");
       await Promise.all([work.loadJobs(), work.loadTasks()]);
       if (selectedJobId.value) {
@@ -1131,6 +1155,7 @@ export function useWorkbench() {
       }
     } catch (e) {
       message.error(e instanceof Error ? e.message : String(e));
+      return Promise.reject(e);
     } finally {
       handoffBusy.value = false;
     }
@@ -1310,6 +1335,7 @@ export function useWorkbench() {
     loading,
     jobLoading,
     labels,
+    members,
     agentTyping,
     chatLocked,
     midTab,
@@ -1336,6 +1362,8 @@ export function useWorkbench() {
     createMrBusy,
     testcasesBusy,
     handoffBusy,
+    handoffOpen,
+    handoffAssignee,
     adhocOpen,
     adhocTitle,
     adhocMessage,
@@ -1401,6 +1429,7 @@ export function useWorkbench() {
     generateTestcases,
     onDiffUpdated,
     quickHandoff,
+    openHandoffModal,
     syncBase,
     syncBaseOpen,
     syncBaseChoice,

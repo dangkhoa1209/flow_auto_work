@@ -43,6 +43,10 @@ useWorkbenchShortcuts({
   canForceStop: canForceStopRef,
   focusTaskSearch: () => taskListRef.value?.focusTaskSearch?.(),
   closeModal: () => {
+    if (wb.handoffOpen) {
+      wb.handoffOpen = false;
+      return true;
+    }
     if (wb.relatedPreviewOpen) {
       wb.relatedPreviewOpen = false;
       return true;
@@ -188,7 +192,7 @@ function confirmMergeFromMenu() {
               @create-mr="wb.createMr"
               @generate-testcases="wb.generateTestcases"
               @diff-updated="wb.onDiffUpdated"
-              @quick-handoff="wb.quickHandoff"
+              @quick-handoff="wb.openHandoffModal"
               @sync-base="wb.syncBase"
               @refresh-issue="wb.refreshIssueDetail"
             />
@@ -399,7 +403,7 @@ function confirmMergeFromMenu() {
           @create-mr="wb.createMr"
           @generate-testcases="wb.generateTestcases"
           @diff-updated="wb.onDiffUpdated"
-          @quick-handoff="wb.quickHandoff"
+          @quick-handoff="wb.openHandoffModal"
           @sync-base="wb.syncBase"
           @refresh-issue="wb.refreshIssueDetail"
         />
@@ -451,22 +455,23 @@ function confirmMergeFromMenu() {
             {{ wb.busy ? "Running…" : "Run" }}
           </button>
         </a-tooltip>
-        <a-popconfirm
-          title="Handoff with Settings prefs?"
-          ok-text="Handoff"
-          cancel-text="Cancel"
-          :disabled="!wb.canQuickHandoff || wb.handoffBusy"
-          @confirm="wb.quickHandoff()"
+        <a-tooltip
+          :title="
+            wb.canQuickHandoff
+              ? 'Handoff — chọn assignee tạm'
+              : 'Only when job is Awaiting handoff / Done'
+          "
         >
           <button
             type="button"
             class="faw-m-btn faw-m-btn--handoff touch-manipulation"
             :disabled="!wb.canQuickHandoff || wb.handoffBusy || wb.mergeBusy"
             aria-label="Handoff"
+            @click="wb.openHandoffModal()"
           >
             {{ wb.handoffBusy ? "…" : "Handoff" }}
           </button>
-        </a-popconfirm>
+        </a-tooltip>
       </div>
       <button
         v-if="wb.awaitingPlanApproval"
@@ -648,6 +653,45 @@ function confirmMergeFromMenu() {
           <li v-for="(item, i) in std.items" :key="i">{{ item }}</li>
         </ul>
       </div>
+    </a-modal>
+
+    <a-modal
+      v-model:open="wb.handoffOpen"
+      title="Handoff"
+      ok-text="Handoff"
+      cancel-text="Cancel"
+      :confirm-loading="wb.handoffBusy"
+      wrap-class-name="work-modal-sheet"
+      :centered="false"
+      @ok="wb.quickHandoff"
+    >
+      <a-form layout="vertical" class="mt-2">
+        <a-form-item label="Assign to">
+          <a-select
+            v-model:value="wb.handoffAssignee"
+            allow-clear
+            show-search
+            class="w-full"
+            placeholder="Chọn người nhận handoff"
+            :options="
+              (wb.members || []).map((m) => ({
+                value: m.username,
+                label: m.name ? `${m.name} (@${m.username})` : `@${m.username}`,
+              }))
+            "
+            :filter-option="
+              (input, option) =>
+                String(option?.label || '')
+                  .toLowerCase()
+                  .includes(String(input || '').toLowerCase())
+            "
+          />
+        </a-form-item>
+        <p class="text-xs text-ink-soft m-0">
+          Chỉ áp dụng lần này — không lưu người handoff vào Settings → Labels.
+          Labels / comment vẫn lấy từ prefs đã lưu.
+        </p>
+      </a-form>
     </a-modal>
 
     <RelatedTaskPreviewModal
