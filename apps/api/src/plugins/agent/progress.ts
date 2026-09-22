@@ -697,7 +697,7 @@ export function recordTokenUsage(
     n >= 1_000_000
       ? `${(n / 1_000_000).toFixed(n % 1_000_000 === 0 ? 0 : 1)}M`
       : n >= 1000
-        ? `${Math.round(n / 1000)}k`
+        ? `${(n / 1000).toFixed(1)}k`
         : String(n);
   appendJobProgress(jobId, "usage", short(lastInput));
   return snap;
