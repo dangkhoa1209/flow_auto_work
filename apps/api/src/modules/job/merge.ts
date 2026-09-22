@@ -4,6 +4,7 @@
  */
 import { saveJob } from "../../job-store.js";
 import { logger } from "../../logger.js";
+import { appendJobProgress } from "../../plugins/agent/progress.js";
 import { redactGitCredentials, safeErrorMessage } from "../../plugins/git/redact.js";
 import type { IssueJob, JobRecord } from "../../types.js";
 import { AppError } from "../../utils/AppError.js";
@@ -27,6 +28,22 @@ async function assertQueuedMergeOpStillActive(
   if (!fresh.pendingMergeOp || fresh.pendingMergeOp.kind !== kind) {
     throw new AppError("Force-stopped from UI", 409);
   }
+}
+
+/** Progress-tab label for a Sync base / Merge History outcome. */
+function mergeOpProgressStatusLine(row: MergeOpHistoryEntry): string | null {
+  if (row.status === "processing") return null;
+  const kindLabel = row.kind === "sync-base" ? "Sync base" : "Merge";
+  const verb =
+    row.status === "ok"
+      ? "success"
+      : row.status === "up_to_date"
+        ? "up to date"
+        : row.status === "conflict"
+          ? "conflict"
+          : "failed";
+  const msg = row.message.trim();
+  return msg ? `${kindLabel} ${verb} — ${msg}` : `${kindLabel} ${verb}`;
 }
 
 /** Append Sync base / Merge outcome for /work Issue tab (redact secrets). */
@@ -74,13 +91,25 @@ export function pushMergeOpHistory(
         row,
         ...hist.slice(idx + 1),
       ].slice(0, MERGE_OP_HISTORY_MAX);
-      return;
+    } else {
+      job.mergeOpHistory = [row, ...(job.mergeOpHistory ?? [])].slice(
+        0,
+        MERGE_OP_HISTORY_MAX,
+      );
     }
+  } else {
+    job.mergeOpHistory = [row, ...(job.mergeOpHistory ?? [])].slice(
+      0,
+      MERGE_OP_HISTORY_MAX,
+    );
   }
-  job.mergeOpHistory = [row, ...(job.mergeOpHistory ?? [])].slice(
-    0,
-    MERGE_OP_HISTORY_MAX,
-  );
+
+  // Progress previously stopped at "Merge running…" / "Sync base running…" with
+  // no terminal line — mirror History outcomes so the console shows success/fail.
+  const progressLine = mergeOpProgressStatusLine(row);
+  if (progressLine && job.id) {
+    appendJobProgress(job.id, "status", progressLine);
+  }
 }
 
 export type CompletionActionsInput = {

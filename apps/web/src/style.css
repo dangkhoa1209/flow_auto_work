@@ -5410,6 +5410,18 @@ a.faw-mseg__btn {
 .faw-ba-filters {
   gap: 8px;
 }
+/* faw-filters already has border-bottom — avoid double rule when sticky */
+.faw-ba .faw-ba-filters.faw-filters {
+  border-bottom: 0;
+}
+.faw-ba-filters--sticky {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--app-panel);
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line-soft, var(--app-border));
+}
 .faw-ba-label {
   display: block;
   font-size: 10px;
@@ -5433,8 +5445,18 @@ a.faw-mseg__btn {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  height: 32px;
-  border-radius: 6px;
+  height: 34px;
+  border-radius: 8px;
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.06);
+}
+.faw-ba-thread-group__label {
+  padding: 8px 12px 4px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--app-faint);
 }
 .faw-ba-thread {
   width: 100%;
@@ -5442,9 +5464,9 @@ a.faw-mseg__btn {
   align-items: center;
   gap: 6px;
   text-align: left;
-  padding: 8px 10px;
+  padding: 7px 10px;
   border: 0;
-  border-bottom: 1px solid var(--line-soft);
+  border-bottom: 1px solid transparent;
   border-left: 2px solid transparent;
   background: transparent;
   color: var(--app-ink);
@@ -5467,18 +5489,30 @@ a.faw-mseg__btn {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
+}
+.faw-ba-thread__top {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
 }
 .faw-ba-thread__title {
-  font-size: 12px;
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
   font-weight: 600;
+  line-height: 1.3;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .faw-ba-thread__time {
+  flex: none;
   font-size: 10px;
   color: var(--app-faint);
+  line-height: 1.25;
+  white-space: nowrap;
 }
 .faw-ba-thread__del {
   opacity: 0;
@@ -5556,12 +5590,32 @@ a.faw-mseg__btn {
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
 }
 .faw-ba-input-hint {
   font-size: 10.5px;
   color: var(--app-faint);
   min-width: 0;
   flex: 1;
+}
+/* Hide shortcuts until focus — BA composer only (Work AgentConsole stays visible) */
+.faw-ba-composer .faw-ba-input-hint {
+  opacity: 0;
+  max-height: 0;
+  overflow: hidden;
+  flex: 0 0 0;
+  min-width: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease, max-height 0.15s ease;
+}
+.faw-ba-composer .faw-ba-input-hint--visible,
+.faw-ba-composer--focused .faw-ba-input-hint,
+.faw-ba-composer:focus-within .faw-ba-input-hint {
+  opacity: 1;
+  max-height: 24px;
+  flex: 1 1 auto;
+  pointer-events: auto;
 }
 .faw-ba-input-hint--mobile {
   display: none;
@@ -5571,6 +5625,28 @@ a.faw-mseg__btn {
   gap: 6px;
   flex: none;
   align-items: center;
+  margin-left: auto;
+}
+.faw-ba-mode-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 8px 0 6px;
+  border-radius: 999px;
+  border: 1px solid var(--app-border);
+  background: var(--app-panel-soft);
+  color: var(--app-muted);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+  transition: border-color 0.15s ease, background-color 0.15s ease, color 0.15s ease;
+}
+.faw-ba-mode-chip--on {
+  border-color: color-mix(in srgb, var(--app-accent) 45%, var(--app-border));
+  background: color-mix(in srgb, var(--app-accent) 12%, var(--app-panel-soft));
+  color: var(--app-ink);
 }
 .faw-agent-mode-select {
   width: auto;
@@ -5619,19 +5695,37 @@ a.faw-mseg__btn {
 
 /* BA Chat empty state */
 .faw-ba-empty__card {
-  padding: 8px;
+  padding: 4px;
   text-align: center;
 }
+.faw-ba-empty__hero {
+  margin-bottom: 4px;
+}
 .faw-ba-empty__title {
-  font-size: 12px;
+  font-size: 15px;
   font-weight: 650;
   color: var(--app-ink);
-  letter-spacing: -0.01em;
+  letter-spacing: -0.02em;
+  line-height: 1.3;
 }
 .faw-ba-empty__desc {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--app-muted);
   line-height: 1.5;
+}
+.faw-ba-empty__hint {
+  font-size: 11px;
+  color: var(--app-faint);
+  line-height: 1.4;
+}
+.faw-ba-empty__hint kbd {
+  display: inline-block;
+  padding: 0 4px;
+  border: 1px solid var(--app-border);
+  border-radius: 4px;
+  background: var(--app-panel-soft);
+  font: 600 10px var(--font-mono, ui-monospace, monospace);
+  color: var(--app-muted);
 }
 .faw-ba-empty__tips {
   list-style: none;
@@ -5653,20 +5747,21 @@ a.faw-mseg__btn {
   gap: 3px;
   width: 100%;
   margin: 0;
-  padding: 8px 11px;
+  padding: 10px 12px;
   border: 1px solid var(--app-border);
-  border-radius: 6px;
+  border-radius: 10px;
   background: var(--app-panel-soft);
   color: var(--app-muted);
   font: inherit;
-  font-size: 11px;
+  font-size: 11.5px;
   line-height: 1.4;
   text-align: left;
   cursor: pointer;
-  transition: border-color 0.15s ease, color 0.15s ease, background-color 0.15s ease;
+  transition: border-color 0.15s ease, color 0.15s ease, background-color 0.15s ease,
+    box-shadow 0.15s ease;
 }
 .faw-ba-empty__tip-title {
-  font-size: 10px;
+  font-size: 10.5px;
   font-weight: 600;
   letter-spacing: 0.01em;
   color: var(--app-muted);
@@ -5678,6 +5773,7 @@ a.faw-mseg__btn {
   border-color: color-mix(in srgb, var(--app-accent) 45%, var(--app-border));
   color: var(--app-ink);
   background: color-mix(in srgb, var(--app-accent) 8%, var(--app-panel-soft));
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.04);
 }
 .faw-ba-empty__tip:hover .faw-ba-empty__tip-title {
   color: color-mix(in srgb, var(--app-accent) 70%, var(--app-ink));
@@ -5687,7 +5783,84 @@ a.faw-mseg__btn {
   outline-offset: 2px;
 }
 
-/* Context strip under console head */
+/* Head — single compact bar (title · chips · status · Create Issue) */
+.faw-console-head--ba {
+  align-items: center;
+  padding: 7px 12px;
+  min-height: 40px;
+  gap: 10px;
+}
+.faw-console-head--ba .faw-console-head__title {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+.faw-ba-head-primary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  min-width: 0;
+}
+.faw-console-head--ba .faw-console-head__title h2 {
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+.faw-ba-head-bits {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.faw-ba-head-chip {
+  display: inline-flex;
+  align-items: center;
+  max-width: 12rem;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--app-border);
+  background: var(--app-panel-soft);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--app-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.faw-ba-head-chip--accent {
+  border-color: color-mix(in srgb, var(--app-accent) 40%, var(--app-border));
+  background: color-mix(in srgb, var(--app-accent) 12%, var(--app-panel-soft));
+  color: var(--app-accent-bright, var(--app-accent));
+}
+.faw-ba-head-chip--warn {
+  border-color: color-mix(in srgb, var(--app-warn, #e6a23c) 40%, var(--app-border));
+  background: color-mix(in srgb, var(--app-warn, #e6a23c) 12%, var(--app-panel-soft));
+  color: var(--app-warn, #e6a23c);
+}
+.faw-ba-status {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border-radius: 999px;
+  animation: faw-ba-status-flash 1s ease;
+}
+@keyframes faw-ba-status-flash {
+  0% {
+    background: color-mix(in srgb, var(--wip, #3b82f6) 22%, transparent);
+  }
+  100% {
+    background: transparent;
+  }
+}
+
+/* Legacy context strip (kept for safety if reintroduced) */
 .faw-ba-context {
   display: flex;
   flex-wrap: wrap;
@@ -5777,26 +5950,100 @@ a.faw-mseg__btn {
 }
 
 /* BA message hierarchy + hover actions */
-.faw-ba .faw-msg.user {
-  max-width: 78%;
+.faw-ba-scroll {
+  padding: 12px 16px 16px;
+  gap: 0;
+}
+.faw-ba-scroll__inner {
+  width: 100%;
+  max-width: 760px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 100%;
+  box-sizing: border-box;
+}
+.faw-ba .faw-ba-msg {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 10px;
+  max-width: 100%;
+  align-self: stretch;
+}
+.faw-ba .faw-ba-msg.user {
+  flex-direction: row-reverse;
+  max-width: 100%;
+  align-self: stretch;
+}
+.faw-ba .faw-ba-msg.user .faw-msg__bubble {
+  margin-left: auto;
+  max-width: min(720px, 85%);
+}
+.faw-ba .faw-ba-msg.agent .faw-msg__bubble,
+.faw-ba .faw-ba-msg.system .faw-msg__bubble {
+  flex: 1;
+  min-width: 0;
+  max-width: 100%;
+}
+.faw-ba-msg__avatar {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--app-muted);
+  background: var(--app-panel-soft);
+  border: 1px solid var(--app-border);
+  margin-top: 2px;
+  user-select: none;
+}
+.faw-ba .faw-ba-msg.user .faw-ba-msg__avatar {
+  background: color-mix(in srgb, var(--app-accent) 18%, var(--app-panel-soft));
+  border-color: color-mix(in srgb, var(--app-accent) 35%, var(--app-border));
+  color: var(--app-accent-bright, var(--app-accent));
+}
+.faw-ba .faw-ba-msg.agent .faw-ba-msg__avatar {
+  background: var(--app-panel-alt, var(--app-panel-soft));
+}
+.faw-ba .faw-msg__who {
+  display: none;
 }
 .faw-ba .faw-msg.agent .faw-msg__bubble {
   background: transparent;
-  border-color: transparent;
-  border-left: 2px solid var(--app-border);
-  border-radius: 0;
-  padding-left: 12px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  padding: 4px 6px 4px 2px;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+.faw-ba .faw-msg.agent:hover .faw-msg__bubble:not(.faw-msg__bubble--typing):not(.faw-msg__bubble--error),
+.faw-ba .faw-msg.agent:focus-within .faw-msg__bubble:not(.faw-msg__bubble--typing):not(.faw-msg__bubble--error) {
+  border-color: var(--line-soft, var(--app-border));
+  background: color-mix(in srgb, var(--app-panel-soft) 55%, transparent);
 }
 .faw-ba .faw-msg.agent .faw-msg__bubble--typing {
   background: var(--app-panel-soft);
   border: 1px solid var(--app-border);
-  border-left: 2px solid var(--app-accent);
-  border-radius: var(--r);
-  padding-left: 12px;
+  border-radius: 12px;
+  padding: 8px 12px;
+}
+.faw-ba .faw-msg.agent .faw-msg__bubble--error {
+  border-color: color-mix(in srgb, var(--app-danger, #ef4444) 35%, var(--line-soft));
+  background: color-mix(in srgb, var(--app-danger, #ef4444) 6%, var(--app-panel-soft));
+  padding: 8px 12px;
 }
 .faw-ba .faw-msg.user .faw-msg__bubble {
-  background: color-mix(in srgb, var(--app-accent) 14%, var(--app-panel-soft));
-  border-color: color-mix(in srgb, var(--app-accent) 32%, var(--app-border));
+  background: color-mix(in srgb, var(--app-accent) 12%, var(--app-panel-soft));
+  border: 1px solid color-mix(in srgb, var(--app-accent) 28%, var(--app-border));
+  border-radius: 14px;
+  padding: 9px 12px;
 }
 .faw-ba .faw-msg__bubble {
   overflow-x: hidden;
@@ -5806,31 +6053,75 @@ a.faw-mseg__btn {
 .faw-ba .chat-md-rich .chat-md-table-wrap {
   max-width: 100%;
 }
-.faw-ba .chat-md-copy {
+/* Meta (time / regenerate / copy) only on hover-focus */
+.faw-ba .chat-md-foot {
   opacity: 0;
-  transition: opacity 0.15s ease;
+  max-height: 0;
+  margin-top: 0;
+  overflow: hidden;
+  transition: opacity 0.15s ease, max-height 0.15s ease, margin-top 0.15s ease;
 }
-.faw-ba .faw-msg:hover .chat-md-copy,
-.faw-ba .faw-msg:focus-within .chat-md-copy {
+.faw-ba .faw-msg:hover .chat-md-foot,
+.faw-ba .faw-msg:focus-within .chat-md-foot,
+.faw-ba .faw-msg--failed .chat-md-foot,
+.faw-ba .faw-msg__bubble--error .chat-md-foot {
+  opacity: 1;
+  max-height: 32px;
+  margin-top: 6px;
+  overflow: visible;
+}
+.faw-ba .chat-md-copy {
   opacity: 1;
 }
+.faw-ba .faw-msg__time {
+  margin-top: 0;
+}
 @media (hover: none) {
-  .faw-ba .chat-md-copy {
+  .faw-ba .chat-md-foot {
     opacity: 1;
+    max-height: 32px;
+    margin-top: 6px;
+    overflow: visible;
   }
 }
 
-/* Composer elevation when focused */
-.faw-ba .faw-ba-composer:focus-within {
-  box-shadow:
-    0 -14px 28px -16px rgb(0 0 0 / 0.5),
-    0 0 0 1px color-mix(in srgb, var(--app-accent) 22%, transparent);
+/* Composer elevation — floating card */
+.faw-ba .faw-ba-composer {
+  padding: 8px 12px 12px;
+  background: transparent;
+  border-top: 0;
+  box-shadow: none;
+}
+.faw-ba .faw-ba-composer__card {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 10px 12px;
+  border: 1px solid var(--app-border);
+  border-radius: 12px;
+  background: var(--app-panel);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.04), 0 8px 24px -16px rgb(0 0 0 / 0.35);
+  transition: box-shadow 0.15s ease, border-color 0.15s ease, background-color 0.15s ease;
+}
+.faw-ba .faw-ba-composer:focus-within .faw-ba-composer__card,
+.faw-ba .faw-ba-composer--focused .faw-ba-composer__card {
+  border-color: color-mix(in srgb, var(--app-accent) 40%, var(--app-border));
   background: var(--app-panel-alt, var(--app-panel));
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--app-accent) 18%, transparent),
+    0 10px 28px -14px rgb(0 0 0 / 0.45);
+}
+.faw-ba .faw-ba-composer .ant-input,
+.faw-ba .faw-ba-composer textarea.ant-input {
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  padding: 2px 2px 4px !important;
+  resize: none;
 }
 .faw-ba .faw-ba-composer .ant-input:focus,
 .faw-ba .faw-ba-composer .ant-input-focused,
 .faw-ba .faw-ba-composer textarea.ant-input:focus {
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--app-accent) 26%, transparent) !important;
+  box-shadow: none !important;
 }
 
 /* Thread search + snippet */
@@ -5851,7 +6142,7 @@ a.faw-mseg__btn {
   height: 30px;
   padding: 0 8px 0 26px;
   border: 1px solid var(--app-border);
-  border-radius: 6px;
+  border-radius: 8px;
   background: var(--app-panel-soft);
   color: var(--app-ink);
   font: 500 11.5px var(--font-ui);
@@ -5873,26 +6164,29 @@ a.faw-mseg__btn {
 /* Thread switch skeleton */
 .faw-ba-skel__row {
   display: flex;
-  flex-direction: column;
-  gap: 6px;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 10px;
   max-width: 100%;
 }
 .faw-ba-skel__row.user {
-  align-self: flex-end;
-  align-items: flex-end;
-  max-width: 70%;
-  margin-left: auto;
+  flex-direction: row-reverse;
+  align-self: stretch;
 }
-.faw-ba-skel__who {
-  width: 48px;
-  height: 8px;
-  border-radius: 3px;
+.faw-ba-skel__avatar {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
   background: var(--app-panel-soft);
 }
+.faw-ba-skel__who {
+  display: none;
+}
 .faw-ba-skel__bubble {
-  width: 100%;
+  flex: 1;
   height: 52px;
-  border-radius: 6px;
+  border-radius: 12px;
   background: linear-gradient(
     90deg,
     var(--app-panel-soft) 0%,
@@ -5902,8 +6196,13 @@ a.faw-mseg__btn {
   background-size: 200% 100%;
   animation: faw-ba-skel-shine 1.2s ease-in-out infinite;
 }
+.faw-ba-skel__row.user .faw-ba-skel__bubble {
+  flex: 0 1 auto;
+  width: 55%;
+  margin-left: auto;
+}
 .faw-ba-skel__bubble--short {
-  width: 70%;
+  width: 42% !important;
   height: 36px;
 }
 @keyframes faw-ba-skel-shine {
@@ -5984,21 +6283,19 @@ a.faw-mseg__btn {
   }
   .faw-ba-shell .faw-ba-input-actions .faw-btn {
     flex: 1;
-    height: 32px;
-    min-height: 32px;
+    height: 40px;
+    min-height: 40px;
   }
-  .faw-ba-mode-toggle {
+  .faw-ba-mode-chip {
+    height: 40px;
+    padding: 0 10px 0 8px;
     font-size: 12px;
   }
-  .faw-ba-context {
-    padding: 4px 10px 6px;
+  .faw-ba-head-bits {
     gap: 4px;
-    flex-wrap: wrap;
-    max-height: none;
   }
-  .faw-ba-context__bit--path,
-  .faw-ba-context__sep:has(+ .faw-ba-context__bit--path) {
-    display: none;
+  .faw-ba-head-chip {
+    max-width: 9rem;
   }
   .faw-ba-create-label--full {
     display: none;
@@ -6011,19 +6308,29 @@ a.faw-mseg__btn {
     padding: 6px 10px;
     gap: 8px;
   }
+  .faw-ba-head-primary {
+    gap: 4px 6px;
+  }
   .faw-console--ba .faw-console-head__title h2 {
     font-size: 13px;
     line-height: 1.3;
+    white-space: normal;
     display: -webkit-box;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
   }
-  .faw-ba .faw-msg.user {
+  .faw-ba-scroll {
+    padding: 10px 10px 12px;
+  }
+  .faw-ba .faw-ba-msg.user .faw-msg__bubble {
     max-width: 92%;
   }
-  .faw-ba .faw-msg.agent .faw-msg__bubble {
-    padding-left: 10px;
+  .faw-ba-msg__avatar {
+    width: 24px;
+    height: 24px;
+    border-radius: 7px;
+    font-size: 9px;
   }
   .faw-ba-empty {
     padding-top: 1.5rem !important;
@@ -6033,6 +6340,9 @@ a.faw-mseg__btn {
   .faw-ba-empty__card {
     max-width: none;
     text-align: left;
+  }
+  .faw-ba-empty__title {
+    font-size: 14px;
   }
   .faw-ba-empty__tips {
     gap: 8px;
@@ -6057,13 +6367,37 @@ a.faw-mseg__btn {
     min-height: 36px;
   }
   /* Main already clears bottom nav — avoid double safe-area on composer */
-  .faw-ba-shell .faw-console-input {
-    padding: 8px 10px 10px;
+  .faw-ba-shell .faw-ba-composer {
+    padding: 6px 10px 10px;
+  }
+  .faw-ba-shell .faw-ba-composer__card {
+    padding: 8px 10px;
+    border-radius: 12px;
+  }
+  .faw-ba-shell .faw-ba-composer .ant-input,
+  .faw-ba-shell .faw-ba-composer textarea.ant-input {
+    font-size: 16px !important; /* avoid iOS zoom */
   }
 }
 
 @media (max-width: 1023px) and (prefers-reduced-motion: reduce) {
   .faw-ba-side {
+    transition: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .faw-ba-status {
+    animation: none;
+  }
+  .faw-ba-skel__bubble {
+    animation: none;
+    background: var(--app-panel-soft);
+  }
+  .faw-ba-composer .faw-ba-input-hint,
+  .faw-ba .chat-md-foot,
+  .faw-ba .faw-ba-composer__card,
+  .faw-ba .faw-msg.agent .faw-msg__bubble {
     transition: none;
   }
 }

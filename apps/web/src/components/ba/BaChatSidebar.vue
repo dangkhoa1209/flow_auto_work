@@ -1,17 +1,9 @@
 <script setup lang="ts">
 import { computed, inject, nextTick, ref } from "vue";
 import { Modal, message } from "ant-design-vue";
-import {
-  PlusOutlined,
-  DeleteOutlined,
-  SearchOutlined,
-  PushpinOutlined,
-  PushpinFilled,
-  EditOutlined,
-  CloseOutlined,
-} from "@ant-design/icons-vue";
+import { PlusOutlined, SearchOutlined, CloseOutlined } from "@ant-design/icons-vue";
 import { useBaChatStore, type BaThread } from "@/stores/baChat";
-import { formatRelativeTime } from "@/utils/formatChatTime";
+import BaThreadRow from "@/components/ba/BaThreadRow.vue";
 
 const ba = useBaChatStore();
 const closeSide = inject<() => void>("baCloseSide", () => undefined);
@@ -22,13 +14,24 @@ const renameDraft = ref("");
 const renameInputEl = ref<HTMLInputElement | null>(null);
 const threadListEl = ref<HTMLElement | null>(null);
 
-const showSearch = computed(() => ba.threads.length >= 8);
+const showSearch = computed(() => ba.threads.length >= 3);
 
 const filteredThreads = computed(() => {
   const q = threadQuery.value.trim().toLowerCase();
   if (!q) return ba.threads;
   return ba.threads.filter((t) => t.title.toLowerCase().includes(q));
 });
+
+const pinnedThreads = computed(() =>
+  filteredThreads.value.filter((t) => t.pinned),
+);
+const recentThreads = computed(() =>
+  filteredThreads.value.filter((t) => !t.pinned),
+);
+
+const showGroups = computed(
+  () => pinnedThreads.value.length > 0 && recentThreads.value.length > 0,
+);
 
 /** Last message snippet for the active thread (others load on select). */
 const activeSnippet = computed(() => {
@@ -124,6 +127,10 @@ function onThreadListScroll() {
     void ba.loadMoreThreads();
   }
 }
+
+function setRenameEl(el: HTMLInputElement | null) {
+  renameInputEl.value = el;
+}
 </script>
 
 <template>
@@ -148,7 +155,7 @@ function onThreadListScroll() {
       </button>
     </div>
 
-    <div class="faw-filters faw-ba-filters">
+    <div class="faw-filters faw-ba-filters faw-ba-filters--sticky">
       <a-tooltip
         :title="
           !ba.selectedProjectId
@@ -173,8 +180,8 @@ function onThreadListScroll() {
           v-model="threadQuery"
           type="search"
           class="faw-ba-thread-search__input"
-          placeholder="Filter chats…"
-          aria-label="Filter chats"
+          placeholder="Search chats…"
+          aria-label="Search chats"
         />
       </div>
     </div>
@@ -197,93 +204,69 @@ function onThreadListScroll() {
       >
         No chats match “{{ threadQuery.trim() }}”
       </div>
-      <div
-        v-for="t in filteredThreads"
-        :key="t.id"
-        role="button"
-        tabindex="0"
-        class="faw-ba-thread"
-        :class="{
-          active: t.id === ba.activeThreadId,
-          'faw-ba-thread--pinned': t.pinned,
-        }"
-        @click="onSelectThread(t.id)"
-        @keydown.enter.prevent="onSelectThread(t.id)"
-        @dblclick.stop="startRename(t)"
-      >
-        <div class="faw-ba-thread__main">
-          <template v-if="renamingId === t.id">
-            <input
-              :ref="
-                (el) => {
-                  renameInputEl.value = (el as HTMLInputElement | null) || null;
-                }
-              "
-              v-model="renameDraft"
-              type="text"
-              class="faw-ba-thread__rename"
-              maxlength="120"
-              aria-label="Rename chat"
-              @click.stop
-              @keydown.enter.prevent="commitRename"
-              @keydown.esc.prevent="cancelRename"
-              @blur="commitRename"
+      <template v-else>
+        <template v-if="showGroups">
+          <div class="faw-ba-thread-group" aria-label="Pinned chats">
+            <div class="faw-ba-thread-group__label">Pinned</div>
+            <BaThreadRow
+              v-for="t in pinnedThreads"
+              :key="t.id"
+              :thread="t"
+              :active="t.id === ba.activeThreadId"
+              :snippet="t.id === ba.activeThreadId ? activeSnippet : ''"
+              :renaming="renamingId === t.id"
+              :rename-draft="renameDraft"
+              @select="onSelectThread"
+              @start-rename="startRename"
+              @commit-rename="commitRename"
+              @cancel-rename="cancelRename"
+              @update:rename-draft="renameDraft = $event"
+              @set-rename-el="setRenameEl"
+              @toggle-pin="onTogglePin"
+              @delete="onDelete"
             />
-          </template>
-          <template v-else>
-            <span class="faw-ba-thread__title">
-              <PushpinFilled
-                v-if="t.pinned"
-                class="faw-ba-thread__pin-mark"
-                aria-hidden="true"
-              />
-              {{ t.title }}
-            </span>
-            <span
-              v-if="t.id === ba.activeThreadId && activeSnippet"
-              class="faw-ba-thread__snip"
-              >{{ activeSnippet }}</span
-            >
-            <span class="faw-ba-thread__time">{{
-              formatRelativeTime(t.updatedAt)
-            }}</span>
-          </template>
-        </div>
-        <div
-          v-if="renamingId !== t.id"
-          class="faw-ba-thread__actions"
-          @click.stop
-        >
-          <button
-            type="button"
-            class="faw-icon-btn"
-            :title="t.pinned ? 'Unpin' : 'Pin'"
-            :aria-label="t.pinned ? 'Unpin chat' : 'Pin chat'"
-            @click="onTogglePin(t, $event)"
-          >
-            <PushpinFilled v-if="t.pinned" />
-            <PushpinOutlined v-else />
-          </button>
-          <button
-            type="button"
-            class="faw-icon-btn"
-            title="Rename"
-            aria-label="Rename chat"
-            @click="startRename(t, $event)"
-          >
-            <EditOutlined />
-          </button>
-          <button
-            type="button"
-            class="faw-icon-btn faw-ba-thread__del"
-            title="Delete"
-            aria-label="Delete chat"
-            @click="onDelete(t.id, t.title)"
-          >
-            <DeleteOutlined />
-          </button>
-        </div>
-      </div>
+          </div>
+          <div class="faw-ba-thread-group" aria-label="Recent chats">
+            <div class="faw-ba-thread-group__label">Recent</div>
+            <BaThreadRow
+              v-for="t in recentThreads"
+              :key="t.id"
+              :thread="t"
+              :active="t.id === ba.activeThreadId"
+              :snippet="t.id === ba.activeThreadId ? activeSnippet : ''"
+              :renaming="renamingId === t.id"
+              :rename-draft="renameDraft"
+              @select="onSelectThread"
+              @start-rename="startRename"
+              @commit-rename="commitRename"
+              @cancel-rename="cancelRename"
+              @update:rename-draft="renameDraft = $event"
+              @set-rename-el="setRenameEl"
+              @toggle-pin="onTogglePin"
+              @delete="onDelete"
+            />
+          </div>
+        </template>
+        <template v-else>
+          <BaThreadRow
+            v-for="t in filteredThreads"
+            :key="t.id"
+            :thread="t"
+            :active="t.id === ba.activeThreadId"
+            :snippet="t.id === ba.activeThreadId ? activeSnippet : ''"
+            :renaming="renamingId === t.id"
+            :rename-draft="renameDraft"
+            @select="onSelectThread"
+            @start-rename="startRename"
+            @commit-rename="commitRename"
+            @cancel-rename="cancelRename"
+            @update:rename-draft="renameDraft = $event"
+            @set-rename-el="setRenameEl"
+            @toggle-pin="onTogglePin"
+            @delete="onDelete"
+          />
+        </template>
+      </template>
       <div
         v-if="ba.threadsLoadingMore"
         class="px-3 py-3 text-center text-[11px] text-[var(--app-faint)]"

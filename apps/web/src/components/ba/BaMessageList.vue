@@ -169,10 +169,10 @@ watch(
   },
 );
 
-function whoLabel(role: string) {
-  if (role === "user") return "You";
-  if (role === "system") return "system";
-  return "assistant";
+function avatarLabel(role: string) {
+  if (role === "user") return "Y";
+  if (role === "system") return "S";
+  return "A";
 }
 
 function onJumpLatest() {
@@ -188,7 +188,7 @@ function onTip(prompt: string) {
   <div class="faw-ba-msgs relative flex-1 min-h-0 flex flex-col">
     <div
       ref="listRef"
-      class="faw-console-scroll flex-1 min-h-0 overflow-y-auto"
+      class="faw-console-scroll faw-ba-scroll flex-1 min-h-0 overflow-y-auto"
       role="log"
       aria-relevant="additions"
       :aria-busy="streaming ? 'true' : undefined"
@@ -197,87 +197,130 @@ function onTip(prompt: string) {
       @wheel.passive="onWheel"
       @touchmove.passive="onTouchMove"
     >
-      <div
-        v-if="showSkeleton"
-        class="faw-ba-skel space-y-3 py-4"
-        aria-busy="true"
-        aria-label="Loading messages"
-      >
-        <div class="faw-ba-skel__row agent">
-          <div class="faw-ba-skel__who" />
-          <div class="faw-ba-skel__bubble" />
-        </div>
-        <div class="faw-ba-skel__row user">
-          <div class="faw-ba-skel__who" />
-          <div class="faw-ba-skel__bubble faw-ba-skel__bubble--short" />
-        </div>
-        <div class="faw-ba-skel__row agent">
-          <div class="faw-ba-skel__who" />
-          <div class="faw-ba-skel__bubble" />
-        </div>
-      </div>
-
-      <div
-        v-else-if="showEmpty"
-        class="faw-ba-empty flex-1 flex items-center justify-center py-16 px-4"
-        role="status"
-      >
-        <div class="faw-ba-empty__card max-w-md space-y-3">
-          <p class="faw-ba-empty__title m-0">
-            Ask anything about the selected project
-          </p>
-          <p class="faw-ba-empty__desc m-0">
-            Include a
-            <strong class="text-[var(--app-ink)] font-medium">URL</strong>
-            or UI anchor (menu, button, screen) so answers match the real system.
-          </p>
-          <ul class="faw-ba-empty__tips" aria-label="Example prompts">
-            <li v-for="tip in EMPTY_TIPS" :key="tip.prompt">
-              <button
-                type="button"
-                class="faw-ba-empty__tip"
-                @click="onTip(tip.prompt)"
-              >
-                <span class="faw-ba-empty__tip-title">{{ tip.title }}</span>
-                <span class="faw-ba-empty__tip-prompt">{{ tip.prompt }}</span>
-              </button>
-            </li>
-          </ul>
-        </div>
-      </div>
-
-      <template v-else>
+      <div class="faw-ba-scroll__inner">
         <div
-          v-for="m in visibleMessages"
-          :key="m.id"
-          class="faw-msg"
-          :class="
-            m.role === 'user' ? 'user' : m.role === 'system' ? 'system' : 'agent'
-          "
-          :data-msg-id="m.id"
+          v-if="showSkeleton"
+          class="faw-ba-skel space-y-4 py-2"
+          aria-busy="true"
+          aria-label="Loading messages"
         >
-          <div class="faw-msg__who">{{ whoLabel(m.role) }}</div>
+          <div class="faw-ba-skel__row agent">
+            <div class="faw-ba-skel__avatar" />
+            <div class="faw-ba-skel__bubble" />
+          </div>
+          <div class="faw-ba-skel__row user">
+            <div class="faw-ba-skel__bubble faw-ba-skel__bubble--short" />
+            <div class="faw-ba-skel__avatar" />
+          </div>
+          <div class="faw-ba-skel__row agent">
+            <div class="faw-ba-skel__avatar" />
+            <div class="faw-ba-skel__bubble" />
+          </div>
+        </div>
+
+        <div
+          v-else-if="showEmpty"
+          class="faw-ba-empty flex-1 flex items-center justify-center py-12 px-4 min-h-[16rem]"
+          role="status"
+        >
+          <div class="faw-ba-empty__card max-w-md space-y-4">
+            <div class="faw-ba-empty__hero space-y-2">
+              <p class="faw-ba-empty__title m-0">
+                Ask anything about this project
+              </p>
+              <p class="faw-ba-empty__desc m-0">
+                Paste a
+                <strong class="text-[var(--app-ink)] font-medium">URL</strong>
+                or name a screen / button so answers match the real product.
+              </p>
+              <p class="faw-ba-empty__hint m-0">
+                Tip: use <kbd>@</kbd> in the composer for anchors · Enter to send
+              </p>
+            </div>
+            <ul class="faw-ba-empty__tips" aria-label="Example prompts">
+              <li v-for="tip in EMPTY_TIPS" :key="tip.prompt">
+                <button
+                  type="button"
+                  class="faw-ba-empty__tip"
+                  @click="onTip(tip.prompt)"
+                >
+                  <span class="faw-ba-empty__tip-title">{{ tip.title }}</span>
+                  <span class="faw-ba-empty__tip-prompt">{{ tip.prompt }}</span>
+                </button>
+              </li>
+            </ul>
+          </div>
+        </div>
+
+        <template v-else>
           <div
-            class="faw-msg__bubble"
-            :class="{
-              'faw-msg__bubble--streaming': isStreamingMessage(m),
-              'faw-msg__bubble--error': isErrorMessage(m),
-            }"
+            v-for="m in visibleMessages"
+            :key="m.id"
+            class="faw-msg faw-ba-msg"
+            :class="
+              m.role === 'user'
+                ? 'user'
+                : m.role === 'system'
+                  ? 'system'
+                  : 'agent'
+            "
+            :data-msg-id="m.id"
           >
-            <ChatMessageBody
-              v-if="m.content"
-              :body="m.content"
-              :role="m.role === 'user' ? 'user' : 'agent'"
-              copyable
+            <div
+              class="faw-ba-msg__avatar"
+              :aria-label="
+                m.role === 'user'
+                  ? 'You'
+                  : m.role === 'system'
+                    ? 'System'
+                    : 'Assistant'
+              "
+              aria-hidden="true"
             >
-              <template #below>
-                <span
-                  v-if="isStreamingMessage(m)"
-                  class="faw-stream-caret"
-                  aria-hidden="true"
-                />
-              </template>
-              <template #meta>
+              {{ avatarLabel(m.role) }}
+            </div>
+            <div
+              class="faw-msg__bubble"
+              :class="{
+                'faw-msg__bubble--streaming': isStreamingMessage(m),
+                'faw-msg__bubble--error': isErrorMessage(m),
+              }"
+            >
+              <ChatMessageBody
+                v-if="m.content"
+                :body="m.content"
+                :role="m.role === 'user' ? 'user' : 'agent'"
+                copyable
+              >
+                <template #below>
+                  <span
+                    v-if="isStreamingMessage(m) && typingInsideStream"
+                    class="faw-stream-caret"
+                    aria-hidden="true"
+                  />
+                </template>
+                <template #meta>
+                  <time
+                    v-if="formatChatTime(m.createdAt)"
+                    class="faw-msg__time"
+                    :datetime="m.createdAt"
+                  >
+                    {{ formatChatTime(m.createdAt) }}
+                  </time>
+                  <button
+                    v-if="canRegenerate(m)"
+                    type="button"
+                    class="faw-ba-msg-action"
+                    :aria-label="
+                      isErrorMessage(m) ? 'Retry reply' : 'Regenerate reply'
+                    "
+                    @click="requestRegenerate(m)"
+                  >
+                    {{ isErrorMessage(m) ? "Retry" : "Regenerate" }}
+                  </button>
+                </template>
+              </ChatMessageBody>
+              <template v-else>
                 <time
                   v-if="formatChatTime(m.createdAt)"
                   class="faw-msg__time"
@@ -285,79 +328,61 @@ function onTip(prompt: string) {
                 >
                   {{ formatChatTime(m.createdAt) }}
                 </time>
-                <button
-                  v-if="canRegenerate(m)"
-                  type="button"
-                  class="faw-ba-msg-action"
-                  :aria-label="isErrorMessage(m) ? 'Retry reply' : 'Regenerate reply'"
-                  @click="requestRegenerate(m)"
-                >
-                  {{ isErrorMessage(m) ? "Retry" : "Regenerate" }}
-                </button>
               </template>
-            </ChatMessageBody>
-            <template v-else>
-              <time
-                v-if="formatChatTime(m.createdAt)"
-                class="faw-msg__time"
-                :datetime="m.createdAt"
-              >
-                {{ formatChatTime(m.createdAt) }}
-              </time>
-            </template>
+            </div>
           </div>
-        </div>
 
-        <!-- Failed Send before server accepted the user message -->
-        <template v-if="failedSend">
-          <div class="faw-msg user faw-msg--failed">
-            <div class="faw-msg__who">You</div>
-            <div class="faw-msg__bubble faw-msg__bubble--failed">
-              <div class="chat-md-wrap">
-                <div class="chat-md chat-md-user whitespace-pre-wrap">
-                  {{ failedSend.content }}
-                </div>
-                <div class="chat-md-foot">
-                  <div class="chat-md-foot__meta">
-                    <span class="faw-ba-failed-label">Send failed</span>
-                    <button
-                      type="button"
-                      class="faw-ba-msg-action"
-                      aria-label="Retry send"
-                      @click="emit('retry')"
-                    >
-                      Retry
-                    </button>
+          <!-- Failed Send before server accepted the user message -->
+          <template v-if="failedSend">
+            <div class="faw-msg faw-ba-msg user faw-msg--failed">
+              <div class="faw-ba-msg__avatar" aria-hidden="true">Y</div>
+              <div class="faw-msg__bubble faw-msg__bubble--failed">
+                <div class="chat-md-wrap">
+                  <div class="chat-md chat-md-user whitespace-pre-wrap">
+                    {{ failedSend.content }}
+                  </div>
+                  <div class="chat-md-foot">
+                    <div class="chat-md-foot__meta">
+                      <span class="faw-ba-failed-label">Send failed</span>
+                      <button
+                        type="button"
+                        class="faw-ba-msg-action"
+                        aria-label="Retry send"
+                        @click="emit('retry')"
+                      >
+                        Retry
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
-          </div>
-          <div class="faw-msg agent faw-msg--failed">
-            <div class="faw-msg__who">system</div>
-            <div class="faw-msg__bubble faw-msg__bubble--error">
-              <p class="m-0 text-[12px]">⚠️ {{ failedSend.error }}</p>
+            <div class="faw-msg faw-ba-msg agent faw-msg--failed">
+              <div class="faw-ba-msg__avatar" aria-hidden="true">S</div>
+              <div class="faw-msg__bubble faw-msg__bubble--error">
+                <p class="m-0 text-[12px]">⚠️ {{ failedSend.error }}</p>
+              </div>
+            </div>
+          </template>
+
+          <!-- Only before first token — one assistant row, no duplicate under content -->
+          <div v-if="showTypingFooter" class="faw-msg faw-ba-msg agent">
+            <div class="faw-ba-msg__avatar" aria-hidden="true">A</div>
+            <div
+              class="faw-msg__bubble faw-msg__bubble--typing"
+              aria-live="polite"
+              aria-label="Thinking"
+            >
+              <span class="chat-typing">
+                <span /><span /><span />
+              </span>
+              <span class="text-[11px] text-[var(--app-faint)] ml-1.5">{{
+                typingHint
+              }}</span>
             </div>
           </div>
         </template>
-
-        <!-- Only before first token — one assistant row, no duplicate under content -->
-        <div v-if="showTypingFooter" class="faw-msg agent">
-          <div class="faw-msg__who">assistant</div>
-          <div
-            class="faw-msg__bubble faw-msg__bubble--typing"
-            aria-live="polite"
-            aria-label="Thinking"
-          >
-            <span class="chat-typing">
-              <span /><span /><span />
-            </span>
-            <span class="text-[11px] text-[var(--app-faint)] ml-1.5">{{
-              typingHint
-            }}</span>
-          </div>
-        </div>
-      </template>
+      </div>
     </div>
 
     <button

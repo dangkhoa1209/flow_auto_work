@@ -323,7 +323,25 @@ const contextBits = computed(() => {
     <section class="faw-console faw-console--ba flex-1 min-w-0 min-h-0 flex flex-col">
       <div class="faw-console-head faw-console-head--ba">
         <div class="faw-console-head__title">
-          <h2>{{ ba.activeThread?.title || "Project Chat" }}</h2>
+          <div class="faw-ba-head-primary">
+            <h2>{{ ba.activeThread?.title || "Project Chat" }}</h2>
+            <div
+              v-if="ba.selectedProject && contextBits.length"
+              class="faw-ba-head-bits"
+              aria-label="Chat context"
+            >
+              <span
+                v-for="bit in contextBits"
+                :key="bit.key"
+                class="faw-ba-head-chip"
+                :class="{
+                  'faw-ba-head-chip--accent': bit.tone === 'accent',
+                  'faw-ba-head-chip--warn': bit.tone === 'warn',
+                }"
+                >{{ bit.label }}</span
+              >
+            </div>
+          </div>
           <div
             v-if="!ba.selectedProject"
             class="faw-console-head__win"
@@ -332,6 +350,13 @@ const contextBits = computed(() => {
           </div>
         </div>
         <div class="faw-console-actions">
+          <span
+            v-if="ba.streaming"
+            class="faw-idle faw-ba-status text-[11px]"
+          >
+            <span class="faw-idle__dot wip" />
+            thinking…
+          </span>
           <a-tooltip
             v-if="createIssueVisible"
             :title="createIssueDisabledReason || undefined"
@@ -350,38 +375,7 @@ const contextBits = computed(() => {
               }}</span>
             </button>
           </a-tooltip>
-          <span
-            v-if="ba.streaming"
-            class="faw-idle text-[11px]"
-          >
-            <span class="faw-idle__dot wip" />
-            thinking…
-          </span>
         </div>
-      </div>
-
-      <div
-        v-if="contextBits.length"
-        class="faw-ba-context"
-        aria-label="Chat context"
-      >
-        <template v-for="(bit, i) in contextBits" :key="bit.key">
-          <span
-            v-if="i > 0"
-            class="faw-ba-context__sep"
-            aria-hidden="true"
-            >·</span
-          >
-          <span
-            class="faw-ba-context__bit"
-            :class="{
-              'faw-ba-context__bit--accent': bit.tone === 'accent',
-              'faw-ba-context__bit--warn': bit.tone === 'warn',
-              'faw-ba-context__bit--path': bit.key === 'path',
-            }"
-            >{{ bit.label }}</span
-          >
-        </template>
       </div>
 
       <div

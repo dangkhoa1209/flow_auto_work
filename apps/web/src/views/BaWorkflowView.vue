@@ -1138,7 +1138,7 @@ onUnmounted(() => {
 
         <!-- Cột 3: chat workflow (tương tự dev console) -->
         <Pane :size="panes.rightSize" :min-size="24">
-          <section class="faw-console h-full min-h-0 flex flex-col border-l border-[var(--app-border)]">
+          <section class="faw-ba faw-console faw-console--ba h-full min-h-0 flex flex-col border-l border-[var(--app-border)]">
             <div class="faw-console-head shrink-0">
               <div class="faw-console-head__title min-w-0">
                 <h2>Chat workflow</h2>
@@ -1462,7 +1462,7 @@ onUnmounted(() => {
         <!-- Chat pane -->
         <div
           v-show="mobilePane === 'chat'"
-          class="flex-1 min-h-0 flex flex-col overflow-hidden"
+          class="faw-ba faw-console faw-console--ba flex-1 min-h-0 flex flex-col overflow-hidden"
         >
           <div v-if="!wfThreadId" class="flex-1 flex items-center justify-center p-4">
             <p class="text-[12px] text-[var(--app-muted)] m-0 text-center">
