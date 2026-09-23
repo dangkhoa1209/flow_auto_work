@@ -24,7 +24,7 @@ BA shared: `project/_ba/<slug>/source/`.
 
 API auto-runs that update after Work/BA clone (and BA pull) **in the background** — BA Chat / Work continue without waiting for `graphify update` to finish (use the existing map). Disable with `GRAPHIFY_ENABLED=0`.
 
-**BA Chat / workflow:** the agent chooses the `code_map_query` locator. The API does not pre-query with a truncated question or a fixed token budget. **Work Run/Q&A:** the agent calls `code_map_query` with a locator it picks (not the full ticket), then Read the listed files. Use `path` / `explain` when that list is empty or two symbols need connecting. **Create issue** synthesizes the chat thread only — no graphify, no source read.
+**BA Chat, BA workflow, Create Data plan, and Work (/dev) Run / Plan / Q&A** share one rule: when the file is unknown, `code_map_query` is required before a repo-wide search. The agent chooses one locator (screen, module, or symbol). The API does not pre-query and does not inject a raw graph dump. Read 1–3 files; query again with a tighter locator if the list is off-target. Use `path` / `explain` only when that list is empty or two symbols need connecting. **Create issue** synthesizes the chat thread only — no graphify, no source read.
 
 Cursor does **not** auto-load nested rules from gitignored `project/`. When the task, open files, Run, or chat target that tree:
 
@@ -35,6 +35,6 @@ Cursor does **not** auto-load nested rules from gitignored `project/`. When the 
 
 ## Agent chooses the query
 
-Before Grep / Glob / a repo-wide search, call `code_map_query` (or `graphify query "<locator>" --graph …` for nested) with a locator you choose — a screen, module, or symbol, not a truncated user message and not the full ticket. If it lists the right files, Read 1–3 of them. If the list is off-target, query again with a tighter name. Use `path` / `explain` when the list is empty or two symbols need connecting.
+When the file is unknown, `code_map_query` (or `graphify query "<locator>" --graph …` for nested) is required before Grep / Glob / a repo-wide search. You choose the locator — a screen, module, or symbol, not a truncated user message and not the full ticket. If it lists the right files, Read 1–3 of them and do not call `path` / `explain`. If the list is off-target, query again with a tighter locator. Use `path` / `explain` only when the list is empty or two symbols need connecting.
 
 Skip when the target file is already known, or that corpus has no `graphify-out/graph.json` yet. Do not fall back to the WorkBench root graph for customer-app questions.

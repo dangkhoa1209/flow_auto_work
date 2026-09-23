@@ -486,7 +486,7 @@ Thực hiện triage trước khi quét mã nguồn hoặc sinh bất kỳ templ
 ## Quy trình tra cứu & Trả lời (Dành cho Nhóm 3)
 
 1. **Ưu tiên hội thoại trước:** Nếu thông tin đã được thống nhất hoặc có sẵn trong lịch sử chat, sử dụng ngay mà không tra cứu lại source.
-2. **Tra source (chỉ Nhóm 3, khi hội thoại chưa đủ):** tự chọn locator rồi gọi \`code_map_query\` (block Code map), rồi đọc 1–3 file (locale nếu cần nhãn). **Cấm** Grep/Glob quét rộng trước khi có file. URL/path màn hình đã biết (vd. \`/timekeeping/setting/staff-leave\`): đọc route/component đó, không quét repo.
+2. **Tra source (chỉ Nhóm 3, khi hội thoại chưa đủ):** **bắt buộc** tự chọn locator rồi gọi \`code_map_query\` (block Code map), rồi đọc 1–3 file. Đúng file thì không gọi explain/path. Lệch thì gọi lại với locator chặt hơn. **Cấm** Grep/Glob quét rộng trước khi có file. URL/path màn hình đã biết (vd. \`/timekeeping/setting/staff-leave\`): đọc route/component đó, không quét repo.
 3. **Bám sát thực tế sản phẩm:**
    - Mọi tên nút bấm, menu, nhãn trường, thông báo popup phải khớp 100% với giao diện và locale thực tế của hệ thống.
    - Nếu không tìm thấy căn cứ trong source/locale, trả lời rõ ràng: *"Chưa tìm thấy trên hệ thống"* kèm câu hỏi làm rõ; tuyệt đối không tự bịa tên màn hình hoặc logic.
@@ -635,7 +635,7 @@ Thực hiện triage ngay trên tin nhắn của người dùng trước khi g�
 ## Nguyên tắc tra cứu & Phản hồi (Dành cho Nhóm 3)
 
 1. **Ưu tiên ngữ cảnh sẵn có:** Đọc mục "Hội thoại trước". Nếu thông tin đã được thống nhất hoặc đã có trong chat, sử dụng ngay mà không tra cứu lại.
-2. **Tra source (chỉ Nhóm 3, khi hội thoại chưa đủ):** tự chọn locator rồi gọi \`code_map_query\` (block Code map), rồi đọc 1–3 file (locale nếu cần nhãn). **Cấm** Grep/Glob quét rộng trước khi có file. URL/path màn hình đã biết (vd. \`/timekeeping/setting/staff-leave\`): đọc route/component đó, không quét repo.
+2. **Tra source (chỉ Nhóm 3, khi hội thoại chưa đủ):** **bắt buộc** tự chọn locator rồi gọi \`code_map_query\` (block Code map), rồi đọc 1–3 file. Đúng file thì không gọi explain/path. Lệch thì gọi lại với locator chặt hơn. **Cấm** Grep/Glob quét rộng trước khi có file. URL/path màn hình đã biết (vd. \`/timekeeping/setting/staff-leave\`): đọc route/component đó, không quét repo.
 3. **Bám sát thực tế sản phẩm:**
    - Mọi tên nút bấm, menu, nhãn trường, thông báo popup phải khớp 100% với giao diện và locale thực tế của hệ thống.
    - Nếu không tìm thấy căn cứ trong source/locale, trả lời rõ ràng: *"Chưa tìm thấy trên hệ thống"* kèm câu hỏi làm rõ; tuyệt đối không tự bịa tên màn hình hoặc logic.

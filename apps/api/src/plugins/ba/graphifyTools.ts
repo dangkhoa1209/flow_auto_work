@@ -48,12 +48,12 @@ export function buildBaGraphifyCustomTools(
   return {
     code_map_query: {
       description:
-        "Look up files for a screen, module, or symbol you choose. " +
-        "Pass one locator — not the full issue, description, or chat. " +
+        "Required before a repo-wide search when the file is unknown. " +
+        "You choose one locator (screen, module, or symbol) — not the full issue, description, or chat. " +
         "Good: 'cấu hình rules chấm công', 'TimekeeperSync'. " +
-        "Read the files it returns. If the list is off-target, call again with a tighter name. " +
+        "Read 1–3 files it returns. If the list is off-target, call again with a tighter locator. " +
         "Use code_map_explain or code_map_path only when this returns no files or you need to connect two symbols. " +
-        "Skip when the target file is already known. Prefer this before a repo-wide Grep/Glob.",
+        "Skip when the target file is already known.",
       inputSchema: {
         type: "object",
         properties: {
@@ -85,7 +85,7 @@ export function buildBaGraphifyCustomTools(
     },
     code_map_path: {
       description:
-        "Shortest path between two symbols. Call only when code_map_query returned no files.",
+        "Shortest path between two symbols. Call only when code_map_query returned no files, or you need to connect two symbols the query did not already link.",
       inputSchema: {
         type: "object",
         properties: {
@@ -109,7 +109,7 @@ export function buildBaGraphifyCustomTools(
     },
     code_map_explain: {
       description:
-        "Neighbors of one symbol. Call only when code_map_query returned no files. Do not call if the query already listed paths.",
+        "Neighbors of one symbol. Call only when code_map_query returned no files, or you need neighbors the query did not list. Do not call if the query already listed the files.",
       inputSchema: {
         type: "object",
         properties: {

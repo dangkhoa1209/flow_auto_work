@@ -9,36 +9,39 @@ import {
 } from "../graphify.js";
 
 describe("formatWorkGraphifyPromptBlock", () => {
-  it("lets the agent choose the locator and forbids a repo-wide scan first", () => {
+  it("requires one agent-chosen query before a repo-wide scan", () => {
     const block = formatWorkGraphifyPromptBlock({
       sourcePath: "/tmp/project/user/app/source",
     });
     expect(block).toMatch(/code_map_query/);
-    expect(block).toMatch(/You choose the `code_map_query` locator/);
-    expect(block).toMatch(/Do not paste the GitLab issue/);
+    expect(block).toMatch(/\*\*Required\*\*/);
+    expect(block).toMatch(/\*\*You choose the locator\*\*/);
     expect(block).toMatch(/code_map_explain/);
-    expect(block).toMatch(/tighter name/);
+    expect(block).toMatch(/tighter locator/);
     expect(block).toMatch(/graphify-out/);
     expect(block).not.toMatch(/strongly preferred/i);
     expect(block).not.toMatch(/INTENT = case 3/);
     expect(block).not.toMatch(/Likely files/);
     expect(block).not.toMatch(/budget 500/);
+    expect(block).not.toMatch(/Map sẵn/);
   });
 });
 
 describe("formatBaGraphifyPromptBlock", () => {
-  it("lets the agent choose the query and forbids a repo-wide scan", () => {
+  it("uses the same required policy as Work, in Vietnamese", () => {
     const block = formatBaGraphifyPromptBlock({
       sourcePath: "/tmp/project/user/app/source",
-      queryText: null,
     });
     expect(block).toMatch(/code_map_query/);
-    expect(block).toMatch(/Bạn chọn cách gọi `code_map_query`/);
-    expect(block).toMatch(/\*\*Cấm\*\*/);
+    expect(block).toMatch(/\*\*Bắt buộc\*\*/);
+    expect(block).toMatch(/\*\*Bạn chọn locator\*\*/);
     expect(block).toMatch(/locator chặt hơn/);
+    expect(block).toMatch(/không ra file/);
     expect(block).not.toMatch(/Map sẵn/);
+    expect(block).not.toMatch(/Gợi ý file/);
     expect(block).not.toMatch(/ưu tiên mạnh/);
     expect(block).not.toMatch(/BẮT BUỘC khi INTENT/);
+    expect(block).not.toMatch(/budget 500/);
   });
 });
 

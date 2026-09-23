@@ -310,7 +310,7 @@ ${baPresentationRules()}
 ${baGitlabBoundaryInstructions()}
 - Branch đọc: ${opts.mainBranch}
 ${dbBlock}
-- Case 3 / cần tra source: tự chọn locator rồi gọi \`code_map_query\`, đọc file tool trả về. Lệch thì gọi lại với locator chặt hơn. **Cấm** Grep quét rộng trước khi có file.
+- Case 3 / cần tra source: **bắt buộc** tự chọn locator rồi gọi \`code_map_query\`, đọc 1–3 file. Đúng file thì không gọi explain/path. Lệch thì gọi lại với locator chặt hơn. **Cấm** Grep quét rộng trước khi có file.
 
 ${opts.graphifyBlock ? `${opts.graphifyBlock}\n\n` : ""}## Yêu cầu gốc (từ khách hàng / PD — nguyên văn)
 **Tiêu đề:** ${opts.title}

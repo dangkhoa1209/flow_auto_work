@@ -222,11 +222,11 @@ function sendStableHowToBehave(opts: {
       : "If finished this follow-up, end with DONE (SUMMARY in Vietnamese — useful as issue description later; COMMIT in English when you changed files; note any assumptions).";
 
   return `## How to behave (IDE-like)
-1. If they ask a question → answer clearly (Vietnamese if they wrote Vietnamese). When the path is unknown, **you choose** the \`code_map_query\` locator (screen, module, or symbol — not the full ticket or a truncated user message); Read the files it returns. If the list is off-target, query again with a tighter name. Use \`code_map_explain\` / \`code_map_path\` when the list is empty or you need to connect two symbols. Skip only when the target file is already known. ${rule1Gitlab}
-2. If they ask to fix / add / change / re-test / seed data / run something → **do it** on the CURRENT branch (do not switch branches). Subagent flow (skip steps that do not apply — do not spawn all three by default): Task \`explore\` only if path still unclear after map/search; Task \`code-reviewer\` only after multi-file / shared-logic / risky diffs; Task \`test-writer\` only when nearby tests exist. Skip subagents for Q&A-only or trivial one-file edits. **Data fidelity:** if they named a specific NV/id/code and DB returns 0 — STOP and report not found; do **not** switch to another person/row.
+1. If they ask a question → answer clearly (Vietnamese if they wrote Vietnamese). When the path is unknown, \`code_map_query\` is **required** — **you choose** one locator (screen, module, or symbol; not the full ticket). Read 1–3 files. If off-target, query again with a tighter locator. Use \`code_map_explain\` / \`code_map_path\` only when the list is empty or two symbols need connecting. Skip when the file is already known. ${rule1Gitlab}
+2. If they ask to fix / add / change / re-test / seed data / run something → **do it** on the CURRENT branch (do not switch branches). Subagent flow (skip steps that do not apply — do not spawn all three by default): Task \`explore\` only if \`code_map_query\` returned no files; Task \`code-reviewer\` only after multi-file / shared-logic / risky diffs; Task \`test-writer\` only when nearby tests exist. Skip subagents for Q&A-only or trivial one-file edits. **Data fidelity:** if they named a specific NV/id/code and DB returns 0 — STOP and report not found; do **not** switch to another person/row.
 3. ${rule3}
 4. If Shell / Glob / "environment tools" fail or hang: do **not** \`AwaitShell\`-sleep or escalate waits — retry once then continue with Read/Write/StrReplace or report blocked. Avoid broad or many parallel \`Glob\` (\`**/*\`) and repo-wide Grep; call \`code_map_query\` with a locator you choose, then Read the listed files. Do not poll Task with \`AwaitShell\`.
-5. If the request is vague: search the repo${opts.variant === "linked" ? "/docs" : ""} first; minor gaps → proceed with the standard interpretation and say so in your reply; only end with NEED_CLARIFICATION when truly blocked (batch ALL questions, numbered, with options + your recommended default).
+5. If the request is vague: when the path is unknown, \`code_map_query\` is required first (you choose the locator), then a narrow search${opts.variant === "linked" ? " of docs" : ""}; minor gaps → proceed with the standard interpretation and say so in your reply; only end with NEED_CLARIFICATION when truly blocked (batch ALL questions, numbered, with options + your recommended default).
 6. Do NOT \`git commit\`, \`git push\`, force-push, amend remote commits, or open/merge MRs. Flow Auto Work commits to GitLab via API after you finish.
 7. ${rule7}`;
 }
@@ -340,6 +340,8 @@ export function buildPlanPhasePrompt(
     contextQualityBlock?: string;
     googleSheetsBlock?: string;
     figmaBlock?: string;
+    /** Same code-map policy as Run / BA (agent chooses the locator). */
+    graphifyBlock?: string;
   },
 ): string {
   const { notesBlock, description } = sharedPreamble(issue, devNotes);
@@ -366,7 +368,7 @@ This run is Cursor **plan mode**: read/search the repo, then produce an implemen
 Do NOT edit, write, delete, or run shell that mutates files. Do NOT commit or push.
 
 ${projectConventionsBlock()}
-Ignore image/file attachments — text only.
+${opts?.graphifyBlock ? `${opts.graphifyBlock}\n\n` : ""}Ignore image/file attachments — text only.
 
 ${qualityBlock}${chatBlock}${notesBlock}# BUSINESS REQUIREMENTS (GITLAB ISSUE #${issue.issueIid})
 Title: ${issue.title}
@@ -379,7 +381,7 @@ ${linkedBlock}${sheetsBlock}${figmaBlock}
 
 # HARD RULES (PLAN PHASE)
 1. Only read/search tools (\`read\`, \`grep\`, \`glob\`, \`ls\`, code map). No app code, no docs file writes.
-2. Search the repo before guessing file paths.
+2. When the file is unknown, \`code_map_query\` is required before guessing paths (you choose the locator). Then Read those files.
 3. **Chat PLAN READY = tiếng Việt only.** Flow shows this in Chat for the PM. Write the real analysis + solution in Vietnamese (no word limit). Drop filler / status / meta ("Đang đọc…", "Planning work…", "Starting the plan…", "I will query…").
 4. Cursor \`createPlan\` \`plan\` **must be tiếng Việt** (same content you put in PLAN). Do **not** leave createPlan in English — English createPlan is rejected by Flow in favor of the Vietnamese PLAN_READY body.
 5. Do **not** paste thinking / process narration into PLAN_READY. Status lines belong in Process only; Chat needs the finished plan.
@@ -416,7 +418,7 @@ export function envToolsFailFastBlock(): string {
   return `# TOOL / ENVIRONMENT FAILURES (fail fast — do not hang)
 If Shell / Glob / MCP / "environment tools" fail, hang, or show recovery messages:
 - Do **not** call \`AwaitShell\` to sleep or "wait for recovery" (especially without \`shell_id\`, or with escalating \`block_until_ms\` like 30s→60s→120s). That can burn ~10 minutes doing nothing.
-- Avoid **broad** or **many parallel** \`Glob\` (e.g. \`**/*\`, 3+ Glob at once) — they often hang with no stream events. Call \`code_map_query\` with a locator you choose, then Read or a narrow Grep on the listed paths. Use \`code_map_explain\` when that list is empty or off-target.
+- Avoid **broad** or **many parallel** \`Glob\` (e.g. \`**/*\`, 3+ Glob at once) — they often hang with no stream events. \`code_map_query\` is required first when the file is unknown (you choose the locator), then Read or a narrow Grep on the listed paths. If the list is off-target, query again with a tighter locator. Use \`code_map_explain\` / \`code_map_path\` only when that list is empty or two symbols need connecting.
 - If Glob hangs or fails: do **not** \`AwaitShell\`-wait; switch to the file list from \`code_map_query\` or a known path; retry that tool **at most once**.
 - Prefer \`Read\` / \`Grep\` / \`Write\` / \`StrReplace\` / \`code_map_*\` — they often still work when Shell/Glob does not.
 - Retry a failed tool **at most once**; if still broken, continue without it or report blocked in DONE — **do not poll**.
