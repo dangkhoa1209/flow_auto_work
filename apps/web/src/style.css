@@ -46,6 +46,25 @@
   --app-danger-border-strong: #7f3a3a;
   --app-danger-ink: #f87171;
   --app-danger-ink-strong: #fca5a5;
+  /* Diff view (JobDiffPanel) */
+  --app-diff-add-bg: rgba(16, 185, 129, 0.14);
+  --app-diff-add-ink: #a7f3d0;
+  --app-diff-del-bg: rgba(239, 68, 68, 0.14);
+  --app-diff-del-ink: #fecaca;
+  --app-diff-hunk-bg: rgba(59, 130, 246, 0.12);
+  --app-diff-hunk-ink: #93c5fd;
+  --app-diff-head-bg: rgba(18, 21, 28, 0.96);
+  --app-diff-overlay: rgba(13, 15, 20, 0.55);
+  --app-diff-badge-add-ink: #6ee7b7;
+  --app-diff-badge-add-bg: rgba(16, 185, 129, 0.16);
+  --app-diff-badge-mod-ink: #fbbf24;
+  --app-diff-badge-mod-bg: rgba(245, 158, 11, 0.14);
+  --app-diff-badge-del-ink: #fca5a5;
+  --app-diff-badge-del-bg: rgba(239, 68, 68, 0.16);
+  --app-diff-badge-ren-ink: #93c5fd;
+  --app-diff-badge-ren-bg: rgba(59, 130, 246, 0.16);
+  --app-diff-delta-add: #34d399;
+  --app-diff-delta-del: #f87171;
   --shadow-panel:
     0 1px 0 rgba(255, 255, 255, 0.03), 0 8px 24px rgba(0, 0, 0, 0.28);
   --shadow-float: 0 12px 32px rgba(0, 0, 0, 0.4);
@@ -88,6 +107,25 @@
   --app-danger-border-strong: #e39a9a;
   --app-danger-ink: #d33b4e;
   --app-danger-ink-strong: #b02a3c;
+  /* Diff view (JobDiffPanel) — darker ink on tinted rows for contrast */
+  --app-diff-add-bg: rgba(16, 185, 129, 0.12);
+  --app-diff-add-ink: #047857;
+  --app-diff-del-bg: rgba(239, 68, 68, 0.1);
+  --app-diff-del-ink: #b91c1c;
+  --app-diff-hunk-bg: rgba(59, 130, 246, 0.1);
+  --app-diff-hunk-ink: #1d4ed8;
+  --app-diff-head-bg: rgb(var(--c-surface-soft));
+  --app-diff-overlay: rgba(255, 255, 255, 0.72);
+  --app-diff-badge-add-ink: #047857;
+  --app-diff-badge-add-bg: rgba(16, 185, 129, 0.14);
+  --app-diff-badge-mod-ink: #b45309;
+  --app-diff-badge-mod-bg: rgba(245, 158, 11, 0.14);
+  --app-diff-badge-del-ink: #b91c1c;
+  --app-diff-badge-del-bg: rgba(239, 68, 68, 0.12);
+  --app-diff-badge-ren-ink: #1d4ed8;
+  --app-diff-badge-ren-bg: rgba(59, 130, 246, 0.12);
+  --app-diff-delta-add: #059669;
+  --app-diff-delta-del: #dc2626;
   --shadow-panel:
     0 1px 2px rgba(16, 24, 40, 0.05), 0 8px 24px rgba(16, 24, 40, 0.08);
   --shadow-float: 0 12px 32px rgba(16, 24, 40, 0.18);
