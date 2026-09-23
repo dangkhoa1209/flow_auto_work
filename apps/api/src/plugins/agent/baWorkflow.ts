@@ -18,8 +18,10 @@ import { cursorModelLogLabel } from "../cursor/modelSpec.js";
 import { readOnlyAgentPolicy } from "../cursor/agentPolicy.js";
 import { isGitRepo } from "../../workspace/clone.js";
 import {
+  compactGraphifyQueryOutput,
   ensureProjectGraphifyReady,
   formatBaGraphifyPromptBlock,
+  graphifyQueryLocator,
   queryProjectGraphify,
 } from "../../workspace/graphify.js";
 import { pullBaProjectLatest } from "../git/ba-pull.js";
@@ -311,7 +313,7 @@ ${baPresentationRules()}
 ${baGitlabBoundaryInstructions()}
 - Branch đọc: ${opts.mainBranch}
 ${dbBlock}
-- Case 3 / cần tra source: **ưu tiên** tool \`code_map_query\` trước Grep quét rộng; bỏ qua khi đã biết path hoặc đủ ngữ cảnh trong YC/chat.
+- Case 3 / cần tra source: một \`code_map_query\`, rồi đọc file trong Map sẵn. **Cấm** Grep quét rộng và gọi thêm explain/path khi map đã có file.
 
 ${opts.graphifyBlock ? `${opts.graphifyBlock}\n\n` : ""}## Yêu cầu gốc (từ khách hàng / PD — nguyên văn)
 **Tiêu đề:** ${opts.title}
@@ -548,13 +550,12 @@ export async function runBaWorkflowStep(opts: {
     session.check();
     const graphifyQuery = await queryProjectGraphify(
       project.localPath,
-      [opts.requirement.title, opts.requirement.rawContent, opts.step].join(
-        " | ",
-      ),
+      graphifyQueryLocator(`${opts.requirement.title} ${opts.step}`),
+      { budget: 500 },
     );
     const graphifyBlock = formatBaGraphifyPromptBlock({
       sourcePath: project.localPath,
-      queryText: graphifyQuery,
+      queryText: compactGraphifyQueryOutput(graphifyQuery),
     });
     session.check();
 

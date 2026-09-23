@@ -499,9 +499,14 @@ async function runGraphifyReadCommand(
   return text || null;
 }
 
+/** Short locator for a server-side graphify hint — current question only, not chat history. */
+export function graphifyQueryLocator(text: string, max = 160): string {
+  return text.trim().replace(/\s+/g, " ").slice(0, max);
+}
+
 /**
- * Prompt block for ChatBox (BA) agents — Graphify is strongly preferred for
- * feature/flow discovery (case 3), not a hard fail if skipped when path is known.
+ * Prompt block for ChatBox (BA). One map lookup, then read files.
+ * `queryText` must already be compacted (file list), never a raw graph dump.
  */
 export function formatBaGraphifyPromptBlock(opts: {
   sourcePath: string;
@@ -511,41 +516,34 @@ export function formatBaGraphifyPromptBlock(opts: {
   const outDir = graphifyOutDirForSource(opts.sourcePath);
   const map =
     opts.queryText?.trim() ||
-    "(chưa có map sẵn — ưu tiên gọi tool code_map_query khi cần tra source.)";
-  return `## Code map (graphify — Flow ChatBox tool, ưu tiên mạnh)
-Graph file (host): \`${graphJson}\` · out: \`${outDir}\` — **không** ghi gì trong \`source/\`.
+    "(chưa có file — Nhóm 3 và chưa biết path: gọi **một** `code_map_query` với locator ngắn.)";
+  return `## Code map (graphify)
+Graph: \`${graphJson}\` · out: \`${outDir}\` — **không** ghi trong \`source/\`.
 
-Graphify rất mạnh để tìm flow / màn hình → file. **Ưu tiên** khi INTENT = case 3 và cần tra source. **Không** bắt buộc mọi lượt (đã biết đúng path, câu trả lời đã có trong hội thoại trước, chào / thiếu ngữ cảnh).
+**Một lần rồi đọc.** Nhóm 1–2 (chào / thiếu ngữ cảnh) hoặc câu trả lời đã có trong hội thoại: không gọi map. Nhóm 3:
+- Map sẵn bên dưới đã có file → **đọc 1–3 file đó**. Không gọi \`code_map_query\` lại.
+- Map trống hoặc lệch: gọi **một** \`code_map_query\` (màn hình / module / symbol). Không dán cả câu hỏi hay hội thoại.
+- **Cấm** Grep / rg / Glob / find toàn repo trước khi có danh sách file. Không gọi \`code_map_explain\` / \`code_map_path\` trừ khi query không ra file.
 
-1. **Ưu tiên bước đầu** khi định vị tính năng/luồng: gọi **\`code_map_query\`** với locator ngắn (màn hình / module / symbol; tiếng Việt OK) — **trước** Grep / rg / find / Glob quét rộng.
-2. Map mỏng/nhiễu: \`code_map_explain\` hoặc \`code_map_path\` A→B; rồi đọc 1–3 file map gợi ý, hoặc locale \`vi\`.
-3. Grep/rg/Glob: khi đã biết path, map trống/không hữu ích, hoặc cần chuỗi chính xác sau khi map thu hẹp vùng — **không** quét toàn repo làm bước đầu khi chưa thử map.
-4. Tools: \`code_map_query\`, \`code_map_path\`, \`code_map_explain\` (đã gắn sẵn — gọi như DB tool).
-
-### Map sẵn cho câu hỏi hiện tại (điểm khởi đầu)
+### Map sẵn
 ${map}`;
 }
 
-/** How Work agents should use graphify — strongly preferred for feature/flow discovery, not mandatory every turn. */
+/** How Work agents should use graphify — one short query, then read. */
 export function formatWorkGraphifyPromptBlock(opts: {
   sourcePath: string;
 }): string {
   const graphJson = graphifyGraphJsonForSource(opts.sourcePath);
   const outDir = graphifyOutDirForSource(opts.sourcePath);
-  return `## How to use Graphify (code map) — Flow tool, strongly preferred
+  return `## How to use Graphify (code map)
 Sibling graph (host): \`${graphJson}\` · \`${outDir}\` — do **not** write inside \`source/\`.
-Tools already attached: \`code_map_query\`, \`code_map_path\`, \`code_map_explain\`.
+Tools: \`code_map_query\`, \`code_map_path\`, \`code_map_explain\`.
 
-Graphify maps screen/feature → files and call paths quickly. **Prefer it** when exploring an unfamiliar feature or flow. It is **not** mandatory every turn (e.g. you already know the exact file, pure Q&A on prior chat, or a one-line edit on a known path).
-
-**You choose the query.** Do not wait for a precomputed map. Do not paste the whole GitLab issue, description, or chat.
-
-1. **Preferred first step** when locating a feature/flow: call \`code_map_query\` with **one short locator** you extract from the task — a screen, module, feature slug, or symbol.
-   - Good: \`cấu hình rules chấm công\`, \`staff import update by column\`, \`TimekeeperSync\`, \`QualityAppraisal.vue\`.
-   - Bad: the full ticket text; only a vague title with no screen/symbol; chat like "dữ liệu như này chạy thành công chưa".
-2. If the map is thin or noisy, refine: \`code_map_explain\` on one name, or \`code_map_path\` from A to B.
-3. Then read 1–5 **source** files (\`.vue\`, \`.php\`, \`node_app/\`, \`resources/\`). Skip webpack bundles (\`public/js/app.js\`), CKEditor, and unrelated docs.
-4. Use Grep / rg / Glob when the path is already known, the map returned nothing useful, or you need a precise string after the map narrowed the area.`;
+**One query, then read.** Before Grep / rg / Glob / find, call \`code_map_query\` **once** with one short locator (screen, module, or symbol). Do not paste the GitLab issue, description, or chat.
+- Good: \`TimekeeperSync\`, \`cấu hình rules chấm công\`.
+- Bad: the full ticket or prior chat.
+If the result lists files, Read 1–3 of them. Do **not** call \`code_map_explain\` / \`code_map_path\` or scan the repo unless that list is empty.
+Skip the map only when the target file is already known or the answer is already in prior chat.`;
 }
 
 const GRAPHIFY_NOISE_SRC =

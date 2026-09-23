@@ -35,8 +35,10 @@ import {
 import { cursorModelLogLabel } from "../cursor/modelSpec.js";
 import { isGitRepo } from "../../workspace/clone.js";
 import {
+  compactGraphifyQueryOutput,
   ensureProjectGraphifyReady,
   formatBaGraphifyPromptBlock,
+  graphifyQueryLocator,
   queryProjectGraphify,
 } from "../../workspace/graphify.js";
 import { pullBaProjectLatest } from "../git/ba-pull.js";
@@ -89,7 +91,7 @@ export function baReadOnlyWorkspaceRules(opts: { mainBranch: string }): string {
 - **Deliverable chỉ trong chat:** mọi spec, tài liệu, draft issue → xuất **nguyên văn trong câu trả lời** để user copy. User nhờ "lưu file", "tạo doc", "export ra file" → **từ chối**, giải thích chat không ghi disk, dán nội dung từ chat.
 - **Cấm sửa code:** không patch, refactor, format, sửa config / locale / test.
 - **Git (chỉ đọc):** server đã pull branch **${opts.mainBranch}** — **không** checkout / tạo-đổi-xóa nhánh / merge / rebase / reset / stash / tag / commit / push / pull thêm.
-- **Shell an toàn:** ưu tiên tool \`code_map_*\` khi định vị tính năng/luồng chưa rõ path. Shell chỉ khi thật sự cần (cat/head/ls file đã biết path). Tránh Grep/rg/find toàn repo khi chưa thử \`code_map_query\` (trừ khi đã biết path hoặc map không hữu ích). **Cấm** rm, mv, cp, tee, chmod, chown, npm/yarn/pnpm install|run|exec, pip install, curl/wget upload, docker, kubectl apply, migrate, dump.
+- **Shell an toàn:** một \`code_map_query\` trước Grep/rg/find toàn repo. Shell chỉ cat/head/ls file đã biết path. **Cấm** rm, mv, cp, tee, chmod, chown, npm/yarn/pnpm install|run|exec, pip install, curl/wget upload, docker, kubectl apply, migrate, dump.
 - **MCP / plugin ghi:** không gọi tool hoặc MCP nào ghi GitLab, Google Drive/Sheets/Docs, filesystem.`;
 }
 
@@ -487,11 +489,7 @@ Thực hiện triage trước khi quét mã nguồn hoặc sinh bất kỳ templ
 ## Quy trình tra cứu & Trả lời (Dành cho Nhóm 3)
 
 1. **Ưu tiên hội thoại trước:** Nếu thông tin đã được thống nhất hoặc có sẵn trong lịch sử chat, sử dụng ngay mà không tra cứu lại source.
-2. **Quy trình tra cứu codebase (nếu cần):**
-   - **Ưu tiên** gọi tool \`code_map_query\` khi định vị tính năng/luồng chưa rõ path — **trước** Grep/Glob quét diện rộng. Bỏ qua map khi đã biết đúng file, hoặc chỉ hỏi đáp trên hội thoại trước.
-   - **Thứ tự nguồn tin:** \`code_map_query\` (khi cần) → các file ngôn ngữ / đa ngữ (locale) của hệ thống → 1–3 file liên quan theo gợi ý từ code map → tài liệu (docs).
-   - Grep/rg/Glob: khi đã biết path, map trống/không hữu ích, hoặc cần chuỗi chính xác sau khi map thu hẹp vùng.
-   - Nếu người dùng cung cấp URL hoặc path màn hình (Ví dụ: \`/timekeeping/setting/staff-leave\`): Tra cứu route để tìm component tương ứng và đọc quy tắc nghiệp vụ tại màn hình đó.
+2. **Tra source (chỉ Nhóm 3, khi hội thoại chưa đủ):** làm đúng block Code map — một \`code_map_query\`, rồi đọc 1–3 file (locale nếu cần nhãn). **Cấm** Grep/Glob quét rộng và **cấm** gọi thêm \`code_map_explain\` / \`code_map_path\` khi map đã có file. URL/path màn hình (vd. \`/timekeeping/setting/staff-leave\`): đọc route/component đó, không quét repo.
 3. **Bám sát thực tế sản phẩm:**
    - Mọi tên nút bấm, menu, nhãn trường, thông báo popup phải khớp 100% với giao diện và locale thực tế của hệ thống.
    - Nếu không tìm thấy căn cứ trong source/locale, trả lời rõ ràng: *"Chưa tìm thấy trên hệ thống"* kèm câu hỏi làm rõ; tuyệt đối không tự bịa tên màn hình hoặc logic.
@@ -640,11 +638,7 @@ Thực hiện triage ngay trên tin nhắn của người dùng trước khi g�
 ## Nguyên tắc tra cứu & Phản hồi (Dành cho Nhóm 3)
 
 1. **Ưu tiên ngữ cảnh sẵn có:** Đọc mục "Hội thoại trước". Nếu thông tin đã được thống nhất hoặc đã có trong chat, sử dụng ngay mà không tra cứu lại.
-2. **Quy trình tra cứu source code (nếu cần):**
-   - **Ưu tiên** dùng tool \`code_map_query\` khi định vị tính năng/luồng chưa rõ path — **trước** Grep/Glob quét diện rộng. Bỏ qua map khi đã biết đúng file, hoặc chỉ hỏi đáp trên hội thoại trước.
-   - **Thứ tự nguồn tin:** \`code_map_query\` (khi cần) → các file ngôn ngữ / đa ngữ (locale) của hệ thống → 1–3 file liên quan theo gợi ý từ code map → tài liệu (docs).
-   - Grep/rg/Glob: khi đã biết path, map trống/không hữu ích, hoặc cần chuỗi chính xác sau khi map thu hẹp vùng.
-   - Nếu người dùng cung cấp URL hoặc path màn hình (Ví dụ: \`/timekeeping/setting/staff-leave\`): Tra cứu route để tìm component tương ứng và đọc quy tắc nghiệp vụ tại màn hình đó.
+2. **Tra source (chỉ Nhóm 3, khi hội thoại chưa đủ):** làm đúng block Code map — một \`code_map_query\`, rồi đọc 1–3 file (locale nếu cần nhãn). **Cấm** Grep/Glob quét rộng và **cấm** gọi thêm \`code_map_explain\` / \`code_map_path\` khi map đã có file. URL/path màn hình (vd. \`/timekeeping/setting/staff-leave\`): đọc route/component đó, không quét repo.
 3. **Bám sát thực tế sản phẩm:**
    - Mọi tên nút bấm, menu, nhãn trường, thông báo popup phải khớp 100% với giao diện và locale thực tế của hệ thống.
    - Nếu không tìm thấy căn cứ trong source/locale, trả lời rõ ràng: *"Chưa tìm thấy trên hệ thống"* kèm câu hỏi làm rõ; tuyệt đối không tự bịa tên màn hình hoặc logic.
@@ -847,11 +841,13 @@ export async function runBaChatAgent(opts: {
     session.check();
     const graphifyQuery = await queryProjectGraphify(
       project.localPath,
-      [opts.question, ...historyUserTexts.slice(-3)].join(" | "),
+      graphifyQueryLocator(opts.question),
+      { budget: 500 },
     );
+    const graphifyHint = compactGraphifyQueryOutput(graphifyQuery);
     const graphifyBlock = formatBaGraphifyPromptBlock({
       sourcePath: project.localPath,
-      queryText: graphifyQuery,
+      queryText: graphifyHint,
     });
     session.check();
 
@@ -874,7 +870,7 @@ export async function runBaChatAgent(opts: {
       model: modelLabel,
       analysisMode: Boolean(opts.analysisMode),
       dbAccess: dbAccess.allowed,
-      graphifyChars: graphifyQuery?.length ?? 0,
+      graphifyChars: graphifyHint?.length ?? 0,
       gitlabIssueIids: linked.gitlabRefs.map((r) => r.iid),
       googleSheets: linked.sheetRefs.length,
       googleDocs: linked.docRefs.length,
