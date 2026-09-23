@@ -48,11 +48,12 @@ export function buildBaGraphifyCustomTools(
   return {
     code_map_query: {
       description:
-        "REQUIRED once before Grep/rg/Glob/find when the file path is unknown. " +
-        "ONE short locator only (screen, module, or symbol) — not the issue, description, or chat. " +
+        "Look up files for a screen, module, or symbol you choose. " +
+        "Pass one locator — not the full issue, description, or chat. " +
         "Good: 'cấu hình rules chấm công', 'TimekeeperSync'. " +
-        "If this returns files, Read them. Do not call again, and do not call code_map_explain or code_map_path unless the list is empty. " +
-        "Skip only when the target file is already known.",
+        "Read the files it returns. If the list is off-target, call again with a tighter name. " +
+        "Use code_map_explain or code_map_path only when this returns no files or you need to connect two symbols. " +
+        "Skip when the target file is already known. Prefer this before a repo-wide Grep/Glob.",
       inputSchema: {
         type: "object",
         properties: {

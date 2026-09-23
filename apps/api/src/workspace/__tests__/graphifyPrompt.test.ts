@@ -9,33 +9,34 @@ import {
 } from "../graphify.js";
 
 describe("formatWorkGraphifyPromptBlock", () => {
-  it("requires one short query then read, no explain/path chain", () => {
+  it("lets the agent choose the locator and forbids a repo-wide scan first", () => {
     const block = formatWorkGraphifyPromptBlock({
       sourcePath: "/tmp/project/user/app/source",
     });
     expect(block).toMatch(/code_map_query/);
-    expect(block).toMatch(/One query, then read/);
-    expect(block).toMatch(/\*\*once\*\*/);
+    expect(block).toMatch(/You choose the `code_map_query` locator/);
     expect(block).toMatch(/Do not paste the GitLab issue/);
     expect(block).toMatch(/code_map_explain/);
-    expect(block).toMatch(/unless that list is empty/);
+    expect(block).toMatch(/tighter name/);
     expect(block).toMatch(/graphify-out/);
     expect(block).not.toMatch(/strongly preferred/i);
     expect(block).not.toMatch(/INTENT = case 3/);
     expect(block).not.toMatch(/Likely files/);
+    expect(block).not.toMatch(/budget 500/);
   });
 });
 
 describe("formatBaGraphifyPromptBlock", () => {
-  it("requires one query and forbids a repo-wide scan", () => {
+  it("lets the agent choose the query and forbids a repo-wide scan", () => {
     const block = formatBaGraphifyPromptBlock({
       sourcePath: "/tmp/project/user/app/source",
       queryText: null,
     });
     expect(block).toMatch(/code_map_query/);
-    expect(block).toMatch(/Một lần rồi đọc/);
+    expect(block).toMatch(/Bạn chọn cách gọi `code_map_query`/);
     expect(block).toMatch(/\*\*Cấm\*\*/);
-    expect(block).toMatch(/[Kk]hông gọi `code_map_query` lại/);
+    expect(block).toMatch(/locator chặt hơn/);
+    expect(block).not.toMatch(/Map sẵn/);
     expect(block).not.toMatch(/ưu tiên mạnh/);
     expect(block).not.toMatch(/BẮT BUỘC khi INTENT/);
   });

@@ -499,34 +499,30 @@ async function runGraphifyReadCommand(
   return text || null;
 }
 
-/** Short locator for a server-side graphify hint — current question only, not chat history. */
-export function graphifyQueryLocator(text: string, max = 160): string {
-  return text.trim().replace(/\s+/g, " ").slice(0, max);
-}
-
 /**
- * Prompt block for ChatBox (BA). One map lookup, then read files.
- * `queryText` must already be compacted (file list), never a raw graph dump.
+ * Prompt block for ChatBox (BA). The agent chooses the `code_map_query` locator.
+ * Optional `queryText` is a hint only (never a raw graph dump, never a lock).
  */
 export function formatBaGraphifyPromptBlock(opts: {
   sourcePath: string;
-  queryText: string | null;
+  queryText?: string | null;
 }): string {
   const graphJson = graphifyGraphJsonForSource(opts.sourcePath);
   const outDir = graphifyOutDirForSource(opts.sourcePath);
-  const map =
-    opts.queryText?.trim() ||
-    "(chưa có file — Nhóm 3 và chưa biết path: gọi **một** `code_map_query` với locator ngắn.)";
+  const hint = opts.queryText?.trim();
+  const hintBlock = hint
+    ? `\n\n### Gợi ý file (không bắt buộc)\n${hint}\nLệch hoặc thiếu → tự gọi \`code_map_query\` với locator bạn chọn.`
+    : "";
   return `## Code map (graphify)
 Graph: \`${graphJson}\` · out: \`${outDir}\` — **không** ghi trong \`source/\`.
 
-**Một lần rồi đọc.** Nhóm 1–2 (chào / thiếu ngữ cảnh) hoặc câu trả lời đã có trong hội thoại: không gọi map. Nhóm 3:
-- Map sẵn bên dưới đã có file → **đọc 1–3 file đó**. Không gọi \`code_map_query\` lại.
-- Map trống hoặc lệch: gọi **một** \`code_map_query\` (màn hình / module / symbol). Không dán cả câu hỏi hay hội thoại.
-- **Cấm** Grep / rg / Glob / find toàn repo trước khi có danh sách file. Không gọi \`code_map_explain\` / \`code_map_path\` trừ khi query không ra file.
-
-### Map sẵn
-${map}`;
+**Bạn chọn cách gọi \`code_map_query\`.** Locator do bạn rút — không lấy prefix cắt sẵn của câu user, không có budget cố định từ server.
+Nhóm 1–2 (chào / thiếu ngữ cảnh) hoặc câu trả lời đã có trong hội thoại: không gọi map.
+Nhóm 3, chưa biết file:
+- Tự rút **một** locator (màn hình, module, hoặc symbol) rồi gọi \`code_map_query\`. Không dán cả câu hỏi, issue, hay hội thoại.
+- Có file đúng việc → đọc 1–3 file đó. Lệch → gọi lại với locator chặt hơn.
+- \`code_map_explain\` / \`code_map_path\` chỉ khi query không ra file hoặc cần nối hai symbol.
+- **Cấm** Grep / rg / Glob / find toàn repo trước khi có danh sách file hoặc path đã biết.${hintBlock}`;
 }
 
 /** How Work agents should use graphify — one short query, then read. */
@@ -539,10 +535,10 @@ export function formatWorkGraphifyPromptBlock(opts: {
 Sibling graph (host): \`${graphJson}\` · \`${outDir}\` — do **not** write inside \`source/\`.
 Tools: \`code_map_query\`, \`code_map_path\`, \`code_map_explain\`.
 
-**One query, then read.** Before Grep / rg / Glob / find, call \`code_map_query\` **once** with one short locator (screen, module, or symbol). Do not paste the GitLab issue, description, or chat.
+**You choose the \`code_map_query\` locator** (screen, module, or symbol). Do not paste the GitLab issue, description, or chat, and do not use a truncated prefix of the user message.
 - Good: \`TimekeeperSync\`, \`cấu hình rules chấm công\`.
 - Bad: the full ticket or prior chat.
-If the result lists files, Read 1–3 of them. Do **not** call \`code_map_explain\` / \`code_map_path\` or scan the repo unless that list is empty.
+If the result lists the right files, Read 1–3 of them. If it is off-target, call \`code_map_query\` again with a tighter name. Use \`code_map_explain\` / \`code_map_path\` when the list is empty or you need to connect two symbols. Do not scan the repo before that.
 Skip the map only when the target file is already known or the answer is already in prior chat.`;
 }
 

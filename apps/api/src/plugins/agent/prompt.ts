@@ -222,10 +222,10 @@ function sendStableHowToBehave(opts: {
       : "If finished this follow-up, end with DONE (SUMMARY in Vietnamese — useful as issue description later; COMMIT in English when you changed files; note any assumptions).";
 
   return `## How to behave (IDE-like)
-1. If they ask a question → answer clearly (Vietnamese if they wrote Vietnamese). Call \`code_map_query\` **once** (short locator) before Grep/Glob when the path is unknown; if it lists files, Read them — do not chain \`code_map_explain\` / \`code_map_path\` or scan the repo. Skip only when the target file is already known. ${rule1Gitlab}
+1. If they ask a question → answer clearly (Vietnamese if they wrote Vietnamese). When the path is unknown, **you choose** the \`code_map_query\` locator (screen, module, or symbol — not the full ticket or a truncated user message); Read the files it returns. If the list is off-target, query again with a tighter name. Use \`code_map_explain\` / \`code_map_path\` when the list is empty or you need to connect two symbols. Skip only when the target file is already known. ${rule1Gitlab}
 2. If they ask to fix / add / change / re-test / seed data / run something → **do it** on the CURRENT branch (do not switch branches). Subagent flow (skip steps that do not apply — do not spawn all three by default): Task \`explore\` only if path still unclear after map/search; Task \`code-reviewer\` only after multi-file / shared-logic / risky diffs; Task \`test-writer\` only when nearby tests exist. Skip subagents for Q&A-only or trivial one-file edits. **Data fidelity:** if they named a specific NV/id/code and DB returns 0 — STOP and report not found; do **not** switch to another person/row.
 3. ${rule3}
-4. If Shell / Glob / "environment tools" fail or hang: do **not** \`AwaitShell\`-sleep or escalate waits — retry once then continue with Read/Write/StrReplace or report blocked. Avoid broad or many parallel \`Glob\` (\`**/*\`) and repo-wide Grep; one \`code_map_query\`, then Read the listed files. Do not poll Task with \`AwaitShell\`.
+4. If Shell / Glob / "environment tools" fail or hang: do **not** \`AwaitShell\`-sleep or escalate waits — retry once then continue with Read/Write/StrReplace or report blocked. Avoid broad or many parallel \`Glob\` (\`**/*\`) and repo-wide Grep; call \`code_map_query\` with a locator you choose, then Read the listed files. Do not poll Task with \`AwaitShell\`.
 5. If the request is vague: search the repo${opts.variant === "linked" ? "/docs" : ""} first; minor gaps → proceed with the standard interpretation and say so in your reply; only end with NEED_CLARIFICATION when truly blocked (batch ALL questions, numbered, with options + your recommended default).
 6. Do NOT \`git commit\`, \`git push\`, force-push, amend remote commits, or open/merge MRs. Flow Auto Work commits to GitLab via API after you finish.
 7. ${rule7}`;
@@ -416,7 +416,7 @@ export function envToolsFailFastBlock(): string {
   return `# TOOL / ENVIRONMENT FAILURES (fail fast — do not hang)
 If Shell / Glob / MCP / "environment tools" fail, hang, or show recovery messages:
 - Do **not** call \`AwaitShell\` to sleep or "wait for recovery" (especially without \`shell_id\`, or with escalating \`block_until_ms\` like 30s→60s→120s). That can burn ~10 minutes doing nothing.
-- Avoid **broad** or **many parallel** \`Glob\` (e.g. \`**/*\`, 3+ Glob at once) — they often hang with no stream events. One \`code_map_query\`, then Read or a narrow Grep on the listed paths. Do not also call \`code_map_explain\` unless that query returned no files.
+- Avoid **broad** or **many parallel** \`Glob\` (e.g. \`**/*\`, 3+ Glob at once) — they often hang with no stream events. Call \`code_map_query\` with a locator you choose, then Read or a narrow Grep on the listed paths. Use \`code_map_explain\` when that list is empty or off-target.
 - If Glob hangs or fails: do **not** \`AwaitShell\`-wait; switch to the file list from \`code_map_query\` or a known path; retry that tool **at most once**.
 - Prefer \`Read\` / \`Grep\` / \`Write\` / \`StrReplace\` / \`code_map_*\` — they often still work when Shell/Glob does not.
 - Retry a failed tool **at most once**; if still broken, continue without it or report blocked in DONE — **do not poll**.
@@ -522,7 +522,7 @@ Ignore image/file attachments — only use text. Do not try to download or open 
 
 # HANDLING AMBIGUITY & MISSING INFO (resolve gaps in THIS order)
 Real tickets are often incomplete. When something is unclear or missing:
-1. **SELF-RESOLVE first.** One \`code_map_query\` (short locator) when the path is unknown, then Read those files — do not chain explain/path or a repo-wide search. Then feature docs and the linked issues/comments above. Most "missing" info (file paths, existing patterns, field names, similar screens) is discoverable in the codebase — never ask the human for something the code can answer.
+1. **SELF-RESOLVE first.** When the path is unknown, choose a \`code_map_query\` locator (screen, module, or symbol), then Read those files. Query again with a tighter name if the list is off-target; use explain/path when it is empty or you need to connect two symbols — not a repo-wide search first. Then feature docs and the linked issues/comments above. Most "missing" info (file paths, existing patterns, field names, similar screens) is discoverable in the codebase — never ask the human for something the code can answer.
 2. **SAFE ASSUMPTION.** If the gap is minor and one interpretation is clearly standard for this codebase (naming, placement, UI copy, default sort/validation style), proceed — but record it and report it under \`ASSUMPTIONS:\` in the DONE block.
    NEVER assume on: deleting/migrating data, permissions/security, money or regulated formulas, external API contracts, **which person/row/entity** to use when the named one is missing, or anything irreversible → those go to tier 3.
 3. **ASK (last resort).** Only when the gap genuinely blocks a correct implementation. The human answers in the **Flow Auto Work UI**. End your reply with EXACTLY this block (nothing after it):
@@ -556,7 +556,7 @@ Do not silently drop scope; anything skipped goes under \`RISKS:\` in the DONE b
 
 # EXECUTION PLAN
 1. Analyze the requirements but execute them EXACTLY as demanded in UI CHAT REQUESTS and DEV NOTES when present (those override conflicting business wording). Latest Human chat messages win for this run.
-2. Call **code_map_query once** (short locator) when the path is unknown, then Read the listed files. Do not chain explain/path or a repo-wide Grep unless the map is empty. Then docs${docsFirst ? " (Docs-first: report → read → code → update/create)" : " (and the approved feature docs if listed above)"}. Launch Task \`explore\` **only** if the map is still empty; then write a short plan for hard tasks.
+2. Call \`code_map_query\` with a locator **you choose** when the path is unknown, then Read the listed files. If the list is off-target, query again with a tighter name; use explain/path when it is empty or you need to connect two symbols. Do not start with a repo-wide Grep. Then docs${docsFirst ? " (Docs-first: report → read → code → update/create)" : " (and the approved feature docs if listed above)"}. Launch Task \`explore\` **only** if the map is still empty; then write a short plan for hard tasks.
 3. Implement on the CURRENT git branch only (do not checkout/create other branches). Keep the change scoped to this issue.
 4. Leave changes as modified files in the working tree — do NOT \`git commit\` or \`git push\`. The orchestrator commits to GitLab when you are done.
 5. VERIFY before finishing: re-read your diff against the requirements; launch Task \`code-reviewer\` and/or Task \`test-writer\` **only** when their gates above match; run the cheapest relevant check. Report what you verified under \`TESTED:\`.

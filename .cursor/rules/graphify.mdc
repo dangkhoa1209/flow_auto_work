@@ -24,7 +24,7 @@ BA shared: `project/_ba/<slug>/source/`.
 
 API auto-runs that update after Work/BA clone (and BA pull) **in the background** — BA Chat / Work continue without waiting for `graphify update` to finish (use the existing map). Disable with `GRAPHIFY_ENABLED=0`.
 
-**BA Chat / workflow:** API runs one short `graphify query`, compacts it to a file list, and injects that "Code map" block. **Work Run/Q&A:** one `code_map_query` (short locator — not the full ticket), then Read the listed files. Do not chain `path` / `explain` unless that list is empty. **Create issue** synthesizes the chat thread only — no graphify, no source read.
+**BA Chat / workflow:** the agent chooses the `code_map_query` locator. The API does not pre-query with a truncated question or a fixed token budget. **Work Run/Q&A:** the agent calls `code_map_query` with a locator it picks (not the full ticket), then Read the listed files. Use `path` / `explain` when that list is empty or two symbols need connecting. **Create issue** synthesizes the chat thread only — no graphify, no source read.
 
 Cursor does **not** auto-load nested rules from gitignored `project/`. When the task, open files, Run, or chat target that tree:
 
@@ -33,8 +33,8 @@ Cursor does **not** auto-load nested rules from gitignored `project/`. When the 
    - `graphify query "<locator>" --graph project/<user>/<slug>/graphify-out/graph.json`
 3. If that `graph.json` is missing, say so and explore with Read/Grep — do **not** fall back to the WorkBench root graph for customer-app questions. You may run `scripts/graphify-work-project.sh <user>/<slug>` to build it.
 
-## One query, then read
+## Agent chooses the query
 
-Before Grep / Glob / a repo-wide search, run **one** `graphify query "<short locator>"` (with `--graph` for nested). If it lists files, Read 1–3 of them. Do not also run `path` and `explain` unless the query returned no files.
+Before Grep / Glob / a repo-wide search, call `code_map_query` (or `graphify query "<locator>" --graph …` for nested) with a locator you choose — a screen, module, or symbol, not a truncated user message and not the full ticket. If it lists the right files, Read 1–3 of them. If the list is off-target, query again with a tighter name. Use `path` / `explain` when the list is empty or two symbols need connecting.
 
 Skip when the target file is already known, or that corpus has no `graphify-out/graph.json` yet. Do not fall back to the WorkBench root graph for customer-app questions.

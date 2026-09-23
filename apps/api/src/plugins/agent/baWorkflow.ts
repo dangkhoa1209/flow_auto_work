@@ -18,11 +18,8 @@ import { cursorModelLogLabel } from "../cursor/modelSpec.js";
 import { readOnlyAgentPolicy } from "../cursor/agentPolicy.js";
 import { isGitRepo } from "../../workspace/clone.js";
 import {
-  compactGraphifyQueryOutput,
   ensureProjectGraphifyReady,
   formatBaGraphifyPromptBlock,
-  graphifyQueryLocator,
-  queryProjectGraphify,
 } from "../../workspace/graphify.js";
 import { pullBaProjectLatest } from "../git/ba-pull.js";
 import { buildBaDbCustomTools } from "../baDb/tools.js";
@@ -313,7 +310,7 @@ ${baPresentationRules()}
 ${baGitlabBoundaryInstructions()}
 - Branch đọc: ${opts.mainBranch}
 ${dbBlock}
-- Case 3 / cần tra source: một \`code_map_query\`, rồi đọc file trong Map sẵn. **Cấm** Grep quét rộng và gọi thêm explain/path khi map đã có file.
+- Case 3 / cần tra source: tự chọn locator rồi gọi \`code_map_query\`, đọc file tool trả về. Lệch thì gọi lại với locator chặt hơn. **Cấm** Grep quét rộng trước khi có file.
 
 ${opts.graphifyBlock ? `${opts.graphifyBlock}\n\n` : ""}## Yêu cầu gốc (từ khách hàng / PD — nguyên văn)
 **Tiêu đề:** ${opts.title}
@@ -546,16 +543,11 @@ export async function runBaWorkflowStep(opts: {
     session.check();
 
     // Fire-and-forget if graph missing; do not wait for long graphify update.
+    // Agent picks the code_map_query locator — no server-side truncated query.
     await ensureProjectGraphifyReady(project.localPath);
     session.check();
-    const graphifyQuery = await queryProjectGraphify(
-      project.localPath,
-      graphifyQueryLocator(`${opts.requirement.title} ${opts.step}`),
-      { budget: 500 },
-    );
     const graphifyBlock = formatBaGraphifyPromptBlock({
       sourcePath: project.localPath,
-      queryText: compactGraphifyQueryOutput(graphifyQuery),
     });
     session.check();
 
