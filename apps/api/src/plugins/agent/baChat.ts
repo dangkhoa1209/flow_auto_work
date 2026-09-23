@@ -35,11 +35,8 @@ import {
 import { cursorModelLogLabel } from "../cursor/modelSpec.js";
 import { isGitRepo } from "../../workspace/clone.js";
 import {
-  compactGraphifyQueryOutput,
   ensureProjectGraphifyReady,
   formatBaGraphifyPromptBlock,
-  graphifyQueryLocator,
-  queryProjectGraphify,
 } from "../../workspace/graphify.js";
 import { pullBaProjectLatest } from "../git/ba-pull.js";
 import { redactGitCredentials } from "../git/redact.js";
@@ -489,7 +486,7 @@ Thực hiện triage trước khi quét mã nguồn hoặc sinh bất kỳ templ
 ## Quy trình tra cứu & Trả lời (Dành cho Nhóm 3)
 
 1. **Ưu tiên hội thoại trước:** Nếu thông tin đã được thống nhất hoặc có sẵn trong lịch sử chat, sử dụng ngay mà không tra cứu lại source.
-2. **Tra source (chỉ Nhóm 3, khi hội thoại chưa đủ):** làm đúng block Code map — một \`code_map_query\`, rồi đọc 1–3 file (locale nếu cần nhãn). **Cấm** Grep/Glob quét rộng và **cấm** gọi thêm \`code_map_explain\` / \`code_map_path\` khi map đã có file. URL/path màn hình (vd. \`/timekeeping/setting/staff-leave\`): đọc route/component đó, không quét repo.
+2. **Tra source (chỉ Nhóm 3, khi hội thoại chưa đủ):** **bắt buộc** tự chọn locator rồi gọi \`code_map_query\` (block Code map), rồi đọc 1–3 file. Đúng file thì không gọi explain/path. Lệch thì gọi lại với locator chặt hơn. **Cấm** Grep/Glob quét rộng trước khi có file. URL/path màn hình đã biết (vd. \`/timekeeping/setting/staff-leave\`): đọc route/component đó, không quét repo.
 3. **Bám sát thực tế sản phẩm:**
    - Mọi tên nút bấm, menu, nhãn trường, thông báo popup phải khớp 100% với giao diện và locale thực tế của hệ thống.
    - Nếu không tìm thấy căn cứ trong source/locale, trả lời rõ ràng: *"Chưa tìm thấy trên hệ thống"* kèm câu hỏi làm rõ; tuyệt đối không tự bịa tên màn hình hoặc logic.
@@ -638,7 +635,7 @@ Thực hiện triage ngay trên tin nhắn của người dùng trước khi g�
 ## Nguyên tắc tra cứu & Phản hồi (Dành cho Nhóm 3)
 
 1. **Ưu tiên ngữ cảnh sẵn có:** Đọc mục "Hội thoại trước". Nếu thông tin đã được thống nhất hoặc đã có trong chat, sử dụng ngay mà không tra cứu lại.
-2. **Tra source (chỉ Nhóm 3, khi hội thoại chưa đủ):** làm đúng block Code map — một \`code_map_query\`, rồi đọc 1–3 file (locale nếu cần nhãn). **Cấm** Grep/Glob quét rộng và **cấm** gọi thêm \`code_map_explain\` / \`code_map_path\` khi map đã có file. URL/path màn hình (vd. \`/timekeeping/setting/staff-leave\`): đọc route/component đó, không quét repo.
+2. **Tra source (chỉ Nhóm 3, khi hội thoại chưa đủ):** **bắt buộc** tự chọn locator rồi gọi \`code_map_query\` (block Code map), rồi đọc 1–3 file. Đúng file thì không gọi explain/path. Lệch thì gọi lại với locator chặt hơn. **Cấm** Grep/Glob quét rộng trước khi có file. URL/path màn hình đã biết (vd. \`/timekeeping/setting/staff-leave\`): đọc route/component đó, không quét repo.
 3. **Bám sát thực tế sản phẩm:**
    - Mọi tên nút bấm, menu, nhãn trường, thông báo popup phải khớp 100% với giao diện và locale thực tế của hệ thống.
    - Nếu không tìm thấy căn cứ trong source/locale, trả lời rõ ràng: *"Chưa tìm thấy trên hệ thống"* kèm câu hỏi làm rõ; tuyệt đối không tự bịa tên màn hình hoặc logic.
@@ -829,25 +826,12 @@ export async function runBaChatAgent(opts: {
       });
     }
 
-    publishBaProgress({
-      userId: opts.userId,
-      threadId: opts.threadId,
-      messageId: opts.assistantMessageId,
-      step: "read",
-      label: "Code map (graphify nền)…",
-    });
     // Fire-and-forget if graph missing; do not wait for long graphify update.
+    // Agent picks the code_map_query locator — no server-side truncated query.
     await ensureProjectGraphifyReady(project.localPath);
     session.check();
-    const graphifyQuery = await queryProjectGraphify(
-      project.localPath,
-      graphifyQueryLocator(opts.question),
-      { budget: 500 },
-    );
-    const graphifyHint = compactGraphifyQueryOutput(graphifyQuery);
     const graphifyBlock = formatBaGraphifyPromptBlock({
       sourcePath: project.localPath,
-      queryText: graphifyHint,
     });
     session.check();
 
@@ -870,7 +854,6 @@ export async function runBaChatAgent(opts: {
       model: modelLabel,
       analysisMode: Boolean(opts.analysisMode),
       dbAccess: dbAccess.allowed,
-      graphifyChars: graphifyHint?.length ?? 0,
       gitlabIssueIids: linked.gitlabRefs.map((r) => r.iid),
       googleSheets: linked.sheetRefs.length,
       googleDocs: linked.docRefs.length,

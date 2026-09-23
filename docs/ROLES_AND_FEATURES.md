@@ -249,7 +249,7 @@ Auth session (access ~10m, refresh ~30d): [AUTH_SESSION.md](./AUTH_SESSION.md).
 | Web | Vue 3 · Ant Design Vue · Tailwind · shells theo role |
 | API | Express/Hono-style routes · Mongo · SSE |
 | Agent Code | Cursor SDK local · context quality · GitLab/GitHub project forge |
-| ChatBox agent | Cursor (system/user keys) · graphify map trên BA |
+| ChatBox agent | Cursor (system/user keys) · `code_map_query` (agent chọn locator, cùng quy tắc /dev) |
 | QC | Web CRUD + Chrome MV3 extension · collections `qc_*` |
 | Secrets | `FLOW_SECRETS_KEY` · PAT/Cursor/Google/Figma encrypted |
 

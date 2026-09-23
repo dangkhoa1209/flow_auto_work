@@ -499,37 +499,42 @@ async function runGraphifyReadCommand(
   return text || null;
 }
 
-/** Short locator for a server-side graphify hint — current question only, not chat history. */
-export function graphifyQueryLocator(text: string, max = 160): string {
-  return text.trim().replace(/\s+/g, " ").slice(0, max);
+/**
+ * Same code-map policy for BA chat and Work (/dev).
+ * Required when the file is unknown; the agent chooses the locator.
+ * Server never pre-queries or injects a raw graph dump.
+ */
+function codeMapPolicyBody(lang: "vi" | "en"): string {
+  if (lang === "vi") {
+    return `**Bắt buộc** khi chưa biết file: gọi \`code_map_query\` trước mọi Grep / rg / Glob / find toàn repo.
+**Bạn chọn locator** — một màn hình, module, hoặc symbol. Không dán cả câu hỏi, issue, hay hội thoại. Server không cắt prefix câu và không khóa budget.
+- Đúng file → đọc 1–3 file. Không gọi \`code_map_explain\` / \`code_map_path\`.
+- Lệch → gọi lại \`code_map_query\` với locator chặt hơn do bạn chọn.
+- \`code_map_explain\` / \`code_map_path\` chỉ khi query không ra file, hoặc cần nối hai symbol.
+- Bỏ qua map khi file đã biết, hoặc câu trả lời đã có trong hội thoại.`;
+  }
+  return `**Required** when the file is unknown: call \`code_map_query\` before any repo-wide Grep / rg / Glob / find.
+**You choose the locator** — one screen, module, or symbol. Do not paste the question, issue, or chat. The server does not truncate the user message or lock a token budget.
+- Right files → Read 1–3 of them. Do not call \`code_map_explain\` / \`code_map_path\`.
+- Off-target → call \`code_map_query\` again with a tighter locator you choose.
+- \`code_map_explain\` / \`code_map_path\` only when the query returned no files, or you need to connect two symbols.
+- Skip the map only when the target file is already known, or the answer is already in the conversation.`;
 }
 
-/**
- * Prompt block for ChatBox (BA). One map lookup, then read files.
- * `queryText` must already be compacted (file list), never a raw graph dump.
- */
+/** Prompt block for ChatBox (BA). Same policy as Work; agent chooses the locator. */
 export function formatBaGraphifyPromptBlock(opts: {
   sourcePath: string;
-  queryText: string | null;
 }): string {
   const graphJson = graphifyGraphJsonForSource(opts.sourcePath);
   const outDir = graphifyOutDirForSource(opts.sourcePath);
-  const map =
-    opts.queryText?.trim() ||
-    "(chưa có file — Nhóm 3 và chưa biết path: gọi **một** `code_map_query` với locator ngắn.)";
   return `## Code map (graphify)
 Graph: \`${graphJson}\` · out: \`${outDir}\` — **không** ghi trong \`source/\`.
+Tools: \`code_map_query\`, \`code_map_path\`, \`code_map_explain\`.
 
-**Một lần rồi đọc.** Nhóm 1–2 (chào / thiếu ngữ cảnh) hoặc câu trả lời đã có trong hội thoại: không gọi map. Nhóm 3:
-- Map sẵn bên dưới đã có file → **đọc 1–3 file đó**. Không gọi \`code_map_query\` lại.
-- Map trống hoặc lệch: gọi **một** \`code_map_query\` (màn hình / module / symbol). Không dán cả câu hỏi hay hội thoại.
-- **Cấm** Grep / rg / Glob / find toàn repo trước khi có danh sách file. Không gọi \`code_map_explain\` / \`code_map_path\` trừ khi query không ra file.
-
-### Map sẵn
-${map}`;
+${codeMapPolicyBody("vi")}`;
 }
 
-/** How Work agents should use graphify — one short query, then read. */
+/** Prompt block for Work (/dev). Same policy as BA; agent chooses the locator. */
 export function formatWorkGraphifyPromptBlock(opts: {
   sourcePath: string;
 }): string {
@@ -539,11 +544,7 @@ export function formatWorkGraphifyPromptBlock(opts: {
 Sibling graph (host): \`${graphJson}\` · \`${outDir}\` — do **not** write inside \`source/\`.
 Tools: \`code_map_query\`, \`code_map_path\`, \`code_map_explain\`.
 
-**One query, then read.** Before Grep / rg / Glob / find, call \`code_map_query\` **once** with one short locator (screen, module, or symbol). Do not paste the GitLab issue, description, or chat.
-- Good: \`TimekeeperSync\`, \`cấu hình rules chấm công\`.
-- Bad: the full ticket or prior chat.
-If the result lists files, Read 1–3 of them. Do **not** call \`code_map_explain\` / \`code_map_path\` or scan the repo unless that list is empty.
-Skip the map only when the target file is already known or the answer is already in prior chat.`;
+${codeMapPolicyBody("en")}`;
 }
 
 const GRAPHIFY_NOISE_SRC =

@@ -37,7 +37,7 @@ describe("buildBaNormalChatPrompt", () => {
     expect(prompt).toMatch(/Nhóm 2: Thiếu ngữ cảnh/);
     expect(prompt).toMatch(/Nhóm 3: Yêu cầu phân tích/);
     expect(prompt).toMatch(/code_map_query/);
-    expect(prompt).toMatch(/một `code_map_query`/);
+    expect(prompt).toMatch(/tự chọn locator rồi gọi `code_map_query`/);
     expect(prompt).toMatch(/\*\*Cấm\*\* Grep\/Glob/);
     expect(prompt).not.toMatch(/Bỏ qua map khi đã biết đúng file/);
     expect(prompt).toMatch(/Chưa tìm thấy trên hệ thống/);
@@ -78,7 +78,7 @@ describe("buildBaNormalChatPrompt", () => {
     expect(prompt).toMatch(/taskCreate/);
     expect(prompt).toMatch(/BỎ HẲN Mục 4/);
     expect(prompt).toMatch(/Câu hỏi của người dùng/);
-    expect(prompt).toMatch(/một `code_map_query`/);
+    expect(prompt).toMatch(/tự chọn locator rồi gọi `code_map_query`/);
     expect(prompt).toMatch(/\*\*Cấm\*\* Grep\/Glob/);
     expect(prompt).not.toMatch(/Bỏ qua map khi đã biết đúng file/);
     expect(prompt).not.toMatch(/Phong cách viết \(BẮT BUỘC/);

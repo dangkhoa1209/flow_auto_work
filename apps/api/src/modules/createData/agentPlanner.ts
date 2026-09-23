@@ -29,7 +29,6 @@ import { isGitRepo } from "../../workspace/clone.js";
 import {
   ensureProjectGraphifyReady,
   formatBaGraphifyPromptBlock,
-  queryProjectGraphify,
 } from "../../workspace/graphify.js";
 import { pullBaProjectLatest } from "../../plugins/git/ba-pull.js";
 import { redactGitCredentials } from "../../plugins/git/redact.js";
@@ -215,10 +214,11 @@ function buildSeedPlannerPrompt(opts: {
 - Env nhãn: **${opts.environment}** (không bao giờ Production).
 - **GitLab đọc:** nếu Scenario / follow-up có link issue hoặc \`#id\` / \`issue 123\`, hệ thống đã kéo sẵn vào mục "GitLab task (chỉ đọc)" bên dưới — dùng block đó để hiểu yêu cầu seed. **Không** tự gọi GitLab API / MCP / \`glab\`.
 
-## Ưu tiên tool
-1. \`code_map_query\` để định vị screen/feature/symbol liên quan đến yêu cầu.
-2. \`code_map_path\` / \`code_map_explain\` để nối UI ↔ BE ↔ model.
-3. Grep/Shell CHỈ dùng khi đã biết path cụ thể cần đọc và code_map không đủ chi tiết (vd đọc nội dung 1 file đã xác định).
+## Code map (cùng quy tắc BA chat và /dev)
+1. Chưa biết file: **bắt buộc** gọi \`code_map_query\`. **Bạn chọn** một locator (màn hình, module, hoặc symbol) — không dán cả scenario.
+2. Đúng file → đọc 1–3 file. Lệch → gọi lại với locator chặt hơn.
+3. \`code_map_path\` / \`code_map_explain\` chỉ khi query không ra file, hoặc cần nối hai symbol.
+4. Grep/Shell chỉ trên path đã biết.
 
 ${opts.graphifyBlock ? `${opts.graphifyBlock}\n` : ""}${opts.knowledgeBlock ? `${opts.knowledgeBlock}\n` : ""}${opts.gitlabTaskBlock ? `${opts.gitlabTaskBlock}\n\n` : ""}## Quy trình bắt buộc (UI → BE → data phát sinh)
 1. Locator: rút yêu cầu thành screen/feature/symbol, tra bằng code_map_query trước.
@@ -585,20 +585,8 @@ export async function runCreateDataPlannerAgent(opts: {
       project.localPath,
     );
     session.check();
-    const graphifyQuery = await queryProjectGraphify(
-      project.localPath,
-      [
-        opts.prompt,
-        scope.collections.length
-          ? `collections: ${scope.collections.join(", ")}`
-          : "",
-      ]
-        .filter(Boolean)
-        .join(" | "),
-    );
     const graphifyBlock = formatBaGraphifyPromptBlock({
       sourcePath: project.localPath,
-      queryText: graphifyQuery,
     });
     const codeMapCache: CreateDataPlanMetrics["codeMapCache"] = graphReadyBefore
       ? "hit"

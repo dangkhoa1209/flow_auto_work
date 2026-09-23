@@ -876,6 +876,7 @@ async function buildMissionPrompt(
             contextQualityBlock: opts.contextQualityBlock,
             googleSheetsBlock: opts.googleSheetsBlock,
             figmaBlock: opts.figmaBlock,
+            graphifyBlock,
           })
       : buildWorkPrompt(issue, extraContext, linkedBlock, notes, {
           approvedDocsPaths: opts.approvedDocsPaths,
