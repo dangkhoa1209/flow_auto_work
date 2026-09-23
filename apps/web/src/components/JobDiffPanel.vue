@@ -1050,7 +1050,7 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(13, 15, 20, 0.55);
+  background: var(--app-diff-overlay);
 }
 .commit-modal-files {
   flex: 0 0 220px;
@@ -1141,10 +1141,10 @@ onUnmounted(() => {
   white-space: nowrap;
 }
 .commit-file-delta .add {
-  color: #34d399;
+  color: var(--app-diff-delta-add);
 }
 .commit-file-delta .del {
-  color: #f87171;
+  color: var(--app-diff-delta-del);
   margin-left: 0.2rem;
 }
 .commit-modal-diff {
@@ -1169,7 +1169,7 @@ onUnmounted(() => {
   justify-content: space-between;
   gap: 0.5rem;
   padding: 0.4rem 0.75rem;
-  background: rgba(18, 21, 28, 0.96);
+  background: var(--app-diff-head-bg);
   border-bottom: 1px solid var(--app-border);
   backdrop-filter: blur(4px);
   color: var(--app-ink);
@@ -1236,24 +1236,24 @@ onUnmounted(() => {
   background: var(--app-panel-soft);
 }
 .gd-badge--A {
-  color: #6ee7b7;
+  color: var(--app-diff-badge-add-ink);
   border-color: rgba(52, 211, 153, 0.45);
-  background: rgba(16, 185, 129, 0.16);
+  background: var(--app-diff-badge-add-bg);
 }
 .gd-badge--M {
-  color: #fbbf24;
+  color: var(--app-diff-badge-mod-ink);
   border-color: rgba(251, 191, 36, 0.4);
-  background: rgba(245, 158, 11, 0.14);
+  background: var(--app-diff-badge-mod-bg);
 }
 .gd-badge--D {
-  color: #fca5a5;
+  color: var(--app-diff-badge-del-ink);
   border-color: rgba(248, 113, 113, 0.45);
-  background: rgba(239, 68, 68, 0.16);
+  background: var(--app-diff-badge-del-bg);
 }
 .gd-badge--R {
-  color: #93c5fd;
+  color: var(--app-diff-badge-ren-ink);
   border-color: rgba(96, 165, 250, 0.45);
-  background: rgba(59, 130, 246, 0.16);
+  background: var(--app-diff-badge-ren-bg);
 }
 .gd-table {
   width: 100%;
@@ -1293,11 +1293,11 @@ onUnmounted(() => {
 .gd-table tr.add .ln,
 .gd-table tr.add .sign,
 .gd-table tr.add .code {
-  background: rgba(16, 185, 129, 0.14);
+  background: var(--app-diff-add-bg);
 }
 .gd-table tr.add .sign,
 .gd-table tr.add .code {
-  color: #a7f3d0;
+  color: var(--app-diff-add-ink);
 }
 .gd-table tr.add .sign {
   font-weight: 700;
@@ -1305,11 +1305,11 @@ onUnmounted(() => {
 .gd-table tr.del .ln,
 .gd-table tr.del .sign,
 .gd-table tr.del .code {
-  background: rgba(239, 68, 68, 0.14);
+  background: var(--app-diff-del-bg);
 }
 .gd-table tr.del .sign,
 .gd-table tr.del .code {
-  color: #fecaca;
+  color: var(--app-diff-del-ink);
 }
 .gd-table tr.del .sign {
   font-weight: 700;
@@ -1317,8 +1317,8 @@ onUnmounted(() => {
 .gd-table tr.hunk .ln,
 .gd-table tr.hunk .sign,
 .gd-table tr.hunk .code {
-  background: rgba(59, 130, 246, 0.12);
-  color: #93c5fd;
+  background: var(--app-diff-hunk-bg);
+  color: var(--app-diff-hunk-ink);
 }
 </style>
 
