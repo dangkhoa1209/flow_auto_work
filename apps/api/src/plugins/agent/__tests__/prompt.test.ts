@@ -203,7 +203,7 @@ describe("buildWorkPrompt graphify", () => {
     });
     expect(prompt).toMatch(/code_map_query/);
     expect(prompt).toContain("How to use Graphify");
-    expect(prompt).toMatch(/Prefer \*\*code_map_query\*\* when locating/);
+    expect(prompt).toMatch(/Call \*\*code_map_query once\*\*/);
   });
 
   it("omits the map when no graphify block is passed", () => {
@@ -324,7 +324,7 @@ describe("follow-up GitLab task + subagents", () => {
       expect(how).toBeGreaterThanOrEqual(0);
       expect(sep).toBeGreaterThan(how);
       expect(human).toBeGreaterThan(sep);
-      expect(prompt).toMatch(/Prefer `code_map_query` first when exploring/);
+      expect(prompt).toMatch(/Call `code_map_query` \*\*once\*\*/);
       expect(prompt).toMatch(
         /If this checkout has `AGENTS\.md` or `\.cursor\/rules`/,
       );

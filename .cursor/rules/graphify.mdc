@@ -22,26 +22,19 @@ BA shared: `project/_ba/<slug>/source/`.
 - Manual rebuild: `scripts/graphify-work-project.sh <username>/<slug>`
 - Or: `GRAPHIFY_OUT="$(pwd)/project/<user>/<slug>/graphify-out" graphify update project/<user>/<slug>/source --force`
 
-API auto-runs that update after Work/BA clone (and BA pull) **in the background** — BA Chat / Work continue without waiting for `graphify update` to finish (use existing map or Grep). Disable with `GRAPHIFY_ENABLED=0`.
+API auto-runs that update after Work/BA clone (and BA pull) **in the background** — BA Chat / Work continue without waiting for `graphify update` to finish (use the existing map). Disable with `GRAPHIFY_ENABLED=0`.
 
-**BA Chat / workflow:** API runs `graphify query` against the sibling graph and injects a "Code map" block into the Cursor prompt. **Work Run/Q&A:** attach `code_map_*` tools and tell the agent how to query (short locator — not the full ticket); the agent calls the tools itself. **Create issue** synthesizes the chat thread only — no graphify, no source read.
+**BA Chat / workflow:** API runs one short `graphify query`, compacts it to a file list, and injects that "Code map" block. **Work Run/Q&A:** one `code_map_query` (short locator — not the full ticket), then Read the listed files. Do not chain `path` / `explain` unless that list is empty. **Create issue** synthesizes the chat thread only — no graphify, no source read.
 
 Cursor does **not** auto-load nested rules from gitignored `project/`. When the task, open files, Run, or chat target that tree:
 
 1. **Rules first** — `Read` every `…/source/.cursor/rules/*.mdc` and follow them for this session/task (include them in subagent prompts). Do **not** install graphify into customer `source/`.
-2. **Graph** — use sibling `…/graphify-out/` only:
-   - `graphify query|path|explain … --graph project/<user>/<slug>/graphify-out/graph.json`
+2. **Graph** — one short query on the sibling graph only:
+   - `graphify query "<locator>" --graph project/<user>/<slug>/graphify-out/graph.json`
 3. If that `graph.json` is missing, say so and explore with Read/Grep — do **not** fall back to the WorkBench root graph for customer-app questions. You may run `scripts/graphify-work-project.sh <user>/<slug>` to build it.
 
-## Mandatory before Explore
+## One query, then read
 
-Before Read / Grep / Glob / Bash to explore a corpus, run graphify on **that** corpus first:
+Before Grep / Glob / a repo-wide search, run **one** `graphify query "<short locator>"` (with `--graph` for nested). If it lists files, Read 1–3 of them. Do not also run `path` and `explain` unless the query returned no files.
 
-- `graphify query "<question>"` (with `--graph` for nested)
-- `graphify path "<A>" "<B>"`
-- `graphify explain "<concept>"`
-
-Same for every subagent that explores code. Skip only when: (1) graphify already oriented you and you need specific lines, or (2) that corpus has no `graphify-out/graph.json` yet.
-
-- Prefer `graphify-out/wiki/index.md` when present
-- `GRAPH_REPORT.md` only for broad architecture when query/path/explain are not enough
+Skip when the target file is already known, or that corpus has no `graphify-out/graph.json` yet. Do not fall back to the WorkBench root graph for customer-app questions.

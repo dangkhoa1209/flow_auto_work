@@ -37,10 +37,8 @@ const TEXT_OUTPUT_SCHEMA = {
 } as const;
 
 /**
- * Cursor SDK custom tools — prefer these before broad Grep when the path is unknown.
+ * Cursor SDK custom tools — one short map query before any repo-wide search.
  * Graph lives outside source/; tools never write the checkout.
- * ChatBox (BA) and Work both treat map-first as strongly preferred, not a hard fail
- * when the path is already known or prior chat answers the question.
  */
 export function buildBaGraphifyCustomTools(
   sourcePath: string,
@@ -50,13 +48,11 @@ export function buildBaGraphifyCustomTools(
   return {
     code_map_query: {
       description:
-        "Preferred first step when exploring an unfamiliar feature/flow and the path is unknown. " +
-        "Runs WorkBench graphify on the sibling graph (not inside source/). " +
-        "Pass ONE short locator: screen name, feature slug, or symbol — " +
-        "NOT the full GitLab issue, description, or chat. " +
-        "Good: 'cấu hình rules chấm công', 'TimekeeperSync', 'staff import by column'. " +
-        "Bad: pasting the ticket or 'dữ liệu như này chạy thành công chưa'. " +
-        "Call before broad Grep, rg, Glob, or find when the path is unknown; skip when the target file is already known.",
+        "REQUIRED once before Grep/rg/Glob/find when the file path is unknown. " +
+        "ONE short locator only (screen, module, or symbol) — not the issue, description, or chat. " +
+        "Good: 'cấu hình rules chấm công', 'TimekeeperSync'. " +
+        "If this returns files, Read them. Do not call again, and do not call code_map_explain or code_map_path unless the list is empty. " +
+        "Skip only when the target file is already known.",
       inputSchema: {
         type: "object",
         properties: {
@@ -88,8 +84,7 @@ export function buildBaGraphifyCustomTools(
     },
     code_map_path: {
       description:
-        "Shortest path between two code/symbol names in the WorkBench graphify graph. " +
-        "Use after code_map_query when you need how A connects to B.",
+        "Shortest path between two symbols. Call only when code_map_query returned no files.",
       inputSchema: {
         type: "object",
         properties: {
@@ -113,8 +108,7 @@ export function buildBaGraphifyCustomTools(
     },
     code_map_explain: {
       description:
-        "Explain a concept/symbol and neighbors from the WorkBench graphify graph. " +
-        "Use when code_map_query is thin and you need focus on one module/screen name.",
+        "Neighbors of one symbol. Call only when code_map_query returned no files. Do not call if the query already listed paths.",
       inputSchema: {
         type: "object",
         properties: {
