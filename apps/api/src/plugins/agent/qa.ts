@@ -29,7 +29,10 @@ import {
   sendWithLocalForceRetry,
   workAgentLocal,
 } from "./run.js";
-import { persistCursorUsage } from "../cursor/recordUsage.js";
+import {
+  persistCursorUsage,
+  usageStatusFromError,
+} from "../cursor/recordUsage.js";
 import {
   extractChatBodyFromAgentText,
   gitlabCommentInstructions,
@@ -252,6 +255,10 @@ ${opts.question}`;
         appendPromptSending(jobId, prompt);
       }
 
+      let streamed = "";
+      let lastTurnInput = 0;
+      let usagePersisted = false;
+      try {
       session.check();
       const run = await sendWithLocalForceRetry(disposed, prompt);
       logger.info("Q&A run started", {
@@ -261,9 +268,6 @@ ${opts.question}`;
       });
       session.attach(run);
 
-      try {
-        let streamed = "";
-        let lastTurnInput = 0;
         try {
           if (
             typeof run.stream === "function" &&
@@ -295,33 +299,9 @@ ${opts.question}`;
         const result = await run.wait();
         session.check();
         if (result.status === "cancelled") {
-          await persistCursorUsage({
-            kind: "job_qa",
-            jobId,
-            agent: disposed,
-            run,
-            result,
-            promptChars: prompt.length,
-            outputChars: streamed.length,
-            model: resolveCursorModel(),
-            status: "cancelled",
-            force: true,
-          });
           throw new Error("Q&A cancelled (force stop)");
         }
         if (result.status === "error") {
-          await persistCursorUsage({
-            kind: "job_qa",
-            jobId,
-            agent: disposed,
-            run,
-            result,
-            promptChars: prompt.length,
-            outputChars: streamed.length,
-            model: resolveCursorModel(),
-            status: "error",
-            force: true,
-          });
           throw errorFromCursorRunStatus(
             result as {
               id: string;
@@ -355,6 +335,7 @@ ${opts.question}`;
             )
           : null;
         appendJobProgress(jobId, "status", "Q&A finished");
+        usagePersisted = true;
         await persistCursorUsage({
           kind: "job_qa",
           jobId,
@@ -394,8 +375,19 @@ ${opts.question}`;
           usage,
           resumed,
         };
-      } finally {
-        /* session.end in outer finally */
+      } catch (usageErr) {
+        if (!usagePersisted) {
+          await persistCursorUsage({
+            kind: "job_qa",
+            jobId,
+            promptChars: prompt.length,
+            outputChars: streamed.length,
+            model: resolveCursorModel(),
+            status: usageStatusFromError(usageErr),
+            force: true,
+          });
+        }
+        throw usageErr;
       }
     } finally {
       session.end();

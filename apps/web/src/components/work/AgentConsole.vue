@@ -32,6 +32,7 @@ const props = withDefaults(
     progressLive: boolean;
     chatInput: string;
     busy: boolean;
+    sendBusy: boolean;
     stopBusy: boolean;
     canForceStop: boolean;
     canResetWindow: boolean;
@@ -75,7 +76,7 @@ function onChatKeydown(e: KeyboardEvent) {
   if (e.isComposing) return;
   if (e.shiftKey && !(e.metaKey || e.ctrlKey)) return;
   e.preventDefault();
-  if (!props.chatInput.trim() || props.stopBusy) return;
+  if (!props.chatInput.trim() || props.stopBusy || props.sendBusy) return;
   emit("sendChat", "continue");
 }
 
@@ -917,7 +918,7 @@ watch(chatBox, (el, prev) => {
             <button
               type="button"
               class="faw-btn faw-btn--run faw-btn--send"
-              :disabled="!chatInput.trim() || stopBusy"
+              :disabled="!chatInput.trim() || stopBusy || sendBusy"
               :title="
                 planFirst
                   ? 'Queue plan-only run (Cursor plan mode)'
@@ -925,12 +926,12 @@ watch(chatBox, (el, prev) => {
               "
               @click="emit('sendChat', 'continue')"
             >
-              Send
+              {{ sendBusy ? "Sending…" : "Send" }}
             </button>
             <button
               type="button"
               class="faw-btn faw-btn--ask"
-              :disabled="!chatInput.trim() || stopBusy"
+              :disabled="!chatInput.trim() || stopBusy || sendBusy"
               title="Quick Q&A (no code changes) → queue"
               @click="emit('sendChat', 'ask')"
             >

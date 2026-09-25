@@ -1,4 +1,3 @@
-import { getConfig } from "../../config.js";
 import { logger } from "../../logger.js";
 import { CursorUsageModel } from "../../models/cursorUsage.js";
 import { JobModel } from "../../models/job.js";
@@ -17,6 +16,12 @@ import {
   normalizeUsageFields,
   pickUsageFromCandidates,
 } from "./usageNormalize.js";
+
+/** Map thrown errors (force-stop, cancel, transport) to usage row status. */
+export function usageStatusFromError(err: unknown): CursorUsageStatus {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /Force-stopped|cancelled/i.test(msg) ? "cancelled" : "error";
+}
 
 export type PersistCursorUsageOpts = {
   kind: CursorUsageKind;
@@ -37,7 +42,7 @@ export type PersistCursorUsageOpts = {
   /** Outcome — omit / ok for successful finishes. */
   status?: CursorUsageStatus;
   /**
-   * When true, still insert a history row even if tokens/cost normalize to 0
+   * When true, still insert a history row even if tokens normalize to 0
    * (e.g. cancelled before first token). Default false.
    */
   force?: boolean;
@@ -132,12 +137,9 @@ export async function persistCursorUsage(
       fromRun,
       ...(opts.extraUsage ?? []),
     );
-    const cfg = getConfig();
     const rawFields = normalizeUsageFields(picked, {
       promptChars: opts.promptChars,
       outputChars: opts.outputChars,
-      usdPerMillionInput: cfg.STATS_USD_PER_MILLION_INPUT,
-      usdPerMillionOutput: cfg.STATS_USD_PER_MILLION_OUTPUT,
     });
 
     const model = opts.model?.trim() || undefined;
@@ -158,10 +160,7 @@ export async function persistCursorUsage(
     );
     const status: CursorUsageStatus = opts.status || "ok";
     const hasSignal =
-      fields.totalTokens > 0 ||
-      fields.costCents > 0 ||
-      Boolean(opts.force) ||
-      status !== "ok";
+      fields.totalTokens > 0 || Boolean(opts.force) || status !== "ok";
     if (!hasSignal) return;
 
     const userId = await resolveUsageUserIdWithJob(opts.userId, opts.jobId);

@@ -29,7 +29,10 @@ import {
   cancelActiveAgentRun,
   errorFromCursorRunStatus,
 } from "./run.js";
-import { persistCursorUsage } from "../cursor/recordUsage.js";
+import {
+  persistCursorUsage,
+  usageStatusFromError,
+} from "../cursor/recordUsage.js";
 import { readOnlyAgentPolicy } from "../cursor/agentPolicy.js";
 
 setMaxListeners(50);
@@ -189,6 +192,10 @@ Hãy sinh bộ test case theo đúng cấu trúc mục 3.`;
       appendJobProgress(jobId, "status", `Sinh testcase QC · model ${modelLabel}`);
       session.check();
 
+      let streamed = "";
+      let lastTurnInput = 0;
+      let usagePersisted = false;
+      try {
       const agent = await Agent.create({
         apiKey: resolveCursorApiKey(),
         model,
@@ -208,46 +215,78 @@ Hãy sinh bộ test case theo đúng cấu trúc mục 3.`;
       const run = await disposed.send(prompt);
       session.attach(run);
 
-      let streamed = "";
-      let lastTurnInput = 0;
-      try {
-        if (
-          typeof run.stream === "function" &&
-          run.supports?.("stream") !== false
-        ) {
-          for await (const message of run.stream()) {
-            session.check();
-            appendSdkMessage(jobId, message);
-            if (message.type === "assistant") {
-              for (const block of message.message.content) {
-                if (block.type === "text") streamed += block.text;
+        try {
+          if (
+            typeof run.stream === "function" &&
+            run.supports?.("stream") !== false
+          ) {
+            for await (const message of run.stream()) {
+              session.check();
+              appendSdkMessage(jobId, message);
+              if (message.type === "assistant") {
+                for (const block of message.message.content) {
+                  if (block.type === "text") streamed += block.text;
+                }
+              }
+              const raw = message as {
+                type?: string;
+                usage?: { inputTokens?: number };
+              };
+              if (raw.type === "usage" && raw.usage?.inputTokens) {
+                lastTurnInput = raw.usage.inputTokens;
               }
             }
-            const raw = message as {
-              type?: string;
-              usage?: { inputTokens?: number };
-            };
-            if (raw.type === "usage" && raw.usage?.inputTokens) {
-              lastTurnInput = raw.usage.inputTokens;
-            }
           }
+        } catch (err) {
+          session.check();
+          appendJobProgress(
+            jobId,
+            "status",
+            `testcase stream error: ${String(err)}`,
+          );
+          logger.warn("Testcase stream failed; wait()", { err: String(err) });
         }
-      } catch (err) {
-        session.check();
-        appendJobProgress(
-          jobId,
-          "status",
-          `testcase stream error: ${String(err)}`,
-        );
-        logger.warn("Testcase stream failed; wait()", { err: String(err) });
-      }
 
-      const result = await run.wait();
-      session.check();
-      if (result.status === "cancelled") {
-        throw new Error("Testcase generation cancelled (force stop)");
-      }
-      if (result.status === "error") {
+        const result = await run.wait();
+        session.check();
+        if (result.status === "cancelled") {
+          throw new Error("Testcase generation cancelled (force stop)");
+        }
+        if (result.status === "error") {
+          throw errorFromCursorRunStatus(
+            result as {
+              id: string;
+              result?: string;
+              durationMs?: number;
+              errorCode?: string;
+              requestId?: string;
+            },
+            { label: "Testcase" },
+          );
+        }
+
+        const text = (result.result ?? streamed).trim();
+        if (!text) throw new Error("Agent returned empty testcase body");
+
+        const sdkU = (result as { usage?: Parameters<typeof recordTokenUsage>[1] })
+          .usage;
+        const hasSdk =
+          Boolean(sdkU) &&
+          (Number(sdkU?.inputTokens) > 0 || Number(sdkU?.totalTokens) > 0);
+        const inEst = Math.max(1, Math.ceil(prompt.length / 4));
+        const outEst = Math.max(0, Math.ceil(text.length / 4));
+        const usage = recordTokenUsage(
+          jobId,
+          hasSdk
+            ? sdkU
+            : {
+                inputTokens: inEst,
+                outputTokens: outEst,
+                totalTokens: inEst + outEst,
+              },
+          { lastTurnInput: lastTurnInput || (hasSdk ? undefined : inEst) },
+        );
+        usagePersisted = true;
         await persistCursorUsage({
           kind: "job_testcase",
           jobId,
@@ -255,85 +294,54 @@ Hãy sinh bộ test case theo đúng cấu trúc mục 3.`;
           run,
           result,
           promptChars: prompt.length,
-          outputChars: streamed.length,
+          outputChars: text.length,
           model: resolveCursorModel(),
-          status: "error",
-          force: true,
+          status: "ok",
         });
-        throw errorFromCursorRunStatus(
-          result as {
-            id: string;
-            result?: string;
-            durationMs?: number;
-            errorCode?: string;
-            requestId?: string;
-          },
-          { label: "Testcase" },
-        );
+
+        let commented = false;
+        try {
+          const body = withAiGeneratedMarker(
+            `## Testcase (Manual QC)\n\n${text}`.slice(0, 900_000),
+          );
+          await commentOnIssue(opts.issue.projectId, opts.issue.issueIid, body);
+          commented = true;
+          appendJobProgress(
+            jobId,
+            "status",
+            `Đã comment testcase lên GitLab #${opts.issue.issueIid}`,
+          );
+        } catch (err) {
+          logger.warn("Testcase GitLab comment failed", { err: String(err) });
+          appendJobProgress(
+            jobId,
+            "status",
+            `Sinh testcase xong nhưng comment GitLab thất bại: ${
+              err instanceof Error ? err.message : String(err)
+            }`,
+          );
+        }
+
+        return {
+          body: text,
+          agentId: disposed.agentId,
+          usage,
+          commented,
+        };
+      } catch (usageErr) {
+        if (!usagePersisted) {
+          await persistCursorUsage({
+            kind: "job_testcase",
+            jobId,
+            promptChars: prompt.length,
+            outputChars: streamed.length,
+            model: resolveCursorModel(),
+            status: usageStatusFromError(usageErr),
+            force: true,
+          });
+        }
+        throw usageErr;
       }
-
-      const text = (result.result ?? streamed).trim();
-      if (!text) throw new Error("Agent returned empty testcase body");
-
-      const sdkU = (result as { usage?: Parameters<typeof recordTokenUsage>[1] })
-        .usage;
-      const hasSdk =
-        Boolean(sdkU) &&
-        (Number(sdkU?.inputTokens) > 0 || Number(sdkU?.totalTokens) > 0);
-      const inEst = Math.max(1, Math.ceil(prompt.length / 4));
-      const outEst = Math.max(0, Math.ceil(text.length / 4));
-      const usage = recordTokenUsage(
-        jobId,
-        hasSdk
-          ? sdkU
-          : {
-              inputTokens: inEst,
-              outputTokens: outEst,
-              totalTokens: inEst + outEst,
-            },
-        { lastTurnInput: lastTurnInput || (hasSdk ? undefined : inEst) },
-      );
-      await persistCursorUsage({
-        kind: "job_testcase",
-        jobId,
-        agent: disposed,
-        run,
-        result,
-        promptChars: prompt.length,
-        outputChars: text.length,
-        model: resolveCursorModel(),
-        status: "ok",
-      });
-
-      let commented = false;
-      try {
-        const body = withAiGeneratedMarker(
-          `## Testcase (Manual QC)\n\n${text}`.slice(0, 900_000),
-        );
-        await commentOnIssue(opts.issue.projectId, opts.issue.issueIid, body);
-        commented = true;
-        appendJobProgress(
-          jobId,
-          "status",
-          `Đã comment testcase lên GitLab #${opts.issue.issueIid}`,
-        );
-      } catch (err) {
-        logger.warn("Testcase GitLab comment failed", { err: String(err) });
-        appendJobProgress(
-          jobId,
-          "status",
-          `Sinh testcase xong nhưng comment GitLab thất bại: ${
-            err instanceof Error ? err.message : String(err)
-          }`,
-        );
-      }
-
-      return {
-        body: text,
-        agentId: disposed.agentId,
-        usage,
-        commented,
-      };
     } finally {
       session.end();
     }

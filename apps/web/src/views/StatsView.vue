@@ -1,7 +1,14 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { message } from "ant-design-vue";
-import { DownloadOutlined, SearchOutlined, BarChartOutlined } from "@ant-design/icons-vue";
+import {
+  BarChartOutlined,
+  CloseCircleOutlined,
+  DownloadOutlined,
+  ReloadOutlined,
+  SearchOutlined,
+  WarningOutlined,
+} from "@ant-design/icons-vue";
 import { api } from "@/api/client";
 import IssueIidLink from "@/components/IssueIidLink.vue";
 import Sparkline from "@/components/stats/Sparkline.vue";
@@ -123,11 +130,6 @@ function fmtPct(n?: number | null): string {
   if (n == null) return "—";
   const sign = n > 0 ? "+" : "";
   return `${sign}${n}%`;
-}
-
-function pctClass(n?: number | null): string {
-  if (n == null || n === 0) return "text-ink-muted";
-  return n > 0 ? "text-status-done" : "text-red-500";
 }
 
 function pctDelta(cur: number, prev: number): number | null {
@@ -293,6 +295,67 @@ const hasMoreTasks = computed(
   () => displayTasks.value.length < filteredTasks.value.length,
 );
 
+const activeFilters = computed(() => {
+  const items: { key: string; label: string; clear: () => void }[] = [];
+  if (statusFilter.value.length) {
+    items.push({
+      key: "status",
+      label: `Status: ${statusFilter.value.join(", ")}`,
+      clear: () => {
+        statusFilter.value = [];
+      },
+    });
+  }
+  if (projectFilter.value !== "current") {
+    const label =
+      projectFilter.value === "all"
+        ? "All projects"
+        : projectFilter.value;
+    items.push({
+      key: "project",
+      label: `Project: ${label}`,
+      clear: () => {
+        projectFilter.value = "current";
+      },
+    });
+  }
+  if (searchDebounced.value) {
+    items.push({
+      key: "q",
+      label: `Search: ${searchDebounced.value}`,
+      clear: () => {
+        search.value = "";
+      },
+    });
+  }
+  if (customFrom.value && customTo.value) {
+    items.push({
+      key: "range",
+      label: `${customFrom.value} → ${customTo.value}`,
+      clear: () => {
+        customFrom.value = undefined;
+        customTo.value = undefined;
+        daysPreset.value = 90;
+        resetListPage();
+        load();
+      },
+    });
+  }
+  return items;
+});
+
+function clearAllFilters() {
+  statusFilter.value = [];
+  projectFilter.value = "current";
+  search.value = "";
+  customFrom.value = undefined;
+  customTo.value = undefined;
+  daysPreset.value = 90;
+  resetListPage();
+  analysis.value = null;
+  load();
+}
+
 function loadMoreTasks() {
   listLimit.value += LIST_PAGE;
 }
@@ -429,69 +492,88 @@ watch(
 </script>
 
 <template>
-  <div class="h-full max-h-full min-h-0 overflow-y-auto">
-    <div class="mx-auto w-full max-w-6xl px-4 py-5 md:px-8 md:py-6 pb-10">
-      <div class="rounded-2xl panel-glass shadow-panel p-5 md:p-6">
-        <div class="flex flex-wrap items-start justify-between gap-3 mb-4">
-          <div>
-            <h2 class="text-lg font-semibold text-ink mt-0 mb-1">Task stats</h2>
-            <p class="text-xs text-ink-muted m-0">
-              {{ payload?.from }} → {{ payload?.to }}
-              · {{ payload?.timezone }}
-              <span v-if="session.me?.gitlabUsername || session.session.username">
-                · @{{ session.me?.gitlabUsername || session.session.username }}
-              </span>
-              <span v-if="refreshing" class="ml-2">refreshing…</span>
-            </p>
-          </div>
-          <div class="flex flex-wrap gap-2">
-            <a-button
-              type="primary"
-              size="small"
-              :loading="analyzing"
-              :disabled="analyzing"
-              @click="runAnalyze(!!analysis)"
-            >
-              <template #icon><BarChartOutlined /></template>
-              {{
-                analyzing
-                  ? "Agent is analyzing…"
-                  : analysis
-                    ? "Analyze again"
-                    : "Analyze performance"
-              }}
-            </a-button>
-            <a-button size="small" @click="exportCsv">
-              <template #icon><DownloadOutlined /></template>
-              Export CSV
-            </a-button>
-          </div>
+  <div class="faw-stats-page">
+    <div class="faw-stats-page__inner">
+      <header class="faw-stats__hero">
+        <div>
+          <p class="faw-stats__eyebrow">
+            <BarChartOutlined aria-hidden="true" />
+            Dev analytics
+          </p>
+          <h1 class="faw-stats__title">Task stats</h1>
+          <p class="faw-stats__desc">
+            Track completed agent runs, success rate, and drill down by month, week,
+            or day — filter by project and status.
+          </p>
+          <p v-if="payload?.from && payload?.to" class="faw-stats__range">
+            {{ payload.from }} → {{ payload.to }}
+            <span v-if="payload.timezone"> · {{ payload.timezone }}</span>
+            <span v-if="session.me?.gitlabUsername || session.session.username">
+              · @{{ session.me?.gitlabUsername || session.session.username }}
+            </span>
+            <span v-if="refreshing"> · refreshing…</span>
+          </p>
         </div>
+        <div class="faw-stats__hero-actions">
+          <a-button
+            type="primary"
+            size="small"
+            :loading="analyzing"
+            :disabled="analyzing"
+            @click="runAnalyze(!!analysis)"
+          >
+            <template #icon><BarChartOutlined /></template>
+            {{
+              analyzing
+                ? "Analyzing…"
+                : analysis
+                  ? "Analyze again"
+                  : "Analyze performance"
+            }}
+          </a-button>
+          <a-button size="small" :loading="loading" @click="load()">
+            <template #icon><ReloadOutlined /></template>
+            Refresh
+          </a-button>
+          <a-button size="small" @click="exportCsv">
+            <template #icon><DownloadOutlined /></template>
+            Export CSV
+          </a-button>
+        </div>
+      </header>
 
-        <DevEvaluation
-          v-if="analysis"
-          :analysis="analysis"
-          class="mb-4"
-          @highlight-jobs="onHighlightJobs"
-        />
+      <DevEvaluation
+        v-if="analysis"
+        :analysis="analysis"
+        class="mb-4"
+        @highlight-jobs="onHighlightJobs"
+      />
 
-        <a-alert
-          v-if="payload?.truncated"
-          type="warning"
-          show-icon
-          class="mb-3"
-          :message="`Incomplete data: showing ${payload.returnedJobs} / ${payload.totalJobsInRange} tasks in this range.`"
-        />
+      <div
+        v-if="payload?.truncated"
+        class="faw-stats__alert"
+        role="status"
+      >
+        <WarningOutlined aria-hidden="true" />
+        <div>
+          <strong>Incomplete data</strong>
+          <p>
+            Showing {{ payload.returnedJobs }} / {{ payload.totalJobsInRange }}
+            tasks in this range.
+          </p>
+        </div>
+      </div>
 
-        <div class="flex flex-wrap gap-2 mb-4">
+      <section class="faw-stats__filters" aria-label="Filters">
+        <div class="faw-stats__filters-row">
           <a-radio-group
             :value="customFrom ? 0 : daysPreset"
             size="small"
             @change="(e: { target?: { value?: number } } | number) => applyPreset(typeof e === 'number' ? e : Number(e.target?.value))"
           >
-            <a-radio-button :value="7">7 days</a-radio-button>
-            <a-radio-button :value="30">30 days</a-radio-button>
-            <a-radio-button :value="90">90 days</a-radio-button>
+            <a-radio-button :value="7">7d</a-radio-button>
+            <a-radio-button :value="30">30d</a-radio-button>
+            <a-radio-button :value="90">90d</a-radio-button>
           </a-radio-group>
           <a-range-picker
             size="small"
@@ -505,7 +587,7 @@ watch(
             allow-clear
             placeholder="Status"
             size="small"
-            class="min-w-[140px]"
+            class="faw-stats__select"
             :max-tag-count="1"
           >
             <a-select-option value="succeeded">Done</a-select-option>
@@ -516,7 +598,7 @@ watch(
           <a-select
             v-model:value="projectFilter"
             size="small"
-            class="min-w-[130px]"
+            class="faw-stats__select"
           >
             <a-select-option value="current">Current project</a-select-option>
             <a-select-option value="all">All projects</a-select-option>
@@ -533,261 +615,246 @@ watch(
             size="small"
             allow-clear
             placeholder="Search #IID or title"
-            class="w-[200px]"
+            class="faw-stats__search"
           >
             <template #prefix><SearchOutlined /></template>
           </a-input>
         </div>
+        <div v-if="activeFilters.length" class="faw-stats__chips">
+          <button
+            v-for="f in activeFilters"
+            :key="f.key"
+            type="button"
+            class="faw-stats__chip"
+            @click="f.clear()"
+          >
+            {{ f.label }}
+            <CloseCircleOutlined aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            class="faw-stats__chip faw-stats__chip--clear"
+            @click="clearAllFilters"
+          >
+            Clear all
+          </button>
+        </div>
+      </section>
 
-        <a-spin :spinning="loading">
-          <div v-if="payload" class="space-y-5">
-            <ContributionHeatmap
-              v-if="payload.heatmap?.length"
-              :cells="payload.heatmap"
-            />
+      <a-spin :spinning="loading">
+        <div v-if="payload">
+          <ContributionHeatmap
+            v-if="payload.heatmap?.length"
+            :cells="payload.heatmap"
+            class="mb-4"
+          />
 
-            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <div class="rounded-xl border border-line bg-surface-raised/40 p-4">
-                <div class="text-[11px] text-ink-muted uppercase tracking-wide">
-                  Total tasks
-                </div>
-                <div class="text-2xl font-semibold text-ink mt-1">
-                  {{ levelCounts.jobCount || 0 }}
-                </div>
-                <div class="text-xs mt-1" :class="pctClass(periodComparePct)">
-                  {{ fmtPct(periodComparePct) }} {{ periodCompareLabel }}
-                </div>
-              </div>
-              <div class="rounded-xl border border-line bg-surface-raised/40 p-4">
-                <div class="text-[11px] text-ink-muted uppercase tracking-wide">
-                  Completed
-                </div>
-                <div class="text-2xl font-semibold text-ink mt-1">
-                  {{ levelCounts.succeeded || 0 }}
-                </div>
-                <div class="text-xs text-ink-muted mt-1">
-                  {{
-                    levelCounts.successRate != null
-                      ? `${levelCounts.successRate}% success`
-                      : "—"
-                  }}
-                  · ✗{{ levelCounts.failed || 0 }}
-                  · pending {{ levelCounts.awaitingHandoff || 0 }}
-                </div>
-              </div>
-              <div class="rounded-xl border border-line bg-surface-raised/40 p-4">
-                <div class="text-[11px] text-ink-muted uppercase tracking-wide">
-                  Avg tasks / day
-                </div>
-                <div class="text-2xl font-semibold text-ink mt-1">
-                  {{ avgTasksPerDay }}
-                </div>
-                <div class="text-xs text-ink-muted mt-1">
-                  {{ activeDayCount || payload.days }} days with data
-                </div>
-              </div>
-            </div>
-
-            <div class="flex items-center gap-2">
-              <Sparkline :values="levelCounts.spark || []" :width="180" :height="32" />
-              <span class="text-[11px] text-ink-muted">Daily task trend</span>
-            </div>
-
-            <div class="text-sm text-ink">
-              <button
-                type="button"
-                class="text-accent hover:underline bg-transparent border-0 p-0 cursor-pointer"
-                @click="crumbRoot"
-              >
-                Months
-              </button>
-              <template v-if="currentMonth">
-                <span class="text-ink-muted"> › </span>
-                <button
-                  type="button"
-                  class="text-accent hover:underline bg-transparent border-0 p-0 cursor-pointer"
-                  @click="crumbMonth"
-                >
-                  {{ monthCrumb(currentMonth.monthKey) }}
-                </button>
-              </template>
-              <template v-if="currentWeek">
-                <span class="text-ink-muted"> › </span>
-                <span>{{ currentWeek.label }}</span>
-              </template>
-            </div>
-
-            <div v-if="!drillMonth" class="space-y-2">
-              <button
-                v-for="m in months"
-                :key="m.monthKey"
-                type="button"
-                class="stats-drill-card w-full text-left rounded-xl border border-line p-4 transition-colors"
-                @click="openMonth(m)"
-              >
-                <div class="flex items-center justify-between gap-3">
-                  <div>
-                    <div class="font-medium text-ink">{{ m.label }}</div>
-                    <div class="text-xs text-ink-muted mt-0.5">
-                      {{ m.jobCount }} task · ✓{{ m.succeeded }} · ✗{{ m.failed }}
-                      · pending {{ m.awaitingHandoff }}
-                      <span v-if="m.successRate != null"> · {{ m.successRate }}%</span>
-                    </div>
-                  </div>
-                  <Sparkline :values="m.spark || []" />
-                </div>
-              </button>
-              <a-empty v-if="!months.length" description="No data yet" />
-            </div>
-
-            <div v-else-if="currentMonth && !drillWeek" class="space-y-2">
-              <button
-                v-for="w in currentMonth.weeks"
-                :key="w.weekKey"
-                type="button"
-                class="stats-drill-card w-full text-left rounded-xl border border-line p-4 transition-colors"
-                @click="openWeek(w)"
-              >
-                <div class="flex items-center justify-between gap-3">
-                  <div>
-                    <div class="font-medium text-ink">{{ w.label }}</div>
-                    <div class="text-xs text-ink-muted mt-0.5">
-                      {{ w.jobCount }} task · ✓{{ w.succeeded }} · ✗{{ w.failed }}
-                      · pending {{ w.awaitingHandoff }}
-                    </div>
-                  </div>
-                  <Sparkline :values="w.spark || []" />
-                </div>
-              </button>
-            </div>
-
-            <a-collapse
-              v-else-if="visibleDays.length"
-              accordion
-              class="stats-collapse"
-            >
-              <a-collapse-panel
-                v-for="d in visibleDays"
-                :key="d.date"
-                :header="`${ymdShort(d.date)} · ${d.jobCount || d.items?.length || 0} task · ✓${d.succeeded || 0} · ✗${d.failed || 0} · pending ${d.awaitingHandoff || 0}`"
-              >
-                <div
-                  v-for="(it, idx) in d.items || []"
-                  :key="it.jobId || idx"
-                  class="py-1.5 text-sm text-ink-soft border-b border-line last:border-0"
-                >
-                  <IssueIidLink :iid="it.issueIid" :url="it.url" />
-                  {{ it.title }}
-                  <a-tag class="ml-2" :color="statusColor(it.status)">
-                    {{ statusLabel(it.status) }}
-                  </a-tag>
-                </div>
-              </a-collapse-panel>
-            </a-collapse>
-
-            <a-empty
-              v-else-if="drillWeek && !visibleDays.length"
-              description="No tasks this week"
-            />
-
-            <div
-              v-if="displayTasks.length"
-              class="rounded-xl border border-line bg-surface-raised/30 p-4"
-            >
-              <div class="text-sm font-medium text-ink mb-3">
-                {{
-                  search.trim()
-                    ? `Matching tasks (${displayTasks.length}/${filteredTasks.length})`
-                    : `Task list (${displayTasks.length}/${filteredTasks.length})`
-                }}
-              </div>
-              <div
-                v-for="it in displayTasks"
-                :key="it.jobId"
-                class="py-2 text-sm text-ink-soft border-b border-line last:border-0"
+          <section class="faw-stats__kpis" aria-label="Summary metrics">
+            <div class="faw-stats__kpi faw-stats__kpi--accent">
+              <span class="faw-stats__kpi-label">Total tasks</span>
+              <span class="faw-stats__kpi-value">{{
+                levelCounts.jobCount || 0
+              }}</span>
+              <span
+                class="faw-stats__kpi-meta"
                 :class="{
-                  'bg-accent/10 -mx-2 px-2 rounded': highlightJobIds.has(it.jobId),
+                  'is-up': (periodComparePct ?? 0) > 0,
+                  'is-down': (periodComparePct ?? 0) < 0,
                 }"
               >
-                <span class="text-[11px] text-ink-muted font-mono mr-2">
-                  {{ ymdShort((it.at || "").slice(0, 10)) }}
-                </span>
+                {{ fmtPct(periodComparePct) }} {{ periodCompareLabel }}
+              </span>
+            </div>
+            <div class="faw-stats__kpi">
+              <span class="faw-stats__kpi-label">Completed</span>
+              <span class="faw-stats__kpi-value">{{
+                levelCounts.succeeded || 0
+              }}</span>
+              <span class="faw-stats__kpi-meta">
+                {{
+                  levelCounts.successRate != null
+                    ? `${levelCounts.successRate}% success`
+                    : "—"
+                }}
+                · ✗{{ levelCounts.failed || 0 }} · pending
+                {{ levelCounts.awaitingHandoff || 0 }}
+              </span>
+            </div>
+            <div class="faw-stats__kpi">
+              <span class="faw-stats__kpi-label">Avg / day</span>
+              <span class="faw-stats__kpi-value">{{ avgTasksPerDay }}</span>
+              <span class="faw-stats__kpi-meta">
+                {{ activeDayCount || payload.days }} days with data
+              </span>
+            </div>
+            <div
+              v-if="(payload.pendingHandoffCount || 0) > 0"
+              class="faw-stats__kpi"
+            >
+              <span class="faw-stats__kpi-label">Pending handoff</span>
+              <span class="faw-stats__kpi-value">{{
+                payload.pendingHandoffCount
+              }}</span>
+              <span class="faw-stats__kpi-meta">Awaiting QC handoff</span>
+            </div>
+          </section>
+
+          <div class="faw-stats__trend">
+            <Sparkline
+              :values="levelCounts.spark || []"
+              :width="180"
+              :height="32"
+            />
+            <span class="faw-stats__trend-label">Daily task trend</span>
+          </div>
+
+          <nav class="faw-stats__crumbs" aria-label="Drill-down">
+            <button type="button" class="faw-stats__crumb" @click="crumbRoot">
+              Months
+            </button>
+            <template v-if="currentMonth">
+              <span class="faw-stats__crumb-sep">›</span>
+              <button type="button" class="faw-stats__crumb" @click="crumbMonth">
+                {{ monthCrumb(currentMonth.monthKey) }}
+              </button>
+            </template>
+            <template v-if="currentWeek">
+              <span class="faw-stats__crumb-sep">›</span>
+              <span>{{ currentWeek.label }}</span>
+            </template>
+          </nav>
+
+          <div v-if="!drillMonth">
+            <button
+              v-for="m in months"
+              :key="m.monthKey"
+              type="button"
+              class="faw-stats__drill-card"
+              @click="openMonth(m)"
+            >
+              <div class="flex items-center justify-between gap-3">
+                <div>
+                  <div class="faw-stats__drill-title">{{ m.label }}</div>
+                  <div class="faw-stats__drill-meta">
+                    {{ m.jobCount }} task · ✓{{ m.succeeded }} · ✗{{ m.failed }}
+                    · pending {{ m.awaitingHandoff }}
+                    <span v-if="m.successRate != null">
+                      · {{ m.successRate }}%</span
+                    >
+                  </div>
+                </div>
+                <Sparkline :values="m.spark || []" />
+              </div>
+            </button>
+            <a-empty v-if="!months.length" description="No data yet" />
+          </div>
+
+          <div v-else-if="currentMonth && !drillWeek">
+            <button
+              v-for="w in currentMonth.weeks"
+              :key="w.weekKey"
+              type="button"
+              class="faw-stats__drill-card"
+              @click="openWeek(w)"
+            >
+              <div class="flex items-center justify-between gap-3">
+                <div>
+                  <div class="faw-stats__drill-title">{{ w.label }}</div>
+                  <div class="faw-stats__drill-meta">
+                    {{ w.jobCount }} task · ✓{{ w.succeeded }} · ✗{{ w.failed }}
+                    · pending {{ w.awaitingHandoff }}
+                  </div>
+                </div>
+                <Sparkline :values="w.spark || []" />
+              </div>
+            </button>
+          </div>
+
+          <a-collapse
+            v-else-if="visibleDays.length"
+            accordion
+            class="faw-stats-collapse"
+          >
+            <a-collapse-panel
+              v-for="d in visibleDays"
+              :key="d.date"
+              :header="`${ymdShort(d.date)} · ${d.jobCount || d.items?.length || 0} task · ✓${d.succeeded || 0} · ✗${d.failed || 0} · pending ${d.awaitingHandoff || 0}`"
+            >
+              <div
+                v-for="(it, idx) in d.items || []"
+                :key="it.jobId || idx"
+                class="faw-stats__task-row"
+              >
                 <IssueIidLink :iid="it.issueIid" :url="it.url" />
                 {{ it.title }}
                 <a-tag class="ml-2" :color="statusColor(it.status)">
                   {{ statusLabel(it.status) }}
                 </a-tag>
-                <div
-                  v-if="it.status === 'failed' && it.error"
-                  class="text-[11px] text-red-500 mt-0.5 ml-12"
-                >
-                  {{ it.error }}
-                </div>
               </div>
-              <div v-if="hasMoreTasks" class="pt-3 text-center">
-                <a-button size="small" @click="loadMoreTasks">
-                  Load more (+{{ LIST_PAGE }})
-                </a-button>
-              </div>
-            </div>
+            </a-collapse-panel>
+          </a-collapse>
 
-            <div
-              v-else-if="search.trim() && filteredTasks.length === 0"
-              class="rounded-xl border border-line p-6 text-center text-ink-muted text-sm"
-            >
-              No tasks match "{{ search.trim() }}"
-            </div>
+          <a-empty
+            v-else-if="drillWeek && !visibleDays.length"
+            description="No tasks this week"
+          />
 
+          <div v-if="displayTasks.length" class="faw-stats__card">
+            <h2 class="faw-stats__card-title">
+              {{
+                search.trim()
+                  ? `Matching tasks (${displayTasks.length}/${filteredTasks.length})`
+                  : `Task list (${displayTasks.length}/${filteredTasks.length})`
+              }}
+            </h2>
             <div
-              v-if="payload.failReasons?.length"
-              class="rounded-xl border border-line bg-surface-raised/30 p-4"
+              v-for="it in displayTasks"
+              :key="it.jobId"
+              class="faw-stats__task-row"
+              :class="{ 'is-highlight': highlightJobIds.has(it.jobId) }"
             >
-              <div class="text-sm font-medium text-ink mb-2">Fail reasons</div>
+              <span class="faw-stats__task-date">
+                {{ ymdShort((it.at || "").slice(0, 10)) }}
+              </span>
+              <IssueIidLink :iid="it.issueIid" :url="it.url" />
+              {{ it.title }}
+              <a-tag class="ml-2" :color="statusColor(it.status)">
+                {{ statusLabel(it.status) }}
+              </a-tag>
               <div
-                v-for="r in payload.failReasons"
-                :key="r.reason"
-                class="flex justify-between text-xs py-0.5 text-ink-soft"
+                v-if="it.status === 'failed' && it.error"
+                class="text-[11px] text-red-500 mt-0.5 ml-12"
               >
-                <span class="truncate pr-2">{{ r.reason }}</span>
-                <span class="font-mono">{{ r.count }}</span>
+                {{ it.error }}
               </div>
+            </div>
+            <div v-if="hasMoreTasks" class="pt-3 text-center">
+              <a-button size="small" @click="loadMoreTasks">
+                Load more (+{{ LIST_PAGE }})
+              </a-button>
             </div>
           </div>
-        </a-spin>
-      </div>
+
+          <div
+            v-else-if="search.trim() && filteredTasks.length === 0"
+            class="faw-stats__empty-search"
+          >
+            No tasks match "{{ search.trim() }}"
+          </div>
+
+          <div v-if="payload.failReasons?.length" class="faw-stats__card">
+            <h2 class="faw-stats__card-title">Fail reasons</h2>
+            <div
+              v-for="r in payload.failReasons"
+              :key="r.reason"
+              class="faw-stats__fail-row"
+            >
+              <span class="truncate pr-2">{{ r.reason }}</span>
+              <span class="font-mono shrink-0">{{ r.count }}</span>
+            </div>
+          </div>
+        </div>
+      </a-spin>
     </div>
   </div>
 </template>
-
-<style scoped>
-.stats-drill-card {
-  background: rgb(var(--c-surface-raised) / 0.35);
-  color: rgb(var(--c-ink));
-}
-.stats-drill-card:hover {
-  background: rgb(var(--c-surface-soft));
-  border-color: rgb(var(--c-accent) / 0.35);
-}
-
-.stats-collapse :deep(.ant-collapse) {
-  background: transparent;
-  border-color: rgb(var(--c-line));
-}
-.stats-collapse :deep(.ant-collapse-item) {
-  border-color: rgb(var(--c-line)) !important;
-  background: transparent;
-}
-.stats-collapse :deep(.ant-collapse-header) {
-  background: rgb(var(--c-surface-raised) / 0.35) !important;
-  color: rgb(var(--c-ink)) !important;
-  border-radius: 8px !important;
-}
-.stats-collapse :deep(.ant-collapse-content) {
-  background: transparent;
-  border-color: rgb(var(--c-line));
-  color: rgb(var(--c-ink-soft));
-}
-.stats-collapse :deep(.ant-collapse-content-box) {
-  padding-top: 8px;
-}
-</style>

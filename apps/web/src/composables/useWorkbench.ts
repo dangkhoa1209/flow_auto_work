@@ -49,6 +49,8 @@ export function useWorkbench() {
     mode: "continue" | "ask";
   } | null>(null);
   const busy = ref(false);
+  /** True from Send/Ask click until the send request finishes (blocks double-submit). */
+  const sendBusy = ref(false);
   const stopBusy = ref(false);
   const notesSaving = ref(false);
   const notesDraft = ref("");
@@ -712,20 +714,26 @@ export function useWorkbench() {
   }
 
   async function sendChat(mode: "continue" | "ask") {
+    if (sendBusy.value) return;
+    if (session.projectSwitching) {
+      message.warning("Đang đổi project — đợi xong rồi gửi lại");
+      return;
+    }
     const msg = chatInput.value.trim();
     if (!msg) return;
 
     if (selectedJobId.value && !(await confirmBadContextIfNeeded())) return;
 
     const run = async () => {
-      if (!(await ensureWorkReady())) return;
-      chatInput.value = "";
-      failedSend.value = null;
-      await nextTick();
-      busy.value = true;
-      mobilePane.value = "chat";
-      work.watchProgress();
+      sendBusy.value = true;
       try {
+        if (!(await ensureWorkReady())) return;
+        chatInput.value = "";
+        failedSend.value = null;
+        await nextTick();
+        busy.value = true;
+        mobilePane.value = "chat";
+        work.watchProgress();
         if (!selectedJobId.value) {
           if (mode === "ask") {
             const res = await projectClone.withCloneRetry(() =>
@@ -791,11 +799,13 @@ export function useWorkbench() {
         }
       } finally {
         busy.value = false;
+        sendBusy.value = false;
         await work.loadJobs().catch(() => undefined);
       }
     };
 
     if (chatLocked.value) {
+      sendBusy.value = true;
       Modal.confirm({
         title: "Stop the running agent?",
         content:
@@ -804,9 +814,16 @@ export function useWorkbench() {
         cancelText: "Keep running",
         okType: "danger",
         centered: true,
+        onCancel() {
+          sendBusy.value = false;
+        },
         async onOk() {
-          await forceStop();
-          await run();
+          try {
+            await forceStop();
+            await run();
+          } catch {
+            sendBusy.value = false;
+          }
         },
       });
       return;
@@ -1343,6 +1360,7 @@ export function useWorkbench() {
     chatInput,
     failedSend,
     busy,
+    sendBusy,
     stopBusy,
     notesSaving,
     notesDraft,

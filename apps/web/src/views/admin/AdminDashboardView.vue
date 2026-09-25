@@ -19,6 +19,7 @@ import { syncDbApi } from "@/api/syncDbApi";
 import { useGreeting } from "@/composables/useGreeting";
 import { useSessionStore } from "@/stores/session";
 import { ADMIN_TABS } from "@/config/adminNav";
+import { formatSparkDayLabel } from "@/utils/formatSparkDayLabel";
 
 type UserRole = "dev" | "admin" | "qc" | "ba" | "pd" | "devops";
 
@@ -43,8 +44,6 @@ type PasswordResetRequest = {
 type UsageBucket = {
   events: number;
   totalTokens: number;
-  costUsd: number;
-  chargedUsd: number;
 };
 
 type DayRow = UsageBucket & { date: string };
@@ -52,7 +51,7 @@ type DayRow = UsageBucket & { date: string };
 type UsagePayload = {
   totals?: UsageBucket;
   byDay?: DayRow[];
-  byKind?: { kind: string; label: string; events: number; costUsd: number }[];
+  byKind?: { kind: string; label: string; events: number; totalTokens: number }[];
 };
 
 type CursorSettings = {
@@ -140,7 +139,7 @@ const sparkDays = computed(() => {
   return days.map((d) => ({
     date: d.date,
     events: d.events || 0,
-    costUsd: d.costUsd || 0,
+    totalTokens: d.totalTokens || 0,
     height: Math.max(8, Math.round(((d.events || 0) / max) * 100)),
   }));
 });
@@ -258,15 +257,6 @@ const quickLinks = computed(() =>
   })),
 );
 
-function formatUsd(n: number | undefined): string {
-  if (n == null || Number.isNaN(n)) return "—";
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: 2,
-  }).format(n);
-}
-
 function formatTokens(n: number | undefined): string {
   if (n == null) return "—";
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -284,16 +274,6 @@ function formatDateTime(iso: string): string {
     }).format(new Date(iso));
   } catch {
     return iso;
-  }
-}
-
-function dayLabel(date: string): string {
-  try {
-    return new Intl.DateTimeFormat("en-US", { weekday: "narrow" }).format(
-      new Date(`${date}T12:00:00`),
-    );
-  } catch {
-    return date.slice(-2);
   }
 }
 
@@ -346,7 +326,7 @@ onMounted(() => {
           {{ greeting }}, {{ displayName }}
         </h1>
         <p class="faw-admin-dash__desc">
-          Workspace health, AI spend, and shortcuts across the admin console.
+          Workspace health, AI usage, and shortcuts across the admin console.
         </p>
       </div>
       <a-button size="small" :loading="loading" @click="load">Refresh</a-button>
@@ -374,12 +354,11 @@ onMounted(() => {
         <span class="faw-admin-dash__kpi-meta">BA project catalog</span>
       </div>
       <div class="faw-admin-dash__kpi">
-        <span class="faw-admin-dash__kpi-label">AI spend (30d)</span>
+        <span class="faw-admin-dash__kpi-label">AI tokens (30d)</span>
         <span class="faw-admin-dash__kpi-value">
-          {{ formatUsd(usageTotals?.costUsd) }}
+          {{ formatTokens(usageTotals?.totalTokens) }}
         </span>
         <span class="faw-admin-dash__kpi-meta">
-          {{ formatTokens(usageTotals?.totalTokens) }} tokens ·
           {{ usageTotals?.events ?? 0 }} runs
         </span>
       </div>
@@ -488,14 +467,14 @@ onMounted(() => {
               v-for="d in sparkDays"
               :key="d.date"
               class="faw-admin-dash__spark-col"
-              :title="`${d.date}: ${d.events} runs · ${formatUsd(d.costUsd)}`"
+              :title="`${d.date}: ${d.events} runs · ${formatTokens(d.totalTokens)} tokens`"
             >
               <span
                 class="faw-admin-dash__spark-bar"
                 :style="{ height: `${d.height}%` }"
                 :class="{ 'is-hot': d.events > 0 }"
               />
-              <span class="faw-admin-dash__spark-label">{{ dayLabel(d.date) }}</span>
+              <span class="faw-admin-dash__spark-label">{{ formatSparkDayLabel(d.date) }}</span>
             </div>
           </div>
           <p v-else class="faw-admin-dash__empty">No usage data in this window.</p>

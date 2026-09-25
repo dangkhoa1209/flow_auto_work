@@ -415,6 +415,7 @@ const contextBits = computed(() => {
           :disabled-reason="disabledReason"
           :loading="ba.streaming"
           :stop-busy="ba.stopBusy"
+          :send-busy="ba.sendBusy"
           :analysis-mode="ba.analysisMode"
           @update:analysis-mode="ba.setAnalysisMode($event)"
           @send="onSend"

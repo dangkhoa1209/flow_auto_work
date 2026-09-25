@@ -211,6 +211,7 @@ function confirmMergeFromMenu() {
               :progress-live="wb.progressLive"
               :chat-input="wb.chatInput"
               :busy="wb.chatLocked"
+              :send-busy="wb.sendBusy"
               :stop-busy="wb.stopBusy"
               :can-force-stop="wb.canForceStop"
               :can-reset-window="wb.canResetWindow"
@@ -273,7 +274,7 @@ function confirmMergeFromMenu() {
       <div
         v-show="wb.mobilePane !== 'tasks'"
         class="flex flex-col w-full flex-1 min-h-0"
-        :class="wb.mobilePane === 'detail' ? 'faw-m-detail-pad' : ''"
+        :class="wb.mobilePane !== 'tasks' ? 'faw-m-detail-pad' : ''"
       >
         <!-- Mobile detail chrome: back + title + slim Issue/Console -->
         <div class="faw-m-detail-bar shrink-0">
@@ -419,6 +420,7 @@ function confirmMergeFromMenu() {
           :progress-live="wb.progressLive"
           :chat-input="wb.chatInput"
           :busy="wb.chatLocked"
+          :send-busy="wb.sendBusy"
           :stop-busy="wb.stopBusy"
           :can-force-stop="wb.canForceStop"
           :can-reset-window="wb.canResetWindow"
@@ -436,12 +438,12 @@ function confirmMergeFromMenu() {
       </div>
     </div>
 
-    <!-- Mobile action dock: Run | Handoff equal pair + overflow -->
+    <!-- Mobile action dock: Run | Handoff equal pair + overflow (Issue + Console) -->
     <div
-      v-if="!isDesktop && wb.mobilePane === 'detail'"
+      v-if="!isDesktop && wb.mobilePane !== 'tasks'"
       class="faw-m-dock"
       role="toolbar"
-      aria-label="Issue actions"
+      aria-label="Job actions"
     >
       <div class="faw-m-dock__pair">
         <a-tooltip title="Run agent">

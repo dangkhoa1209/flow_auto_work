@@ -1,7 +1,11 @@
 import { API } from "@/api/endpoints";
 import { refreshAccessToken } from "@/api/client";
 import { recoverAuthRefreshLocks } from "@/api/http";
-import { getAccessExpiresAt, getAccessToken, loadPersistedAuth } from "@/api/tokenStorage";
+import {
+  getAccessExpiresAt,
+  getAccessToken,
+  getProjectId,
+} from "@/api/tokenStorage";
 
 export type RealtimeStatus = {
   type: "status";
@@ -192,9 +196,9 @@ export type RealtimeHandlers = {
 type Handlers = RealtimeHandlers;
 
 function eventsUrl(): string {
-  const persisted = loadPersistedAuth();
   const qs = new URLSearchParams();
-  if (persisted.projectId) qs.set("p", persisted.projectId);
+  const tabProject = getProjectId();
+  if (tabProject) qs.set("p", tabProject);
   const access = getAccessToken();
   if (access) qs.set("access_token", access);
   return `${API.events}${qs.toString() ? `?${qs}` : ""}`;

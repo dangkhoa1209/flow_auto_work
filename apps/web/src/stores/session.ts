@@ -8,6 +8,7 @@ import { effectiveRoles, hasAnyRole } from "@/utils/userRoles";
 import {
   getAccessExpiresAt,
   getAccessToken,
+  getProjectId,
   getRefreshToken,
   loadPersistedAuth,
   savePersistedAuth,
@@ -70,11 +71,13 @@ export type UserPublic = {
 export const useSessionStore = defineStore("session", () => {
   const auth = useAuthStore();
 
-  const projectId = ref<string | null>(loadPersistedAuth().projectId);
+  const projectId = ref<string | null>(getProjectId());
   const me = ref<UserPublic | null>(null);
   const memberships = ref<Membership[]>([]);
   const loading = ref(false);
   const bootstrapped = ref(false);
+  /** True while POST /projects/:id/activate is in flight — block Run/Send. */
+  const projectSwitching = ref(false);
 
   /** Legacy shape for components still reading session.session */
   const session = computed({
@@ -196,7 +199,7 @@ export const useSessionStore = defineStore("session", () => {
   function syncFromStorage() {
     auth.hydrate();
     auth.syncFromBridge();
-    projectId.value = loadPersistedAuth().projectId;
+    projectId.value = getProjectId();
   }
 
   function normalizeMemberships(
@@ -216,24 +219,31 @@ export const useSessionStore = defineStore("session", () => {
   }
 
   function reconcileProjectId() {
-    const pid = projectId.value;
+    if (memberships.value.length === 0) return;
+
+    const fallbackId =
+      memberships.value.find((m) => m.project?.isActive)?.projectId ||
+      memberships.value[0]?.projectId ||
+      null;
+
+    const pid = projectId.value?.trim() || null;
     if (!pid) {
-      const first = memberships.value[0]?.projectId;
-      if (first) {
-        projectId.value = first;
-        auth.setProjectId(first);
+      if (fallbackId) {
+        projectId.value = fallbackId;
+        auth.setProjectId(fallbackId);
       }
       return;
     }
-    if (memberships.value.length === 0) return;
+
     const ok = memberships.value.some(
       (m) => m.projectId === pid || m.project?.id === pid,
     );
-    if (!ok) {
-      const next = memberships.value[0]?.projectId ?? pid;
-      projectId.value = next;
-      auth.setProjectId(next);
+    if (!ok && fallbackId) {
+      projectId.value = fallbackId;
+      auth.setProjectId(fallbackId);
     }
+    // Keep this tab's project when valid — multi-tab users may run PHAMNGUYEN
+    // and Motul in parallel; server isActive is only "last activated globally".
   }
 
   function setMe(user: UserPublic | null) {
@@ -384,13 +394,18 @@ export const useSessionStore = defineStore("session", () => {
   async function activateProject(idRaw: string): Promise<void> {
     const id = idRaw.trim();
     if (!id) throw new Error("projectId required");
-    const res = await api<{ memberships?: Membership[] }>(
-      API.projects.activate(id),
-      { method: "POST", body: "{}" },
-    );
-    if (res.memberships) setMemberships(res.memberships);
-    setSession({ projectId: id });
-    await refreshMe();
+    projectSwitching.value = true;
+    try {
+      const res = await api<{ memberships?: Membership[] }>(
+        API.projects.activate(id),
+        { method: "POST", body: "{}" },
+      );
+      if (res.memberships) setMemberships(res.memberships);
+      setSession({ projectId: id });
+      await refreshMe();
+    } finally {
+      projectSwitching.value = false;
+    }
   }
 
   return {
@@ -400,6 +415,7 @@ export const useSessionStore = defineStore("session", () => {
     memberships,
     loading,
     bootstrapped,
+    projectSwitching,
     isLoggedIn,
     isAdmin,
     isBaAudience,

@@ -37,7 +37,10 @@ import {
   errorFromCursorRunStatus,
   isTransientCursorTransportError,
 } from "./run.js";
-import { persistCursorUsage } from "../cursor/recordUsage.js";
+import {
+  persistCursorUsage,
+  usageStatusFromError,
+} from "../cursor/recordUsage.js";
 
 const WORKFLOW_TIMEOUT_MS = 12 * 60 * 1000;
 
@@ -628,6 +631,9 @@ export async function runBaWorkflowStep(opts: {
         project.localPath,
         dbCfg ? (buildBaDbCustomTools(dbCfg) as never) : null,
       );
+      let streamed = "";
+      let usagePersisted = false;
+      try {
       const agent = await Agent.create({
         apiKey,
         model,
@@ -647,42 +653,64 @@ export async function runBaWorkflowStep(opts: {
       const run = await disposed.send(prompt);
       session.attach(run);
 
-      let streamed = "";
-      try {
-        if (
-          typeof run.stream === "function" &&
-          run.supports?.("stream") !== false
-        ) {
-          for await (const message of run.stream()) {
-            session.check();
-            const chunk = extractAssistantText(
-              message as {
-                type?: string;
-                message?: {
-                  content?: Array<{ type?: string; text?: string }>;
-                };
-              },
-            );
-            if (chunk.startsWith(streamed) && chunk.length >= streamed.length) {
-              streamed = chunk;
-            } else if (streamed && streamed.endsWith(chunk)) {
-              /* duplicate trailing snapshot */
-            } else if (chunk) {
-              streamed += chunk;
+        try {
+          if (
+            typeof run.stream === "function" &&
+            run.supports?.("stream") !== false
+          ) {
+            for await (const message of run.stream()) {
+              session.check();
+              const chunk = extractAssistantText(
+                message as {
+                  type?: string;
+                  message?: {
+                    content?: Array<{ type?: string; text?: string }>;
+                  };
+                },
+              );
+              if (chunk.startsWith(streamed) && chunk.length >= streamed.length) {
+                streamed = chunk;
+              } else if (streamed && streamed.endsWith(chunk)) {
+                /* duplicate trailing snapshot */
+              } else if (chunk) {
+                streamed += chunk;
+              }
             }
           }
+        } catch (err) {
+          if (!isTransientCursorTransportError(err)) {
+            logger.warn("BA workflow stream error; waiting for result", {
+              err: String(err),
+            });
+          }
         }
-      } catch (err) {
-        if (!isTransientCursorTransportError(err)) {
-          logger.warn("BA workflow stream error; waiting for result", {
-            err: String(err),
-          });
-        }
-      }
 
-      session.check();
-      const result = await run.wait();
-      if (result.status === "error") {
+        session.check();
+        const result = await run.wait();
+        if (result.status === "cancelled") {
+          throw new Error("Force-stopped from UI");
+        }
+        if (result.status === "error") {
+          throw errorFromCursorRunStatus(
+            result as {
+              id: string;
+              result?: string;
+              durationMs?: number;
+              errorCode?: string;
+              requestId?: string;
+            },
+            { label: "BA workflow" },
+          );
+        }
+
+        const fromResult = String(
+          (result as { result?: string }).result || "",
+        ).trim();
+        const finalText = fromResult.length >= streamed.length
+          ? fromResult || streamed
+          : streamed || fromResult;
+        if (!finalText) throw new Error("Agent returned empty content");
+        usagePersisted = true;
         await persistCursorUsage({
           kind: "ba_workflow",
           userId: opts.requirement.userId,
@@ -692,44 +720,27 @@ export async function runBaWorkflowStep(opts: {
           run,
           result,
           promptChars: prompt.length,
-          outputChars: streamed.length,
-          model: await resolveSystemCursorModel().catch(() => undefined),
-          status: "error",
-          force: true,
+          outputChars: finalText.length,
+          model: await resolveSystemCursorModel(),
+          status: "ok",
         });
-        throw errorFromCursorRunStatus(
-          result as {
-            id: string;
-            result?: string;
-            durationMs?: number;
-            errorCode?: string;
-            requestId?: string;
-          },
-          { label: "BA workflow" },
-        );
+        return finalText;
+      } catch (usageErr) {
+        if (!usagePersisted) {
+          await persistCursorUsage({
+            kind: "ba_workflow",
+            userId: opts.requirement.userId,
+            threadId: opts.requirement.linkedThreadId || undefined,
+            requirementId: opts.requirement.id,
+            promptChars: prompt.length,
+            outputChars: streamed.length,
+            model: await resolveSystemCursorModel().catch(() => undefined),
+            status: usageStatusFromError(usageErr),
+            force: true,
+          });
+        }
+        throw usageErr;
       }
-
-      const fromResult = String(
-        (result as { result?: string }).result || "",
-      ).trim();
-      const finalText = fromResult.length >= streamed.length
-        ? fromResult || streamed
-        : streamed || fromResult;
-      if (!finalText) throw new Error("Agent returned empty content");
-      await persistCursorUsage({
-        kind: "ba_workflow",
-        userId: opts.requirement.userId,
-        threadId: opts.requirement.linkedThreadId || undefined,
-        requirementId: opts.requirement.id,
-        agent: disposed,
-        run,
-        result,
-        promptChars: prompt.length,
-        outputChars: finalText.length,
-        model: await resolveSystemCursorModel(),
-        status: "ok",
-      });
-      return finalText;
     };
 
     return await withTimeout(work(), WORKFLOW_TIMEOUT_MS, "BA workflow step");

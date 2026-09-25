@@ -152,6 +152,8 @@ export const useBaChatStore = defineStore("baChat", () => {
   /** True after send until the new assistant placeholder/delta arrives (Stop & send). */
   const pendingNewStream = ref(false);
   const stopBusy = ref(false);
+  /** True from Send click until POST /messages completes (before/during stream). */
+  const sendBusy = ref(false);
   let stallTimer: ReturnType<typeof setTimeout> | undefined;
   /** Wall-clock when current stream started (empty give-up). */
   let streamStartedAt = 0;
@@ -632,29 +634,31 @@ export const useBaChatStore = defineStore("baChat", () => {
   async function sendMessage(content: string) {
     const text = content.trim();
     if (!text) return;
-    if (!activeThreadId.value) {
-      await newChat();
-    }
-    const threadId = activeThreadId.value!;
-    streaming.value = true;
-    // Ignore late ba_done/ba_error from the run we just stopped (Stop & send).
-    streamingMessageId.value = null;
-    pendingNewStream.value = true;
-    streamStartedAt = Date.now();
-    streamLastActivityAt = Date.now();
-    errorText.value = "";
-    failedPendingSend.value = null;
-    clearProgress();
-    progressVisible.value = true;
-    progress.value = [
-      {
-        step: "pull",
-        label: "Đang gửi câu hỏi…",
-        at: new Date().toISOString(),
-      },
-    ];
-    armStallWatch();
+    if (sendBusy.value) return;
+    sendBusy.value = true;
     try {
+      if (!activeThreadId.value) {
+        await newChat();
+      }
+      const threadId = activeThreadId.value!;
+      streaming.value = true;
+      // Ignore late ba_done/ba_error from the run we just stopped (Stop & send).
+      streamingMessageId.value = null;
+      pendingNewStream.value = true;
+      streamStartedAt = Date.now();
+      streamLastActivityAt = Date.now();
+      errorText.value = "";
+      failedPendingSend.value = null;
+      clearProgress();
+      progressVisible.value = true;
+      progress.value = [
+        {
+          step: "pull",
+          label: "Đang gửi câu hỏi…",
+          at: new Date().toISOString(),
+        },
+      ];
+      armStallWatch();
       const data = await api<{ message?: BaMessage }>(API.ba.messages(threadId), {
         method: "POST",
         body: JSON.stringify({
@@ -672,17 +676,22 @@ export const useBaChatStore = defineStore("baChat", () => {
       errorText.value = errMsg;
       // Only keep a Retry draft if the user bubble was not accepted yet
       // (avoids duplicate user messages when the server persisted then failed).
-      const alreadySaved = messages.value.some(
-        (m) =>
-          m.role === "user" &&
-          m.content.trim() === text &&
-          m.threadId === threadId,
-      );
+      const threadId = activeThreadId.value;
+      const alreadySaved =
+        threadId != null &&
+        messages.value.some(
+          (m) =>
+            m.role === "user" &&
+            m.content.trim() === text &&
+            m.threadId === threadId,
+        );
       failedPendingSend.value = alreadySaved
         ? null
         : { content: text, error: errMsg };
       clearProgress();
       throw e;
+    } finally {
+      sendBusy.value = false;
     }
   }
 
@@ -1189,6 +1198,7 @@ export const useBaChatStore = defineStore("baChat", () => {
     streaming,
     streamingMessageId,
     stopBusy,
+    sendBusy,
     loading,
     errorText,
     failedPendingSend,

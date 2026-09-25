@@ -2,6 +2,7 @@
 import { computed, onMounted } from "vue";
 import { useRoute, RouterLink, RouterView } from "vue-router";
 import AdminShell from "@/components/layout/AdminShell.vue";
+import BrandLogo from "@/components/layout/BrandLogo.vue";
 import AppTopbarRight from "@/components/layout/AppTopbarRight.vue";
 import MobileBottomNav from "@/components/MobileBottomNav.vue";
 import { useSessionStore } from "@/stores/session";
@@ -26,21 +27,16 @@ onMounted(() => {
   >
     <header class="faw-topbar faw-topbar--admin">
       <RouterLink to="/admin" class="faw-brand" title="Admin">
-        <img
+        <BrandLogo
           class="faw-brand__logo faw-brand__logo--full"
-          src="/logo.svg"
-          alt="FLOW.AUTO"
           width="148"
           height="33"
-          draggable="false"
         />
-        <img
+        <BrandLogo
           class="faw-brand__logo faw-brand__logo--mark"
-          src="/favicon.svg"
-          alt="FLOW.AUTO"
+          variant="mark"
           width="28"
           height="28"
-          draggable="false"
         />
       </RouterLink>
 

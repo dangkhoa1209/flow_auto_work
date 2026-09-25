@@ -10,7 +10,10 @@ import {
   isJobKillRequested,
   isTransientCursorTransportError,
 } from "../../plugins/agent/run.js";
-import { persistCursorUsage } from "../../plugins/cursor/recordUsage.js";
+import {
+  persistCursorUsage,
+  usageStatusFromError,
+} from "../../plugins/cursor/recordUsage.js";
 import { readOnlyAgentPolicy } from "../../plugins/cursor/agentPolicy.js";
 import {
   getBaProject,
@@ -696,6 +699,9 @@ export async function runCreateDataPlannerAgent(opts: {
           ...mergeBaAgentCustomTools(project.localPath, dbTools),
           ...proposeTools,
         };
+        let streamed = "";
+        let usagePersisted = false;
+        try {
         const agent = await Agent.create({
           apiKey,
           model,
@@ -715,99 +721,114 @@ export async function runCreateDataPlannerAgent(opts: {
         const run = await disposed.send(agentPrompt);
         session.attach(run);
 
-        let streamed = "";
-        try {
-          if (
-            typeof run.stream === "function" &&
-            run.supports?.("stream") !== false
-          ) {
-            for await (const message of run.stream()) {
-              session.check();
-              const { text, toolLabel } = extractAssistantText(
-                message as {
-                  type?: string;
-                  message?: {
-                    content?: Array<{ type?: string; text?: string }>;
-                  };
-                  name?: string;
-                  args?: unknown;
-                  status?: string;
-                },
-              );
-              if (toolLabel) {
-                toolCalls += 1;
-                publishProgress({
-                  userId: opts.userId,
-                  baProjectId: opts.baProjectId,
-                  step: "tool",
-                  label: toolLabel,
-                });
-                if (toolCalls > toolBudget) {
-                  throw new Error(
-                    `Tool-call budget exceeded (${toolBudget}) — stopping Pass 2; refine the scenario or refresh seed knowledge`,
-                  );
+          try {
+            if (
+              typeof run.stream === "function" &&
+              run.supports?.("stream") !== false
+            ) {
+              for await (const message of run.stream()) {
+                session.check();
+                const { text, toolLabel } = extractAssistantText(
+                  message as {
+                    type?: string;
+                    message?: {
+                      content?: Array<{ type?: string; text?: string }>;
+                    };
+                    name?: string;
+                    args?: unknown;
+                    status?: string;
+                  },
+                );
+                if (toolLabel) {
+                  toolCalls += 1;
+                  publishProgress({
+                    userId: opts.userId,
+                    baProjectId: opts.baProjectId,
+                    step: "tool",
+                    label: toolLabel,
+                  });
+                  if (toolCalls > toolBudget) {
+                    throw new Error(
+                      `Tool-call budget exceeded (${toolBudget}) — stopping Pass 2; refine the scenario or refresh seed knowledge`,
+                    );
+                  }
+                }
+                if (!text) continue;
+                if (text.startsWith(streamed) && text.length >= streamed.length) {
+                  streamed = text;
+                } else if (!(streamed && streamed.endsWith(text))) {
+                  streamed += text;
+                }
+                if (streamed.length > 40) {
+                  publishProgress({
+                    userId: opts.userId,
+                    baProjectId: opts.baProjectId,
+                    step: "write",
+                    label: "Drafting plan…",
+                  });
                 }
               }
-              if (!text) continue;
-              if (text.startsWith(streamed) && text.length >= streamed.length) {
-                streamed = text;
-              } else if (!(streamed && streamed.endsWith(text))) {
-                streamed += text;
-              }
-              if (streamed.length > 40) {
-                publishProgress({
-                  userId: opts.userId,
-                  baProjectId: opts.baProjectId,
-                  step: "write",
-                  label: "Drafting plan…",
-                });
-              }
+            }
+          } catch (err) {
+            if (!isTransientCursorTransportError(err)) {
+              logger.warn("Create Data planner stream error", {
+                err: err instanceof Error ? err.message : String(err),
+              });
             }
           }
-        } catch (err) {
-          if (!isTransientCursorTransportError(err)) {
-            logger.warn("Create Data planner stream error", {
-              err: err instanceof Error ? err.message : String(err),
+
+          session.check();
+          const result = await run.wait();
+          if (result.status === "cancelled") {
+            throw new Error("Force-stopped from UI");
+          }
+          if (result.status === "error") {
+            throw errorFromCursorRunStatus(
+              result as {
+                id: string;
+                result?: string;
+                durationMs?: number;
+                errorCode?: string;
+                requestId?: string;
+              },
+              { label: "Create Data" },
+            );
+          }
+
+          const fromResult = String(
+            (result as { result?: string }).result || "",
+          ).trim();
+          const finalText = fromResult || streamed.trim();
+          if (!finalText) throw new Error("Agent returned an empty plan");
+
+          usagePersisted = true;
+          await persistCursorUsage({
+            kind: "ba_create_data",
+            userId: opts.userId,
+            agent: disposed,
+            run,
+            result,
+            promptChars: agentPrompt.length,
+            outputChars: finalText.length,
+            model: await resolveSystemCursorModel(),
+            status: "ok",
+          });
+
+          return finalText;
+        } catch (usageErr) {
+          if (!usagePersisted) {
+            await persistCursorUsage({
+              kind: "ba_create_data",
+              userId: opts.userId,
+              promptChars: agentPrompt.length,
+              outputChars: streamed.length,
+              model: await resolveSystemCursorModel().catch(() => undefined),
+              status: usageStatusFromError(usageErr),
+              force: true,
             });
           }
+          throw usageErr;
         }
-
-        session.check();
-        const result = await run.wait();
-        if (result.status === "cancelled") {
-          throw new Error("Force-stopped from UI");
-        }
-        if (result.status === "error") {
-          throw errorFromCursorRunStatus(
-            result as {
-              id: string;
-              result?: string;
-              durationMs?: number;
-              errorCode?: string;
-              requestId?: string;
-            },
-            { label: "Create Data" },
-          );
-        }
-
-        const fromResult = String(
-          (result as { result?: string }).result || "",
-        ).trim();
-        const finalText = fromResult || streamed.trim();
-        if (!finalText) throw new Error("Agent returned an empty plan");
-
-        await persistCursorUsage({
-          kind: "ba_create_data",
-          userId: opts.userId,
-          agent: disposed,
-          run,
-          result,
-          promptChars: agentPrompt.length,
-          outputChars: finalText.length,
-          model: await resolveSystemCursorModel(),
-        });
-
-        return finalText;
       };
 
       // Keep SSH tunnel open for the whole planner turn so query_* tools reuse it.

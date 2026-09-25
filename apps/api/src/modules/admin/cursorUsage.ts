@@ -103,10 +103,6 @@ export type UsageBucket = {
   cacheReadTokens: number;
   cacheWriteTokens: number;
   totalTokens: number;
-  costCents: number;
-  chargedCents: number;
-  estimatedCents: number;
-  sdkEvents: number;
   errorEvents: number;
   cancelledEvents: number;
 };
@@ -119,10 +115,6 @@ function emptyBucket(): UsageBucket {
     cacheReadTokens: 0,
     cacheWriteTokens: 0,
     totalTokens: 0,
-    costCents: 0,
-    chargedCents: 0,
-    estimatedCents: 0,
-    sdkEvents: 0,
     errorEvents: 0,
     cancelledEvents: 0,
   };
@@ -135,22 +127,9 @@ function addEvent(b: UsageBucket, e: CursorUsageEvent): void {
   b.cacheReadTokens += e.cacheReadTokens || 0;
   b.cacheWriteTokens += e.cacheWriteTokens || 0;
   b.totalTokens += e.totalTokens || 0;
-  b.costCents += e.costCents || 0;
-  b.chargedCents += e.chargedCents || 0;
-  b.estimatedCents += e.estimatedCents || 0;
-  if (e.costSource === "sdk") b.sdkEvents += 1;
   const st = e.status || "ok";
   if (st === "error") b.errorEvents += 1;
   if (st === "cancelled") b.cancelledEvents += 1;
-}
-
-function withUsd(b: UsageBucket) {
-  return {
-    ...b,
-    costUsd: Math.round(b.costCents) / 100,
-    chargedUsd: Math.round(b.chargedCents) / 100,
-    estimatedUsd: Math.round(b.estimatedCents) / 100,
-  };
 }
 
 function eventRoles(
@@ -227,28 +206,28 @@ export function rollupCursorUsageEvents(
 
   const days = enumerateDays(fromYmd, toYmd).map((date) => ({
     date,
-    ...withUsd(byDay.get(date) || emptyBucket()),
+    ...(byDay.get(date) || emptyBucket()),
   }));
 
   return {
-    totals: withUsd(totals),
+    totals,
     byUser: [...byUser.entries()]
-      .map(([userId, b]) => ({ userId, ...withUsd(b) }))
-      .sort((a, b) => b.costCents - a.costCents || b.totalTokens - a.totalTokens),
+      .map(([userId, b]) => ({ userId, ...b }))
+      .sort((a, b) => b.totalTokens - a.totalTokens || b.events - a.events),
     byKind: [...byKind.entries()]
       .map(([kind, b]) => ({
         kind,
         label: USAGE_KIND_LABELS[kind as CursorUsageKind] || kind,
-        ...withUsd(b),
+        ...b,
       }))
-      .sort((a, b) => b.costCents - a.costCents),
+      .sort((a, b) => b.totalTokens - a.totalTokens),
     byRole: [...byRole.entries()]
       .map(([role, b]) => ({
         role,
         label: ROLE_LABELS[role as UserRole] || role,
-        ...withUsd(b),
+        ...b,
       }))
-      .sort((a, b) => b.costCents - a.costCents || b.totalTokens - a.totalTokens),
+      .sort((a, b) => b.totalTokens - a.totalTokens || b.events - a.events),
     byDay: days,
     byUserDay,
   };
@@ -274,9 +253,6 @@ function mapEventDetail(e: CursorUsageEvent, nameById: Map<string, string>) {
     outputTokens: e.outputTokens,
     cacheReadTokens: e.cacheReadTokens,
     totalTokens: e.totalTokens,
-    costCents: e.costCents,
-    costUsd: Math.round(e.costCents) / 100,
-    costSource: e.costSource,
     fromSdk: e.fromSdk,
   };
 }
@@ -339,7 +315,7 @@ export async function adminGetCursorUsage(query: AdminCursorUsageQuery) {
     userId && rolled.byUserDay.get(userId)
       ? enumerateDays(fromYmd, toYmd).map((date) => ({
           date,
-          ...withUsd(rolled.byUserDay.get(userId)!.get(date) || emptyBucket()),
+          ...(rolled.byUserDay.get(userId)!.get(date) || emptyBucket()),
         }))
       : undefined;
 

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { useRoute, useRouter, RouterLink, RouterView } from "vue-router";
 import { message } from "ant-design-vue";
 import {
@@ -7,6 +7,7 @@ import {
   PlusOutlined,
   CheckOutlined,
 } from "@ant-design/icons-vue";
+import BrandLogo from "@/components/layout/BrandLogo.vue";
 import AppTopbarRight from "@/components/layout/AppTopbarRight.vue";
 import AppSwitcher from "@/components/layout/AppSwitcher.vue";
 import PostLoginGreeting from "@/components/layout/PostLoginGreeting.vue";
@@ -28,16 +29,11 @@ const nav = computed(() => [
   { to: "/stats", label: "Stats" },
 ]);
 
-const switching = ref(false);
-const selectedProjectId = ref(session.session.projectId || "");
-const projectPickerOpen = ref(false);
-
-watch(
-  () => session.session.projectId,
-  (id) => {
-    if (id && id !== selectedProjectId.value) selectedProjectId.value = id;
-  },
+const switching = computed(
+  () => session.projectSwitching || localSwitching.value,
 );
+const localSwitching = ref(false);
+const projectPickerOpen = ref(false);
 
 const projectOptions = computed(() =>
   session.memberships.map((m) => {
@@ -58,7 +54,7 @@ const projectOptions = computed(() =>
 );
 
 const activeProject = computed(() => {
-  const id = selectedProjectId.value || session.session.projectId;
+  const id = session.session.projectId;
   return projectOptions.value.find((o) => o.value === id) || null;
 });
 
@@ -74,7 +70,6 @@ const projectSheetHeight = computed(() => {
 });
 
 onMounted(() => {
-  selectedProjectId.value = session.session.projectId || "";
   // Remount after Work↔BA↔Build: pinia already warm — avoid blocking + loading flash.
   void (async () => {
     try {
@@ -98,21 +93,19 @@ async function onSwitchProject(projectId: string) {
     projectPickerOpen.value = false;
     return;
   }
-  switching.value = true;
+  localSwitching.value = true;
   try {
     work.clearOpenSelection();
     await session.activateProject(projectId);
-    selectedProjectId.value = projectId;
     projectPickerOpen.value = false;
     // SSE reconnects via appBridge when session.projectId changes
     await work.refreshAll();
     await settings.loadHandoffPrefs(projectId);
     message.success("Project switched");
   } catch (e) {
-    selectedProjectId.value = session.session.projectId || "";
     message.error(e instanceof Error ? e.message : String(e));
   } finally {
-    switching.value = false;
+    localSwitching.value = false;
   }
 }
 
@@ -142,21 +135,16 @@ async function onKillAll() {
     <header class="faw-topbar faw-topbar--work">
       <!-- Brand: full logo desktop, icon-only mobile -->
       <RouterLink to="/dev" class="faw-brand" title="Flow Auto WorkBench">
-        <img
+        <BrandLogo
           class="faw-brand__logo faw-brand__logo--full"
-          src="/logo.svg"
-          alt="Flow Auto WorkBench"
           width="148"
           height="33"
-          draggable="false"
         />
-        <img
+        <BrandLogo
           class="faw-brand__logo faw-brand__logo--mark"
-          src="/favicon.svg"
-          alt="FLOW.AUTO"
+          variant="mark"
           width="28"
           height="28"
-          draggable="false"
         />
       </RouterLink>
 
@@ -165,7 +153,7 @@ async function onKillAll() {
       <!-- Desktop: inline project select -->
       <div class="faw-crumb hidden lg:flex">
         <a-select
-          v-model:value="selectedProjectId"
+          :value="session.session.projectId || undefined"
           class="faw-crumb-select"
           :bordered="false"
           :loading="switching"
@@ -304,7 +292,7 @@ async function onKillAll() {
           type="button"
           class="faw-project-sheet__item touch-manipulation"
           :class="{
-            'is-active': o.value === (selectedProjectId || session.session.projectId),
+            'is-active': o.value === session.session.projectId,
           }"
           :disabled="switching"
           @click="onSwitchProject(o.value)"
@@ -316,7 +304,7 @@ async function onKillAll() {
             </div>
           </div>
           <CheckOutlined
-            v-if="o.value === (selectedProjectId || session.session.projectId)"
+            v-if="o.value === session.session.projectId"
             class="faw-project-sheet__check"
           />
         </button>
