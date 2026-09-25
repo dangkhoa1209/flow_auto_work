@@ -146,6 +146,7 @@ const wfStreamingMessageId = ref<string | null>(null);
 /** True after send until the new assistant placeholder arrives (Stop & send). */
 const wfPendingNewStream = ref(false);
 const wfStopBusy = ref(false);
+const wfSendBusy = ref(false);
 const wfProgress = ref<WfProgressItem[]>([]);
 const wfError = ref("");
 const wfAnalysisMode = ref(true);
@@ -625,7 +626,8 @@ function onDeleteYc(id: string, title: string) {
 }
 
 async function onWfSend(content: string) {
-  if (!wfThreadId.value) return;
+  if (!wfThreadId.value || wfSendBusy.value) return;
+  wfSendBusy.value = true;
   wfError.value = "";
   try {
     if (wfStreaming.value) {
@@ -634,6 +636,7 @@ async function onWfSend(content: string) {
     // Ignore late ba_done from the run we just stopped (Stop & send).
     wfStreamingMessageId.value = null;
     wfPendingNewStream.value = true;
+    wfStreaming.value = true;
     await api(API.ba.messages(wfThreadId.value), {
       method: "POST",
       body: JSON.stringify({
@@ -641,9 +644,11 @@ async function onWfSend(content: string) {
         analysisMode: wfAnalysisMode.value,
       }),
     });
-    wfStreaming.value = true;
   } catch (e) {
+    wfStreaming.value = false;
     message.error(e instanceof Error ? e.message : String(e));
+  } finally {
+    wfSendBusy.value = false;
   }
 }
 
@@ -1179,6 +1184,7 @@ onUnmounted(() => {
                 "
                 :loading="wfStreaming"
                 :stop-busy="wfStopBusy"
+                :send-busy="wfSendBusy"
                 :analysis-mode="wfAnalysisMode"
                 @update:analysis-mode="wfAnalysisMode = $event"
                 @send="onWfSend"
@@ -1490,6 +1496,7 @@ onUnmounted(() => {
               "
               :loading="wfStreaming"
               :stop-busy="wfStopBusy"
+              :send-busy="wfSendBusy"
               :analysis-mode="wfAnalysisMode"
               @update:analysis-mode="wfAnalysisMode = $event"
               @send="onWfSend"

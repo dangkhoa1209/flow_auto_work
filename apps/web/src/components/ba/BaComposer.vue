@@ -7,6 +7,7 @@ const props = defineProps<{
   disabledReason?: string;
   loading?: boolean;
   stopBusy?: boolean;
+  sendBusy?: boolean;
   analysisMode?: boolean;
 }>();
 
@@ -20,20 +21,23 @@ const text = ref("");
 const inputWrap = ref<HTMLElement | null>(null);
 
 /** Draft anytime; project gates use `disabled`. Streaming still allows Send (confirm). */
-const canSend = computed(
-  () => Boolean(text.value.trim()) && !props.disabled && !props.stopBusy,
-);
+const canSend = computed(() => {
+  if (!text.value.trim() || props.disabled || props.stopBusy) return false;
+  if (props.loading) return true;
+  return !props.sendBusy;
+});
 
-async function doSend(content: string) {
+function emitSend(content: string) {
   text.value = "";
-  await nextTick();
   emit("send", content);
+  void nextTick(() => focusInput());
 }
 
 function submit() {
-  if (!canSend.value) return;
+  if (props.disabled || props.stopBusy) return;
   const content = text.value.trim();
   if (!content) return;
+  if (!props.loading && props.sendBusy) return;
 
   if (props.loading) {
     Modal.confirm({
@@ -44,12 +48,12 @@ function submit() {
       cancelText: "Keep running",
       okType: "danger",
       centered: true,
-      onOk: () => doSend(content),
+      onOk: () => emitSend(content),
     });
     return;
   }
 
-  void doSend(content);
+  emitSend(content);
 }
 
 function onKeydown(e: KeyboardEvent) {
@@ -62,7 +66,7 @@ function onKeydown(e: KeyboardEvent) {
   if (e.isComposing) return;
   // Ctrl/Cmd+Enter always sends; plain Enter sends unless Shift (newline).
   if (e.shiftKey && !(e.metaKey || e.ctrlKey)) return;
-  if (props.disabled || props.stopBusy) return;
+  if (props.disabled || props.stopBusy || props.sendBusy) return;
   e.preventDefault();
   submit();
 }
@@ -161,7 +165,7 @@ defineExpose({ fill, focusInput });
           aria-label="Send message"
           @click="submit"
         >
-          Send
+          {{ sendBusy && !loading ? "Sending…" : "Send" }}
         </button>
       </div>
     </div>
