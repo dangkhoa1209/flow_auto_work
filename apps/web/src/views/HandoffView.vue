@@ -1,7 +1,12 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { message } from "ant-design-vue";
-import { ArrowLeftOutlined } from "@ant-design/icons-vue";
+import {
+  ArrowLeftOutlined,
+  CheckCircleOutlined,
+  ReloadOutlined,
+  SwapOutlined,
+} from "@ant-design/icons-vue";
 import { storeToRefs } from "pinia";
 import { api } from "@/api/client";
 import IssueIidLink from "@/components/IssueIidLink.vue";
@@ -17,6 +22,7 @@ const { jobs, members, labels } = storeToRefs(work);
 
 const selectedId = ref<string | null>(null);
 const busy = ref(false);
+const listLoading = ref(false);
 const assignee = ref<string | undefined>(
   settings.local.assignee || undefined,
 );
@@ -46,9 +52,18 @@ onMounted(async () => {
   assignee.value = settings.local.assignee || undefined;
   addLabels.value = [...settings.local.addLabels];
   comment.value = settings.local.comment;
-  await work.loadJobs();
+  await refreshJobs();
   await work.loadMeta();
 });
+
+async function refreshJobs() {
+  listLoading.value = true;
+  try {
+    await work.loadJobs();
+  } finally {
+    listLoading.value = false;
+  }
+}
 
 function selectJob(id: string) {
   selectedId.value = id;
@@ -119,8 +134,8 @@ async function mergeBranch() {
     if (m?.aiResolved) {
       message.success(
         mergeBranches
-          ? `Merged ${mergeBranches} — AI đã tự resolve conflict`
-          : "Merge OK — AI đã tự resolve conflict",
+          ? `Merged ${mergeBranches} — AI auto-resolved conflicts`
+          : "Merge OK — AI auto-resolved conflicts",
       );
     } else {
       message.success(mergeBranches ? `Merged ${mergeBranches}` : "Merge OK");
@@ -136,165 +151,211 @@ async function mergeBranch() {
 </script>
 
 <template>
-  <div class="faw-handoff h-full max-h-full min-h-0 overflow-hidden">
-    <!-- Desktop: side-by-side -->
-    <div class="hidden lg:grid grid-cols-12 gap-3 p-3 h-full min-h-0">
-      <aside
-        class="col-span-4 min-h-0 overflow-y-auto p-3 rounded-2xl panel-glass shadow-panel"
-      >
-        <h2
-          class="text-sm font-semibold text-ink mb-3 sticky top-0 bg-surface-raised/90 py-1 backdrop-blur"
-        >
-          Done awaiting handoff
-        </h2>
-        <div
-          v-for="j in handoffJobs"
-          :key="j.id"
-          class="rounded-xl border border-line p-3 mb-2 cursor-pointer hover:border-accent/50 bg-surface-raised/60 transition"
-          :class="
-            selectedId === j.id ? '!border-accent !bg-accent-soft shadow-sm' : ''
-          "
-          @click="selectJob(j.id)"
-        >
-          <div class="text-xs">
-            <IssueIidLink
-              :iid="j.issue?.issueIid"
-              :url="j.issue?.url"
-              link-class="!text-xs"
-            />
-          </div>
-          <div class="text-sm text-ink-soft">{{ j.issue?.title }}</div>
-          <div v-if="j.summary?.trim()" class="faw-handoff-list-summary mt-1">
-            <ChatMessageBody
-              role="agent"
-              :markdown="true"
-              :issue-url="j.issue?.url"
-              :body="j.summary"
-            />
-          </div>
-          <div v-else class="text-xs text-ink-faint mt-1 truncate">
-            {{ j.branch || j.id }}
-          </div>
+  <div class="faw-handoff">
+    <!-- Desktop -->
+    <div class="faw-handoff__shell hidden lg:flex">
+      <header class="faw-handoff__hero">
+        <div>
+          <p class="faw-handoff__eyebrow">
+            <SwapOutlined aria-hidden="true" />
+            QC pipeline
+          </p>
+          <h1 class="faw-handoff__title">Task handoff</h1>
+          <p class="faw-handoff__desc">
+            Review completed agent runs and push assignees, labels, and comments
+            to GitLab — or merge and mark done without handoff.
+          </p>
         </div>
-        <a-empty
-          v-if="!handoffJobs.length"
-          description="No jobs awaiting handoff"
-        />
-      </aside>
-
-      <section
-        class="col-span-8 min-h-0 overflow-y-auto p-4 rounded-2xl panel-glass shadow-panel"
-      >
-        <template v-if="selected">
-          <h2 class="text-lg font-semibold text-ink mt-0">
-            <IssueIidLink
-              :iid="selected.issue?.issueIid"
-              :url="selected.issue?.url"
-            />
-            — {{ selected.issue?.title }}
-          </h2>
-          <div class="faw-handoff-detail-summary mb-4">
-            <ChatMessageBody
-              role="agent"
-              :markdown="true"
-              :issue-url="selected.issue?.url"
-              :body="selected.summary || ''"
-              empty="—"
-            />
+        <div class="faw-handoff__kpis">
+          <div class="faw-handoff__kpi faw-handoff__kpi--accent">
+            <span class="faw-handoff__kpi-label">Awaiting</span>
+            <span class="faw-handoff__kpi-value">{{ handoffJobs.length }}</span>
           </div>
-          <a-form layout="vertical" class="max-w-lg mt-4">
-            <a-form-item label="Assign">
-              <a-select
-                v-model:value="assignee"
-                allow-clear
-                show-search
-                class="w-full"
-                :options="
-                  members.map((m) => ({
-                    value: m.username,
-                    label: `@${m.username}`,
-                  }))
-                "
-              />
-            </a-form-item>
-            <a-form-item label="Add labels">
-              <a-select
-                v-model:value="addLabels"
-                mode="multiple"
-                class="w-full"
-                :options="labels.map((l) => ({ value: l, label: l }))"
-              />
-            </a-form-item>
-            <a-form-item label="Comment">
-              <a-textarea v-model:value="comment" :rows="2" />
-            </a-form-item>
-            <div class="flex gap-2 flex-wrap">
-              <a-button :loading="busy" @click="mergeBranch"
-                >Merge → project</a-button
-              >
-              <a-popconfirm
-                title="Mark Done without GitLab assign/labels?"
-                description="Không gán assignee / label trên GitLab. Dùng cho hotfix hoặc task không cần handoff."
-                ok-text="Mark Done"
-                cancel-text="Cancel"
-                :disabled="busy"
-                @confirm="skipHandoff"
-              >
-                <a-button :disabled="busy">Done — skip handoff</a-button>
-              </a-popconfirm>
-              <a-button type="primary" :loading="busy" @click="confirmHandoff"
-                >Confirm handoff</a-button
-              >
+          <a-button
+            size="small"
+            :loading="listLoading"
+            @click="refreshJobs"
+          >
+            <template #icon><ReloadOutlined /></template>
+            Refresh
+          </a-button>
+        </div>
+      </header>
+
+      <div class="faw-handoff__grid">
+        <aside class="faw-handoff__panel">
+          <div class="faw-handoff__panel-head">Done awaiting handoff</div>
+          <div class="faw-handoff__panel-body">
+            <button
+              v-for="j in handoffJobs"
+              :key="j.id"
+              type="button"
+              class="faw-handoff__job"
+              :class="{ 'is-active': selectedId === j.id }"
+              @click="selectJob(j.id)"
+            >
+              <div class="text-xs">
+                <IssueIidLink
+                  :iid="j.issue?.issueIid"
+                  :url="j.issue?.url"
+                  link-class="!text-xs"
+                />
+              </div>
+              <div class="faw-handoff__job-title truncate">
+                {{ j.issue?.title }}
+              </div>
+              <div v-if="j.summary?.trim()" class="faw-handoff-list-summary mt-1">
+                <ChatMessageBody
+                  role="agent"
+                  :markdown="true"
+                  :issue-url="j.issue?.url"
+                  :body="j.summary"
+                />
+              </div>
+              <div v-else class="text-[11px] text-ink-faint mt-1 truncate">
+                {{ j.branch || j.id }}
+              </div>
+            </button>
+            <div v-if="!handoffJobs.length && !listLoading" class="faw-handoff__empty">
+              <CheckCircleOutlined class="faw-handoff__empty-icon" aria-hidden="true" />
+              <p class="m-0 font-medium text-ink">All caught up</p>
+              <p class="m-0 text-xs">No jobs awaiting handoff right now.</p>
             </div>
-          </a-form>
-        </template>
-        <a-empty v-else description="Select a job on the left" />
-      </section>
+            <a-spin v-if="listLoading && !handoffJobs.length" class="block py-8" />
+          </div>
+        </aside>
+
+        <section class="faw-handoff__panel">
+          <div class="faw-handoff__panel-head">Handoff details</div>
+          <div class="faw-handoff__panel-body">
+            <template v-if="selected">
+              <h2 class="faw-handoff__detail-title">
+                <IssueIidLink
+                  :iid="selected.issue?.issueIid"
+                  :url="selected.issue?.url"
+                />
+                — {{ selected.issue?.title }}
+              </h2>
+              <div class="faw-handoff-detail-summary mb-4">
+                <ChatMessageBody
+                  role="agent"
+                  :markdown="true"
+                  :issue-url="selected.issue?.url"
+                  :body="selected.summary || ''"
+                  empty="—"
+                />
+              </div>
+              <a-form layout="vertical" class="max-w-lg">
+                <a-form-item label="Assign">
+                  <a-select
+                    v-model:value="assignee"
+                    allow-clear
+                    show-search
+                    class="w-full"
+                    :options="
+                      members.map((m) => ({
+                        value: m.username,
+                        label: `@${m.username}`,
+                      }))
+                    "
+                  />
+                </a-form-item>
+                <a-form-item label="Add labels">
+                  <a-select
+                    v-model:value="addLabels"
+                    mode="multiple"
+                    class="w-full"
+                    :options="labels.map((l) => ({ value: l, label: l }))"
+                  />
+                </a-form-item>
+                <a-form-item label="Comment">
+                  <a-textarea v-model:value="comment" :rows="2" />
+                </a-form-item>
+                <div class="faw-handoff__actions">
+                  <a-button :loading="busy" @click="mergeBranch">
+                    Merge → project
+                  </a-button>
+                  <a-popconfirm
+                    title="Mark Done without GitLab assign/labels?"
+                    description="Skips assignee and label updates on GitLab. Use for hotfixes or tasks that do not need handoff."
+                    ok-text="Mark Done"
+                    cancel-text="Cancel"
+                    :disabled="busy"
+                    @confirm="skipHandoff"
+                  >
+                    <a-button :disabled="busy">Done — skip handoff</a-button>
+                  </a-popconfirm>
+                  <a-button type="primary" :loading="busy" @click="confirmHandoff">
+                    Confirm handoff
+                  </a-button>
+                </div>
+              </a-form>
+            </template>
+            <div v-else class="faw-handoff__empty">
+              <SwapOutlined class="faw-handoff__empty-icon" aria-hidden="true" />
+              <p class="m-0">Select a job from the queue to review and hand off.</p>
+            </div>
+          </div>
+        </section>
+      </div>
     </div>
 
-    <!-- Mobile: list ↔ detail -->
+    <!-- Mobile -->
     <div class="lg:hidden flex flex-col h-full min-h-0">
       <div
         v-show="!selectedId"
-        class="flex-1 min-h-0 overflow-y-auto px-3 py-3"
+        class="flex flex-col flex-1 min-h-0 overflow-hidden"
       >
-        <h2 class="text-sm font-semibold text-ink m-0 mb-3">
-          Done awaiting handoff
-          <span class="faw-count ml-1">{{ handoffJobs.length }}</span>
-        </h2>
-        <button
-          v-for="j in handoffJobs"
-          :key="j.id"
-          type="button"
-          class="faw-handoff-card touch-manipulation"
-          @click="selectJob(j.id)"
-        >
-          <div class="text-xs">
-            <IssueIidLink
-              :iid="j.issue?.issueIid"
-              :url="j.issue?.url"
-              link-class="!text-xs"
-            />
+        <header class="faw-handoff__hero shrink-0 mx-3 mt-3">
+          <div>
+            <p class="faw-handoff__eyebrow">
+              <SwapOutlined aria-hidden="true" />
+              QC pipeline
+            </p>
+            <h1 class="faw-handoff__title">Task handoff</h1>
           </div>
-          <div class="text-sm text-ink font-medium truncate mt-0.5">
-            {{ j.issue?.title }}
+          <div class="faw-handoff__kpis">
+            <div class="faw-handoff__kpi faw-handoff__kpi--accent">
+              <span class="faw-handoff__kpi-label">Awaiting</span>
+              <span class="faw-handoff__kpi-value">{{ handoffJobs.length }}</span>
+            </div>
           </div>
-          <div v-if="j.summary?.trim()" class="faw-handoff-list-summary mt-1">
-            <ChatMessageBody
-              role="agent"
-              :markdown="true"
-              :issue-url="j.issue?.url"
-              :body="j.summary"
-            />
+        </header>
+        <div class="flex-1 min-h-0 overflow-y-auto px-3 py-3">
+          <button
+            v-for="j in handoffJobs"
+            :key="j.id"
+            type="button"
+            class="faw-handoff-card touch-manipulation"
+            @click="selectJob(j.id)"
+          >
+            <div class="text-xs">
+              <IssueIidLink
+                :iid="j.issue?.issueIid"
+                :url="j.issue?.url"
+                link-class="!text-xs"
+              />
+            </div>
+            <div class="text-sm text-ink font-medium truncate mt-0.5">
+              {{ j.issue?.title }}
+            </div>
+            <div v-if="j.summary?.trim()" class="faw-handoff-list-summary mt-1">
+              <ChatMessageBody
+                role="agent"
+                :markdown="true"
+                :issue-url="j.issue?.url"
+                :body="j.summary"
+              />
+            </div>
+            <div v-else class="text-[11px] text-ink-faint mt-1 truncate">
+              {{ j.branch || j.id }}
+            </div>
+          </button>
+          <div v-if="!handoffJobs.length" class="faw-handoff__empty">
+            <CheckCircleOutlined class="faw-handoff__empty-icon" aria-hidden="true" />
+            <p class="m-0">No jobs awaiting handoff</p>
           </div>
-          <div v-else class="text-[11px] text-ink-faint mt-1 truncate">
-            {{ j.branch || j.id }}
-          </div>
-        </button>
-        <a-empty
-          v-if="!handoffJobs.length"
-          description="No jobs awaiting handoff"
-        />
+        </div>
       </div>
 
       <div
@@ -370,7 +431,7 @@ async function mergeBranch() {
                 </button>
                 <a-popconfirm
                   title="Mark Done without GitLab assign/labels?"
-                  description="Không gán assignee / label trên GitLab."
+                  description="Skips assignee and label updates on GitLab."
                   ok-text="Mark Done"
                   cancel-text="Cancel"
                   :disabled="busy"
