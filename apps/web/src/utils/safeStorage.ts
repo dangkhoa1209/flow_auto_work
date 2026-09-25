@@ -27,3 +27,28 @@ export function safeRemoveItem(key: string): void {
     /* ignore */
   }
 }
+
+export function safeSessionGetItem(key: string): string | null {
+  try {
+    return sessionStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+export function safeSessionSetItem(key: string, value: string): boolean {
+  try {
+    sessionStorage.setItem(key, value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function safeSessionRemoveItem(key: string): void {
+  try {
+    sessionStorage.removeItem(key);
+  } catch {
+    /* ignore */
+  }
+}

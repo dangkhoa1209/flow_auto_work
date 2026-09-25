@@ -8,6 +8,7 @@ import { effectiveRoles, hasAnyRole } from "@/utils/userRoles";
 import {
   getAccessExpiresAt,
   getAccessToken,
+  getProjectId,
   getRefreshToken,
   loadPersistedAuth,
   savePersistedAuth,
@@ -70,7 +71,7 @@ export type UserPublic = {
 export const useSessionStore = defineStore("session", () => {
   const auth = useAuthStore();
 
-  const projectId = ref<string | null>(loadPersistedAuth().projectId);
+  const projectId = ref<string | null>(getProjectId());
   const me = ref<UserPublic | null>(null);
   const memberships = ref<Membership[]>([]);
   const loading = ref(false);
@@ -198,7 +199,7 @@ export const useSessionStore = defineStore("session", () => {
   function syncFromStorage() {
     auth.hydrate();
     auth.syncFromBridge();
-    projectId.value = loadPersistedAuth().projectId;
+    projectId.value = getProjectId();
   }
 
   function normalizeMemberships(
@@ -220,18 +221,16 @@ export const useSessionStore = defineStore("session", () => {
   function reconcileProjectId() {
     if (memberships.value.length === 0) return;
 
-    // Server isActive (POST activate / login) is source of truth — localStorage
-    // can lag (e.g. PHAMNGUYEN active in DB but client still on Motul → vilube branch).
-    const activeId =
+    const fallbackId =
       memberships.value.find((m) => m.project?.isActive)?.projectId ||
       memberships.value[0]?.projectId ||
       null;
 
     const pid = projectId.value?.trim() || null;
     if (!pid) {
-      if (activeId) {
-        projectId.value = activeId;
-        auth.setProjectId(activeId);
+      if (fallbackId) {
+        projectId.value = fallbackId;
+        auth.setProjectId(fallbackId);
       }
       return;
     }
@@ -239,17 +238,12 @@ export const useSessionStore = defineStore("session", () => {
     const ok = memberships.value.some(
       (m) => m.projectId === pid || m.project?.id === pid,
     );
-    if (!ok) {
-      const next = activeId ?? pid;
-      projectId.value = next;
-      auth.setProjectId(next);
-      return;
+    if (!ok && fallbackId) {
+      projectId.value = fallbackId;
+      auth.setProjectId(fallbackId);
     }
-
-    if (activeId && activeId !== pid) {
-      projectId.value = activeId;
-      auth.setProjectId(activeId);
-    }
+    // Keep this tab's project when valid — multi-tab users may run PHAMNGUYEN
+    // and Motul in parallel; server isActive is only "last activated globally".
   }
 
   function setMe(user: UserPublic | null) {

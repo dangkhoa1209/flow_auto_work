@@ -2,10 +2,19 @@
  * Token bridge — accessToken lives in memory only (anti-XSS).
  * refreshToken + identity persist to localStorage.
  */
-import { safeGetItem, safeRemoveItem, safeSetItem } from "@/utils/safeStorage";
+import {
+  safeGetItem,
+  safeRemoveItem,
+  safeSessionGetItem,
+  safeSessionRemoveItem,
+  safeSessionSetItem,
+  safeSetItem,
+} from "@/utils/safeStorage";
 
 const PERSIST_KEY = "flow_auto_work_session";
 const LAST_LOGIN_KEY = "flow_auto_work_last_login";
+/** Per-tab project — survives localStorage overwrites from other tabs. */
+const TAB_PROJECT_KEY = "flow_tab_project";
 
 export type PersistedAuth = {
   username: string | null;
@@ -19,6 +28,41 @@ export type PersistedAuth = {
 /** In-memory access token (cleared on reload → bootstrap refreshes). */
 let memoryAccessToken: string | null = null;
 let memoryAccessExpiresAt: number | null = null;
+
+/** In-memory project for this tab (X-Flow-Project header). */
+let memoryProjectId: string | null = null;
+
+function hydrateTabProjectId(): string | null {
+  const fromSession = safeSessionGetItem(TAB_PROJECT_KEY)?.trim() || null;
+  if (fromSession) {
+    memoryProjectId = fromSession;
+    return fromSession;
+  }
+  const fromLocal = loadPersistedAuthRaw().projectId?.trim() || null;
+  if (fromLocal) {
+    memoryProjectId = fromLocal;
+    safeSessionSetItem(TAB_PROJECT_KEY, fromLocal);
+  }
+  return fromLocal;
+}
+
+function loadPersistedAuthRaw(): PersistedAuth {
+  try {
+    const raw = safeGetItem(PERSIST_KEY);
+    if (!raw) {
+      return { username: null, projectId: null, refreshToken: null };
+    }
+    const parsed = JSON.parse(raw) as PersistedAuth;
+    return {
+      username: parsed.username || null,
+      projectId: parsed.projectId || null,
+      refreshToken: parsed.refreshToken || null,
+      accessExpiresAt: parsed.accessExpiresAt ?? null,
+    };
+  } catch {
+    return { username: null, projectId: null, refreshToken: null };
+  }
+}
 
 /**
  * Monotonic session generation — bumped on every successful token write.
@@ -54,26 +98,28 @@ export function setAccessToken(
 }
 
 export function loadPersistedAuth(): PersistedAuth {
-  try {
-    const raw = safeGetItem(PERSIST_KEY);
-    if (!raw) {
-      return { username: null, projectId: null, refreshToken: null };
-    }
-    const parsed = JSON.parse(raw) as PersistedAuth;
-    return {
-      username: parsed.username || null,
-      projectId: parsed.projectId || null,
-      refreshToken: parsed.refreshToken || null,
-      accessExpiresAt: parsed.accessExpiresAt ?? null,
-    };
-  } catch {
-    return { username: null, projectId: null, refreshToken: null };
+  const auth = loadPersistedAuthRaw();
+  const tabProject = memoryProjectId ?? hydrateTabProjectId();
+  return {
+    ...auth,
+    projectId: tabProject ?? auth.projectId,
+  };
+}
+
+/** Set this tab's active project (memory + sessionStorage). */
+export function setActiveProjectId(projectId: string | null): void {
+  const id = projectId?.trim() || null;
+  memoryProjectId = id;
+  if (id) {
+    safeSessionSetItem(TAB_PROJECT_KEY, id);
+  } else {
+    safeSessionRemoveItem(TAB_PROJECT_KEY);
   }
 }
 
 /** Persist identity + refresh only — never write accessToken. */
 export function savePersistedAuth(partial: Partial<PersistedAuth>): void {
-  const cur = loadPersistedAuth();
+  const cur = loadPersistedAuthRaw();
   const next: PersistedAuth = {
     username:
       partial.username !== undefined ? partial.username : cur.username,
@@ -85,22 +131,27 @@ export function savePersistedAuth(partial: Partial<PersistedAuth>): void {
         : cur.refreshToken,
   };
   safeSetItem(PERSIST_KEY, JSON.stringify(next));
+  if (partial.projectId !== undefined) {
+    setActiveProjectId(partial.projectId);
+  }
 }
 
 export function clearPersistedAuth(): void {
-  const prev = loadPersistedAuth();
+  const prev = loadPersistedAuthRaw();
   if (prev.username) {
     safeSetItem(
       LAST_LOGIN_KEY,
       JSON.stringify({
         username: prev.username,
-        projectId: prev.projectId,
+        projectId: memoryProjectId ?? prev.projectId,
       }),
     );
   }
   safeRemoveItem(PERSIST_KEY);
   memoryAccessToken = null;
   memoryAccessExpiresAt = null;
+  memoryProjectId = null;
+  safeSessionRemoveItem(TAB_PROJECT_KEY);
 }
 
 /**
@@ -114,7 +165,7 @@ export function clearPersistedAuth(): void {
 export function clearPersistedAuthIfRefresh(
   expectedRefresh: string | null,
 ): boolean {
-  const cur = loadPersistedAuth();
+  const cur = loadPersistedAuthRaw();
   if (expectedRefresh == null) {
     if (cur.refreshToken) return false;
     clearPersistedAuth();
@@ -128,15 +179,15 @@ export function clearPersistedAuthIfRefresh(
 }
 
 export function getRefreshToken(): string | null {
-  return loadPersistedAuth().refreshToken;
+  return loadPersistedAuthRaw().refreshToken;
 }
 
 export function getUsername(): string | null {
-  return loadPersistedAuth().username;
+  return loadPersistedAuthRaw().username;
 }
 
 export function getProjectId(): string | null {
-  return loadPersistedAuth().projectId;
+  return memoryProjectId ?? hydrateTabProjectId();
 }
 
 export function applyTokenPair(opts: {
