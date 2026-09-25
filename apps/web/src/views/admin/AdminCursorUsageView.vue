@@ -10,6 +10,7 @@ import {
 import { message } from "ant-design-vue";
 import { api } from "@/api/client";
 import { API } from "@/api/endpoints";
+import { formatSparkDayLabel } from "@/utils/formatSparkDayLabel";
 
 type UsageBucket = {
   events: number;
@@ -276,16 +277,6 @@ function fmtWhen(iso: string): string {
     hour: "2-digit",
     minute: "2-digit",
   });
-}
-
-function dayLabel(date: string): string {
-  try {
-    return new Intl.DateTimeFormat("en-US", { weekday: "narrow" }).format(
-      new Date(`${date}T12:00:00`),
-    );
-  } catch {
-    return date.slice(-2);
-  }
 }
 
 function statusClass(status?: string): string {
@@ -566,7 +557,7 @@ watch(
               :style="{ height: `${d.height}%` }"
               :class="{ 'is-hot': d.totalTokens > 0 }"
             />
-            <span class="faw-admin-dash__spark-label">{{ dayLabel(d.date) }}</span>
+            <span class="faw-admin-dash__spark-label">{{ formatSparkDayLabel(d.date) }}</span>
           </div>
         </div>
         <p v-else class="faw-admin-usage__empty">No daily data in this window.</p>

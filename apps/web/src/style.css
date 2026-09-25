@@ -8528,6 +8528,9 @@ a.faw-mseg__btn {
 .faw-admin-dash__spark-label {
   font-size: 0.625rem;
   font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+  white-space: nowrap;
   color: var(--app-faint, var(--ink-faint));
 }
 .faw-admin-dash__status {

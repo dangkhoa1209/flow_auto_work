@@ -19,6 +19,7 @@ import { syncDbApi } from "@/api/syncDbApi";
 import { useGreeting } from "@/composables/useGreeting";
 import { useSessionStore } from "@/stores/session";
 import { ADMIN_TABS } from "@/config/adminNav";
+import { formatSparkDayLabel } from "@/utils/formatSparkDayLabel";
 
 type UserRole = "dev" | "admin" | "qc" | "ba" | "pd" | "devops";
 
@@ -276,16 +277,6 @@ function formatDateTime(iso: string): string {
   }
 }
 
-function dayLabel(date: string): string {
-  try {
-    return new Intl.DateTimeFormat("en-US", { weekday: "narrow" }).format(
-      new Date(`${date}T12:00:00`),
-    );
-  } catch {
-    return date.slice(-2);
-  }
-}
-
 async function load() {
   loading.value = true;
   try {
@@ -483,7 +474,7 @@ onMounted(() => {
                 :style="{ height: `${d.height}%` }"
                 :class="{ 'is-hot': d.events > 0 }"
               />
-              <span class="faw-admin-dash__spark-label">{{ dayLabel(d.date) }}</span>
+              <span class="faw-admin-dash__spark-label">{{ formatSparkDayLabel(d.date) }}</span>
             </div>
           </div>
           <p v-else class="faw-admin-dash__empty">No usage data in this window.</p>
