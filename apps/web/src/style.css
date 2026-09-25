@@ -2132,7 +2132,7 @@ a.faw-mseg__btn {
   border-top: 1px solid var(--app-border);
   box-shadow: 0 -6px 18px rgba(0, 0, 0, 0.28);
 }
-/* Room for fixed dock above bottom nav when Issue pane is open */
+/* Room for fixed dock above bottom nav when Issue or Console pane is open */
 .faw-m-detail-pad {
   padding-bottom: calc(3.25rem + env(safe-area-inset-bottom, 0px));
 }
