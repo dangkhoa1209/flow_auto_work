@@ -715,6 +715,10 @@ export function useWorkbench() {
 
   async function sendChat(mode: "continue" | "ask") {
     if (sendBusy.value) return;
+    if (session.projectSwitching) {
+      message.warning("Đang đổi project — đợi xong rồi gửi lại");
+      return;
+    }
     const msg = chatInput.value.trim();
     if (!msg) return;
 

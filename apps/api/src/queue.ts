@@ -1390,6 +1390,12 @@ export class JobQueue {
       if (!repoPath) throw new Error("No repo path in workspace context");
 
       const fixedWork = (job.workBranch || rt?.workBranch || "").trim();
+      const branchHint = fixedWork || job.branch || "(auto)";
+      appendJobProgress(
+        job.id,
+        "status",
+        `Checkout ${rt?.gitlabPath || job.issue.projectPath || "project"} → ${branchHint}`,
+      );
       const prepared = await prepareRepoForIssue({
         issueIid: Math.max(job.issue.issueIid, 0),
         title: job.issue.title,

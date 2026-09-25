@@ -75,6 +75,8 @@ export const useSessionStore = defineStore("session", () => {
   const memberships = ref<Membership[]>([]);
   const loading = ref(false);
   const bootstrapped = ref(false);
+  /** True while POST /projects/:id/activate is in flight — block Run/Send. */
+  const projectSwitching = ref(false);
 
   /** Legacy shape for components still reading session.session */
   const session = computed({
@@ -216,23 +218,37 @@ export const useSessionStore = defineStore("session", () => {
   }
 
   function reconcileProjectId() {
-    const pid = projectId.value;
+    if (memberships.value.length === 0) return;
+
+    // Server isActive (POST activate / login) is source of truth — localStorage
+    // can lag (e.g. PHAMNGUYEN active in DB but client still on Motul → vilube branch).
+    const activeId =
+      memberships.value.find((m) => m.project?.isActive)?.projectId ||
+      memberships.value[0]?.projectId ||
+      null;
+
+    const pid = projectId.value?.trim() || null;
     if (!pid) {
-      const first = memberships.value[0]?.projectId;
-      if (first) {
-        projectId.value = first;
-        auth.setProjectId(first);
+      if (activeId) {
+        projectId.value = activeId;
+        auth.setProjectId(activeId);
       }
       return;
     }
-    if (memberships.value.length === 0) return;
+
     const ok = memberships.value.some(
       (m) => m.projectId === pid || m.project?.id === pid,
     );
     if (!ok) {
-      const next = memberships.value[0]?.projectId ?? pid;
+      const next = activeId ?? pid;
       projectId.value = next;
       auth.setProjectId(next);
+      return;
+    }
+
+    if (activeId && activeId !== pid) {
+      projectId.value = activeId;
+      auth.setProjectId(activeId);
     }
   }
 
@@ -384,13 +400,18 @@ export const useSessionStore = defineStore("session", () => {
   async function activateProject(idRaw: string): Promise<void> {
     const id = idRaw.trim();
     if (!id) throw new Error("projectId required");
-    const res = await api<{ memberships?: Membership[] }>(
-      API.projects.activate(id),
-      { method: "POST", body: "{}" },
-    );
-    if (res.memberships) setMemberships(res.memberships);
-    setSession({ projectId: id });
-    await refreshMe();
+    projectSwitching.value = true;
+    try {
+      const res = await api<{ memberships?: Membership[] }>(
+        API.projects.activate(id),
+        { method: "POST", body: "{}" },
+      );
+      if (res.memberships) setMemberships(res.memberships);
+      setSession({ projectId: id });
+      await refreshMe();
+    } finally {
+      projectSwitching.value = false;
+    }
   }
 
   return {
@@ -400,6 +421,7 @@ export const useSessionStore = defineStore("session", () => {
     memberships,
     loading,
     bootstrapped,
+    projectSwitching,
     isLoggedIn,
     isAdmin,
     isBaAudience,
