@@ -44,7 +44,10 @@ import {
   workRunOnStep,
   type JobTokenSnapshot,
 } from "./progress.js";
-import { persistCursorUsage } from "../cursor/recordUsage.js";
+import {
+  persistCursorUsage,
+  usageStatusFromError,
+} from "../cursor/recordUsage.js";
 import type { CursorUsageKind } from "../cursor/usageNormalize.js";
 
 // Cursor SDK attaches many AbortSignal listeners during a run.
@@ -985,11 +988,25 @@ export async function runNewAgent(
       );
       appendPromptSending(opts.jobId, prompt);
     }
-    const run = await sendPrompt(
-      disposed,
-      prompt,
-      workSendOptions(opts?.jobId, sdkPolicy.mode),
-    );
+    let run: SdkRun;
+    try {
+      run = await sendPrompt(
+        disposed,
+        prompt,
+        workSendOptions(opts?.jobId, sdkPolicy.mode),
+      );
+    } catch (sendErr) {
+      await persistCursorUsage({
+        kind: "job_run",
+        jobId: opts?.jobId,
+        agent: disposed,
+        promptChars: prompt.length,
+        model: resolveCursorModel(),
+        status: usageStatusFromError(sendErr),
+        force: true,
+      });
+      throw sendErr;
+    }
     logger.info("Agent run started", {
       runId: run.id,
       agentId: disposed.agentId,
@@ -1044,11 +1061,21 @@ export async function resumeAgent(
   if (opts?.jobId) {
     appendPromptSending(opts.jobId, prompt);
   }
-  const run = await sendPrompt(
-    agent,
-    prompt,
-    workSendOptions(opts?.jobId),
-  );
+  let run: SdkRun;
+  try {
+    run = await sendPrompt(agent, prompt, workSendOptions(opts?.jobId));
+  } catch (sendErr) {
+    await persistCursorUsage({
+      kind: "job_run",
+      jobId: opts?.jobId,
+      agent,
+      promptChars: prompt.length,
+      model: resolveCursorModel(),
+      status: usageStatusFromError(sendErr),
+      force: true,
+    });
+    throw sendErr;
+  }
   logger.info("Resume run started", { runId: run.id, agentId: agent.agentId });
   trackRun(opts?.jobId, run);
   try {
@@ -1178,6 +1205,15 @@ export async function continueAgentWindow(
       if (opts?.jobId) {
         appendJobProgress(opts.jobId, "status", `Gửi prompt lỗi: ${msg}`);
       }
+      await persistCursorUsage({
+        kind: "job_run",
+        jobId: opts?.jobId,
+        agent: disposed,
+        promptChars: prompt.length,
+        model: resolveCursorModel(),
+        status: usageStatusFromError(err),
+        force: true,
+      });
       throw new Error(msg);
     }
 

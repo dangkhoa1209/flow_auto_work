@@ -17,6 +17,12 @@ import {
   pickUsageFromCandidates,
 } from "./usageNormalize.js";
 
+/** Map thrown errors (force-stop, cancel, transport) to usage row status. */
+export function usageStatusFromError(err: unknown): CursorUsageStatus {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /Force-stopped|cancelled/i.test(msg) ? "cancelled" : "error";
+}
+
 export type PersistCursorUsageOpts = {
   kind: CursorUsageKind;
   userId?: string;

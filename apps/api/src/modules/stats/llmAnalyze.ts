@@ -8,7 +8,10 @@ import {
 } from "../../plugins/agent/run.js";
 import { toAgentModel, cursorModelLogLabel } from "../../plugins/cursor/modelSpec.js";
 import { readOnlyAgentPolicy } from "../../plugins/cursor/agentPolicy.js";
-import { persistCursorUsage } from "../../plugins/cursor/recordUsage.js";
+import {
+  persistCursorUsage,
+  usageStatusFromError,
+} from "../../plugins/cursor/recordUsage.js";
 import type { DevRecommendation, TaskTypeStats } from "./analyze.js";
 import type { AnalysisJob, SkillDimensions } from "./scoring.js";
 
@@ -330,7 +333,7 @@ ${JSON.stringify(snapshot)}`;
 
 async function collectText(
   run: Awaited<ReturnType<Awaited<ReturnType<typeof Agent.create>>["send"]>>,
-): Promise<{ text: string; result: unknown }> {
+): Promise<{ text: string; result: unknown; outputChars: number }> {
   let streamed = "";
   try {
     if (typeof run.stream === "function" && run.supports?.("stream") !== false) {
@@ -346,11 +349,18 @@ async function collectText(
     logger.warn("Dev analysis stream failed; wait()", { err: String(err) });
   }
   const result = await run.wait();
+  const outputChars = Math.max(
+    streamed.length,
+    String((result as { result?: string }).result || "").trim().length,
+  );
   if (result.status === "cancelled") {
-    throw new AppError("Analysis cancelled", 400);
+    throw Object.assign(new AppError("Analysis cancelled", 400), {
+      outputChars,
+      runResult: result,
+    });
   }
   if (result.status === "error") {
-    throw errorFromCursorRunStatus(
+    const err = errorFromCursorRunStatus(
       result as {
         id: string;
         result?: string;
@@ -358,8 +368,13 @@ async function collectText(
       },
       { label: "Dev evaluation" },
     );
+    throw Object.assign(err, { outputChars, runResult: result });
   }
-  return { text: (result.result ?? streamed).trim(), result };
+  return {
+    text: (result.result ?? streamed).trim(),
+    result,
+    outputChars,
+  };
 }
 
 export async function analyzeWithCursorSdk(input: {
@@ -399,6 +414,8 @@ export async function analyzeWithCursorSdk(input: {
     owner: input.ownerUsername,
   });
 
+  let usagePersisted = false;
+  let outputChars = 0;
   try {
     const agent = await Agent.create({
       apiKey,
@@ -415,32 +432,86 @@ export async function analyzeWithCursorSdk(input: {
       runId: run.id,
       agentId: disposed.agentId,
     });
-    const { text, result } = await collectText(run);
-    await persistCursorUsage({
-      kind: "stats_analyze",
-      userId: rt?.gitlabUsername,
-      agent: disposed,
-      run,
-      result,
-      promptChars: prompt.length,
-      outputChars: text.length,
-      model: rt?.cursorModel,
-    });
-    const parsed = parseLlmAnalysisJson(text, input.jobs);
-    if (!parsed) {
-      throw new AppError(
-        "Agent reply was not valid evaluation JSON — try Analyze again",
-        502,
-      );
+    try {
+      const { text, result, outputChars: collectedChars } = await collectText(run);
+      outputChars = collectedChars;
+      usagePersisted = true;
+      await persistCursorUsage({
+        kind: "stats_analyze",
+        userId: rt?.gitlabUsername,
+        agent: disposed,
+        run,
+        result,
+        promptChars: prompt.length,
+        outputChars: text.length,
+        model: rt?.cursorModel,
+        status: "ok",
+      });
+      const parsed = parseLlmAnalysisJson(text, input.jobs);
+      if (!parsed) {
+        throw new AppError(
+          "Agent reply was not valid evaluation JSON — try Analyze again",
+          502,
+        );
+      }
+      return parsed;
+    } catch (usageErr) {
+      if (!usagePersisted) {
+        const partial =
+          typeof usageErr === "object" &&
+          usageErr &&
+          "outputChars" in usageErr &&
+          typeof (usageErr as { outputChars: unknown }).outputChars === "number"
+            ? (usageErr as { outputChars: number }).outputChars
+            : outputChars;
+        await persistCursorUsage({
+          kind: "stats_analyze",
+          userId: rt?.gitlabUsername,
+          agent: disposed,
+          run,
+          result:
+            typeof usageErr === "object" && usageErr && "runResult" in usageErr
+              ? (usageErr as { runResult: unknown }).runResult
+              : undefined,
+          promptChars: prompt.length,
+          outputChars: partial,
+          model: rt?.cursorModel,
+          status: usageStatusFromError(usageErr),
+          force: true,
+        });
+      }
+      throw usageErr;
     }
-    return parsed;
   } catch (err) {
     if (err instanceof AppError) throw err;
     if (err instanceof CursorAgentError) {
+      if (!usagePersisted) {
+        await persistCursorUsage({
+          kind: "stats_analyze",
+          userId: rt?.gitlabUsername,
+          promptChars: prompt.length,
+          outputChars,
+          model: rt?.cursorModel,
+          status: "error",
+          force: true,
+        });
+        usagePersisted = true;
+      }
       throw new AppError(
         formatCursorAgentFailure(err, err.message),
         err.isRetryable ? 503 : 400,
       );
+    }
+    if (!usagePersisted) {
+      await persistCursorUsage({
+        kind: "stats_analyze",
+        userId: rt?.gitlabUsername,
+        promptChars: prompt.length,
+        outputChars,
+        model: rt?.cursorModel,
+        status: usageStatusFromError(err),
+        force: true,
+      });
     }
     throw err;
   }

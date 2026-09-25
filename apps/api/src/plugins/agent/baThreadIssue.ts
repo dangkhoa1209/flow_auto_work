@@ -22,7 +22,10 @@ import {
   errorFromCursorRunStatus,
   isTransientCursorTransportError,
 } from "./run.js";
-import { persistCursorUsage } from "../cursor/recordUsage.js";
+import {
+  persistCursorUsage,
+  usageStatusFromError,
+} from "../cursor/recordUsage.js";
 
 const ISSUE_DRAFT_TIMEOUT_MS = 10 * 60 * 1000;
 
@@ -805,6 +808,9 @@ export async function runBaThreadIssueDraft(opts: {
     const work = async (): Promise<BaThreadIssueDraft> => {
       session.check();
       const scratchCwd = await issueDraftScratchCwd();
+      let streamed = "";
+      let usagePersisted = false;
+      try {
       const agent = await Agent.create({
         apiKey,
         model,
@@ -821,138 +827,157 @@ export async function runBaThreadIssueDraft(opts: {
       const run = await disposed.send(prompt);
       session.attach(run);
 
-      let streamed = "";
-      try {
-        if (
-          typeof run.stream === "function" &&
-          run.supports?.("stream") !== false
-        ) {
-          for await (const message of run.stream()) {
-            session.check();
-            const chunk = extractAssistantText(
-              message as {
-                type?: string;
-                message?: {
-                  content?: Array<{ type?: string; text?: string }>;
-                };
-              },
-            );
-            if (!chunk) continue;
-            // Snapshot vs delta (same as BA chat) — tránh nhân đôi / mất đuôi JSON dài.
-            if (chunk.startsWith(streamed) && chunk.length >= streamed.length) {
-              streamed = chunk;
-            } else if (streamed && streamed.endsWith(chunk)) {
-              /* duplicate trailing snapshot */
-            } else {
-              streamed += chunk;
+        try {
+          if (
+            typeof run.stream === "function" &&
+            run.supports?.("stream") !== false
+          ) {
+            for await (const message of run.stream()) {
+              session.check();
+              const chunk = extractAssistantText(
+                message as {
+                  type?: string;
+                  message?: {
+                    content?: Array<{ type?: string; text?: string }>;
+                  };
+                },
+              );
+              if (!chunk) continue;
+              // Snapshot vs delta (same as BA chat) — tránh nhân đôi / mất đuôi JSON dài.
+              if (chunk.startsWith(streamed) && chunk.length >= streamed.length) {
+                streamed = chunk;
+              } else if (streamed && streamed.endsWith(chunk)) {
+                /* duplicate trailing snapshot */
+              } else {
+                streamed += chunk;
+              }
             }
           }
+        } catch (err) {
+          if (!isTransientCursorTransportError(err)) {
+            logger.warn("BA thread issue stream error; waiting for result", {
+              err: String(err),
+            });
+          }
         }
-      } catch (err) {
-        if (!isTransientCursorTransportError(err)) {
-          logger.warn("BA thread issue stream error; waiting for result", {
-            err: String(err),
-          });
+
+        session.check();
+        const result = await run.wait();
+        if (result.status === "cancelled") {
+          throw new Error("Force-stopped from UI");
         }
-      }
+        if (result.status === "error") {
+          throw errorFromCursorRunStatus(
+            result as {
+              id: string;
+              result?: string;
+              durationMs?: number;
+              errorCode?: string;
+              requestId?: string;
+            },
+            { label: "BA issue draft" },
+          );
+        }
 
-      session.check();
-      const result = await run.wait();
-      if (result.status === "error") {
-        throw errorFromCursorRunStatus(
-          result as {
-            id: string;
-            result?: string;
-            durationMs?: number;
-            errorCode?: string;
-            requestId?: string;
-          },
-          { label: "BA issue draft" },
-        );
-      }
-
-      const fromResult = String(
-        (result as { result?: string }).result || "",
-      ).trim();
-      const finalText = pickBestIssueAgentText(fromResult, streamed);
-      if (!finalText) throw new Error("Agent returned empty content");
-      if (
-        fromResult &&
-        streamed &&
-        fromResult !== streamed &&
-        finalText === streamed &&
-        fromResult.length >= streamed.length
-      ) {
-        logger.info("BA thread issue draft preferred stream over longer result", {
-          threadId: opts.threadId,
-          resultChars: fromResult.length,
-          streamChars: streamed.length,
-        });
-      }
-
-      await persistCursorUsage({
-        kind: "ba_create_issue",
-        userId: thread?.userId,
-        threadId: opts.threadId,
-        agent: disposed,
-        run,
-        result,
-        promptChars: prompt.length,
-        outputChars: finalText.length,
-        model: await resolveSystemCursorModel(),
-      });
-
-      let parsed = parseIssueDraftFromAgent(finalText);
-      if (!parsed) {
-        parsed = draftFromLatestBaAnalysis(messages);
-        if (parsed) {
-          logger.warn("BA thread issue draft recovered from chat analysis", {
+        const fromResult = String(
+          (result as { result?: string }).result || "",
+        ).trim();
+        const finalText = pickBestIssueAgentText(fromResult, streamed);
+        if (!finalText) throw new Error("Agent returned empty content");
+        if (
+          fromResult &&
+          streamed &&
+          fromResult !== streamed &&
+          finalText === streamed &&
+          fromResult.length >= streamed.length
+        ) {
+          logger.info("BA thread issue draft preferred stream over longer result", {
             threadId: opts.threadId,
-            preview: finalText.slice(0, 400),
-            length: finalText.length,
-            title: parsed.title.slice(0, 80),
+            resultChars: fromResult.length,
+            streamChars: streamed.length,
           });
         }
-      }
-      if (!parsed) {
-        logger.warn("BA thread issue draft parse failed", {
+
+        usagePersisted = true;
+        await persistCursorUsage({
+          kind: "ba_create_issue",
+          userId: thread?.userId,
           threadId: opts.threadId,
-          preview: finalText.slice(0, 600),
-          length: finalText.length,
+          agent: disposed,
+          run,
+          result,
+          promptChars: prompt.length,
+          outputChars: finalText.length,
+          model: await resolveSystemCursorModel(),
+          status: "ok",
         });
-        throw new AppError(
-          "Agent did not return valid issue JSON — add more detail in chat and try again",
-          422,
-          "ba_issue_draft_parse_failed",
+
+        let parsed = parseIssueDraftFromAgent(finalText);
+        if (!parsed) {
+          parsed = draftFromLatestBaAnalysis(messages);
+          if (parsed) {
+            logger.warn("BA thread issue draft recovered from chat analysis", {
+              threadId: opts.threadId,
+              preview: finalText.slice(0, 400),
+              length: finalText.length,
+              title: parsed.title.slice(0, 80),
+            });
+          }
+        }
+        if (!parsed) {
+          logger.warn("BA thread issue draft parse failed", {
+            threadId: opts.threadId,
+            preview: finalText.slice(0, 600),
+            length: finalText.length,
+          });
+          throw new AppError(
+            "Agent did not return valid issue JSON — add more detail in chat and try again",
+            422,
+            "ba_issue_draft_parse_failed",
+          );
+        }
+        const latestAnalysis =
+          findLatestBaAnalysisMessage(messages)?.content || "";
+        let enriched = enrichIssueDraftWithLatestAnalysis(
+          parsed,
+          latestAnalysis,
         );
-      }
-      const latestAnalysis =
-        findLatestBaAnalysisMessage(messages)?.content || "";
-      let enriched = enrichIssueDraftWithLatestAnalysis(
-        parsed,
-        latestAnalysis,
-      );
-      // Cùng lượt: agent có thể viết spec đầy đủ ngoài JSON mỏng.
-      if (isThinIssueDescription(enriched.description)) {
-        const fromProse = enrichIssueDraftWithLatestAnalysis(
-          enriched,
-          stripIssueDraftJsonFromAgentText(finalText),
-        );
-        enriched = fromProse;
-      }
-      if (enriched.description !== parsed.description) {
-        logger.info("BA thread issue draft enriched", {
+        // Cùng lượt: agent có thể viết spec đầy đủ ngoài JSON mỏng.
+        if (isThinIssueDescription(enriched.description)) {
+          const fromProse = enrichIssueDraftWithLatestAnalysis(
+            enriched,
+            stripIssueDraftJsonFromAgentText(finalText),
+          );
+          enriched = fromProse;
+        }
+        if (enriched.description !== parsed.description) {
+          logger.info("BA thread issue draft enriched", {
+            threadId: opts.threadId,
+            thinChars: parsed.description.length,
+            enrichedChars: enriched.description.length,
+            stillThin: isThinIssueDescription(enriched.description),
+          });
+        }
+        logger.info("BA thread issue draft parsed", {
           threadId: opts.threadId,
-          thinChars: parsed.description.length,
-          enrichedChars: enriched.description.length,
-          stillThin: isThinIssueDescription(enriched.description),
+          title: enriched.title.slice(0, 80),
         });
+        return normalizeIssueDraftForForm(enriched);
+      } catch (usageErr) {
+        if (!usagePersisted) {
+          await persistCursorUsage({
+            kind: "ba_create_issue",
+            userId: thread?.userId,
+            threadId: opts.threadId,
+            promptChars: prompt.length,
+            outputChars: streamed.length,
+            model: await resolveSystemCursorModel().catch(() => undefined),
+            status: usageStatusFromError(usageErr),
+            force: true,
+          });
+        }
+        throw usageErr;
       }
-      logger.info("BA thread issue draft parsed", {
-        threadId: opts.threadId,
-        title: enriched.title.slice(0, 80),
-      });
-      return normalizeIssueDraftForForm(enriched);
     };
 
     return await withTimeout(work(), ISSUE_DRAFT_TIMEOUT_MS, "BA issue draft");

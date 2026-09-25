@@ -80,34 +80,61 @@ Rules for the reply:
     model: modelLabel,
   });
 
-  const result = await Agent.prompt(prompt, {
-    apiKey: resolveCursorApiKey(),
-    model,
-    local: { cwd: repoPath },
-  });
+  let usagePersisted = false;
+  try {
+    const result = await Agent.prompt(prompt, {
+      apiKey: resolveCursorApiKey(),
+      model,
+      local: { cwd: repoPath },
+    });
 
-  if (result.status === "error") {
-    throw new Error(`AI conflict resolve failed: ${result.id}`);
+    if (result.status === "error") {
+      throw new Error(`AI conflict resolve failed: ${result.id}`);
+    }
+    if (result.status === "cancelled") {
+      throw new Error("AI conflict resolve cancelled");
+    }
+
+    const remainingAfterAi = files;
+    // Stage files AI cleared but forgot to git-add (orchestrator also stages).
+    const stillMarked = await stageClearedConflictFiles(
+      repoPath,
+      remainingAfterAi,
+    );
+    const remaining = [
+      ...new Set([...(await listConflictedFiles(repoPath)), ...stillMarked]),
+    ];
+    usagePersisted = true;
+    await persistCursorUsage({
+      kind: "job_merge",
+      jobId: opts.jobId,
+      userId: opts.userId,
+      result,
+      promptChars: prompt.length,
+      outputChars: (result.result ?? "").length,
+      model: resolveCursorModel(),
+      status: "ok",
+    });
+    return {
+      text: (result.result ?? "").trim() || "(đã xử lý)",
+      remaining,
+    };
+  } catch (err) {
+    if (!usagePersisted) {
+      await persistCursorUsage({
+        kind: "job_merge",
+        jobId: opts.jobId,
+        userId: opts.userId,
+        promptChars: prompt.length,
+        outputChars: 0,
+        model: resolveCursorModel(),
+        status:
+          err instanceof Error && /cancel/i.test(err.message)
+            ? "cancelled"
+            : "error",
+        force: true,
+      });
+    }
+    throw err;
   }
-
-  const remainingAfterAi = files;
-  // Stage files AI cleared but forgot to git-add (orchestrator also stages).
-  const stillMarked = await stageClearedConflictFiles(repoPath, remainingAfterAi);
-  const remaining = [
-    ...new Set([...(await listConflictedFiles(repoPath)), ...stillMarked]),
-  ];
-  await persistCursorUsage({
-    kind: "job_merge",
-    jobId: opts.jobId,
-    userId: opts.userId,
-    result,
-    promptChars: prompt.length,
-    outputChars: (result.result ?? "").length,
-    model: resolveCursorModel(),
-    status: "ok",
-  });
-  return {
-    text: (result.result ?? "").trim() || "(đã xử lý)",
-    remaining,
-  };
 }
