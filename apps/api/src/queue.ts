@@ -101,7 +101,7 @@ export class JobQueue {
   /** Jobs force-stopped — runJob should abort ASAP. */
   private killedJobs = new Set<string>();
 
-  /** Per user + project: A running on project X does not block B on the same project. */
+  /** One serial worker per user + project (shared repo clone). Multi-tab same project queues here. */
   private laneKeyFor(
     job: Pick<JobRecord, "workspaceProjectId" | "ownerUsername">,
   ): string {
