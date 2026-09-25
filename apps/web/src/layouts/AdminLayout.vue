@@ -29,8 +29,9 @@ onMounted(() => {
       <RouterLink to="/admin" class="faw-brand" title="Admin">
         <BrandLogo
           class="faw-brand__logo faw-brand__logo--full"
-          width="148"
-          height="33"
+          variant="compact"
+          width="132"
+          height="30"
         />
         <BrandLogo
           class="faw-brand__logo faw-brand__logo--mark"

@@ -145,8 +145,9 @@ async function onKillAll() {
       <RouterLink to="/dev" class="faw-brand" title="Flow Auto WorkBench">
         <BrandLogo
           class="faw-brand__logo faw-brand__logo--full"
-          width="148"
-          height="33"
+          variant="compact"
+          width="132"
+          height="30"
         />
         <BrandLogo
           class="faw-brand__logo faw-brand__logo--mark"

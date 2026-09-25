@@ -13,6 +13,6 @@
     <circle cx="42" cy="18.5" r="3.5" fill="#8A6BFF"/>
     <circle cx="18" cy="42" r="3.5" fill="#34D399"/>
   </g>
-  <text x="62" y="30" fill="#E7E9EE" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="20" font-weight="700" letter-spacing="0.4">FLOW<tspan fill="#5B8DEF">.AUTO</tspan></text>
-  <text x="62" y="47" fill="#5E6576" font-family="ui-monospace, 'SF Mono', Menlo, monospace" font-size="11" font-weight="500" letter-spacing="1.2">WORKBENCH</text>
+  <text x="62" y="30" fill="#E7E9EE" font-family="Montserrat, system-ui, sans-serif" font-size="20" font-weight="700" letter-spacing="0.4">FLOW<tspan fill="#5B8DEF">.AUTO</tspan></text>
+  <text x="62" y="47" fill="#9AA2B1" font-family="IBM Plex Mono, ui-monospace, monospace" font-size="11" font-weight="500" letter-spacing="1.2">WORKBENCH</text>
 </svg>

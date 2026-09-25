@@ -70,6 +70,8 @@
   --shadow-float: 0 12px 32px rgba(0, 0, 0, 0.4);
   --font-ui: "Montserrat", system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+  --brand-purple: 138 107 255;
+  --brand-done: 52 211 153;
   /* Shared Work AgentConsole + BA Chat message density (keep in sync) */
   --app-chat-size: 12px;
   --app-chat-leading: 1.5;
@@ -89,6 +91,8 @@
   --c-line-strong: 198 205 217;
   --c-accent: 59 111 209;
   --c-accent-bright: 44 88 184;
+  --brand-purple: 109 79 217;
+  --brand-done: 5 150 105;
 
   --app-panel-hover: #e8ecf3;
   --app-panel-alt: #eef1f6;
@@ -1487,22 +1491,70 @@ code {
   display: flex;
   align-items: center;
   gap: 7px;
+  min-width: 36px;
   text-decoration: none;
   flex-shrink: 0;
   line-height: 0;
+  border-radius: 4px;
+  transition:
+    transform 0.18s ease,
+    filter 0.18s ease;
 }
 .faw-brand:hover {
   text-decoration: none;
-  opacity: 0.92;
+  transform: translateY(-0.5px);
+  filter: drop-shadow(0 0 10px rgb(var(--c-accent) / 0.18));
+}
+.faw-brand:focus-visible {
+  outline: 2px solid rgb(var(--c-accent) / 0.45);
+  outline-offset: 2px;
 }
 .faw-brand__logo {
   display: block;
-  height: 28px;
+  height: 30px;
   width: auto;
-  max-width: 160px;
-  object-fit: contain;
+  max-width: 148px;
   user-select: none;
   pointer-events: none;
+}
+.faw-brand-svg {
+  display: block;
+  overflow: visible;
+}
+.faw-brand-svg__grad-start {
+  stop-color: rgb(var(--c-accent));
+}
+.faw-brand-svg__grad-end {
+  stop-color: rgb(var(--brand-purple));
+}
+.faw-brand-svg__node-start {
+  fill: rgb(var(--c-accent));
+}
+.faw-brand-svg__node-mid {
+  fill: rgb(var(--brand-purple));
+}
+.faw-brand-svg__node-done {
+  fill: rgb(var(--brand-done));
+}
+.faw-brand-svg__wordmark {
+  fill: rgb(var(--c-ink));
+  font-family: var(--font-ui);
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+}
+.faw-brand-svg--compact .faw-brand-svg__wordmark {
+  font-size: 18px;
+}
+.faw-brand-svg__accent {
+  fill: rgb(var(--c-accent));
+}
+.faw-brand-svg__subtitle {
+  fill: rgb(var(--c-ink-muted));
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 1.2px;
 }
 .faw-crumb {
   display: flex;
@@ -1776,17 +1828,18 @@ code {
   }
   .faw-topbar--work .faw-brand__logo--full,
   .faw-topbar--ba .faw-brand__logo--full,
-  .faw-topbar--devops .faw-brand__logo--full {
+  .faw-topbar--devops .faw-brand__logo--full,
+  .faw-topbar--admin .faw-brand__logo--full {
     display: none;
   }
   .faw-topbar--work .faw-brand__logo--mark,
   .faw-topbar--ba .faw-brand__logo--mark,
-  .faw-topbar--devops .faw-brand__logo--mark {
+  .faw-topbar--devops .faw-brand__logo--mark,
+  .faw-topbar--admin .faw-brand__logo--mark {
     display: block;
-    height: 24px;
-    width: 24px;
-    max-width: 24px;
-    border-radius: 6px;
+    height: 26px;
+    width: 26px;
+    max-width: 26px;
   }
   .faw-topbar--work .faw-seg,
   .faw-topbar--ba .faw-seg,
