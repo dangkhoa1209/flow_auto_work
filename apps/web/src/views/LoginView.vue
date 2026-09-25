@@ -9,6 +9,7 @@ import { LAST_LOGIN_KEY } from "@/api/tokenStorage";
 import { useAuthStore } from "@/stores/auth";
 import { useSessionStore, type Membership } from "@/stores/session";
 import { isPathAllowed, resolveHomeRoute } from "@/utils/routeAccess";
+import BrandLogo from "@/components/layout/BrandLogo.vue";
 import { markPostLoginGreeting } from "@/utils/postLoginGreeting";
 
 const router = useRouter();
@@ -439,13 +440,10 @@ async function onForgotPassword(e?: Event) {
         class="faw-login__brand"
         :class="`is-mode-${mode}`"
       >
-        <img
+        <BrandLogo
           class="faw-login__logo"
-          src="/logo.svg"
-          alt="Flow Auto WorkBench"
           width="280"
           height="64"
-          draggable="false"
         />
         <p class="faw-login__tagline">
           From ticket to commit — steered by you

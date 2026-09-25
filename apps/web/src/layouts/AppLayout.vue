@@ -7,6 +7,7 @@ import {
   PlusOutlined,
   CheckOutlined,
 } from "@ant-design/icons-vue";
+import BrandLogo from "@/components/layout/BrandLogo.vue";
 import AppTopbarRight from "@/components/layout/AppTopbarRight.vue";
 import AppSwitcher from "@/components/layout/AppSwitcher.vue";
 import PostLoginGreeting from "@/components/layout/PostLoginGreeting.vue";
@@ -142,21 +143,16 @@ async function onKillAll() {
     <header class="faw-topbar faw-topbar--work">
       <!-- Brand: full logo desktop, icon-only mobile -->
       <RouterLink to="/dev" class="faw-brand" title="Flow Auto WorkBench">
-        <img
+        <BrandLogo
           class="faw-brand__logo faw-brand__logo--full"
-          src="/logo.svg"
-          alt="Flow Auto WorkBench"
           width="148"
           height="33"
-          draggable="false"
         />
-        <img
+        <BrandLogo
           class="faw-brand__logo faw-brand__logo--mark"
-          src="/favicon.svg"
-          alt="FLOW.AUTO"
+          variant="mark"
           width="28"
           height="28"
-          draggable="false"
         />
       </RouterLink>
 

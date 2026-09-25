@@ -3,6 +3,7 @@ import { computed, onMounted, provide, ref, watch } from "vue";
 import { useRouter, RouterLink, RouterView, useRoute } from "vue-router";
 import { message } from "ant-design-vue";
 import { MenuOutlined } from "@ant-design/icons-vue";
+import BrandLogo from "@/components/layout/BrandLogo.vue";
 import AppTopbarRight from "@/components/layout/AppTopbarRight.vue";
 import AppSwitcher from "@/components/layout/AppSwitcher.vue";
 import PostLoginGreeting from "@/components/layout/PostLoginGreeting.vue";
@@ -111,21 +112,16 @@ onMounted(() => {
       </button>
 
       <RouterLink :to="basePath" class="faw-brand" title="Project Chat">
-        <img
+        <BrandLogo
           class="faw-brand__logo faw-brand__logo--full"
-          src="/logo.svg"
-          alt="FLOW.AUTO"
           width="148"
           height="33"
-          draggable="false"
         />
-        <img
+        <BrandLogo
           class="faw-brand__logo faw-brand__logo--mark"
-          src="/favicon.svg"
-          alt="FLOW.AUTO"
+          variant="mark"
           width="28"
           height="28"
-          draggable="false"
         />
       </RouterLink>
 
