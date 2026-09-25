@@ -15,10 +15,6 @@ function ev(partial: Partial<CursorUsageEvent>): CursorUsageEvent {
     cacheReadTokens: partial.cacheReadTokens ?? 0,
     cacheWriteTokens: partial.cacheWriteTokens ?? 0,
     totalTokens: partial.totalTokens ?? 120,
-    chargedCents: partial.chargedCents ?? null,
-    estimatedCents: partial.estimatedCents ?? 1,
-    costCents: partial.costCents ?? 1,
-    costSource: partial.costSource ?? "estimated",
     fromSdk: partial.fromSdk ?? false,
     createdAt: partial.createdAt || "2026-09-04T03:00:00.000Z",
   };
@@ -36,7 +32,6 @@ describe("rollupCursorUsageEvents", () => {
         kind: "ba_chat",
         roles: ["ba"],
         totalTokens: 100,
-        costCents: 10,
         createdAt: "2026-09-03T17:00:00.000Z",
       }),
       ev({
@@ -45,7 +40,6 @@ describe("rollupCursorUsageEvents", () => {
         kind: "ba_create_issue",
         roles: ["ba"],
         totalTokens: 50,
-        costCents: 5,
         createdAt: "2026-09-04T02:00:00.000Z",
       }),
       ev({
@@ -55,9 +49,7 @@ describe("rollupCursorUsageEvents", () => {
         roles: ["dev"],
         status: "error",
         totalTokens: 200,
-        costCents: 40,
-        costSource: "sdk",
-        chargedCents: 40,
+        fromSdk: true,
         createdAt: "2026-09-04T10:00:00.000Z",
       }),
     ];
@@ -69,7 +61,6 @@ describe("rollupCursorUsageEvents", () => {
     );
     expect(r.totals.events).toBe(3);
     expect(r.totals.totalTokens).toBe(350);
-    expect(r.totals.costCents).toBe(55);
     expect(r.totals.errorEvents).toBe(1);
     expect(r.byUser[0].userId).toBe("bob");
     expect(r.byUser.find((u) => u.userId === "alice")?.events).toBe(2);
@@ -91,7 +82,6 @@ describe("rollupCursorUsageEvents", () => {
           userId: "carol",
           kind: "job_testcase",
           totalTokens: 80,
-          costCents: 2,
           createdAt: "2026-09-04T08:00:00.000Z",
         }),
       ],

@@ -10,11 +10,6 @@ type UsageBucket = {
   outputTokens: number;
   cacheReadTokens: number;
   totalTokens: number;
-  costCents: number;
-  costUsd: number;
-  chargedUsd: number;
-  estimatedUsd: number;
-  sdkEvents: number;
   errorEvents?: number;
   cancelledEvents?: number;
 };
@@ -47,8 +42,6 @@ type UsageEvent = {
   inputTokens: number;
   outputTokens: number;
   totalTokens: number;
-  costUsd: number;
-  costSource: string;
   fromSdk: boolean;
 };
 
@@ -136,15 +129,12 @@ const userColumns = [
   { title: "Roles", key: "roles", width: 120 },
   { title: "Runs", key: "events", width: 80, align: "right" as const },
   { title: "Tokens", key: "tokens", width: 150, align: "right" as const },
-  { title: "Cost", key: "cost", width: 110, align: "right" as const },
-  { title: "Billed", key: "sdk", width: 90, align: "right" as const },
 ];
 
 const dayColumns = [
   { title: "Day", key: "date", width: 120 },
   { title: "Runs", key: "events", width: 80, align: "right" as const },
   { title: "Tokens", key: "tokens", width: 160, align: "right" as const },
-  { title: "Cost", key: "cost", width: 110, align: "right" as const },
 ];
 
 const eventColumns = [
@@ -155,7 +145,6 @@ const eventColumns = [
   { title: "Roles", key: "roles", width: 100 },
   { title: "Model", key: "model", ellipsis: true },
   { title: "Tokens", key: "tokens", width: 110, align: "right" as const },
-  { title: "Cost", key: "cost", width: 100, align: "right" as const },
 ];
 
 function fmtTokens(n: number | undefined): string {
@@ -163,10 +152,6 @@ function fmtTokens(n: number | undefined): string {
   if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(2)}M`;
   if (v >= 10_000) return `${(v / 1000).toFixed(1)}k`;
   return v.toLocaleString("en-US");
-}
-
-function fmtUsd(n: number | undefined): string {
-  return `$${(n || 0).toFixed(2)}`;
 }
 
 function fmtWhen(iso: string): string {
@@ -246,10 +231,8 @@ watch(
       <div>
         <h1 class="faw-admin-page__title">Cursor usage</h1>
         <p class="faw-admin-page__desc">
-          Token and cost history for every Cursor action across BA, Dev, QC,
-          DevOps, and PD. Cost uses SDK billed cents when available; otherwise
-          estimated from token rates. End-user UIs stay minimal — detail lives
-          here.
+          Token history for every Cursor action across BA, Dev, QC, DevOps, and
+          PD. End-user UIs stay minimal — detail lives here.
         </p>
       </div>
     </header>
@@ -316,18 +299,6 @@ watch(
         }}</span>
         <span class="faw-admin-stat__l">Tokens</span>
       </div>
-      <div class="faw-admin-stat">
-        <span class="faw-admin-stat__n">{{
-          fmtUsd(payload?.totals?.costUsd)
-        }}</span>
-        <span class="faw-admin-stat__l">Cost (best available)</span>
-      </div>
-      <div class="faw-admin-stat faw-admin-stat--muted">
-        <span class="faw-admin-stat__n">{{
-          fmtUsd(payload?.totals?.chargedUsd)
-        }}</span>
-        <span class="faw-admin-stat__l">SDK billed</span>
-      </div>
       <div class="faw-admin-stat faw-admin-stat--muted">
         <span class="faw-admin-stat__n">{{
           (payload?.totals?.errorEvents ?? 0) +
@@ -345,7 +316,7 @@ watch(
         :class="roleFilter === r.role ? 'ring-1 ring-[var(--accent)]' : ''"
         @click="roleFilter = roleFilter === r.role ? undefined : r.role"
       >
-        {{ r.label }} · {{ fmtTokens(r.totalTokens) }} · {{ fmtUsd(r.costUsd) }}
+        {{ r.label }} · {{ fmtTokens(r.totalTokens) }}
       </span>
     </div>
 
@@ -357,7 +328,7 @@ watch(
         :class="kindFilter === k.kind ? 'ring-1 ring-[var(--accent)]' : ''"
         @click="kindFilter = kindFilter === k.kind ? undefined : k.kind"
       >
-        {{ k.label }} · {{ fmtTokens(k.totalTokens) }} · {{ fmtUsd(k.costUsd) }}
+        {{ k.label }} · {{ fmtTokens(k.totalTokens) }}
       </span>
     </div>
 
@@ -382,7 +353,7 @@ watch(
       :data-source="filteredUsers"
       :loading="loading"
       :pagination="{ pageSize: 20, showSizeChanger: true }"
-      :scroll="{ x: 800 }"
+      :scroll="{ x: 700 }"
       :custom-row="
         (record: UserRow) => ({
           onClick: () => openUser(record),
@@ -415,12 +386,6 @@ watch(
             {{ fmtTokens(record.outputTokens) }} out)
           </span>
         </template>
-        <template v-else-if="column.key === 'cost'">{{
-          fmtUsd(record.costUsd)
-        }}</template>
-        <template v-else-if="column.key === 'sdk'">
-          {{ record.sdkEvents }}/{{ record.events }}
-        </template>
       </template>
     </a-table>
 
@@ -448,9 +413,6 @@ watch(
               {{ fmtTokens(record.outputTokens) }})
             </span>
           </template>
-          <template v-else-if="column.key === 'cost'">{{
-            fmtUsd(record.costUsd)
-          }}</template>
         </template>
       </a-table>
     </template>
@@ -465,7 +427,7 @@ watch(
       :data-source="payload?.events || []"
       :loading="loading"
       :pagination="{ pageSize: 25, showSizeChanger: true }"
-      :scroll="{ x: 980 }"
+      :scroll="{ x: 880 }"
     >
       <template #emptyText>
         <div class="faw-admin-empty py-6">No runs recorded yet.</div>
@@ -505,10 +467,6 @@ watch(
         <template v-else-if="column.key === 'tokens'">{{
           fmtTokens(record.totalTokens)
         }}</template>
-        <template v-else-if="column.key === 'cost'">
-          {{ fmtUsd(record.costUsd) }}
-          <span class="text-xs text-ink-muted">{{ record.costSource }}</span>
-        </template>
       </template>
     </a-table>
   </div>

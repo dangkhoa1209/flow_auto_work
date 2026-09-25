@@ -24,11 +24,6 @@ export type NormalizedCursorUsage = {
   cacheReadTokens: number;
   cacheWriteTokens: number;
   totalTokens: number;
-  /** Actual bill from SDK when present */
-  chargedCents: number | null;
-  estimatedCents: number;
-  costCents: number;
-  costSource: "sdk" | "estimated";
   fromSdk: boolean;
 };
 
@@ -43,33 +38,6 @@ function firstNum(obj: Record<string, unknown>, keys: string[]): number {
     if (n > 0) return n;
   }
   return 0;
-}
-
-/** cents from dollars, or already-cents fields */
-function pickChargedCents(obj: Record<string, unknown>): number | null {
-  const cents = firstNum(obj, [
-    "chargedCents",
-    "charged_cents",
-    "costCents",
-    "cost_cents",
-    "billedCents",
-    "billed_cents",
-  ]);
-  if (cents > 0) return Math.round(cents);
-  const usd = firstNum(obj, [
-    "chargedUsd",
-    "charged_usd",
-    "costUsd",
-    "cost_usd",
-    "totalCost",
-    "total_cost",
-  ]);
-  if (usd > 0) {
-    // Heuristic: values < 1000 treated as USD, else already cents
-    const asCents = usd < 1000 ? usd * 100 : usd;
-    return Math.round(asCents);
-  }
-  return null;
 }
 
 export function asUsageRecord(raw: unknown): Record<string, unknown> | null {
@@ -96,9 +64,7 @@ export function hasTokenLikeFields(obj: Record<string, unknown>): boolean {
       "total_tokens",
       "cacheReadTokens",
       "cache_read_tokens",
-      "chargedCents",
-      "charged_cents",
-    ]) > 0 || pickChargedCents(obj) != null
+    ]) > 0
   );
 }
 
@@ -107,8 +73,6 @@ export function normalizeUsageFields(
   opts?: {
     promptChars?: number;
     outputChars?: number;
-    usdPerMillionInput: number;
-    usdPerMillionOutput: number;
   },
 ): NormalizedCursorUsage {
   const inputFromSdk = obj
@@ -150,8 +114,7 @@ export function normalizeUsageFields(
       outputFromSdk > 0 ||
       totalFromSdk > 0 ||
       cacheRead > 0 ||
-      cacheWrite > 0 ||
-      pickChargedCents(obj ?? {}) != null);
+      cacheWrite > 0);
 
   const inEst = Math.max(0, Math.ceil((opts?.promptChars ?? 0) / 4));
   const outEst = Math.max(0, Math.ceil((opts?.outputChars ?? 0) / 4));
@@ -164,27 +127,12 @@ export function normalizeUsageFields(
       : inputTokens + outputTokens + cacheRead + cacheWrite) ||
     inputTokens + outputTokens;
 
-  const usdIn = opts?.usdPerMillionInput ?? 1.25;
-  const usdOut = opts?.usdPerMillionOutput ?? 10;
-  const billableInput = inputTokens + cacheRead * 0.1 + cacheWrite * 1.25;
-  const estimatedUsd =
-    (billableInput / 1_000_000) * usdIn + (outputTokens / 1_000_000) * usdOut;
-  const estimatedCents = Math.round(estimatedUsd * 100);
-
-  const chargedCents = obj ? pickChargedCents(obj) : null;
-  const costSource: "sdk" | "estimated" =
-    chargedCents != null && chargedCents > 0 ? "sdk" : "estimated";
-
   return {
     inputTokens,
     outputTokens,
     cacheReadTokens: cacheRead,
     cacheWriteTokens: cacheWrite,
     totalTokens,
-    chargedCents,
-    estimatedCents,
-    costCents: costSource === "sdk" ? chargedCents! : estimatedCents,
-    costSource,
     fromSdk,
   };
 }
@@ -195,18 +143,8 @@ export function pickUsageFromCandidates(
   for (const c of candidates) {
     if (!c || typeof c !== "object") continue;
     const raw = c as Record<string, unknown>;
-    // agent.getUsage() → AgentUsage: { usage, cost?, runs[] }
     if (raw.usage && typeof raw.usage === "object") {
-      const nested = { ...(raw.usage as Record<string, unknown>) };
-      const cost = raw.cost;
-      if (cost && typeof cost === "object") {
-        const charged = Number(
-          (cost as { chargedCents?: unknown }).chargedCents,
-        );
-        if (Number.isFinite(charged) && charged > 0) {
-          nested.chargedCents = charged;
-        }
-      }
+      const nested = raw.usage as Record<string, unknown>;
       if (hasTokenLikeFields(nested)) return nested;
     }
     const rec = asUsageRecord(c);
@@ -221,9 +159,6 @@ export type UsageCounters = {
   cacheReadTokens: number;
   cacheWriteTokens: number;
   totalTokens: number;
-  costCents: number;
-  chargedCents: number;
-  estimatedCents: number;
 };
 
 export function emptyUsageCounters(): UsageCounters {
@@ -233,9 +168,6 @@ export function emptyUsageCounters(): UsageCounters {
     cacheReadTokens: 0,
     cacheWriteTokens: 0,
     totalTokens: 0,
-    costCents: 0,
-    chargedCents: 0,
-    estimatedCents: 0,
   };
 }
 
@@ -247,9 +179,6 @@ export function addUsageCounters(
     cacheReadTokens?: number;
     cacheWriteTokens?: number;
     totalTokens?: number;
-    costCents?: number;
-    chargedCents?: number | null;
-    estimatedCents?: number;
   },
 ): void {
   acc.inputTokens += row.inputTokens || 0;
@@ -257,9 +186,6 @@ export function addUsageCounters(
   acc.cacheReadTokens += row.cacheReadTokens || 0;
   acc.cacheWriteTokens += row.cacheWriteTokens || 0;
   acc.totalTokens += row.totalTokens || 0;
-  acc.costCents += row.costCents || 0;
-  acc.chargedCents += row.chargedCents || 0;
-  acc.estimatedCents += row.estimatedCents || 0;
 }
 
 /**
@@ -287,18 +213,6 @@ export function maybeDeltaFromCumulative(
     0,
     current.totalTokens - previous.totalTokens,
   );
-  const estimatedCents = Math.max(
-    0,
-    current.estimatedCents - previous.estimatedCents,
-  );
-  const chargedCents =
-    current.chargedCents != null
-      ? Math.max(0, current.chargedCents - previous.chargedCents)
-      : null;
-  const costCents =
-    chargedCents != null && chargedCents > 0
-      ? chargedCents
-      : Math.max(0, current.costCents - previous.costCents);
 
   return {
     inputTokens,
@@ -306,11 +220,6 @@ export function maybeDeltaFromCumulative(
     cacheReadTokens,
     cacheWriteTokens,
     totalTokens,
-    chargedCents,
-    estimatedCents,
-    costCents,
-    costSource:
-      chargedCents != null && chargedCents > 0 ? "sdk" : "estimated",
     fromSdk: true,
   };
 }

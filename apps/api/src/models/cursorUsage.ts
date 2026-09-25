@@ -26,10 +26,6 @@ export type CursorUsageEvent = {
   cacheReadTokens: number;
   cacheWriteTokens: number;
   totalTokens: number;
-  chargedCents: number | null;
-  estimatedCents: number;
-  costCents: number;
-  costSource: "sdk" | "estimated";
   fromSdk: boolean;
   createdAt: string;
 };
