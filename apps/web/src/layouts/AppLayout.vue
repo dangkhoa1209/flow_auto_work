@@ -1,5 +1,7 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import { getUsername } from "@/api/tokenStorage";
+import { foreignTabHoldsAgentLock } from "@/utils/projectTabCoordinator";
 import { useRoute, useRouter, RouterLink, RouterView } from "vue-router";
 import { message } from "ant-design-vue";
 import {
@@ -69,7 +71,33 @@ const projectSheetHeight = computed(() => {
   return Math.min(520, Math.round(window.innerHeight * 0.72));
 });
 
+const peerTabAgentActive = ref(false);
+
+function refreshPeerTabAgentLock() {
+  peerTabAgentActive.value = foreignTabHoldsAgentLock(
+    getUsername(),
+    session.projectId,
+  );
+}
+
+function onStorageForPeerLock(ev: StorageEvent) {
+  if (!ev.key?.startsWith("flow_agent_tab_lock:")) return;
+  refreshPeerTabAgentLock();
+}
+
+watch(
+  () => session.projectId,
+  () => refreshPeerTabAgentLock(),
+);
+
+watch(
+  () => [work.runningJobIds.length, work.queueLength, work.agentTyping] as const,
+  () => refreshPeerTabAgentLock(),
+);
+
 onMounted(() => {
+  refreshPeerTabAgentLock();
+  window.addEventListener("storage", onStorageForPeerLock);
   // Remount after Work↔BA↔Build: pinia already warm — avoid blocking + loading flash.
   void (async () => {
     try {
@@ -85,6 +113,10 @@ onMounted(() => {
       message.error(e instanceof Error ? e.message : String(e));
     }
   })();
+});
+
+onUnmounted(() => {
+  window.removeEventListener("storage", onStorageForPeerLock);
 });
 
 async function onSwitchProject(projectId: string) {
@@ -132,6 +164,15 @@ async function onKillAll() {
   <div
     class="faw-app-shell h-[100dvh] max-h-[100dvh] flex flex-col overflow-hidden overflow-x-hidden bg-[var(--app-bg)]"
   >
+    <div
+      v-if="peerTabAgentActive"
+      class="shrink-0 border-b border-amber-500/30 bg-amber-500/10 px-3 py-2 text-center text-xs leading-snug text-amber-950"
+      role="status"
+    >
+      Tab khác đang chạy agent trên project này — tab này chỉ xem; Send/Run bị
+      chặn cho tới khi tab kia xong hoặc Force Stop.
+    </div>
+
     <header class="faw-topbar faw-topbar--work">
       <!-- Brand: full logo desktop, icon-only mobile -->
       <RouterLink to="/dev" class="faw-brand" title="Flow Auto WorkBench">

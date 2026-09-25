@@ -2,7 +2,11 @@ import { defineStore } from "pinia";
 import { computed, ref, watch } from "vue";
 import { API } from "@/api/endpoints";
 import { api } from "@/api/client";
-import { getProjectId } from "@/api/tokenStorage";
+import { getProjectId, getUsername } from "@/api/tokenStorage";
+import {
+  releaseAgentLock,
+  touchAgentLock,
+} from "@/utils/projectTabCoordinator";
 import { jobApi } from "@/api/jobApi";
 import { useSettingsStore } from "./settings";
 import type { GitlabLabelColor } from "@/utils/gitlabLabel";
@@ -251,6 +255,26 @@ export const useWorkStore = defineStore("work", () => {
   });
 
   const canKillAll = computed(() => activeJobCount.value >= 1);
+
+  /** Keep cross-tab agent lock in sync while this tab drives the project queue. */
+  watch(
+    [runningJobIds, queueLength, agentTyping, () => getProjectId()],
+    () => {
+      const user = getUsername();
+      const project = getProjectId();
+      if (!user || !project) return;
+      const busy =
+        agentTyping.value ||
+        runningJobIds.value.length > 0 ||
+        queueLength.value > 0;
+      if (busy) {
+        touchAgentLock(user, project, runningJobIds.value[0]);
+      } else {
+        releaseAgentLock(user, project);
+      }
+    },
+    { immediate: true },
+  );
 
   watch(milestoneFilter, (v) => {
     writePersistedFilter(MILESTONE_FILTER_KEY, getProjectId(), v);

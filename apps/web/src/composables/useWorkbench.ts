@@ -10,6 +10,12 @@ import { useWorkStore, isAdhocJob, type TaskDetail } from "@/stores/work";
 import { formatIssueMeta } from "@/utils/formatIssueMeta";
 import { statusLabel } from "@/utils/status";
 import { titleFromWorkRequest } from "@/utils/sessionTitle";
+import {
+  agentLockBlockMessage,
+  foreignTabHoldsAgentLock,
+  touchAgentLock,
+} from "@/utils/projectTabCoordinator";
+import { getUsername } from "@/api/tokenStorage";
 
 export type MobilePane = "tasks" | "detail" | "chat";
 export type MidTab = "detail" | "diff";
@@ -626,14 +632,32 @@ export function useWorkbench() {
     });
   }
 
+  function rejectForeignAgentTab(): boolean {
+    if (foreignTabHoldsAgentLock(getUsername(), session.projectId)) {
+      message.warning(agentLockBlockMessage());
+      return true;
+    }
+    return false;
+  }
+
+  function claimProjectAgentTab(jobId?: string): void {
+    touchAgentLock(
+      getUsername(),
+      session.projectId,
+      jobId || selectedJobId.value || undefined,
+    );
+  }
+
   /** Issue panel Run — always the current job (issue or session). */
   async function runCurrentJob() {
     if (!(await confirmBadContextIfNeeded())) return;
+    if (rejectForeignAgentTab()) return;
     if (!(await ensureWorkReady())) return;
     if (!selectedJobId.value) {
       message.warning("Select a job first");
       return;
     }
+    claimProjectAgentTab();
 
     const iid = currentJob.value?.issue?.issueIid;
     if (iid && iid > 0 && !(await confirmRunIfNotAssigned([iid]))) return;
@@ -669,7 +693,9 @@ export function useWorkbench() {
   /** Tasks column Run — checked Open tasks only (not a chat session). */
   async function runCheckedTasks() {
     if (!(await confirmBadContextIfNeeded())) return;
+    if (rejectForeignAgentTab()) return;
     if (!(await ensureWorkReady())) return;
+    claimProjectAgentTab();
     const iids = selectedIids.value.filter((id) => id > 0);
     if (!iids.length) {
       message.warning("Select a task");
@@ -723,11 +749,28 @@ export function useWorkbench() {
     if (!msg) return;
 
     if (selectedJobId.value && !(await confirmBadContextIfNeeded())) return;
+    if (rejectForeignAgentTab()) return;
+
+    const laneBusy =
+      work.runningJobIds.length > 0 || work.queueLength > 0;
+    const myJob = selectedJobId.value;
+    const myJobActive =
+      Boolean(myJob) &&
+      (work.runningJobIds.includes(myJob!) ||
+        work.jobs.some(
+          (j) => j.id === myJob && ["queued", "running"].includes(j.status || ""),
+        ));
+    if (laneBusy && !myJobActive) {
+      message.info(
+        "Project đang chạy job khác — request này sẽ xếp hàng (chỉ một agent/lần trên repo).",
+      );
+    }
 
     const run = async () => {
       sendBusy.value = true;
       try {
         if (!(await ensureWorkReady())) return;
+        claimProjectAgentTab();
         chatInput.value = "";
         failedSend.value = null;
         await nextTick();
