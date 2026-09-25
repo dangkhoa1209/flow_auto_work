@@ -36,7 +36,7 @@ export type PersistCursorUsageOpts = {
   /** Outcome — omit / ok for successful finishes. */
   status?: CursorUsageStatus;
   /**
-   * When true, still insert a history row even if tokens/cost normalize to 0
+   * When true, still insert a history row even if tokens normalize to 0
    * (e.g. cancelled before first token). Default false.
    */
   force?: boolean;

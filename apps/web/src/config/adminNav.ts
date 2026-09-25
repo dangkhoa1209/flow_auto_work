@@ -54,7 +54,7 @@ export const ADMIN_TABS: AdminTab[] = [
     to: "/admin/usage",
     label: "Usage",
     short: "Usage",
-    description: "Cursor tokens and cost",
+    description: "Cursor token usage",
     icon: "usage",
   },
   {
